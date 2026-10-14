@@ -780,9 +780,12 @@
             "format": "double"
           },
           "schemaVersion": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
-            "description": "Bumped when probing changes what it records; triggers a re-probe.",
+            "description": "Bumped when probing changes what it records; absent on blobs persisted before the engine existed.",
             "minimum": 0
           },
           "subtitles": {
@@ -857,7 +860,10 @@
             }
           },
           "schemaVersion": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           }

@@ -231,9 +231,9 @@ export interface components {
             formatStartSeconds?: number | null;
             /**
              * Format: int32
-             * @description Bumped when probing changes what it records; triggers a re-probe.
+             * @description Bumped when probing changes what it records; absent on blobs persisted before the engine existed.
              */
-            schemaVersion?: number;
+            schemaVersion?: number | null;
             subtitles: components["schemas"]["SubtitleStreamInfo"][];
             /**
              * Format: double
@@ -255,7 +255,7 @@ export interface components {
             end: number;
             keyframes: components["schemas"]["Keyframe"][];
             /** Format: int32 */
-            schemaVersion?: number;
+            schemaVersion?: number | null;
         };
         /** @description The `streaming_*` settings, already resolved by the host. Defaults match the host's. */
         StreamingConfig: {

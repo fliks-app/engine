@@ -13,7 +13,10 @@ fn fixtures() -> Vec<(String, Value)> {
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
         .map(|p| {
             let name = p.file_name().unwrap().to_string_lossy().into_owned();
-            (name, serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap())
+            (
+                name,
+                serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap(),
+            )
         })
         .collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -24,7 +27,9 @@ fn fixtures() -> Vec<(String, Value)> {
 fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(p, q)),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(p, q))
+        }
         (Value::Object(x), Value::Object(y)) => {
             x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w)))
         }
@@ -35,7 +40,10 @@ fn same(a: &Value, b: &Value) -> bool {
 fn roundtrip<T: Serialize + for<'a> Deserialize<'a>>(name: &str, what: &str, v: &Value) {
     let t: T = serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{name}: {what}: {e}"));
     let back = serde_json::to_value(t).unwrap();
-    assert!(same(&back, v), "{name}: {what} changed on round trip\n in: {v}\nout: {back}");
+    assert!(
+        same(&back, v),
+        "{name}: {what} changed on round trip\n in: {v}\nout: {back}"
+    );
 }
 
 #[test]
