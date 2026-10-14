@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/estimate-sizes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["estimate_sizes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hello": {
         parameters: {
             query?: never;
@@ -322,6 +338,12 @@ export interface components {
              */
             streaming: components["schemas"]["StreamingConfig"];
         };
+        /** @description Body of `POST /v1/estimate-sizes`. `fileSize` is the source size in bytes, 0 when unknown. */
+        EstimateSizesRequest: {
+            /** Format: double */
+            fileSize?: number;
+            info: components["schemas"]["MediaInfo"];
+        };
         Gpu: {
             name: string;
             renderNode: string;
@@ -487,6 +509,13 @@ export interface components {
         };
         /** @enum {string} */
         QsvPreset: "veryfast" | "faster" | "fast" | "medium" | "slow" | "slower" | "veryslow";
+        /** @description One download quality; `estimatedSize` is in bytes. */
+        QualityEstimate: {
+            /** Format: double */
+            estimatedSize: number;
+            key: string;
+            label: string;
+        };
         QualityOption: {
             /** Format: int32 */
             height: number;
@@ -735,6 +764,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    estimate_sizes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EstimateSizesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityEstimate"][];
+                };
             };
         };
     };

@@ -10,8 +10,8 @@ use axum::{
     routing::{get, post},
 };
 use fliks_engine_core::api::{
-    Capabilities, DecideBody, Decision, DeviceProfile, EngineConfig, Hello, HostCaps, MediaInfo,
-    PROTOCOL_VERSION, SourceScan,
+    Capabilities, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest, Hello,
+    HostCaps, MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
 };
 use std::sync::{Arc, Mutex};
 use utoipa::OpenApi;
@@ -32,7 +32,7 @@ pub fn random_hex(bytes: usize) -> String {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "fliks-engine", version = "1"),
-    paths(hello, capabilities, get_config, put_config, decide),
+    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes),
     components(schemas(MediaInfo, DeviceProfile, SourceScan)),
     modifiers(&Bearer)
 )]
@@ -68,6 +68,7 @@ pub fn app(token: String) -> Router {
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/config", get(get_config).put(put_config))
         .route("/v1/decide", post(decide))
+        .route("/v1/estimate-sizes", post(estimate_sizes))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state)
 }
@@ -101,7 +102,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     Json(Hello {
         engine_version: env!("CARGO_PKG_VERSION").into(),
         protocol_version: PROTOCOL_VERSION,
-        features: vec!["decide".into()],
+        features: vec!["decide".into(), "estimate-sizes".into()],
         instance_id: s.instance_id.clone(),
     })
 }
@@ -164,6 +165,12 @@ async fn decide(
         &caps,
         &config.streaming,
     )))
+}
+
+#[utoipa::path(post, path = "/v1/estimate-sizes", request_body = EstimateSizesRequest,
+    responses((status = 200, body = Vec<QualityEstimate>)))]
+async fn estimate_sizes(Json(req): Json<EstimateSizesRequest>) -> Json<Vec<QualityEstimate>> {
+    Json(fliks_engine_core::decide::estimate_sizes(&req))
 }
 
 #[cfg(test)]

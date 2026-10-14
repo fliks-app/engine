@@ -106,6 +106,37 @@
         }
       }
     },
+    "/v1/estimate-sizes": {
+      "post": {
+        "tags": [],
+        "operationId": "estimate_sizes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateSizesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QualityEstimate"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/hello": {
       "get": {
         "tags": [],
@@ -1029,6 +1060,22 @@
           }
         }
       },
+      "EstimateSizesRequest": {
+        "type": "object",
+        "description": "Body of `POST /v1/estimate-sizes`. `fileSize` is the source size in bytes, 0 when unknown.",
+        "required": [
+          "info"
+        ],
+        "properties": {
+          "fileSize": {
+            "type": "number",
+            "format": "double"
+          },
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          }
+        }
+      },
       "Gpu": {
         "type": "object",
         "required": [
@@ -1590,6 +1637,27 @@
           "slower",
           "veryslow"
         ]
+      },
+      "QualityEstimate": {
+        "type": "object",
+        "description": "One download quality; `estimatedSize` is in bytes.",
+        "required": [
+          "key",
+          "label",
+          "estimatedSize"
+        ],
+        "properties": {
+          "estimatedSize": {
+            "type": "number",
+            "format": "double"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
       },
       "QualityOption": {
         "type": "object",

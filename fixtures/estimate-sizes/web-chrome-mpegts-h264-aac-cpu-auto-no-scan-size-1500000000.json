@@ -1,0 +1,85 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 1500000000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 1500000000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1072800000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 622800000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 397800000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 262800000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 1500000000,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 384000,
+          "channelLayout": "5.1",
+          "channels": 6,
+          "codec": "aac",
+          "endSeconds": 3600,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 1.4,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 3600,
+      "formatBitRate": 9000000,
+      "formatName": "mpegts",
+      "formatStartSeconds": 1.4,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 8,
+          "bitRate": 7500000,
+          "codec": "h264",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 3600,
+          "firstFrameSeconds": 1.48,
+          "frameRate": "24000/1001",
+          "height": 1080,
+          "level": 40,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 1.4,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "web-chrome mpegts-h264-aac cpu auto no scan size 1500000000"
+}

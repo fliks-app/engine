@@ -1,0 +1,65 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 102400000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 51600000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 26200000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 13300000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 7050000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 3100000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": 15,
+          "language": "und",
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService — audio that ends early leaves a muxed single track alone, whose segments the video carries size 0"
+}

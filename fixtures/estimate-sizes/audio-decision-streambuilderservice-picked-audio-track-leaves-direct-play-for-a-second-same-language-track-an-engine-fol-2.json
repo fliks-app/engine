@@ -1,0 +1,78 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 107200000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 54800000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 28600000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 14900000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 8650000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 4300000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 1500000000,
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "aac",
+          "language": "eng",
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        },
+        {
+          "channels": 2,
+          "codec": "aac",
+          "language": "eng",
+          "startTimeSeconds": 0,
+          "streamIndex": 2
+        },
+        {
+          "channels": 2,
+          "codec": "aac",
+          "language": "fre",
+          "startTimeSeconds": 0,
+          "streamIndex": 3
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService — picked audio track leaves Direct Play for a second same-language track an engine folds away size 1500000000"
+}

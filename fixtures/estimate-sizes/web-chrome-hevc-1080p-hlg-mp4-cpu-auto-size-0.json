@@ -1,0 +1,102 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 5572800000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 2872800000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1522800000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 847800000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 510300000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 307800000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 256000,
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 20000000,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 19000000,
+          "codec": "hevc",
+          "colorPrimaries": "bt2020",
+          "colorRange": "tv",
+          "colorSpace": "bt2020nc",
+          "colorTransfer": "arib-std-b67",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "hdrFormat": "HLG",
+          "height": 1080,
+          "level": 150,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "web-chrome hevc-1080p-hlg-mp4 cpu auto size 0"
+}

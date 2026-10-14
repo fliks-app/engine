@@ -1,0 +1,109 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 7182000000,
+      "key": "2160p",
+      "label": "2160p"
+    },
+    {
+      "estimatedSize": 5832000000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 3132000000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1782000000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 1107000000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 769500000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 567000000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 640000,
+          "channels": 6,
+          "codec": "eac3",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 25000000,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 24000000,
+          "codec": "hevc",
+          "colorRange": "tv",
+          "displayAspectRatio": "16:9",
+          "dvBlPresent": true,
+          "dvBlSignalCompatId": 0,
+          "dvElPresent": false,
+          "dvLevel": 6,
+          "dvProfile": 5,
+          "dvRpuPresent": true,
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 2160,
+          "level": 150,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 3840
+        }
+      ]
+    }
+  },
+  "name": "web-chrome dv-p5-mp4 cpu auto size 0"
+}

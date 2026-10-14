@@ -5,6 +5,7 @@ mod caps;
 mod codec;
 mod direct_play;
 mod dolby_vision;
+mod estimate;
 mod qualities;
 mod source;
 mod timeline;
@@ -21,6 +22,7 @@ use audio::{
 };
 use codec::{SourceForSelector, normalise_source_codec, pick_primary_variant};
 use direct_play::try_direct_play;
+pub use estimate::estimate_sizes;
 use qualities::{build_quality_list, transcode_bitrate_by_quality};
 use timeline::{
     VideoCut, frame_seconds_of, last_video_segment_start, parse_source_fps, remux_grid_boundaries,

@@ -328,3 +328,21 @@ pub struct Decision {
     /// Whether a transcoded rung runs a tone-map, whatever the play method.
     pub transcode_tonemapping: bool,
 }
+
+/// Body of `POST /v1/estimate-sizes`. `fileSize` is the source size in bytes, 0 when unknown.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EstimateSizesRequest {
+    pub info: MediaInfo,
+    #[serde(default)]
+    pub file_size: f64,
+}
+
+/// One download quality; `estimatedSize` is in bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityEstimate {
+    pub key: String,
+    pub label: String,
+    pub estimated_size: f64,
+}

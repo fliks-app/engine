@@ -1,0 +1,74 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 101600000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 51600000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 26600000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 14100000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 7850000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 4100000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitDepth": 10,
+          "bitRate": 8000000,
+          "codec": "hevc",
+          "colorPrimaries": "bt2020",
+          "colorRange": "tv",
+          "colorSpace": "bt2020nc",
+          "colorTransfer": "smpte2084",
+          "dvBlSignalCompatId": 0,
+          "dvLevel": 6,
+          "dvProfile": 5,
+          "frameRate": "24",
+          "hdrFormat": "HDR10",
+          "height": 1080,
+          "level": 120,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "dovi-play-method: StreamBuilderService — Dolby Vision play-method reshapes P5 into HDR10 for a DV-capable client forced off DirectPlay/remux by another gate size 0"
+}

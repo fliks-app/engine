@@ -1,0 +1,64 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 107200000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 54800000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 28600000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 15700000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 9450000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 5700000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "channels": 6,
+          "codec": "pcm_s24le",
+          "language": "und",
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService — one audio decision per track tv: pcm_s24le 6ch — plan equals the track on DirectStream and Transcode size 0"
+}

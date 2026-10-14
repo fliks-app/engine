@@ -142,3 +142,17 @@ async fn decide_needs_config_then_matches_the_golden_vector() {
     );
     assert_eq!(got["videoVariant"], want["videoVariant"]);
 }
+
+#[tokio::test]
+async fn estimate_sizes_lists_the_ladder() {
+    let body = r#"{"info":{"video":[{"streamIndex":0,"codec":"h264","width":1920,"height":1080}],
+        "audio":[],"subtitles":[],"durationSeconds":100},"fileSize":0}"#;
+    assert_eq!(
+        call("POST", "/v1/estimate-sizes", None, body).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (s, v) = call("POST", "/v1/estimate-sizes", Some("secret"), body).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v[0]["key"], "1080p");
+    assert_eq!(v[0]["estimatedSize"].as_f64(), Some(100_000_000.0));
+}
