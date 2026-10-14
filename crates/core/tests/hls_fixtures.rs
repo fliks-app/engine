@@ -3,6 +3,7 @@ mod common;
 
 use common::diff;
 use fliks_engine_core::api::{AudioPlan, VideoStreamInfo};
+use fliks_engine_core::decide::dolby_vision::{dv_standalone_codecs, dv_supplemental_codecs};
 use fliks_engine_core::hls::parse_source_fps;
 use fliks_engine_core::hls::{self, MasterOptions, Rendition, SegUrl};
 use serde_json::{Value, json};
@@ -147,6 +148,25 @@ fn run(fn_: &str, a: &Value) -> Value {
             }
             let v: VideoStreamInfo = serde_json::from_value(v).expect("video");
             json!(hls::copy_source_codec_string(&v))
+        }
+        "dvCodecs" => {
+            let out: Vec<Value> = a["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| {
+                    let mut v = json!({ "streamIndex": 0, "codec": "" });
+                    for (k, x) in c.as_object().unwrap() {
+                        v[k] = x.clone();
+                    }
+                    let v: VideoStreamInfo = serde_json::from_value(v).expect("video");
+                    json!([
+                        dv_supplemental_codecs(Some(&v)),
+                        dv_standalone_codecs(Some(&v))
+                    ])
+                })
+                .collect();
+            json!(out)
         }
         r if r.ends_with("Route") => json!(route(a, r)),
         other => panic!("unknown fn {other}"),

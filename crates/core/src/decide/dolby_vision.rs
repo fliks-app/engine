@@ -38,30 +38,39 @@ pub fn applies_rpu(profile: Option<u32>, compat: Option<u32>) -> bool {
     has_no_base(profile, compat) || (matches!(profile, Some(8 | 10)) && compat == Some(4))
 }
 
-/// A DV base layer that has a SUPPLEMENTAL-CODECS string (P8.1/8.4/10.1/10.4 passing the muxer gate).
-pub fn has_supplemental_codecs(v: Option<&VideoStreamInfo>) -> bool {
-    let Some(v) = v else { return false };
-    if !matches!(v.dv_profile, Some(8 | 10)) || v.dv_level.unwrap_or(0) == 0 {
-        return false;
-    }
+/// `SUPPLEMENTAL-CODECS` of a DV stream with an HDR10 or HLG base (P8.1/8.4/10.1/10.4) passing
+/// the muxer gate. [ts:modules/streaming/transcoding/codec/dolby-vision.ts:69-79]
+pub fn dv_supplemental_codecs(v: Option<&VideoStreamInfo>) -> Option<String> {
+    let v = v?;
+    let prefix = match v.dv_profile {
+        Some(8) => "dvh1.08",
+        Some(10) => "dav1.10",
+        _ => return None,
+    };
+    let level = v.dv_level.filter(|l| *l != 0)?;
     if v.color_range.as_deref() != Some("tv") || v.color_space.as_deref() != Some("bt2020nc") {
-        return false;
+        return None;
     }
     if !matches!(v.pixel_format.as_deref(), Some("yuv420p10" | "yuv420p10le")) {
-        return false;
+        return None;
     }
-    matches!(
-        (v.dv_bl_signal_compat_id, v.hdr_format),
-        (Some(1), Some(HdrFormat::Hdr10)) | (Some(4), Some(HdrFormat::Hlg))
-    )
+    match (v.dv_bl_signal_compat_id, v.hdr_format) {
+        (Some(1), Some(HdrFormat::Hdr10)) => Some(format!("{prefix}.{level:02}/db1p")),
+        (Some(4), Some(HdrFormat::Hlg)) => Some(format!("{prefix}.{level:02}/db4h")),
+        _ => None,
+    }
 }
 
-/// A no-base DV stream (P5, P10.0) that has a standalone CODECS string, i.e. a probed level.
-pub fn has_standalone_codecs(v: Option<&VideoStreamInfo>) -> bool {
-    let Some(v) = v else { return false };
-    v.dv_level.unwrap_or(0) != 0
-        && (v.dv_profile == Some(5)
-            || (v.dv_profile == Some(10) && matches!(v.dv_bl_signal_compat_id, Some(0) | None)))
+/// CODECS of a no-base remux: P5 `dvh1.05.LL` or P10.0 `dav1.10.LL`, with a probed level.
+/// [ts:modules/streaming/transcoding/codec/dolby-vision.ts:83-91]
+pub fn dv_standalone_codecs(v: Option<&VideoStreamInfo>) -> Option<String> {
+    let v = v?;
+    let level = v.dv_level.filter(|l| *l != 0)?;
+    match (v.dv_profile, v.dv_bl_signal_compat_id) {
+        (Some(5), _) => Some(format!("dvh1.05.{level:02}")),
+        (Some(10), Some(0) | None) => Some(format!("dav1.10.{level:02}")),
+        _ => None,
+    }
 }
 
 /// Whether a CODECS string can be built from the probed profile and level of a copied stream.

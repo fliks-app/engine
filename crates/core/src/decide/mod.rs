@@ -173,8 +173,9 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
             .is_some_and(|p| dv_profiles.contains(&(p as i32)))
         && video_ok;
     let client_can_present_dynamic_range = client_can_present_hdr || client_can_present_dv;
-    let dv_with_base = client_can_present_dv && dolby_vision::has_supplemental_codecs(v);
-    let dv_standalone_copy = client_can_present_dv && dolby_vision::has_standalone_codecs(v);
+    let dv_with_base = client_can_present_dv && dolby_vision::dv_supplemental_codecs(v).is_some();
+    let dv_standalone_copy =
+        client_can_present_dv && dolby_vision::dv_standalone_codecs(v).is_some();
     let dv_copy_allowed = !no_base || client_can_present_dv;
     let dv_remux_copy_allowed = !no_base || dv_standalone_copy;
     let dv_remux_eligible =

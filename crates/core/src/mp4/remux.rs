@@ -6,6 +6,7 @@ use super::timeline::{
     RawSample, TRUN_DATA_OFFSET, TRUN_SAMPLE_CTS, TRUN_SAMPLE_DURATION, TRUN_SAMPLE_FLAGS,
     TRUN_SAMPLE_SIZE, read_tfdt, trun_samples,
 };
+use crate::api::{AudioCodec, AudioPlan};
 use serde::{Deserialize, Serialize};
 
 /// Packet grid (seconds) of an encoded track: packets start at `alignedAt - padding + k * frame`.
@@ -253,4 +254,60 @@ pub fn build_fragment(
     let mut out = build(size + 8)?;
     out.extend(make_box(b"mdat", data)?);
     Ok(out)
+}
+
+/// `remuxAudioGrid`: the packet grid of an encoded track at 48 kHz, `None` for a copy; no plan is
+/// the AAC stereo default. [ts:ffmpeg-args.ts:1465-1470] [ts:audio-encode.ts:48-93]
+pub fn remux_audio_grid(plan: Option<&AudioPlan>, libfdk_aac: bool) -> Option<PacketGrid> {
+    let (codec, channels) = match plan {
+        Some(AudioPlan::Copy { .. }) => return None,
+        Some(AudioPlan::Transcode { codec, channels }) => (*codec, *channels),
+        None => (AudioCodec::Aac, 2),
+    };
+    let (frame, padding) = match codec {
+        AudioCodec::Aac if libfdk_aac && channels <= 6 => (1024.0, 2048.0),
+        AudioCodec::Aac => (1024.0, 1024.0),
+        AudioCodec::Opus => (960.0, 312.0),
+        AudioCodec::Ac3 | AudioCodec::Eac3 => (1536.0, 256.0),
+    };
+    Some(PacketGrid {
+        frame: frame / 48_000.0,
+        padding: padding / 48_000.0,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_grid_follows_the_encoder() {
+        let t = |codec, channels| AudioPlan::Transcode { codec, channels };
+        let g = |p: Option<&AudioPlan>, fdk| remux_audio_grid(p, fdk).map(|g| (g.frame, g.padding));
+        let k = 48_000.0;
+        assert_eq!(g(None, false), Some((1024.0 / k, 1024.0 / k)));
+        assert_eq!(
+            g(Some(&t(AudioCodec::Aac, 2)), true),
+            Some((1024.0 / k, 2048.0 / k))
+        );
+        assert_eq!(
+            g(Some(&t(AudioCodec::Aac, 8)), true),
+            Some((1024.0 / k, 1024.0 / k))
+        );
+        assert_eq!(
+            g(Some(&t(AudioCodec::Opus, 2)), false),
+            Some((960.0 / k, 312.0 / k))
+        );
+        assert_eq!(
+            g(Some(&t(AudioCodec::Eac3, 6)), false),
+            Some((1536.0 / k, 256.0 / k))
+        );
+        let copy = AudioPlan::Copy {
+            codec: "aac".into(),
+            channels: Some(2),
+            bitrate_bps: None,
+            profile: None,
+        };
+        assert_eq!(g(Some(&copy), false), None);
+    }
 }

@@ -1,13 +1,16 @@
 //! What a session freezes at open and how its routes and runs read it back: the profile hash
 //! inputs, the ffmpeg run options and the master options. Spec: `docs/spec/runtime.md`.
 use super::{LayoutAudio, SessionLayout, profile_from_layout, profile_hash};
+use super::{SessionVariant, remux_variant};
 use crate::api::{
-    AudioCodec, AudioPlan, BurnInKind, Decision, HostCaps, HwAccel, MediaInfo, MuxFlavour,
-    OpenSessionRequest, PlayMethod, QsvPreset, SessionKind, StreamingConfig, SubtitleTrackKind,
+    AudioCodec, AudioPlan, BurnInKind, Decision, HdrFormat, HostCaps, HwAccel, MediaInfo,
+    MuxFlavour, OpenSessionRequest, PlayMethod, QsvPreset, SessionKind, StreamingConfig,
+    SubtitleTrackKind,
 };
 use crate::args::{self, AudioStream, BurnIn, Profile, VodArgs};
+use crate::args::{RemuxArgs, RemuxRun};
 use crate::decide::codec::resolve_encoder;
-use crate::decide::dolby_vision::has_no_base;
+use crate::decide::dolby_vision::{dv_standalone_codecs, dv_supplemental_codecs, has_no_base};
 use crate::decide::source::is_mpeg_ts;
 use crate::decide::timeline::{parse_source_fps, real_segment_seconds};
 use crate::hls::{
@@ -17,7 +20,9 @@ use crate::hls::{
 use crate::ladder::{
     HDR_LADDER, SDR_LADDER, profile_fits_source, resolve_source_video_bitrate_bps,
 };
-use crate::mp4::{SourceTimeline, source_timeline};
+use crate::mp4::{
+    KeyframeGrid, RemuxRunStart, SourceTimeline, remux_segment_grid, source_timeline,
+};
 
 /// What every request of a session reads back, decided once at open.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +38,10 @@ pub struct SessionPlan {
     pub segment_duration: f64,
     pub timeline: SourceTimeline,
     pub duration: f64,
+    /// Keyframe grid a DirectStream session's remux runs are cut on, frozen at open.
+    pub remux_grid: Option<KeyframeGrid>,
+    /// The client fetches seg-0 on a load-then-seek: a resume gets the early companion.
+    pub probes_seg_zero: bool,
 }
 
 pub fn session_kind(m: PlayMethod) -> SessionKind {
@@ -112,6 +121,17 @@ pub fn plan(
         multi_audio: info.audio.len() > 1,
         source_fps: parse_source_fps(v.and_then(|v| v.frame_rate.as_deref())),
         segment_duration: streaming.segment_duration,
+        remux_grid: (kind == SessionKind::Remux)
+            .then(|| {
+                remux_segment_grid(
+                    req.decide.scan.as_ref(),
+                    timeline.origin,
+                    streaming.segment_duration,
+                    v.and_then(|v| v.frame_rate.as_deref()),
+                )
+            })
+            .flatten(),
+        probes_seg_zero: req.decide.device.probes_seg_zero.unwrap_or(true),
         timeline,
         duration: info.duration_seconds.unwrap_or(0.0),
     }
@@ -192,6 +212,79 @@ pub struct RunInput<'a> {
     pub quality: &'a str,
     pub start_segment: u32,
     pub hw: HwAccel,
+    /// The early companion: seg-0 and seg-1 only. [ts:transcoding/transcoding.service.ts:965-1060]
+    pub early: bool,
+}
+
+/// The picked audio track, when it names one of the source's.
+pub fn picked_audio(req: &OpenSessionRequest) -> Option<u32> {
+    req.decide
+        .selection
+        .audio_stream_index
+        .filter(|i| *i >= 0 && (*i as usize) < req.decide.info.audio.len())
+        .map(|i| i as u32)
+}
+
+/// The cache variant of a session's remux runs. [ts:transcoding/transcoding.service.ts:1409-1430]
+pub fn remux_variant_of(req: &OpenSessionRequest, plan: &SessionPlan) -> SessionVariant {
+    remux_variant(
+        picked_audio(req),
+        plan.remux_grid.is_some(),
+        plan.multi_audio,
+    )
+}
+
+/// The plan an encoded remux audio start snaps onto: the group's transcoded track, else the
+/// picked one's. [ts:transcoding/transcoding.service.ts:1482-1486]
+pub fn remux_audio_basis(d: &Decision) -> &AudioPlan {
+    d.audio_plans
+        .iter()
+        .find(|p| matches!(p, AudioPlan::Transcode { .. }))
+        .unwrap_or(&d.response.audio_plan)
+}
+
+/// One remux run's ffmpeg options; `output_dir` is the run's GOP dir.
+/// [ts:transcoding/transcoding.service.ts:1497-1520]
+pub fn remux_args(r: &RunInput, run: &RemuxRunStart) -> RemuxArgs {
+    let (req, d, plan) = (r.req, r.decision, r.plan);
+    let info = &req.decide.info;
+    let v = info.video.first();
+    RemuxArgs {
+        input_path: r.input_path.into(),
+        output_dir: r.output_dir.into(),
+        run: RemuxRun {
+            audio_start_seconds: run.audio_start_seconds,
+            seek_seconds: run.seek_seconds,
+            start_number: run.start_number as u32,
+        },
+        trusted_stream_info: v.is_some_and(|v| !v.codec.is_empty()),
+        audio_stream_index: picked_audio(req),
+        source_video_codec: v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty()),
+        audio_streams: Some(audio_streams(info)),
+        grid: plan.remux_grid.as_ref().map(|_| serde::de::IgnoredAny),
+        segment_duration: Some(plan.segment_duration),
+        video_stream_index: v.map(|v| v.stream_index),
+        source_end_seconds: plan.timeline.end,
+        source_clock_break_seconds: plan.timeline.clock_break,
+        audio_plan: Some(d.response.audio_plan.clone()),
+        audio_track_plans: (plan.multi_audio && !d.audio_plans.is_empty())
+            .then(|| d.audio_plans.clone()),
+        video_only: plan.multi_audio,
+        dolby_vision: d.response.dolby_vision,
+        source_dv_profile: v.and_then(|v| v.dv_profile),
+        source_dv_bl_signal_compat_id: v.and_then(|v| v.dv_bl_signal_compat_id),
+        hdr10_plus: v.and_then(|v| v.hdr10_plus).unwrap_or(false),
+    }
+}
+
+fn audio_streams(info: &MediaInfo) -> Vec<AudioStream> {
+    info.audio
+        .iter()
+        .map(|a| AudioStream {
+            language: Some(a.language.clone()),
+            stream_index: Some(a.stream_index),
+        })
+        .collect()
 }
 
 pub fn vod_args(r: &RunInput) -> VodArgs {
@@ -203,12 +296,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         v.and_then(|v| v.dv_bl_signal_compat_id),
     );
     let hdr = v.and_then(|v| v.hdr_format).is_some();
-    let picked = req
-        .decide
-        .selection
-        .audio_stream_index
-        .filter(|i| *i >= 0 && (*i as usize) < info.audio.len())
-        .map(|i| i as u32);
+    let picked = picked_audio(req);
     VodArgs {
         input_path: r.input_path.into(),
         profile: rung_profile(r.quality),
@@ -231,15 +319,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
             .then(|| v.and_then(|v| v.crop.clone()))
             .flatten(),
         video_only: plan.multi_audio,
-        audio_streams: Some(
-            info.audio
-                .iter()
-                .map(|a| AudioStream {
-                    language: Some(a.language.clone()),
-                    stream_index: Some(a.stream_index),
-                })
-                .collect(),
-        ),
+        audio_streams: Some(audio_streams(info)),
         video_variant: Some(d.video_variant),
         source_video_codec: v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty()),
         source_bit_depth: Some(if hdr || dv_no_base { 10 } else { 8 }),
@@ -267,7 +347,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         source_color_range: v.and_then(|v| v.color_range.clone()),
         segment_duration: Some(plan.segment_duration),
         trusted_stream_info: v.is_some_and(|v| !v.codec.is_empty()),
-        early: false,
+        early: r.early,
         use_ts: plan.use_ts,
     }
 }
@@ -365,6 +445,9 @@ pub fn master_options(
                 .collect(),
         });
     let positive = |x: Option<u32>| x.filter(|b| *b > 0).map(f64::from);
+    // [ts:modules/streaming/streaming.controller.ts:1506-1551]
+    let dv = q.include_remux && d.response.dolby_vision;
+    let dv_standalone = dv.then(|| dv_standalone_codecs(v)).flatten();
     MasterOptions {
         prefix: q.prefix.into(),
         token_param: q.token.into(),
@@ -401,13 +484,20 @@ pub fn master_options(
         dedupes_audio_by_language: device.dedupes_audio_by_language == Some(true),
         supports_abr: device.supports_abr,
         remux_codecs: if q.include_remux {
-            v.and_then(copy_source_codec_string)
+            dv_standalone
+                .clone()
+                .or_else(|| v.and_then(copy_source_codec_string))
         } else {
             None
         },
-        remux_supplemental_codecs: None,
+        remux_supplemental_codecs: dv.then(|| dv_supplemental_codecs(v)).flatten(),
         format_bit_rate: positive(info.format_bit_rate),
-        source_hdr_format: v.and_then(|v| v.hdr_format),
+        // A no-base DV copy's standalone CODECS is always PQ.
+        source_hdr_format: if dv_standalone.is_some() {
+            Some(HdrFormat::Hdr10)
+        } else {
+            v.and_then(|v| v.hdr_format)
+        },
         i_frame_trick_play_segment_seconds: (device.supports_i_frame_trick_play == Some(true))
             .then(|| real_segment_seconds(plan.segment_duration, plan.source_fps)),
     }

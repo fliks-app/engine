@@ -140,12 +140,10 @@ pub struct CodecVariant {
 
 /// One audio output's decision: a verbatim copy of the source or the encode target.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(
-    tag = "mode",
-    rename_all = "lowercase",
-    rename_all_fields = "camelCase"
-)]
+#[serde(tag = "mode", rename_all = "lowercase")]
 pub enum AudioPlan {
+    // Per variant: utoipa ignores `rename_all_fields`.
+    #[serde(rename_all = "camelCase")]
     Copy {
         /// Source codec, lowercased, whatever it is.
         codec: String,
@@ -156,10 +154,8 @@ pub enum AudioPlan {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         profile: Option<String>,
     },
-    Transcode {
-        codec: AudioCodec,
-        channels: u32,
-    },
+    #[serde(rename_all = "camelCase")]
+    Transcode { codec: AudioCodec, channels: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

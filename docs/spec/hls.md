@@ -28,6 +28,8 @@
 
 `remux_bandwidth_bps` (9's formula, shared with playback-info) and `pinned_rung_name(q, w, h, hdr)` (the rung a `startQuality` pin lands on: the name, `-hdr` appended on the HDR ladder, resolved by `resolve_rung` on the fitting ladder, else the name itself) are public too. `[ts:mp:68-77,211-225]`
 
+Dolby Vision `[ts:transcoding/codec/dolby-vision.ts:69-91]` (`decide::dolby_vision`): `dv_supplemental_codecs` = `dvh1.08.LL` / `dav1.10.LL` + `/db1p` (compat 1, HDR10) or `/db4h` (compat 4, HLG), only for a probed level, `tv` range, `bt2020nc`, `yuv420p10[le]`; `dv_standalone_codecs` = `dvh1.05.LL` (P5) or `dav1.10.LL` (P10, compat 0/unknown). The master of a DV remux (`include_remux` and `dolbyVision`) takes the standalone string as `remuxCodecs` (with `VIDEO-RANGE=PQ`), else the probed one plus `SUPPLEMENTAL-CODECS`. `[ts:ctl:1506-1551]`
+
 `copy_source_codec_string(video)` (the host's `remuxCodecs` input) is ported too: H.264 `avc1.PP00LL` from the probed profile and level_idc (<= 255), HEVC `hvc1.1.6.L{level}.B0` / `hvc1.2.4.L{level}.B0` (level >= 30, `main` / `main 10`), AV1 `av01.P.LLM.DD` (level <= 31, profile `main high professional`, bit depth from `bitDepth` 8/10/12 else the pixel format `p12`/`p10`, else 8 when one is named); `None` otherwise. `[ts:cs:216-305]`
 
 ## Media playlists `[ts:ctl:261-347]`

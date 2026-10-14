@@ -913,3 +913,212 @@ async fn throttle_pauses_a_run_far_ahead_and_resumes_it() {
     assert_eq!(p.job(&sid).await["state"], "running");
     p.e.rt.shutdown().await;
 }
+
+/// A desktop client that copies H.264/AAC but cannot direct play Matroska: DirectStream.
+fn copy_client(file: &Path) -> Value {
+    json!({
+        "device": {
+            "directPlayProfiles": [{ "containers": ["mp4"], "videoCodecs": ["h264"], "audioCodecs": ["aac"] }],
+            "codecConditions": [{ "codec": "h264", "maxBitDepth": 8, "maxLevel": 52, "profiles": ["baseline", "main", "high"] }],
+            "rejectCopy": false, "maxAudioChannels": 2, "deviceType": "desktop",
+        },
+        "scan": scan(file),
+    })
+}
+
+fn extinf(playlist: &str) -> Vec<f64> {
+    playlist
+        .lines()
+        .filter_map(|l| l.strip_prefix("#EXTINF:"))
+        .map(|l| l.trim_end_matches(',').parse().unwrap())
+        .collect()
+}
+
+/// Start time of each segment: the running sum of the playlist's durations.
+fn starts(durations: &[f64]) -> Vec<f64> {
+    durations
+        .iter()
+        .scan(0.0, |t, d| {
+            let s = *t;
+            *t += d;
+            Some(s)
+        })
+        .collect()
+}
+
+impl Play {
+    async fn text(&self, path: &str) -> String {
+        let r = self.e.get(path, "alice-jwt", &[]).await;
+        assert_eq!(r.status, 200, "{path}: {}", r.text());
+        r.text()
+    }
+
+    async fn open_remux(&self) -> String {
+        let s = self
+            .e
+            .open(1, &self.file, &self.info, "alice", copy_client(&self.file))
+            .await;
+        assert_eq!(s["decision"]["response"]["playMethod"], "DirectStream");
+        s["sessionId"].as_str().unwrap().to_string()
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn remux_variant_and_audio_renditions_on_the_keyframe_grid() {
+    let p = play(multi_audio_clip()).await;
+    let sid = p.open_remux().await;
+    let master = p
+        .text(&format!("/api/stream/1/master.m3u8?sid={sid}&remux=1"))
+        .await;
+    assert!(
+        master.contains("/api/stream/1/remux/index.m3u8"),
+        "{master}"
+    );
+    assert!(
+        master.contains("/api/stream/1/audio/1/index.m3u8"),
+        "{master}"
+    );
+    let video = extinf(
+        &p.text(&format!("/api/stream/1/remux/index.m3u8?sid={sid}"))
+            .await,
+    );
+    assert!((video.iter().sum::<f64>() - 10.0).abs() < 0.1, "{video:?}");
+    let init = p.seg(&sid, "alice-jwt", "remux", "init.mp4").await;
+    assert_eq!(init.status, 200);
+    for (n, t0) in starts(&video).into_iter().enumerate() {
+        let s = p.seg(&sid, "alice-jwt", "remux", &seg_name(n as u32)).await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        let t = tfdt_seconds(&init.body, &s.body, true);
+        assert!((t - t0).abs() < 0.05, "seg {n} video tfdt {t}, want {t0}");
+    }
+    for a in 0..2 {
+        let list = p
+            .text(&format!("/api/stream/1/audio/{a}/index.m3u8?sid={sid}"))
+            .await;
+        assert_eq!(extinf(&list), video, "audio {a} rides the video grid");
+        let ainit = p
+            .seg(
+                &sid,
+                "alice-jwt",
+                &format!("audio/{a}"),
+                &format!("init_{}.mp4", a + 1),
+            )
+            .await;
+        assert_eq!(ainit.status, 200);
+        for (n, t0) in starts(&video).into_iter().enumerate() {
+            let s = p
+                .seg(
+                    &sid,
+                    "alice-jwt",
+                    &format!("audio/{a}"),
+                    &seg_name(n as u32),
+                )
+                .await;
+            assert_eq!(s.status, 200, "audio {a} seg {n}: {}", s.text());
+            let t = tfdt_seconds(&ainit.body, &s.body, false);
+            assert!(
+                (t - t0).abs() < 0.1,
+                "audio {a} seg {n} tfdt {t}, want {t0}"
+            );
+        }
+    }
+    let job = p.job(&sid).await;
+    assert_eq!(job["quality"], "remux");
+    p.e.rt.shutdown().await;
+    assert!(p.e.ffmpeg_pids().is_empty());
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn remux_seek_restarts_on_the_grid_and_keeps_the_timeline() {
+    let p = play(h264_clip(120)).await;
+    let sid = p.open_remux().await;
+    let video = extinf(
+        &p.text(&format!("/api/stream/1/remux/index.m3u8?sid={sid}"))
+            .await,
+    );
+    let at = starts(&video);
+    // A copy outruns any player: seek forward first, then back, each a run of its own.
+    let far = 25;
+    let mut segs = vec![];
+    for (n, start) in [(far, far), (far + 1, far), (0, 0), (1, 0)] {
+        let s = p.seg(&sid, "alice-jwt", "remux", &seg_name(n)).await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        assert_eq!(p.job(&sid).await["startSegment"], start, "seg {n}");
+        segs.push((n, s.body));
+    }
+    let init = p.seg(&sid, "alice-jwt", "remux", "init.mp4").await;
+    assert_eq!(init.status, 200);
+    for (n, body) in segs {
+        let want = at[n as usize];
+        let t = tfdt_seconds(&init.body, &body, true);
+        assert!((t - want).abs() < 0.05, "seg {n} tfdt {t}, want {want}");
+        let a = tfdt_seconds(&init.body, &body, false);
+        assert!(
+            (a - want).abs() < 0.1,
+            "seg {n} audio tfdt {a}, want {want}"
+        );
+    }
+    // The first run's segments stay served from disk.
+    assert_eq!(
+        p.seg(&sid, "alice-jwt", "remux", &seg_name(far))
+            .await
+            .status,
+        200
+    );
+    assert_eq!(p.job(&sid).await["startSegment"], 0);
+    let past = video.len() as u32;
+    assert_eq!(
+        p.e.get(
+            &format!("/api/stream/1/remux/{}?sid={sid}", seg_name(past)),
+            "alice-jwt",
+            &[]
+        )
+        .await
+        .status,
+        404
+    );
+    p.e.rt.shutdown().await;
+    assert!(p.e.ffmpeg_pids().is_empty());
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn resume_seg_zero_probe_is_served_by_the_early_companion() {
+    let p = play(h264_clip(120)).await;
+    let mut ev = p.e.rt.events.subscribe();
+    let sid = p
+        .open(
+            "alice",
+            json!({ "startAtS": 60.0, "selection": { "requestedQuality": "720p" } }),
+        )
+        .await;
+    let init = p.seg(&sid, "alice-jwt", "720p", "init.mp4").await;
+    assert_eq!(init.status, 200);
+    for n in 0..2 {
+        let s = p.seg(&sid, "alice-jwt", "720p", &seg_name(n)).await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        let t = tfdt_seconds(&init.body, &s.body, true);
+        assert!((t - f64::from(n) * SEG).abs() < 0.05, "seg {n} tfdt {t}");
+    }
+    // The main run kept its resume start; the probe never relocated it.
+    let resume = p.seg(&sid, "alice-jwt", "720p", &seg_name(20)).await;
+    assert_eq!(resume.status, 200);
+    assert_eq!(p.job(&sid).await["startSegment"], 20);
+    let mut starts = vec![];
+    while let Ok(e) = ev.try_recv() {
+        if let EngineEvent::JobStarted {
+            job_key,
+            start_segment,
+            ..
+        } = e
+        {
+            starts.push((job_key.ends_with("-early"), start_segment));
+        }
+    }
+    starts.sort();
+    assert_eq!(starts, [(false, 20), (true, 0)], "{starts:?}");
+    p.e.rt.shutdown().await;
+    assert!(p.e.ffmpeg_pids().is_empty());
+}

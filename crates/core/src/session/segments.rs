@@ -91,6 +91,8 @@ pub fn parse_segment_name(name: &str) -> Option<SegmentName> {
 pub const SEGMENT_WAIT_MS: u32 = 60_000;
 /// Early companion: the main run covers the same files behind it.
 pub const EARLY_WAIT_MS: u32 = 10_000;
+/// Segments the early companion writes. [ts:transcoding/constants.ts:43]
+pub const EARLY_PROBE_SEGMENTS: u32 = 2;
 /// How long an init file gets to become non-empty.
 pub const INIT_NON_EMPTY_WAIT_MS: u32 = 5_000;
 pub const RETRY_AFTER_SECONDS: u32 = 2;

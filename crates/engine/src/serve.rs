@@ -162,7 +162,8 @@ fn token_param(q: &HashMap<String, String>) -> String {
     }
 }
 
-/// The credential as received: `?token=`, else the `Authorization` value, else the `Cookie` header.
+/// The credential as received, in the host's extractor order: the `Cookie` header, else a
+/// `Bearer` `Authorization` value, else `?token=`. [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
 fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
     let h = |n| {
         headers
@@ -170,11 +171,14 @@ fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
             .and_then(|v: &HeaderValue| v.to_str().ok())
             .filter(|v| !v.is_empty())
     };
-    q.get("token")
-        .filter(|t| !t.is_empty())
-        .cloned()
-        .or_else(|| h(header::AUTHORIZATION).map(String::from))
-        .or_else(|| h(header::COOKIE).map(String::from))
+    let bearer = h(header::AUTHORIZATION).filter(|v| {
+        v.get(..7)
+            .is_some_and(|s| s.eq_ignore_ascii_case("bearer "))
+    });
+    h(header::COOKIE)
+        .or(bearer)
+        .map(String::from)
+        .or_else(|| q.get("token").filter(|t| !t.is_empty()).cloned())
         .unwrap_or_default()
 }
 
@@ -301,11 +305,19 @@ async fn master(
     playlist(body)
 }
 
-fn rendition<'a>(s: &Session, q: &HashMap<String, String>, token: &'a str) -> Rendition<'a> {
+/// `remux`: the remux variant or a rendition of it, on the frozen keyframe grid.
+fn rendition<'a>(
+    s: &'a Session,
+    q: &HashMap<String, String>,
+    token: &'a str,
+    remux: bool,
+) -> Rendition<'a> {
     Rendition {
         token,
         use_ts: s.plan.use_ts,
-        remux_durations: None,
+        remux_durations: remux
+            .then(|| s.plan.remux_grid.as_ref().map(|g| g.durations.as_slice()))
+            .flatten(),
         duration: duration_of(s, q),
         source_fps: s.plan.source_fps,
         segment_duration: s.plan.segment_duration,
@@ -334,17 +346,19 @@ async fn variant(
         Err(r) => return r,
     };
     let token = token_param(&q);
-    let r = rendition(&s, &q, &token);
+    let r = rendition(&s, &q, &token, quality == "remux");
     if r.duration <= 0.0 {
         return text(
             StatusCode::NOT_FOUND,
             "Duration unknown — rescan the file first",
         );
     }
-    if quality != "remux"
-        && let Some(at) = q.get("startAt").and_then(|v| v.parse().ok())
-    {
-        rt.prewarm(&s, Some(&quality), Some(at));
+    if let Some(at) = q.get("startAt").and_then(|v| v.parse().ok()) {
+        if quality == "remux" {
+            rt.prewarm_remux(&s, at);
+        } else {
+            rt.prewarm(&s, Some(&quality), Some(at));
+        }
     }
     playlist(variant_playlist(
         &prefix(id),
@@ -370,16 +384,12 @@ async fn audio_list(
         Err(r) => return r,
     };
     let token = token_param(&q);
-    let r = rendition(&s, &q, &token);
+    let remux = s.served_kind() == SessionKind::Remux;
+    let r = rendition(&s, &q, &token, remux);
     if r.duration <= 0.0 {
         return text(StatusCode::NOT_FOUND, "Duration unknown");
     }
-    playlist(audio_playlist(
-        &prefix(id),
-        idx,
-        s.plan.kind == SessionKind::Remux,
-        &r,
-    ))
+    playlist(audio_playlist(&prefix(id), idx, remux, &r))
 }
 
 /// [ts:modules/streaming/streaming.controller.ts:1586-1622]
@@ -527,8 +537,14 @@ async fn init_tracks(dir: &Path) -> IdMap<TrackInfo> {
 }
 
 /// Wire bytes of a cache file: TS verbatim; fMP4 CMAF-rewritten and anchored on the served
-/// timeline. [ts:modules/streaming/services/segment-packaging.service.ts:30-130]
-async fn package(path: &Path, name: SegmentName, s: &Session) -> Option<Vec<u8>> {
+/// timeline, unless `keyframe_cut` (a remux file, assembled on it already).
+/// [ts:modules/streaming/services/segment-packaging.service.ts:30-130]
+async fn package(
+    path: &Path,
+    name: SegmentName,
+    s: &Session,
+    keyframe_cut: bool,
+) -> Option<Vec<u8>> {
     let buf = tokio::fs::read(path).await.ok().filter(|b| !b.is_empty())?;
     if path.extension().is_some_and(|e| e == "ts") {
         return Some(buf);
@@ -537,6 +553,9 @@ async fn package(path: &Path, name: SegmentName, s: &Session) -> Option<Vec<u8>>
     let SegmentName::Segment(n) = name else {
         return Some(buf);
     };
+    if keyframe_cut {
+        return Some(buf);
+    }
     let tracks = init_tracks(path.parent()?).await;
     let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
     match rewrite_segment_tfdt(&buf, &tracks, n, seg, served_origin(s.plan.timeline.origin)) {
@@ -560,14 +579,12 @@ fn cmcd(headers: &HeaderMap, q: &HashMap<String, String>) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(","))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn respond(
     rt: &Runtime,
     s: &Session,
     fetch: Fetch,
     name: SegmentName,
-    track: Track,
-    rung: &str,
+    (track, rung, remux): (Track, &str, bool),
     headers: &HeaderMap,
     q: &HashMap<String, String>,
 ) -> Response {
@@ -583,7 +600,7 @@ async fn respond(
         Fetch::Failed => return text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
     };
     // A restart can remove the file between the wait and the read.
-    let Some(bytes) = package(&path, name, s).await else {
+    let Some(bytes) = package(&path, name, s, remux).await else {
         return retry();
     };
     if let SegmentName::Segment(index) = name {
@@ -618,19 +635,23 @@ async fn respond(
         .into_response()
 }
 
-/// A segment past the playlist's last one would spawn a run seeking past the end. [new]
-fn past_end(s: &Session, name: SegmentName) -> bool {
+/// A segment past the playlist's last one would spawn a run seeking past the end: the remux
+/// grid's [ts:modules/streaming/streaming.controller.ts:555-568], else the uniform one's [new].
+fn past_end(s: &Session, name: SegmentName, remux: bool) -> bool {
     let SegmentName::Segment(n) = name else {
         return false;
     };
     let p = &s.plan;
+    if let (true, Some(g)) = (remux, &p.remux_grid) {
+        return n as usize >= g.durations.len();
+    }
+    let seg = if remux {
+        p.segment_duration
+    } else {
+        real_segment_seconds(p.segment_duration, p.source_fps)
+    };
     p.duration > 0.0
-        && f64::from(n)
-            >= uniform_segment_count(
-                p.duration,
-                real_segment_seconds(p.segment_duration, p.source_fps),
-                frame_seconds_of(p.source_fps),
-            )
+        && f64::from(n) >= uniform_segment_count(p.duration, seg, frame_seconds_of(p.source_fps))
 }
 
 fn seg_name(seg: &str) -> Result<SegmentName, Response> {
@@ -671,17 +692,26 @@ async fn segment(
         Ok(v) => v,
         Err(r) => return r,
     };
-    if quality == "remux" {
-        return text(
-            StatusCode::NOT_IMPLEMENTED,
-            "remux runs are not served by the engine yet",
-        );
-    }
-    if past_end(&s, name) {
+    let remux = quality == "remux";
+    rt.note_kind(&s, remux);
+    if past_end(&s, name, remux) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
-    let fetch = rt.video_file(&s, &quality, name).await;
-    respond(&rt, &s, fetch, name, Track::Video, &quality, &headers, &q).await
+    let fetch = if remux {
+        rt.remux_file(&s, 0, name).await
+    } else {
+        rt.video_file(&s, &quality, name).await
+    };
+    respond(
+        &rt,
+        &s,
+        fetch,
+        name,
+        (Track::Video, &quality, remux),
+        &headers,
+        &q,
+    )
+    .await
 }
 
 /// [ts:modules/streaming/streaming.controller.ts:1909-2120]
@@ -707,26 +737,23 @@ async fn audio_seg(
         Ok(v) => v,
         Err(r) => return r,
     };
-    if s.plan.kind == SessionKind::Remux {
-        return text(
-            StatusCode::NOT_IMPLEMENTED,
-            "remux runs are not served by the engine yet",
-        );
-    }
-    if !s.plan.multi_audio {
+    let remux = s.served_kind() == SessionKind::Remux;
+    if !s.plan.multi_audio || past_end(&s, name, remux) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
-    if past_end(&s, name) {
-        return text(StatusCode::NOT_FOUND, "Segment not found");
-    }
-    let fetch = rt.audio_file(&s, idx as usize + 1, name).await;
+    let track = idx as usize + 1;
+    let fetch = if remux {
+        rt.remux_file(&s, track, name).await
+    } else {
+        rt.audio_file(&s, track, name).await
+    };
+    let rung = format!("audio-{idx}");
     respond(
         &rt,
         &s,
         fetch,
         name,
-        Track::Audio,
-        &format!("audio-{idx}"),
+        (Track::Audio, &rung, remux),
         &headers,
         &q,
     )
@@ -1220,12 +1247,14 @@ mod tests {
     #[test]
     fn credential_order_and_content_type() {
         let mut h = HeaderMap::new();
-        h.insert(header::COOKIE, HeaderValue::from_static("a=1"));
-        assert_eq!(credential(&h, &HashMap::new()), "a=1");
-        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer j"));
-        assert_eq!(credential(&h, &HashMap::new()), "Bearer j");
         let q: HashMap<String, String> = [("token".into(), "t".into())].into();
         assert_eq!(credential(&h, &q), "t");
+        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Basic x"));
+        assert_eq!(credential(&h, &q), "t");
+        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer j"));
+        assert_eq!(credential(&h, &q), "Bearer j");
+        h.insert(header::COOKIE, HeaderValue::from_static("a=1"));
+        assert_eq!(credential(&h, &q), "a=1");
         assert_eq!(content_type("/a/b.MKV", None), "video/x-matroska");
         assert_eq!(content_type("/a/b.bin", Some("video/mp4")), "video/mp4");
     }

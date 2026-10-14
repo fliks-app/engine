@@ -316,6 +316,9 @@ impl Engine {
                 req["decide"]["selection"][k] = v.clone();
             }
         }
+        if let Some(v) = extra.get("scan") {
+            req["decide"]["scan"] = v.clone();
+        }
         for k in ["startAtS", "pinned", "tags"] {
             if let Some(v) = extra.get(k) {
                 req[k] = v.clone();
@@ -407,6 +410,59 @@ pub fn multi_audio_clip() -> PathBuf {
              -metadata:s:a:0 language=eng -metadata:s:a:1 language=fra -shortest"
         ),
     )
+}
+
+/// The host's `SourceScan` of a file's video packets: keyframes (decode order) and end; a packet
+/// without a dts (Matroska's first ones) decodes `has_b_frames` frames before its pts.
+pub fn scan(file: &Path) -> Value {
+    let ffprobe = std::env::var("FFPROBE_PATH").unwrap_or_else(|_| "ffprobe".into());
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(&ffprobe)
+            .args(["-v", "error", "-select_streams", "v:0"])
+            .args(args)
+            .arg(file)
+            .output()
+            .expect("ffprobe");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let stream = run(&[
+        "-show_entries",
+        "stream=has_b_frames,avg_frame_rate",
+        "-of",
+        "csv=p=0",
+    ]);
+    let (mut reorder, mut fps) = (0.0, 24.0);
+    for f in stream.trim().split(',') {
+        match f.split_once('/') {
+            Some((n, d)) => {
+                fps = n.parse::<f64>().unwrap_or(24.0) / d.parse::<f64>().unwrap_or(1.0)
+            }
+            None => reorder = f.parse().unwrap_or(0.0),
+        }
+    }
+    let lead = reorder / fps;
+    let (mut keyframes, mut end) = (vec![], 0f64);
+    let packets = run(&[
+        "-show_entries",
+        "packet=pts_time,dts_time,duration_time,flags",
+        "-of",
+        "csv=p=0",
+    ]);
+    for l in packets.lines() {
+        let f: Vec<&str> = l.split(',').collect();
+        let Some(pts) = f.first().and_then(|p| p.parse::<f64>().ok()) else {
+            continue;
+        };
+        let dts = f
+            .get(1)
+            .and_then(|d| d.parse::<f64>().ok())
+            .unwrap_or(pts - lead);
+        end = end.max(pts + f.get(2).and_then(|d| d.parse::<f64>().ok()).unwrap_or(0.0));
+        if f.get(3).is_some_and(|k| k.starts_with('K')) {
+            keyframes.push(serde_json::json!({ "pts": pts, "dts": dts }));
+        }
+    }
+    serde_json::json!({ "keyframes": keyframes, "end": end, "audioConfigChanges": {} })
 }
 
 pub fn e2e() -> bool {
