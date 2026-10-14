@@ -107,6 +107,7 @@ fn probe(mode: &str, args: &[String]) {
 }
 
 /// The ADTS ffmpeg of a scan: reads the file on stdin, writes two frames to each `pipe:N`.
+#[cfg_attr(not(unix), allow(unused_variables))]
 fn adts(mode: &str, args: &[String]) {
     #[cfg(unix)]
     {
