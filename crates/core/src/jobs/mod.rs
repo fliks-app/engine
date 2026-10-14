@@ -1,6 +1,8 @@
-//! The pure half of the background jobs: argv, output parsers and result assembly. Spec: `docs/spec/jobs-pure.md`.
+//! The pure half of the background jobs: argv, output parsers and result assembly.
+//! Specs: `docs/spec/jobs.md` (framework, sprite), `docs/spec/jobs-pure.md`.
 pub mod fingerprint;
 pub mod scan;
+pub mod sprite;
 pub mod subtitles;
 
 fn v(a: &[&str]) -> Vec<String> {
