@@ -2,12 +2,13 @@
 //! inputs, the ffmpeg run options and the master options. Spec: `docs/spec/runtime.md`.
 use super::{LayoutAudio, SessionLayout, profile_from_layout, profile_hash};
 use crate::api::{
-    AudioCodec, AudioPlan, BurnInKind, Decision, HostCaps, HwAccel, MediaInfo, MuxFlavour,
-    OpenSessionRequest, PlayMethod, QsvPreset, SessionKind, StreamingConfig, SubtitleTrackKind,
+    AudioCodec, AudioPlan, BurnInKind, Decision, HdrFormat, HostCaps, HwAccel, MediaInfo,
+    MuxFlavour, OpenSessionRequest, PlayMethod, QsvPreset, SessionKind, StreamingConfig,
+    SubtitleTrackKind,
 };
 use crate::args::{self, AudioStream, BurnIn, Profile, VodArgs};
 use crate::decide::codec::resolve_encoder;
-use crate::decide::dolby_vision::has_no_base;
+use crate::decide::dolby_vision::{dv_standalone_codecs, dv_supplemental_codecs, has_no_base};
 use crate::decide::source::is_mpeg_ts;
 use crate::decide::timeline::{parse_source_fps, real_segment_seconds};
 use crate::hls::{
@@ -365,6 +366,9 @@ pub fn master_options(
                 .collect(),
         });
     let positive = |x: Option<u32>| x.filter(|b| *b > 0).map(f64::from);
+    // [ts:modules/streaming/streaming.controller.ts:1506-1551]
+    let dv = q.include_remux && d.response.dolby_vision;
+    let dv_standalone = dv.then(|| dv_standalone_codecs(v)).flatten();
     MasterOptions {
         prefix: q.prefix.into(),
         token_param: q.token.into(),
@@ -401,13 +405,20 @@ pub fn master_options(
         dedupes_audio_by_language: device.dedupes_audio_by_language == Some(true),
         supports_abr: device.supports_abr,
         remux_codecs: if q.include_remux {
-            v.and_then(copy_source_codec_string)
+            dv_standalone
+                .clone()
+                .or_else(|| v.and_then(copy_source_codec_string))
         } else {
             None
         },
-        remux_supplemental_codecs: None,
+        remux_supplemental_codecs: dv.then(|| dv_supplemental_codecs(v)).flatten(),
         format_bit_rate: positive(info.format_bit_rate),
-        source_hdr_format: v.and_then(|v| v.hdr_format),
+        // A no-base DV copy's standalone CODECS is always PQ.
+        source_hdr_format: if dv_standalone.is_some() {
+            Some(HdrFormat::Hdr10)
+        } else {
+            v.and_then(|v| v.hdr_format)
+        },
         i_frame_trick_play_segment_seconds: (device.supports_i_frame_trick_play == Some(true))
             .then(|| real_segment_seconds(plan.segment_duration, plan.source_fps)),
     }
