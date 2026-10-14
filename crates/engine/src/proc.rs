@@ -11,8 +11,49 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 
+/// Pids of the children `spawn` started: their exit status belongs to tokio, not to a PID 1 reaper.
+#[cfg(unix)]
+static OWN: Mutex<std::collections::BTreeSet<u32>> = Mutex::new(std::collections::BTreeSet::new());
+
+/// Only PID 1 runs the reaper that consults it.
+#[cfg(unix)]
+fn track(pid: u32) {
+    OWN.lock().unwrap().insert(pid);
+}
+
+/// Whether `pid` is still a child `spawn` started; forgets it once tokio has reaped it.
+#[cfg(unix)]
+pub fn is_own(pid: u32) -> bool {
+    let mut own = OWN.lock().unwrap();
+    if !own.contains(&pid) {
+        return false;
+    }
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let r = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if r != 0 {
+        own.remove(&pid);
+    }
+    r == 0
+}
+
 /// `Command::spawn`, retried briefly on ETXTBSY: a concurrent fork can still hold a just-written binary open.
 pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
+    let child = spawn_retry(cmd).await?;
+    #[cfg(unix)]
+    if let Some(pid) = child.id().filter(|_| std::process::id() == 1) {
+        track(pid);
+    }
+    Ok(child)
+}
+
+async fn spawn_retry(cmd: &mut Command) -> io::Result<Child> {
     // A SIGKILLed or crashed engine runs no shutdown path: the kernel kills the child instead.
     #[cfg(target_os = "linux")]
     // SAFETY: prctl is async-signal-safe and touches no memory.
@@ -368,6 +409,19 @@ mod tests {
 
     fn sh(script: &str) -> Vec<String> {
         vec!["-c".into(), script.into()]
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn own_children_are_tracked_until_tokio_reaps_them() {
+        let mut child = spawn(Command::new("true").kill_on_drop(true))
+            .await
+            .unwrap();
+        let pid = child.id().unwrap();
+        track(pid);
+        assert!(is_own(pid));
+        child.wait().await.unwrap();
+        assert!(!is_own(pid));
     }
 
     #[tokio::test]
