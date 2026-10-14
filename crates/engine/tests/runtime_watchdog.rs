@@ -54,10 +54,14 @@ async fn with_all_jobs(lifetime: Value) -> (Engine, String) {
     let sid = open(&e, &file, resume()).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("three runs", 10, || e.ffmpeg_pids().len() == 3).await;
-    for k in [JobKind::Main, JobKind::Early, JobKind::Remux] {
-        assert!(e.rt.job(&s.key(k)).is_some_and(|j| j.producing()), "{k:?}");
-    }
+    // A process is listed before its job is registered: wait for the registry.
+    until("three producing jobs", 10, || {
+        [JobKind::Main, JobKind::Early, JobKind::Remux]
+            .iter()
+            .all(|k| e.rt.job(&s.key(*k)).is_some_and(|j| j.producing()))
+    })
+    .await;
+    assert_eq!(e.ffmpeg_pids().len(), 3);
     (e, sid)
 }
 

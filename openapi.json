@@ -2137,6 +2137,8 @@
             "required": [
               "capacityToken",
               "upstream",
+              "upstreamUrl",
+              "upstreamPriority",
               "type"
             ],
             "properties": {
@@ -2170,6 +2172,14 @@
                 "format": "int32",
                 "description": "Position in the upstreams of the open that started the session.",
                 "minimum": 0
+              },
+              "upstreamPriority": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "upstreamUrl": {
+                "type": "string",
+                "description": "URL of that upstream, so a host that lost the open's list can still place it."
               }
             }
           },
@@ -3061,6 +3071,8 @@
           "mode",
           "capacityToken",
           "upstream",
+          "upstreamUrl",
+          "upstreamPriority",
           "openedAtMs",
           "lastSeenMs",
           "container",
@@ -3122,7 +3134,17 @@
           "upstream": {
             "type": "integer",
             "format": "int32",
+            "description": "The feeding upstream, a position in the upstreams of the open that started the session.",
             "minimum": 0
+          },
+          "upstreamPriority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`priority` of the feeding upstream."
+          },
+          "upstreamUrl": {
+            "type": "string",
+            "description": "URL of the feeding upstream, so a host can name its source after a restart."
           },
           "videoCodec": {
             "type": [

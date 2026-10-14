@@ -325,10 +325,34 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
     ];
     let a = open(&e, open_req("9", ups, json!({}), "alice", "tok")).await;
     assert_eq!(a["upstream"], 2);
+    let held = |s: Value| {
+        (
+            s["mode"].clone(),
+            s["capacityToken"].clone(),
+            s["upstreamUrl"].clone(),
+            s["upstreamPriority"].clone(),
+        )
+    };
+    let before = e
+        .control("GET", &format!("/v1/live/{}", sid(&a)), None)
+        .await
+        .json();
+    assert_eq!(
+        held(before),
+        (
+            json!("remux"),
+            json!("tok"),
+            json!("http://up/dies"),
+            json!(1)
+        )
+    );
     let e1 = event(&mut rx, 5, |ev| attempt(ev).is_some()).await;
     assert_eq!(
         attempt(&e1),
         Some((1, Some("no segment produced within the startup window")))
+    );
+    assert!(
+        matches!(&e1, EngineEvent::LiveAttempt { upstream_url: u, upstream_priority: 0, .. } if u == "http://up/fail")
     );
     assert_eq!(
         attempt(&event(&mut rx, 5, |ev| attempt(ev).is_some()).await),
@@ -365,17 +389,34 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         (snap["upstream"].clone(), snap["restarts"].clone()),
         (json!(0), json!(2))
     );
-    let r = e
-        .get(
-            &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
-            "alice-jwt",
-            &[],
+    assert_eq!(
+        held(snap),
+        (
+            json!("remux"),
+            json!("tok"),
+            json!("http://up/ok"),
+            json!(2)
         )
-        .await;
+    );
+    // A run counts as started when its first segment exists: the playlist follows it.
+    let mut text = String::new();
+    for _ in 0..100 {
+        let r = e
+            .get(
+                &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
+                "alice-jwt",
+                &[],
+            )
+            .await;
+        text = r.text();
+        if text.contains("seg-00003.m4s") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert!(
-        r.text().contains("seg-00003.m4s"),
-        "numbering continues: {}",
-        r.text()
+        text.contains("seg-00003.m4s"),
+        "numbering continues: {text}"
     );
 }
 
