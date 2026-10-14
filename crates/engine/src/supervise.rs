@@ -53,6 +53,34 @@ async fn reap_orphans(child_pid: impl Fn() -> u32) {
     }
 }
 
+/// Kill-on-close job: the child tree dies with the engine. The handle is intentionally never closed.
+#[cfg(windows)]
+fn assign_to_job(child: &Child) {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::JobObjects::*;
+    static JOB: OnceLock<usize> = OnceLock::new();
+    let job = *JOB.get_or_init(|| unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            std::mem::size_of_val(&info) as u32,
+        );
+        job as usize
+    });
+    if let Some(h) = child.raw_handle()
+        && unsafe { AssignProcessToJobObject(job as _, h as _) } == 0
+    {
+        tracing::warn!(
+            "job object assign failed: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
 fn backoff_base() -> Duration {
     std::env::var("FLIKS_ENGINE_BACKOFF_MS")
         .ok()
@@ -91,6 +119,8 @@ pub async fn run(cmd: &[String], url: &str, token: &str) -> u8 {
                 continue;
             }
         };
+        #[cfg(windows)]
+        assign_to_job(&child);
         #[cfg(unix)]
         current.store(
             child.id().unwrap_or(0),
