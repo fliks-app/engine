@@ -286,9 +286,9 @@ async fn websocket_echo_through_the_gateway() {
     ws.close(None).await.unwrap();
 }
 
+// A freed ephemeral port can be re-bound by a parallel test; port 1 is reliably refused.
 fn dead_addr() -> SocketAddr {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    l.local_addr().unwrap()
+    "127.0.0.1:1".parse().unwrap()
 }
 
 fn engine_stub() -> Router {
