@@ -27,7 +27,7 @@ fn forward_term(child: &Child) {
 #[cfg(not(unix))]
 fn forward_term(_: &Child) {}
 
-/// Reaps orphans re-parented to us, leaving our direct child to tokio.
+/// Reaps orphans re-parented to us, leaving our direct children (the host, ffmpeg...) to tokio.
 #[cfg(unix)]
 async fn reap_orphans(child_pid: impl Fn() -> u32) {
     use tokio::signal::unix::{SignalKind, signal};
@@ -45,7 +45,7 @@ async fn reap_orphans(child_pid: impl Fn() -> u32) {
             };
             let pid = unsafe { info.si_pid() };
             // ponytail: a zombie child at the head of the queue hides orphans behind it until the next SIGCHLD
-            if r != 0 || pid == 0 || pid as u32 == child_pid() {
+            if r != 0 || pid == 0 || pid as u32 == child_pid() || crate::proc::is_own(pid as u32) {
                 break;
             }
             unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) };
