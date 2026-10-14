@@ -1,0 +1,92 @@
+{
+  "expected": {
+    "argv": {
+      "packets": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "packet=pts_time,dts_time,duration_time,flags",
+        "-of",
+        "compact=p=0",
+        "a.mp4"
+      ],
+      "reorder": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "stream=has_b_frames,avg_frame_rate",
+        "-of",
+        "compact=p=0",
+        "a.mp4"
+      ]
+    },
+    "scan": {
+      "audioConfigChanges": {},
+      "end": 1.5,
+      "keyframes": [
+        {
+          "dts": -0.166667,
+          "pts": 0
+        },
+        {
+          "dts": 0.833333,
+          "pts": 1
+        }
+      ]
+    }
+  },
+  "input": {
+    "filePath": "a.mp4",
+    "info": {
+      "audio": [
+        {
+          "codec": "aac",
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "h264",
+          "streamIndex": 0
+        }
+      ]
+    },
+    "size": 17691
+  },
+  "kind": "scan",
+  "name": "mp4 reorder read from the file",
+  "source": "recorded with jellyfin-ffmpeg 8.1.2",
+  "tools": {
+    "packets": [
+      "pts_time=0.000000|dts_time=-0.166667|duration_time=0.083333|flags=K__",
+      "pts_time=0.250000|dts_time=-0.083333|duration_time=0.083333|flags=___",
+      "pts_time=0.083333|dts_time=0.000000|duration_time=0.083333|flags=___",
+      "pts_time=0.166667|dts_time=0.083333|duration_time=0.083333|flags=___",
+      "pts_time=0.500000|dts_time=0.166667|duration_time=0.083333|flags=___",
+      "pts_time=0.333333|dts_time=0.250000|duration_time=0.083333|flags=___",
+      "pts_time=0.416667|dts_time=0.333333|duration_time=0.083333|flags=___",
+      "pts_time=0.750000|dts_time=0.416667|duration_time=0.083333|flags=___",
+      "pts_time=0.583333|dts_time=0.500000|duration_time=0.083333|flags=___",
+      "pts_time=0.666667|dts_time=0.583333|duration_time=0.083333|flags=___",
+      "pts_time=0.916667|dts_time=0.666667|duration_time=0.083333|flags=___",
+      "pts_time=0.833333|dts_time=0.750000|duration_time=0.083333|flags=___",
+      "pts_time=1.000000|dts_time=0.833333|duration_time=0.083333|flags=K__",
+      "pts_time=1.250000|dts_time=0.916667|duration_time=0.083333|flags=___",
+      "pts_time=1.083333|dts_time=1.000000|duration_time=0.083333|flags=___",
+      "pts_time=1.166667|dts_time=1.083333|duration_time=0.083333|flags=___",
+      "pts_time=1.416667|dts_time=1.166667|duration_time=0.083333|flags=___",
+      "pts_time=1.333333|dts_time=1.250000|duration_time=0.083333|flags=___"
+    ],
+    "stream": [
+      "has_b_frames=2|avg_frame_rate=12/1"
+    ]
+  }
+}

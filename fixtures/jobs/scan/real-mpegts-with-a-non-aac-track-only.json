@@ -1,0 +1,80 @@
+{
+  "expected": {
+    "argv": {
+      "packets": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "packet=pts_time,dts_time,duration_time,flags",
+        "-of",
+        "compact=p=0",
+        "a.ts"
+      ]
+    },
+    "scan": {
+      "audioConfigChanges": {},
+      "end": 3.066666,
+      "keyframes": [
+        {
+          "dts": 1.4,
+          "pts": 1.566667
+        },
+        {
+          "dts": 2.4,
+          "pts": 2.566667
+        }
+      ]
+    }
+  },
+  "input": {
+    "filePath": "a.ts",
+    "info": {
+      "audio": [
+        {
+          "codec": "ac3",
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "formatName": "mpegts",
+      "formatStartSeconds": 1.52,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "12/1",
+          "codec": "h264",
+          "reorderFrames": 2,
+          "streamIndex": 0
+        }
+      ]
+    },
+    "size": 29516
+  },
+  "kind": "scan",
+  "name": "mpegts with a non-aac track only",
+  "source": "recorded with jellyfin-ffmpeg 8.1.2",
+  "tools": {
+    "packets": [
+      "pts_time=1.566667|dts_time=1.400000|duration_time=0.083333|flags=K__|",
+      "pts_time=1.816667|dts_time=1.483333|duration_time=0.083333|flags=___|",
+      "pts_time=1.650000|dts_time=1.566667|duration_time=0.083333|flags=___|",
+      "pts_time=1.733333|dts_time=1.650000|duration_time=0.083333|flags=___|",
+      "pts_time=2.066667|dts_time=1.733333|duration_time=0.083333|flags=___|",
+      "pts_time=1.900000|dts_time=1.816667|duration_time=0.083333|flags=___|",
+      "pts_time=1.983333|dts_time=1.900000|duration_time=0.083333|flags=___|",
+      "pts_time=2.316667|dts_time=1.983333|duration_time=0.083333|flags=___|",
+      "pts_time=2.150000|dts_time=2.066667|duration_time=0.083333|flags=___|",
+      "pts_time=2.233333|dts_time=2.150000|duration_time=0.083333|flags=___|",
+      "pts_time=2.483333|dts_time=2.233333|duration_time=0.083333|flags=___|",
+      "pts_time=2.400000|dts_time=2.316667|duration_time=0.083333|flags=___|",
+      "pts_time=2.566667|dts_time=2.400000|duration_time=0.083333|flags=K__|",
+      "pts_time=2.816667|dts_time=2.483333|duration_time=0.083333|flags=___|",
+      "pts_time=2.650000|dts_time=2.566667|duration_time=0.083333|flags=___|",
+      "pts_time=2.733333|dts_time=2.650000|duration_time=0.083333|flags=___|",
+      "pts_time=2.983333|dts_time=2.733333|duration_time=0.083333|flags=___|",
+      "pts_time=2.900000|dts_time=2.816667|duration_time=0.083333|flags=___|"
+    ]
+  }
+}
