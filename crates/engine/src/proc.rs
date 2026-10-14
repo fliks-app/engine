@@ -4,6 +4,7 @@ use fliks_engine_core::session::{PauseCapability, PauseCommand, pause_command};
 use std::collections::VecDeque;
 use std::io;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -12,6 +13,15 @@ use tokio::sync::{mpsc, watch};
 
 /// `Command::spawn`, retried briefly on ETXTBSY: a concurrent fork can still hold a just-written binary open.
 pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
+    // A SIGKILLed or crashed engine runs no shutdown path: the kernel kills the child instead.
+    #[cfg(target_os = "linux")]
+    // SAFETY: prctl is async-signal-safe and touches no memory.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+            Ok(())
+        });
+    }
     for _ in 0..5 {
         match cmd.spawn() {
             Err(e) if e.raw_os_error() == Some(26) => {
@@ -71,6 +81,7 @@ pub struct Ffmpeg {
     pid: Option<u32>,
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
+    stderr_lines: Arc<AtomicU64>,
     exit: watch::Receiver<Option<Exit>>,
     kill: mpsc::Sender<()>,
 }
@@ -113,11 +124,13 @@ impl Ffmpeg {
         #[cfg(windows)]
         assign_to_job(&child);
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
+        let stderr_lines = Arc::new(AtomicU64::new(0));
         if let Some(err) = child.stderr.take() {
-            let ring = stderr.clone();
+            let (ring, count) = (stderr.clone(), stderr_lines.clone());
             tokio::spawn(async move {
                 let mut lines = BufReader::new(err).lines();
                 while let Ok(Some(l)) = lines.next_line().await {
+                    count.fetch_add(1, Ordering::Relaxed);
                     let mut r = ring.lock().unwrap();
                     if r.len() == RING_LINES {
                         r.pop_front();
@@ -147,6 +160,7 @@ impl Ffmpeg {
             pid,
             stdin: tokio::sync::Mutex::new(stdin),
             stderr,
+            stderr_lines,
             exit,
             kill,
         })
@@ -165,6 +179,11 @@ impl Ffmpeg {
                 signal: true,
             },
         }
+    }
+
+    /// Lines written to stderr so far: a progress signal for the watchdog.
+    pub fn stderr_lines(&self) -> u64 {
+        self.stderr_lines.load(Ordering::Relaxed)
     }
 
     pub fn stderr_tail(&self) -> Vec<String> {

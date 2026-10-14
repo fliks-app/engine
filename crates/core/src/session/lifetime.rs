@@ -112,6 +112,43 @@ pub fn job_idle(i: &JobIdleInput, cfg: &LifetimeConfig) -> (JobIdleState, JobIdl
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobWatchInput {
+    pub now_ms: i64,
+    pub started_ms: i64,
+    pub last_progress_ms: i64,
+    pub paused: bool,
+    /// Media time of a run with a natural end (the early companion's `-to`), in ms.
+    pub natural_end_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JobWatch {
+    Ok,
+    Stalled,
+    Overran,
+}
+
+/// One watchdog tick of a running job; a paused one is exempt. [new]
+pub fn job_watch(i: &JobWatchInput, cfg: &LifetimeConfig) -> JobWatch {
+    let stall = i64::from(cfg.resolved().job_stall_timeout_ms);
+    if stall == 0 || i.paused {
+        return JobWatch::Ok;
+    }
+    if i.natural_end_ms
+        .is_some_and(|e| i.now_ms - i.started_ms > e + stall)
+    {
+        return JobWatch::Overran;
+    }
+    if i.now_ms - i.last_progress_ms > stall {
+        JobWatch::Stalled
+    } else {
+        JobWatch::Ok
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,5 +232,73 @@ mod tests {
             job_idle(&dead, &cfg()).1,
             JobIdleAction::Reap { kill: false }
         );
+    }
+
+    fn watch_input(now: i64, progress: i64) -> JobWatchInput {
+        JobWatchInput {
+            now_ms: now,
+            started_ms: 0,
+            last_progress_ms: progress,
+            paused: false,
+            natural_end_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_job_without_progress_is_stalled_past_the_timeout() {
+        assert_eq!(job_watch(&watch_input(30_000, 0), &cfg()), JobWatch::Ok);
+        assert_eq!(
+            job_watch(&watch_input(30_001, 0), &cfg()),
+            JobWatch::Stalled
+        );
+        assert_eq!(
+            job_watch(&watch_input(40_000, 15_000), &cfg()),
+            JobWatch::Ok
+        );
+    }
+
+    #[test]
+    fn paused_and_disabled_jobs_are_exempt() {
+        let paused = JobWatchInput {
+            paused: true,
+            ..watch_input(999_999, 0)
+        };
+        assert_eq!(job_watch(&paused, &cfg()), JobWatch::Ok);
+        let off = LifetimeConfig {
+            job_stall_timeout_ms: 0,
+            ..cfg()
+        };
+        assert_eq!(job_watch(&watch_input(999_999, 0), &off), JobWatch::Ok);
+        let custom = LifetimeConfig {
+            job_stall_timeout_ms: 1_000,
+            ..cfg()
+        };
+        assert_eq!(
+            job_watch(&watch_input(1_001, 0), &custom),
+            JobWatch::Stalled
+        );
+    }
+
+    #[test]
+    fn a_run_with_a_natural_end_is_killed_past_it_even_with_progress() {
+        let early = |now| JobWatchInput {
+            natural_end_ms: Some(7_000),
+            ..watch_input(now, now)
+        };
+        assert_eq!(job_watch(&early(37_000), &cfg()), JobWatch::Ok);
+        assert_eq!(job_watch(&early(37_001), &cfg()), JobWatch::Overran);
+        let off = LifetimeConfig {
+            job_stall_timeout_ms: 0,
+            ..cfg()
+        };
+        assert_eq!(job_watch(&early(1_000_000), &off), JobWatch::Ok);
+    }
+
+    #[test]
+    fn the_stall_field_defaults_to_30_s_when_absent() {
+        let c: LifetimeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(c.job_stall_timeout_ms, 30_000);
+        let c: LifetimeConfig = serde_json::from_str(r#"{"jobStallTimeoutMs":0}"#).unwrap();
+        assert_eq!(c.resolved().job_stall_timeout_ms, 0);
     }
 }

@@ -93,6 +93,11 @@ pub const SEGMENT_WAIT_MS: u32 = 60_000;
 pub const EARLY_WAIT_MS: u32 = 10_000;
 /// Segments the early companion writes. [ts:transcoding/constants.ts:43]
 pub const EARLY_PROBE_SEGMENTS: u32 = 2;
+
+/// Source seconds the early companion reads (`-to`).
+pub fn early_run_seconds(segment_duration: f64) -> f64 {
+    f64::from(EARLY_PROBE_SEGMENTS) * segment_duration + 1.0
+}
 /// How long an init file gets to become non-empty.
 pub const INIT_NON_EMPTY_WAIT_MS: u32 = 5_000;
 pub const RETRY_AFTER_SECONDS: u32 = 2;
