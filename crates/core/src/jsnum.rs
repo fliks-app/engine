@@ -105,12 +105,14 @@ pub fn to_fixed(x: f64, f: usize) -> String {
     }
     let sign = if x < 0.0 { "-" } else { "" };
     let a = x.abs();
-    let exact = format!("{a:.1100}");
+    // A double's exact decimal expansion needs at most 52 - exponent fractional digits.
+    let p = if a >= 1e-9 { 90 } else { 1100 };
+    let exact = format!("{a:.p$}");
     let frac = exact.split_once('.').map_or("", |(_, r)| r);
     let tie = frac[f..].starts_with('5') && frac[f + 1..].bytes().all(|b| b == b'0');
     let s = if tie {
         // Round the truncated value up by one unit in the last place.
-        let mut d: Vec<u8> = exact[..exact.len() - (1100 - f)].bytes().collect();
+        let mut d: Vec<u8> = exact[..exact.len() - (p - f)].bytes().collect();
         if f == 0 {
             d.pop();
         }
@@ -236,5 +238,28 @@ mod tests {
         assert_eq!(seconds(-0.0000001), "0");
         assert_eq!(seconds(2.9999), "2.9999");
         assert_eq!(seconds(7.0 * 3.003), "21.021");
+    }
+
+    #[test]
+    fn to_fixed_bounded_precision_matches_full_expansion() {
+        let full = |x: f64, f: usize| {
+            let e = format!("{:.1100}", x.abs());
+            let frac = e.split_once('.').map_or("", |(_, r)| r);
+            frac[f..].starts_with('5') && frac[f + 1..].bytes().all(|b| b == b'0')
+        };
+        let mut x = 1e-9_f64;
+        while x < 1e12 {
+            for v in [x, x * 1.000_000_7, x + 0.0005, x + 0.125] {
+                for f in 0..=6 {
+                    let tie = full(v, f);
+                    let e = format!("{:.90}", v.abs());
+                    let frac = e.split_once('.').map_or("", |(_, r)| r);
+                    let bounded =
+                        frac[f..].starts_with('5') && frac[f + 1..].bytes().all(|b| b == b'0');
+                    assert_eq!(tie, bounded, "{v} {f}");
+                }
+            }
+            x *= 1.37;
+        }
     }
 }
