@@ -1,10 +1,10 @@
 //! The `Scan` job: ffprobe over every video packet (keyframes, end, clock break) and, on MPEG-TS
-//! with AAC, the ADTS headers a `TsDemuxer` reads from the same bytes. Spec: `docs/spec/jobs.md` section 6.
+//! with AAC, the ADTS headers a `Demuxer` reads from the same bytes. Spec: `docs/spec/jobs.md` section 6.
 use super::{Cmd, Ctx};
 use crate::proc::{Ffmpeg, Pipes};
 use fliks_engine_core::api::{JobResult, MediaInfo, SOURCE_SCAN_SCHEMA_VERSION};
 use fliks_engine_core::jobs::scan::*;
-use fliks_engine_core::jobs::ts::TsDemuxer;
+use fliks_engine_core::mpegts::Demuxer;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -130,7 +130,7 @@ async fn piped(
     timeout: u64,
 ) -> Result<(PacketReader, std::collections::BTreeMap<u32, bool>), String> {
     let pids = aac_pids_of(ctx, plan, path).await?;
-    let demux = Arc::new(Mutex::new(TsDemuxer::new(&pids)));
+    let demux = Arc::new(Mutex::new(Demuxer::new(&pids)));
     let cmds = vec![ffprobe(ctx, &packet_args(plan, "pipe:0"))];
     let (c, file, d) = (ctx.clone(), path.to_string(), demux.clone());
     let (reader, walkers) = ctx
@@ -149,7 +149,7 @@ async fn piped(
     Ok((reader, audio_config_changes(&plan.aac, &walkers)))
 }
 
-async fn feed(ctx: Ctx, file: String, ffprobe: Arc<Ffmpeg>, demux: Arc<Mutex<TsDemuxer>>) {
+async fn feed(ctx: Ctx, file: String, ffprobe: Arc<Ffmpeg>, demux: Arc<Mutex<Demuxer>>) {
     let (Ok(mut f), Some(mut sink)) = (
         tokio::fs::File::open(&file).await,
         ffprobe.take_stdin().await,

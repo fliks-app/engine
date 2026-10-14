@@ -23,13 +23,13 @@ Source: `modules/streaming/services/{source-scan,video-packets}.ts`. The result 
   missing or `N/A` duration is 0. On MPEG-TS only, a decode time more than 0.1 s behind the last one or more
   than 300 s past its end breaks the clock: `breakSeconds` is the `end` so far, the rest is ignored.
 - ADTS (MPEG-TS with AAC): the caller reads the file once and feeds the same chunks to ffprobe (stdin) and
-  to a `ts::TsDemuxer`. `pid_args(file)` is ffprobe `stream=index,id` (compact output, any `id=0x...` line,
+  to a `mpegts::Demuxer`. `pid_args(file)` is ffprobe `stream=index,id` (compact output, any `id=0x...` line,
   repeated lines harmless) and `aac_pids(plan, lines)` maps each AAC track to its PID by stream index (`None`
   when ffprobe gave none, no guessing by order). `TsDemuxer::new(&pids)` / `push(chunk)` / `finish()` hands
   back one `Option<AdtsConfigWalker>` per track; the walker notes any header whose profile, sampling index or
   channel configuration (private bit masked) differs from the first, across PES and chunk boundaries.
   `audio_config_changes(aac, walkers)` reports a track as changing when its walker is `None`.
-- `ts::TsDemuxer` (no dependency: `core` stays serde-only, and the PAT/PMT/PES subset a scan needs is about 200
+- `mpegts::Demuxer` (no dependency: `core` stays serde-only, and the PAT/PMT/PES subset a scan needs is about 200
   lines):
   - Framing: the first run of 4 sync bytes (0x47) at a 188, 192 (M2TS, 4-byte timecode prefix) or 204
     (Reed-Solomon suffix) spacing fixes the stride (`mpegts` in ffprobe covers all three); a missing sync

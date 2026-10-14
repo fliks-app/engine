@@ -1,6 +1,6 @@
-//! MPEG-TS demuxer for a scan: the ADTS payload of chosen PIDs, fed to one `AdtsConfigWalker` each.
+//! MPEG-TS demuxer (PAT/PMT/PES); today it feeds the scan: the ADTS payload of chosen PIDs, fed to one `AdtsConfigWalker` each.
 //! Spec: `docs/spec/jobs-pure.md` section 1.
-use super::scan::AdtsConfigWalker;
+use crate::jobs::scan::AdtsConfigWalker;
 use std::collections::HashMap;
 
 const SYNC: u8 = 0x47;
@@ -98,14 +98,14 @@ struct Psi {
 /// A track is unreadable (`None` at `finish`) when its PID carries something else than ADTS
 /// (PMT stream type, scrambling, no PES header) or no frame at all.
 #[derive(Default)]
-pub struct TsDemuxer {
+pub struct Demuxer {
     buf: Vec<u8>,
     stride: Option<usize>,
     tracks: Vec<Option<Track>>,
     psi: HashMap<u16, Psi>,
 }
 
-impl TsDemuxer {
+impl Demuxer {
     /// One slot per entry of `pids`; `None` is a track whose PID is unknown.
     pub fn new(pids: &[Option<u16>]) -> Self {
         Self {
@@ -394,7 +394,7 @@ mod tests {
     }
 
     fn run(chunks: &[Vec<u8>], packet_split: usize) -> Option<AdtsConfigWalker> {
-        let mut d = TsDemuxer::new(&[Some(AUDIO), None]);
+        let mut d = Demuxer::new(&[Some(AUDIO), None]);
         for c in chunks.concat().chunks(packet_split) {
             d.push(c);
         }
