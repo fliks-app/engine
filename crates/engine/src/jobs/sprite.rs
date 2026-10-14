@@ -68,7 +68,9 @@ async fn generate(
         .await
         .map_err(io)?;
     let json = serde_json::to_vec(&m).unwrap_or_default();
-    tokio::fs::write(dir.join("sprite.json"), json)
+    let tmp = dir.join("sprite-tmp.json");
+    tokio::fs::write(&tmp, json).await.map_err(io)?;
+    tokio::fs::rename(&tmp, dir.join("sprite.json"))
         .await
         .map_err(io)?;
     Ok(m)
