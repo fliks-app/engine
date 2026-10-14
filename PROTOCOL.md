@@ -21,10 +21,12 @@ JSON over HTTP, SSE for events (planned). Two planes:
 
 | Endpoint | Status |
 |---|---|
-| `GET /v1/hello`, `GET /v1/capabilities` (stub until M2), `GET`/`PUT /v1/config` (409 on lower revision) | M0 implemented |
+| `GET /v1/hello`, `GET`/`PUT /v1/config` (409 on lower revision) | M0 implemented |
+| `GET /v1/capabilities` (`Capabilities` of the detected host; 503 + `Retry-After: 1` until the first detection run ends; `FFMPEG_PATH` selects the ffmpeg, see `docs/spec/hw.md`) | M2 implemented |
 | `POST /v1/estimate-sizes` (`{ info, fileSize? }` -> `[{ key, label, estimatedSize }]`, see `docs/spec/estimate-sizes.md`) | M1 implemented |
 | `POST /v1/probe` | M1 |
-| `POST /v1/decide` (`{ request, hostCaps? }`, 400 before the first `PUT /v1/config`; `hostCaps` is a debug/shadow override until M2) | M1 implemented |
+| Detection re-runs when `PUT /v1/config` changes `streaming.gpuRenderNode`; the previous snapshot is served meanwhile | M2 implemented |
+| `POST /v1/decide` (`{ request, hostCaps? }`, 400 before the first `PUT /v1/config`; without `hostCaps` the detected host decides, 503 + `Retry-After: 1` until detection ends; `hostCaps` is a debug/shadow override) | M1 implemented |
 | `POST /v1/sessions`, heartbeat, command, `DELETE`, `GET /v1/sessions[/{sid}]`, `POST /v1/revoke`, `GET`/`DELETE /v1/cache`, `POST /v1/invalidate`, `GET /v1/events` | M3 |
 | `POST /v1/jobs`, `DELETE /v1/jobs/{id}` | M5 |
 | `POST /v1/live` | M6 |

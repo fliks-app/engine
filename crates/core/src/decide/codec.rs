@@ -105,6 +105,12 @@ impl Encoder {
     }
 }
 
+/// Probe descriptor ids in registry order, for the hw table to match.
+#[cfg(test)]
+pub(crate) fn registry_ids() -> Vec<String> {
+    ENCODERS.iter().map(Encoder::id).collect()
+}
+
 pub fn codec_name(c: VideoCodec) -> &'static str {
     match c {
         H264 => "h264",

@@ -24,6 +24,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "hardware detection has not finished (Retry-After: 1)"
           }
         }
       }
@@ -102,6 +105,9 @@
           },
           "400": {
             "description": "no config set yet"
+          },
+          "503": {
+            "description": "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)"
           }
         }
       }
@@ -627,7 +633,7 @@
       },
       "DecideBody": {
         "type": "object",
-        "description": "Body of `POST /v1/decide`. `hostCaps` is a debug/shadow override until the engine detects its own.",
+        "description": "Body of `POST /v1/decide`. `hostCaps` overrides the engine's detected capabilities (debug, shadow runs).",
         "required": [
           "request"
         ],
@@ -1151,7 +1157,7 @@
       },
       "HostCaps": {
         "type": "object",
-        "description": "What the decision reads of the host: detected backend and boot probe results.",
+        "description": "What the decision reads of the host: detected backend and boot probe results (`core::hw`).",
         "properties": {
           "disabledDecoders": {
             "type": "array",

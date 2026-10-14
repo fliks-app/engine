@@ -1,6 +1,6 @@
 //! Wire types of `POST /v1/decide`: the request, the host capabilities and the `Decision`.
 //! `Decision` mirrors the host's `EvaluateResult` field for field (`fixtures/decide`).
-use super::{Capabilities, CropInfo, DeviceProfile, HdrFormat, MediaInfo, SourceScan};
+use super::{CropInfo, DeviceProfile, HdrFormat, MediaInfo, SourceScan};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
@@ -26,7 +26,7 @@ pub enum Platform {
     Win32,
 }
 
-/// What the decision reads of the host: detected backend and boot probe results.
+/// What the decision reads of the host: detected backend and boot probe results (`core::hw`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", default)]
 pub struct HostCaps {
@@ -43,29 +43,6 @@ pub struct HostCaps {
     pub disabled_encoders: Vec<String>,
     /// Decoder descriptor ids the boot probe blacklisted (`hevc_qsv_decode`, ...).
     pub disabled_decoders: Vec<String>,
-}
-
-/// Until the engine detects its own caps (M2): the backend and platform of `Capabilities`, no
-/// probe passed and nothing blacklisted.
-impl From<&Capabilities> for HostCaps {
-    fn from(c: &Capabilities) -> Self {
-        Self {
-            hw_accel: match c.hw_accel.as_str() {
-                "vaapi" => HwAccel::Vaapi,
-                "nvenc" => HwAccel::Nvenc,
-                "qsv" => HwAccel::Qsv,
-                "amf" => HwAccel::Amf,
-                "videotoolbox" => HwAccel::Videotoolbox,
-                _ => HwAccel::None,
-            },
-            platform: match c.platform.as_str() {
-                "macos" | "darwin" => Platform::Darwin,
-                "windows" | "win32" => Platform::Win32,
-                _ => Platform::Linux,
-            },
-            ..Self::default()
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -110,7 +87,7 @@ pub struct DecideRequest {
     pub selection: DecideSelection,
 }
 
-/// Body of `POST /v1/decide`. `hostCaps` is a debug/shadow override until the engine detects its own.
+/// Body of `POST /v1/decide`. `hostCaps` overrides the engine's detected capabilities (debug, shadow runs).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DecideBody {

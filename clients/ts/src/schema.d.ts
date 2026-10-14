@@ -211,7 +211,7 @@ export interface components {
             /** Format: int32 */
             y: number;
         };
-        /** @description Body of `POST /v1/decide`. `hostCaps` is a debug/shadow override until the engine detects its own. */
+        /** @description Body of `POST /v1/decide`. `hostCaps` overrides the engine's detected capabilities (debug, shadow runs). */
         DecideBody: {
             hostCaps?: null | components["schemas"]["HostCaps"];
             request: components["schemas"]["DecideRequest"];
@@ -364,7 +364,7 @@ export interface components {
             /** Format: int32 */
             protocolVersion: number;
         };
-        /** @description What the decision reads of the host: detected backend and boot probe results. */
+        /** @description What the decision reads of the host: detected backend and boot probe results (`core::hw`). */
         HostCaps: {
             /**
              * @description Decoder descriptor ids the boot probe blacklisted (`hevc_qsv_decode`, ...).
@@ -686,6 +686,13 @@ export interface operations {
                     "application/json": components["schemas"]["Capabilities"];
                 };
             };
+            /** @description hardware detection has not finished (Retry-After: 1) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_config: {
@@ -760,6 +767,13 @@ export interface operations {
             };
             /** @description no config set yet */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no `hostCaps` given and hardware detection has not finished (Retry-After: 1) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
