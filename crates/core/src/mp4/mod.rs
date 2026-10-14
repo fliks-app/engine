@@ -1,10 +1,14 @@
 //! Segment packaging, bytes in, bytes out (`docs/spec/mp4.md`).
+mod assemble;
 mod boxes;
 mod cmaf;
 mod grid;
 mod remux;
 mod timeline;
 
+pub use assemble::{
+    AudioGroup, OpenedRun, RunVideo, check_gop, gop_complete, open_audio, open_run, tail_boxes,
+};
 pub use boxes::{BoxRef, boxes, find_box, make_box, read_box_header};
 pub use cmaf::{cmaf_rewrite, is_cmaf_rewritten, rewrite_cmaf};
 pub use grid::{
@@ -14,8 +18,8 @@ pub use grid::{
 };
 pub use remux::{
     PacketGrid, RawFrame, RemuxAssemblyPlan, RemuxEdits, RemuxRunStart, build_fragment, gops_of,
-    parse_frame, plan_boundary_seconds, remux_assembly_plan, remux_edits, remux_run_start,
-    seg_name,
+    parse_frame, plan_boundary_seconds, remux_assembly_plan, remux_audio_grid, remux_edits,
+    remux_run_start, seg_name,
 };
 pub use timeline::{
     DecodeExtent, IdMap, RawSample, TfdtInfo, TrackInfo, first_tfdt, parse_init_tracks,

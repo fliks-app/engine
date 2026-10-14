@@ -136,7 +136,7 @@ fn collect_tfdts(buf: &[u8]) -> Result<Vec<Frag>, Mp4Error> {
 }
 
 /// JS `BigInt(x)` of a `Math.round` result.
-fn big_int(x: f64) -> Result<i128, Mp4Error> {
+pub(super) fn big_int(x: f64) -> Result<i128, Mp4Error> {
     if x.is_finite() {
         // ponytail: saturates past 2^127, where every tfdt write fails anyway
         return Ok(x as i128);

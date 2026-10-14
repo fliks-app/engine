@@ -5,6 +5,7 @@ pub mod gateway;
 pub mod hw;
 pub mod probe;
 pub mod proc;
+pub mod remux;
 pub mod resolve;
 pub mod runtime;
 pub mod serve;
