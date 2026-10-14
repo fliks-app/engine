@@ -105,7 +105,8 @@ async fn probe_validates_the_request() {
     let app = fliks_engine::app("secret".into(), cpu_host());
     let rel = json!({ "media": { "mediaFileId": 1, "path": "-v" }, "crop": false, "mkvTags": false, "moviehash": false });
     assert_eq!(post(&app, rel).await.0, StatusCode::BAD_REQUEST);
-    let missing = json!({ "media": { "mediaFileId": 1, "path": "/nonexistent/file.mkv" }, "crop": true, "mkvTags": true, "moviehash": true });
+    let path = std::env::temp_dir().join("nonexistent").join("file.mkv");
+    let missing = json!({ "media": { "mediaFileId": 1, "path": path }, "crop": true, "mkvTags": true, "moviehash": true });
     let (status, v) = post(&app, missing).await;
     assert_eq!(status, StatusCode::OK);
     // ffprobe cannot read it (or is absent): ok false, never "no streams".
