@@ -1581,6 +1581,7 @@
               "cacheGcIntervalMs": 300000,
               "jobFallbackTimeoutMs": 1800000,
               "jobGraceMs": 60000,
+              "jobStallTimeoutMs": 30000,
               "liveSessionGcIntervalMs": 5000,
               "liveSessionTtlMs": 30000,
               "maxSessionsPerOwner": 10,
@@ -1790,6 +1791,13 @@
               },
               "jobKey": {
                 "type": "string"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Set when the watchdog ended the run: `stalled` or `overran`."
               },
               "state": {
                 "$ref": "#/components/schemas/JobState"
@@ -2201,15 +2209,22 @@
           "jobFallbackTimeoutMs": {
             "type": "integer",
             "format": "int32",
-            "description": "Idle window of a job that never had a viewer.",
+            "description": "Unused by the engine: jobs stop with their session.",
             "default": 1800000,
             "minimum": 0
           },
           "jobGraceMs": {
             "type": "integer",
             "format": "int32",
-            "description": "Delay between the last viewer leaving and the ffmpeg job being killed.",
+            "description": "Unused by the engine: jobs stop with their session.",
             "default": 60000,
+            "minimum": 0
+          },
+          "jobStallTimeoutMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "A running, unpaused job with no output and no stderr line for this long is killed; 0 disables.",
+            "default": 30000,
             "minimum": 0
           },
           "liveSessionGcIntervalMs": {

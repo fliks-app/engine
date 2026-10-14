@@ -37,6 +37,7 @@ Plan sections: 3 "Exécution", 4 "Cache", 5 "Seek et changement de qualité" and
 | `jobFallbackTimeoutMs` | 1 800 000 | `STREAM_JOB_FALLBACK_TIMEOUT_MS` |
 | `pinnedSessionTtlMs` | 3 600 000 | `pinnedTtlMs` [ts:live-session.service.ts:389] |
 | `cacheGcIntervalMs` | 300 000 | `TRANSCODE_CACHE_GC_INTERVAL_MS` |
+| `jobStallTimeoutMs` | 30 000 | [new] stall watchdog, `0` disables (the one field where zero is not "unset") |
 
 The cache TTL (4 h) and budget (20 GiB) are `streaming.cacheTtlMs` / `cacheMaxBytes`; absent or non-positive keeps the default (`CachePolicy::from_config`). [ts:transcoding/transcode-cache.service.ts:66-69]
 

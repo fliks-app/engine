@@ -36,7 +36,7 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 | `POST /v1/revoke` (`{ ownerId?, mediaFileIds? }`, every given filter must match: sessions removed so their `sid` answers 410, jobs killed, resolver answers purged -> `{ sessions }`; 400 with neither) | M3 implemented |
 | `POST /v1/invalidate` (`{ mediaFileId }`: jobs killed, cache entries and subtitle extracts deleted, resolver answers purged; sessions stay -> `{ jobs, cacheEntries }`) | M3 implemented |
 | `GET /v1/cache` (`{ usedBytes, entries: [{ ownerId?, mediaFileId, profileHash, bytes, lastAccessMs, live }] }`), `DELETE /v1/cache[?mediaFileId&ownerId]` (non-live entries -> `{ removed }`) | M3 implemented |
-| `GET /v1/events` (SSE, event name = `type`, data = `EngineEvent`: `SessionOpened`, `SessionEnded{reason}`, `PipelineChanged`, `SegmentServed`, `JobStarted`, `JobEnded`, `HwFallback`; resync with `GET /v1/sessions`) | M3 implemented |
+| `GET /v1/events` (SSE, event name = `type`, data = `EngineEvent`: `SessionOpened`, `SessionEnded{reason}`, `PipelineChanged`, `SegmentServed`, `JobStarted`, `JobEnded{reason?}`, `HwFallback`; resync with `GET /v1/sessions`) | M3 implemented |
 | Cache root `FLIKS_TRANSCODE_DIR` (else `FLIKS_CACHE_DIR`, else the OS temp dir), layout `cache/v1/`; the old layout is purged once at boot. See `docs/spec/runtime.md` | M3 implemented |
 | `POST /v1/jobs`, `DELETE /v1/jobs/{id}` | M5 |
 | `POST /v1/live` | M6 |
