@@ -13,6 +13,6 @@ The control plane (`/v1/*`) needs `Authorization: Bearer $FLIKS_ENGINE_TOKEN` (r
 
 ## Protocol
 
-See [PROTOCOL.md](PROTOCOL.md) and the generated [openapi.json](openapi.json). TS client: `clients/ts` (`@fliks/engine-client`). Repository: https://github.com/fliks-app/engine
+See [PROTOCOL.md](PROTOCOL.md) and the generated [openapi.json](openapi.json). Clients generate their types from `openapi.json` (attached to every release). Repository: https://github.com/fliks-app/engine
 
 AGPL-3.0-or-later.

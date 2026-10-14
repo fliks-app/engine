@@ -13,11 +13,11 @@ Video engine for Fliks (decisions, ffmpeg sessions, segment serving). Standalone
 - `crates/core` (`fliks_engine_core`): PURE. Deps: serde, serde_json, utoipa only. No tokio, fs, process, clock, rand.
 - `crates/engine` (`fliks-engine` bin + `fliks_engine` lib): axum control plane, supervisor, later hw/proc/sessions/cache/serve.
 - `crates/engine/src/bin/gen-openapi.rs`: prints the OpenAPI document.
-- `fixtures/`: golden vectors. `clients/ts/`: generated TS client.
+- `fixtures/`: golden vectors. No client package: hosts generate their types from `openapi.json` (published with each release).
 
 ## Rules
 
-- Wire types (`core::api`) are the single source of truth: serde struct = JSON = persisted blob = OpenAPI. Never hand-write TS types: `cargo run -q --bin gen-openapi > openapi.json && npm run gen --prefix clients/ts`, commit both.
+- Wire types (`core::api`) are the single source of truth: serde struct = JSON = persisted blob = OpenAPI. Regenerate `openapi.json` after changing them: `cargo run -q --bin gen-openapi > openapi.json`, commit it.
 - `MediaInfo` mirrors the host's `MediaFileInfo` jsonb: optional stays absent, `| null` stays explicit null, integers as u32/i32, seconds f64.
 - Fixtures: never edit `expected` by hand: `cargo insta review`.
 - Protocol: additive-only in v1, unknown fields ignored, no 64-bit ints, breaks go to `/v2`. Bump `PROTOCOL_VERSION` only on a new major.
@@ -27,7 +27,7 @@ Video engine for Fliks (decisions, ffmpeg sessions, segment serving). Standalone
 ## Working economically
 
 - Quiet commands: `cargo test -p <crate> 2>&1 | tail -30`, `cargo clippy --all-targets -- -D warnings 2>&1 | tail -30`.
-- Locate with `tools/sym NAME` (or `-p`, `-f FILE`, `-g REGEX`) or rust-analyzer, then read +-40 lines. Do not read `target/`, `openapi.json`, `clients/ts/src/schema.d.ts`.
+- Locate with `tools/sym NAME` (or `-p`, `-f FILE`, `-g REGEX`) or rust-analyzer, then read +-40 lines. Do not read `target/`, `openapi.json`.
 - Targeted tests while working, the full suite once at the end.
 - Porting agent: `.claude/agents/port.md`.
 
