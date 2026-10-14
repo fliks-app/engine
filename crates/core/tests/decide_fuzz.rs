@@ -11,7 +11,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Named classes of TS behaviour the port must not copy (docs/README.md "Deviations"); a line is
 /// excluded when its predicate holds on the whole vector.
-const EXCLUDED: &[(&str, fn(&Value) -> bool)] = &[];
+type Predicate = fn(&Value) -> bool;
+const EXCLUDED: &[(&str, Predicate)] = &[];
 
 /// Path with array indices and map keys collapsed, so one class groups every occurrence.
 fn class(path: &str) -> String {
