@@ -275,6 +275,97 @@
         }
       }
     },
+    "/v1/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobSnapshot"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "queued, or the in-flight identical request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "relative path or unusable request"
+          }
+        }
+      }
+    },
+    "/v1/jobs/{id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "operationId": "get_one",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobSnapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown job"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "operationId": "delete",
+        "responses": {
+          "204": {
+            "description": "cancelled (an ended job is left as is)"
+          },
+          "404": {
+            "description": "unknown job"
+          }
+        }
+      }
+    },
     "/v1/probe": {
       "post": {
         "tags": [
@@ -2200,6 +2291,80 @@
           }
         }
       },
+      "JobAccepted": {
+        "type": "object",
+        "required": [
+          "jobId"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "The in-flight job of an identical request, else a new one."
+          }
+        }
+      },
+      "JobKind": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Seek-bar thumbnails: `sprite.jpg` + `sprite.json`, served by the data plane.",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Sprite"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a job does; new kinds are additive variants."
+      },
+      "JobPriority": {
+        "type": "string",
+        "enum": [
+          "high",
+          "normal",
+          "low"
+        ]
+      },
+      "JobRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "media"
+        ],
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "description": "Redo the work even when its output exists."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "media": {
+            "$ref": "#/components/schemas/MediaRef"
+          },
+          "priority": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JobPriority",
+                "description": "Order among queued jobs; playback always comes first. Absent: `normal`."
+              }
+            ]
+          }
+        }
+      },
       "JobResult": {
         "oneOf": [
           {
@@ -2223,6 +2388,77 @@
           }
         ],
         "description": "What a finished job hands back, as data (files stay in the engine and are served by it)."
+      },
+      "JobSnapshot": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "kind",
+          "mediaFileId",
+          "priority",
+          "state",
+          "pct",
+          "createdMs"
+        ],
+        "properties": {
+          "createdMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "endedMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The request's `kind.type`."
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "pct": {
+            "type": "number",
+            "format": "double",
+            "description": "0 to 100."
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobPriority"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JobResult"
+              }
+            ]
+          },
+          "startedMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BgJobState"
+          }
+        }
       },
       "JobState": {
         "type": "string",

@@ -33,6 +33,25 @@ pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
     cmd.spawn()
 }
 
+#[cfg(target_os = "linux")]
+fn on_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
+}
+
+/// `ionice -c3 nice -n19` in front of a background run, where the host has them.
+pub fn background(cmd: &str, args: &[String]) -> (String, Vec<String>) {
+    #[cfg(target_os = "linux")]
+    if on_path("ionice") && on_path("nice") {
+        let rest = ["-c3", "nice", "-n19", cmd].map(String::from);
+        return (
+            "ionice".into(),
+            rest.into_iter().chain(args.iter().cloned()).collect(),
+        );
+    }
+    (cmd.into(), args.to_vec())
+}
+
 /// Kill-on-close job: the child tree dies with the engine. The handle is intentionally never closed.
 #[cfg(windows)]
 pub fn assign_to_job(child: &Child) {

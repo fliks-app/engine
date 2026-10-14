@@ -100,6 +100,16 @@ async fn resolve(
         (ResolvePurpose::Sprite, _) => (stub.sprites.lock().unwrap().get(&id).cloned(), None),
         _ => (stub.paths.lock().unwrap().get(&id).cloned(), None),
     };
+    // A sprite grant without a path: the engine serves its own sprite.
+    if r.purpose == ResolvePurpose::Sprite && path.is_none() {
+        return Ok(Json(ResolveResponse {
+            allow: true,
+            path: None,
+            owner_id: Some(owner),
+            format: None,
+            ttl_s: Some(60.0),
+        }));
+    }
     Ok(Json(match path {
         Some(p) => ResolveResponse {
             allow: true,
@@ -506,4 +516,26 @@ pub fn scan(file: &Path) -> Value {
 
 pub fn e2e() -> bool {
     std::env::var_os("ENGINE_E2E").is_some()
+}
+
+/// A copy of the `fake-ffmpeg` test binary under a name of its own: the mode is in it, and each
+/// engine's processes can be told apart.
+pub fn fake(mode: &str) -> String {
+    let p = temp_dir("fake").join(format!(
+        "{mode}-{}{}",
+        fliks_engine::random_hex(4),
+        std::env::consts::EXE_SUFFIX
+    ));
+    std::fs::copy(env!("CARGO_BIN_EXE_fake-ffmpeg"), &p).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+pub async fn until(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
+    for _ in 0..secs * 20 {
+        if ok() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("timeout: {what}");
 }

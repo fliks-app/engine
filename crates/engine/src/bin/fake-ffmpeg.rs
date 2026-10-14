@@ -1,5 +1,6 @@
 //! Test stand-in for ffmpeg (never shipped: the release builds `--bin fliks-engine` only). The
-//! mode is the first dash-separated word of the exe name: `hang`, `busy`, `talk`, `early`.
+//! mode is the first dash-separated word of the exe name: `hang`, `busy`, `talk`, `early`, and the
+//! sprite modes `sprite`, `slowsprite`, `hangsprite`, `failsprite` (other runs hang).
 use std::io::Write;
 use std::time::{Duration, Instant};
 
@@ -21,9 +22,34 @@ fn talk() -> ! {
     }
 }
 
+/// A frame (240x135) or tile (10 x rows of them) run: a JPEG header at the output path.
+fn sprite(mode: &str, args: &[String]) {
+    let rows = args
+        .iter()
+        .find_map(|a| a.strip_prefix("tile=10x"))
+        .map(|r| r.parse::<u16>().unwrap());
+    if rows.is_none() && !args.iter().any(|a| a == "-frames:v") {
+        hang()
+    }
+    match (mode, rows) {
+        ("hangsprite", None) => hang(),
+        ("failsprite", None) => std::process::exit(1),
+        ("slowsprite", None) => std::thread::sleep(Duration::from_millis(1000)),
+        _ => std::thread::sleep(Duration::from_millis(50)),
+    }
+    let (w, h) = rows.map_or((240u16, 135u16), |r| (2400, 135 * r));
+    let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08];
+    jpg.extend(h.to_be_bytes());
+    jpg.extend(w.to_be_bytes());
+    jpg.extend([0x03; 10]);
+    jpg.extend([0xFF, 0xD9]);
+    std::fs::write(args.last().unwrap(), jpg).unwrap();
+}
+
 fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     match stem.split('-').next().unwrap() {
         // CPU for 4 s with no file and no stderr, then hangs like the real bug.
         "busy" => {
@@ -35,7 +61,8 @@ fn main() {
         }
         "talk" => talk(),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
-        "early" if std::env::args().any(|a| a == "-to") => talk(),
+        "early" if args.iter().any(|a| a == "-to") => talk(),
+        m @ ("sprite" | "slowsprite" | "hangsprite" | "failsprite") => sprite(m, &args),
         _ => hang(),
     }
 }

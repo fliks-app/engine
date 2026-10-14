@@ -102,6 +102,11 @@ impl Cache {
         self.root.join(cache_path(owner, file, hash, Some(quality)))
     }
 
+    /// The engine-generated `sprite.jpg` and `sprite.json` of a file.
+    pub fn sprite_dir(&self, file: u32) -> PathBuf {
+        self.root.join("sprites/v1").join(file.to_string())
+    }
+
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
         self.root.join("subtitles/v1").join(file.to_string())
     }

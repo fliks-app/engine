@@ -1,13 +1,14 @@
 //! The probe tools as processes: `core::probe::Tools` over tokio.
+use crate::proc::background;
+use crate::slots::Slots;
+use fliks_engine_core::api::JobPriority;
 use fliks_engine_core::probe::{ToolError, Tools, args};
 use std::future::Future;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, timeout_at};
 
@@ -40,43 +41,17 @@ impl Binaries {
 pub struct ProcessTools {
     bin: Binaries,
     path: String,
+    slots: std::sync::Arc<Slots>,
 }
 
 impl ProcessTools {
-    pub fn new(path: &str) -> Self {
+    pub fn new(path: &str, slots: std::sync::Arc<Slots>) -> Self {
         Self {
             bin: Binaries::from_env(),
             path: path.into(),
+            slots,
         }
     }
-}
-
-/// ffmpeg crop samples share one process-wide budget: one core stays free, like the host.
-fn slots() -> &'static Arc<Semaphore> {
-    static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    SLOTS.get_or_init(|| {
-        let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-        Arc::new(Semaphore::new(cores.saturating_sub(1).max(1)))
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn on_path(name: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
-}
-
-/// `ionice -c3 nice -n19` in front of a background run, where the host has them.
-fn background(cmd: &str, args: &[String]) -> (String, Vec<String>) {
-    #[cfg(target_os = "linux")]
-    if on_path("ionice") && on_path("nice") {
-        let rest = ["-c3", "nice", "-n19", cmd].map(String::from);
-        return (
-            "ionice".into(),
-            rest.into_iter().chain(args.iter().cloned()).collect(),
-        );
-    }
-    (cmd.into(), args.to_vec())
 }
 
 fn failed(cmd: &str, args: &[String], stderr: String, stdout: String) -> ToolError {
@@ -270,14 +245,14 @@ impl Tools for ProcessTools {
         &self,
         runs: Vec<Vec<String>>,
     ) -> impl Future<Output = Vec<Result<String, ToolError>>> + Send {
-        let ffmpeg = self.bin.ffmpeg.clone();
+        let (ffmpeg, slots) = (self.bin.ffmpeg.clone(), self.slots.clone());
         async move {
             let mut set = JoinSet::new();
             for (i, a) in runs.into_iter().enumerate() {
                 let (cmd, args) = background(&ffmpeg, &a);
+                let slots = slots.clone();
                 set.spawn(async move {
-                    // Never closed, so a permit is always granted.
-                    let _slot = slots().acquire().await;
+                    let _slot = slots.background(JobPriority::Normal).await;
                     let r = capture(
                         &cmd,
                         &args,
@@ -329,6 +304,7 @@ mod tests {
                 mkvmerge: "mkvmerge".into(),
             },
             path: "/x".into(),
+            slots: Slots::new(1),
         }
     }
 

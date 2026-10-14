@@ -6,6 +6,7 @@ use crate::hw::Hw;
 use crate::proc::{Exit, Ffmpeg};
 use crate::remux::Assembler;
 use crate::resolve::Resolver;
+use crate::slots::{PlaybackSlot, Slots};
 use fliks_engine_core::api::{
     Decision, EngineConfig, EngineEvent, Hints, HostCaps, HwAccel, JobState, JobStats,
     LifetimeConfig, MEDIA_INFO_SCHEMA_VERSION, OpenSessionRequest, OpenSessionResponse, PlayMethod,
@@ -212,6 +213,8 @@ pub struct Job {
     natural_end_ms: Option<i64>,
     proc: Ffmpeg,
     remux: Option<Arc<Mutex<Assembler>>>,
+    /// Held while the process lives; lent back while throttled.
+    slot: Mutex<Option<PlaybackSlot>>,
     m: Mutex<JobMut>,
     changed: watch::Sender<u64>,
 }
@@ -284,6 +287,9 @@ impl Job {
             }
             if let Some(a) = &self.remux {
                 a.lock().unwrap().pause(pause);
+            }
+            if let Some(s) = &*self.slot.lock().unwrap() {
+                s.set_idle(pause);
             }
         }
         sent
@@ -486,6 +492,9 @@ pub struct Runtime {
     pub events: Events,
     pub resolver: Resolver,
     pub ffmpeg: String,
+    /// The one ffmpeg budget: session runs, extracts, background jobs and probe samples.
+    pub slots: Arc<Slots>,
+    pub jobs: crate::jobs::Jobs,
     reg: Mutex<Reg>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -499,6 +508,8 @@ impl Runtime {
             events: Events::default(),
             resolver: Resolver::default(),
             ffmpeg,
+            slots: Slots::new(crate::slots::auto_size()),
+            jobs: Default::default(),
             reg: Mutex::new(Reg::default()),
             locks: Mutex::new(HashMap::new()),
         })
@@ -525,7 +536,7 @@ impl Runtime {
             .clone()
     }
 
-    fn pause_capability(&self) -> PauseCapability {
+    pub(crate) fn pause_capability(&self) -> PauseCapability {
         self.hw.snapshot().map_or(PauseCapability::None, |s| {
             PauseCapability::parse(&s.pause_capability)
         })
@@ -893,8 +904,9 @@ impl Runtime {
         gone.len() as u32
     }
 
-    /// Rescan or deletion: every job of the file dies, its cache goes; sessions stay.
-    pub async fn invalidate(&self, file: u32) -> (u32, u32) {
+    /// Rescan or deletion: every job of the file dies, its cache and sprite go; sessions stay.
+    pub async fn invalidate(self: &Arc<Self>, file: u32) -> (u32, u32) {
+        let background = crate::jobs::cancel_file(self, file).await;
         let jobs: Vec<Arc<Job>> = {
             let mut reg = self.reg.lock().unwrap();
             let keys: Vec<String> = reg
@@ -914,9 +926,9 @@ impl Runtime {
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
             removed += 1;
         }
-        let subs = self.cache.subtitles_dir(file);
-        let _ = tokio::task::spawn_blocking(move || remove_dir(&subs)).await;
-        (jobs.len() as u32, removed)
+        let dirs = [self.cache.subtitles_dir(file), self.cache.sprite_dir(file)];
+        let _ = tokio::task::spawn_blocking(move || dirs.iter().for_each(|d| remove_dir(d))).await;
+        (jobs.len() as u32 + background, removed)
     }
 
     pub async fn pause_job(&self, s: &Session, pause: bool) -> bool {
@@ -1121,6 +1133,7 @@ impl Runtime {
         let key = r.key;
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
+        let slot = self.slots.playback();
         let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {
@@ -1165,6 +1178,7 @@ impl Runtime {
                 reason: None,
             }),
             remux: r.remux,
+            slot: Mutex::new(Some(slot)),
             changed: watch::channel(0).0,
         });
         job.scan().await;
@@ -1279,6 +1293,7 @@ impl Runtime {
                 }
             }
             let exit = job.proc.exited().unwrap();
+            job.slot.lock().unwrap().take();
             if let Some(a) = job.remux.clone() {
                 let clean = exit.code == Some(0) && !job.killed();
                 let _ = tokio::task::spawn_blocking(move || a.lock().unwrap().finish(clean)).await;
@@ -1942,8 +1957,9 @@ impl Runtime {
         });
     }
 
-    /// Kills every job (engine shutdown).
-    pub async fn shutdown(&self) {
+    /// Kills every job and background job (engine shutdown).
+    pub async fn shutdown(self: &Arc<Self>) {
+        crate::jobs::shutdown(self).await;
         let jobs: Vec<Arc<Job>> = self
             .reg
             .lock()

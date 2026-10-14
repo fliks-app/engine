@@ -3,6 +3,7 @@ pub mod cache;
 pub mod events;
 pub mod gateway;
 pub mod hw;
+pub mod jobs;
 pub mod probe;
 pub mod proc;
 pub mod remux;
@@ -10,6 +11,7 @@ pub mod resolve;
 pub mod runtime;
 pub mod serve;
 pub mod sessions;
+pub mod slots;
 pub mod supervise;
 
 use axum::{
@@ -52,7 +54,8 @@ pub fn random_hex(bytes: usize) -> String {
     paths(hello, capabilities, get_config, put_config, decide, estimate_sizes, probe::probe,
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
-        sessions::cache_delete, sessions::events),
+        sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
+        jobs::delete),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, ResolveRequest,
         ResolveResponse, SessionExpired)),
     modifiers(&Bearer)
@@ -113,6 +116,8 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
             get(sessions::cache).delete(sessions::cache_delete),
         )
         .route("/v1/events", get(sessions::events))
+        .route("/v1/jobs", get(jobs::list).post(jobs::create))
+        .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state);
     control.merge(serve::router(rt))
@@ -156,6 +161,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             "serve".into(),
             "events".into(),
             "revoke".into(),
+            "jobs".into(),
         ],
         instance_id: s.instance_id.clone(),
     })
@@ -199,6 +205,7 @@ async fn put_config(
         return Err(StatusCode::CONFLICT);
     }
     *cur = Some(new.clone());
+    s.rt.slots.set_size(new.streaming.ffmpeg_slots);
     s.hw.set_render_node(selected_render_node(&new.streaming.gpu_render_node));
     Ok(Json(new))
 }
