@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "decision": "noop"
+  },
+  "input": {
+    "aheadSeconds": 60,
+    "paused": false,
+    "thresholdSeconds": 90
+  },
+  "kind": "throttle-decide",
+  "name": "ffmpeg-throttle.service.spec: decideThrottle no-op band, running",
+  "source": "ffmpeg-throttle.service.spec"
+}

@@ -1,0 +1,30 @@
+{
+  "expected": {
+    "kill": true,
+    "purgeCache": false,
+    "result": "respawn",
+    "startSegment": 3
+  },
+  "input": {
+    "present": [
+      3
+    ],
+    "qualityMatch": true,
+    "requestedSegment": 3,
+    "run": {
+      "assembler": {
+        "frontier": 12,
+        "segmentsPerSecond": null,
+        "startSegment": 10
+      },
+      "exitCode": null,
+      "outputPending": false,
+      "remux": true,
+      "signal": false,
+      "startSegment": 10
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: remux: restarts below the run's own start",
+  "source": "resolve-existing-session.spec"
+}

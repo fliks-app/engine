@@ -1,0 +1,25 @@
+{
+  "expected": {
+    "result": "existing"
+  },
+  "input": {
+    "present": [],
+    "qualityMatch": true,
+    "requestedSegment": 6,
+    "run": {
+      "assembler": {
+        "frontier": 5,
+        "segmentsPerSecond": null,
+        "startSegment": 0
+      },
+      "exitCode": null,
+      "outputPending": false,
+      "remux": true,
+      "signal": false,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: remux: waits just past the frontier",
+  "source": "resolve-existing-session.spec"
+}

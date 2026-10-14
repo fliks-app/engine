@@ -1,0 +1,28 @@
+{
+  "expected": {
+    "decision": "noop",
+    "frontierSegment": null
+  },
+  "input": {
+    "capability": "signal",
+    "enabled": false,
+    "paused": false,
+    "processExited": false,
+    "run": {
+      "fps": null,
+      "frontierHint": null,
+      "kind": "transcode",
+      "present": [],
+      "segmentDuration": 3,
+      "startSegment": 0
+    },
+    "thresholdSeconds": 90,
+    "variant": {
+      "kind": "main"
+    },
+    "viewers": []
+  },
+  "kind": "throttle-tick",
+  "name": "ffmpeg-throttle.service.spec: tick re-entrancy: throttle off, nothing paused",
+  "source": "ffmpeg-throttle.service.spec"
+}

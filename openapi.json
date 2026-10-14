@@ -1091,6 +1091,23 @@
             "description": "Resolver callback base URL of the host.",
             "default": null
           },
+          "lifetime": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LifetimeConfig"
+              }
+            ],
+            "default": {
+              "cacheGcIntervalMs": 300000,
+              "jobFallbackTimeoutMs": 1800000,
+              "jobGraceMs": 60000,
+              "liveSessionGcIntervalMs": 5000,
+              "liveSessionTtlMs": 30000,
+              "maxSessionsPerOwner": 10,
+              "pinnedSessionTtlMs": 3600000,
+              "sessionReviveTtlMs": 900000
+            }
+          },
           "revision": {
             "type": "integer",
             "format": "int32",
@@ -1287,6 +1304,66 @@
           "pts": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "LifetimeConfig": {
+        "type": "object",
+        "description": "How long sessions, ffmpeg jobs and cache sweeps live; the cache TTL and budget are in\n`StreamingConfig`. Zero is not a duration: `session::LifetimeConfig` keeps the default then.",
+        "properties": {
+          "cacheGcIntervalMs": {
+            "type": "integer",
+            "format": "int32",
+            "default": 300000,
+            "minimum": 0
+          },
+          "jobFallbackTimeoutMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Idle window of a job that never had a viewer.",
+            "default": 1800000,
+            "minimum": 0
+          },
+          "jobGraceMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Delay between the last viewer leaving and the ffmpeg job being killed.",
+            "default": 60000,
+            "minimum": 0
+          },
+          "liveSessionGcIntervalMs": {
+            "type": "integer",
+            "format": "int32",
+            "default": 5000,
+            "minimum": 0
+          },
+          "liveSessionTtlMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "A session without a heartbeat for this long is dropped (kept revivable).",
+            "default": 30000,
+            "minimum": 0
+          },
+          "maxSessionsPerOwner": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Beyond it the owner's oldest session is evicted, never the new one.",
+            "default": 10,
+            "minimum": 0
+          },
+          "pinnedSessionTtlMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Heartbeat TTL of pinned (download, offline) sessions.",
+            "default": 3600000,
+            "minimum": 0
+          },
+          "sessionReviveTtlMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How long a dropped session's id can still revive.",
+            "default": 900000,
+            "minimum": 0
           }
         }
       },

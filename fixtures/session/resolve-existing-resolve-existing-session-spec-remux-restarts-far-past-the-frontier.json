@@ -1,0 +1,28 @@
+{
+  "expected": {
+    "kill": true,
+    "purgeCache": false,
+    "result": "respawn",
+    "startSegment": 65
+  },
+  "input": {
+    "present": [],
+    "qualityMatch": true,
+    "requestedSegment": 65,
+    "run": {
+      "assembler": {
+        "frontier": 5,
+        "segmentsPerSecond": null,
+        "startSegment": 0
+      },
+      "exitCode": null,
+      "outputPending": false,
+      "remux": true,
+      "signal": false,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: remux: restarts far past the frontier",
+  "source": "resolve-existing-session.spec"
+}

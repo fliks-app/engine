@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "decision": "pause"
+  },
+  "input": {
+    "aheadSeconds": 91,
+    "paused": false,
+    "thresholdSeconds": 90
+  },
+  "kind": "throttle-decide",
+  "name": "ffmpeg-throttle.service.spec: decideThrottle pauses once ahead exceeds the threshold (91)",
+  "source": "ffmpeg-throttle.service.spec"
+}

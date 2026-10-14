@@ -5,6 +5,7 @@
   - [spec/decide.md](spec/decide.md): the play-method decision (`evaluate()`), ladder, audio plan, HDR/DV, host caps.
   - [spec/hw.md](spec/hw.md): host capability detection (backend choice, test encodes, probes, GPUs, pause), the source of `Capabilities` and `HostCaps`.
   - [spec/probe.md](spec/probe.md): media probing (`POST /v1/probe`): ffprobe/mkvmerge/cropdetect to `MediaInfo`, moviehash.
+  - [spec/session.md](spec/session.md): `core::session`, the pure session runtime: keys, `cache/v1` profile hash, seek/quality-switch matrix, throttle, segment responses, lifetimes, cache eviction.
 
 ## Tags
 
@@ -25,6 +26,10 @@
 
 - hw: every detection run recomputes all flags (the TS keeps the flags of probes a re-pin did not re-run), uses the pinned node for the backend choice too, and runs CPU probes serially; `FFMPEG_PATH` is new (the TS only looks `ffmpeg` up on PATH). Details in `spec/hw.md` section 10.
 - hw: `/v1/capabilities` and `/v1/decide` answer 503 until the first detection run ends (the TS treats unprobed encoders as usable and probes as off).
+- session: the cache profile hash is new (`cache/v1`, FNV-1a 64 over a documented canonical string, `spec/session.md` section 2), not the host's sha1 of `computeProfileHash`: no parity, snapshot and stability tests only. The old cache layout is purged once.
+- session: segment names accept `seg-<n>` with any number of digits (the host's regex allows 3 to 4); the production frontier is the in-memory `SegmentSet`, not `existsSync`.
+- session: `EngineConfig.lifetime` (`LifetimeConfig`) carries the durations of the host's `lifetime-constants.ts` (env vars are not read by the engine); zero keeps the default. `MAX_TOMBSTONES` trimming is not ported.
+- session fuzz (3 seeds, 168 000 inputs: 30 000 seek-matrix, 30 000 throttle ticks, 30 000 throttle decisions): 0 mismatches, no class promoted to a `fuzz-*` fixture.
 
 ## Open divergences
 
@@ -39,3 +44,5 @@
 - probe: `detectEmbeddedSubtitles` and `detectStreams` (embedded-subtitle, subtitle-sync and the media controller) are not ported: they read the same ffprobe JSON but are not part of `MediaInfo`.
 - probe crop samples share one process-wide budget of `cores - 1` runs in the engine; the host's cgroup-aware pool (and its admin override) stays in Node until the engine owns every ffmpeg slot (M3).
 - probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.
+- session: the 503/404/410 segment rule and the `Retry-After` value are inline in the host's controller (no function to call): hand-written tests, no golden vectors. The job-idle vectors run with the default durations (the host reads them from env at import).
+- session: pure `core::session` is not wired yet: the sessions, cache and serve layers of `crates/engine` (M3) call it.

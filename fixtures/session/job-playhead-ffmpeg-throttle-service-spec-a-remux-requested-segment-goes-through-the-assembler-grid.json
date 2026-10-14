@@ -1,0 +1,27 @@
+{
+  "expected": {
+    "playhead": 35
+  },
+  "input": {
+    "grid": {
+      "boundaries": [
+        0,
+        0,
+        0,
+        0,
+        35
+      ],
+      "kind": "remux"
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": 4,
+        "pinned": false,
+        "position": 0
+      }
+    ]
+  },
+  "kind": "job-playhead",
+  "name": "ffmpeg-throttle.service.spec: a remux requested segment goes through the assembler grid",
+  "source": "ffmpeg-throttle.service.spec"
+}

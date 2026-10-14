@@ -1,0 +1,14 @@
+{
+  "expected": {
+    "eligible": false
+  },
+  "input": {
+    "variant": {
+      "kind": "early"
+    },
+    "viewers": []
+  },
+  "kind": "throttle-eligible",
+  "name": "ffmpeg-throttle.service.spec: excludes the early companion",
+  "source": "ffmpeg-throttle.service.spec"
+}

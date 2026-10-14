@@ -1,0 +1,20 @@
+{
+  "expected": {
+    "eligible": false
+  },
+  "input": {
+    "variant": {
+      "kind": "main"
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": null,
+        "pinned": true,
+        "position": 0
+      }
+    ]
+  },
+  "kind": "throttle-eligible",
+  "name": "ffmpeg-throttle.service.spec: excludes a run backing a pinned session (main)",
+  "source": "ffmpeg-throttle.service.spec"
+}

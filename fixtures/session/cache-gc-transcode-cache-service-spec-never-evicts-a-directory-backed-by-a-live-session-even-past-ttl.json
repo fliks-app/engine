@@ -1,0 +1,35 @@
+{
+  "expected": {
+    "evicted": [
+      "1::2::aaa"
+    ]
+  },
+  "input": {
+    "entries": [
+      {
+        "lastAccessMs": 1699967600000,
+        "live": true,
+        "mediaFileId": 1,
+        "owner": 1,
+        "profile": "aaa",
+        "totalBytes": 1000
+      },
+      {
+        "lastAccessMs": 1699967600000,
+        "live": false,
+        "mediaFileId": 2,
+        "owner": 1,
+        "profile": "aaa",
+        "totalBytes": 1000
+      }
+    ],
+    "nowMs": 1700000000000,
+    "policy": {
+      "maxBytes": 21474836480,
+      "ttlMs": 14400000
+    }
+  },
+  "kind": "cache-gc",
+  "name": "transcode-cache.service.spec: never evicts a directory backed by a live session, even past TTL",
+  "source": "transcode-cache.service.spec"
+}

@@ -1,0 +1,27 @@
+{
+  "expected": {
+    "evicted": [
+      "1::1::aaa"
+    ]
+  },
+  "input": {
+    "entries": [
+      {
+        "lastAccessMs": 1699982000000,
+        "live": false,
+        "mediaFileId": 1,
+        "owner": 1,
+        "profile": "aaa",
+        "totalBytes": 1000
+      }
+    ],
+    "nowMs": 1700000000000,
+    "policy": {
+      "maxBytes": 21474836480,
+      "ttlMs": 14400000
+    }
+  },
+  "kind": "cache-gc",
+  "name": "transcode-cache.service.spec: evicts entries past their TTL on gc",
+  "source": "transcode-cache.service.spec"
+}

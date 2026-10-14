@@ -4,3 +4,4 @@ pub mod decide;
 pub mod hw;
 pub mod ladder;
 pub mod probe;
+pub mod session;

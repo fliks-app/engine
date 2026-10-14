@@ -1,0 +1,15 @@
+{
+  "expected": {
+    "lead": 150
+  },
+  "input": {
+    "playhead": 1650,
+    "span": {
+      "frontierSeconds": 1800,
+      "startSeconds": 1650
+    }
+  },
+  "kind": "run-lead",
+  "name": "ffmpeg-throttle.service.spec: runLeadSeconds playhead 1650",
+  "source": "ffmpeg-throttle.service.spec"
+}

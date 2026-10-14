@@ -1,0 +1,30 @@
+{
+  "expected": {
+    "kill": false,
+    "purgeCache": false,
+    "result": "respawn",
+    "startSegment": 6
+  },
+  "input": {
+    "present": [
+      6
+    ],
+    "qualityMatch": true,
+    "requestedSegment": 6,
+    "run": {
+      "assembler": {
+        "frontier": 5,
+        "segmentsPerSecond": null,
+        "startSegment": 0
+      },
+      "exitCode": 0,
+      "outputPending": false,
+      "remux": true,
+      "signal": false,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: remux exited: a segment past its frontier respawns",
+  "source": "resolve-existing-session.spec"
+}
