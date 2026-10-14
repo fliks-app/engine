@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "deny": ["Read(target/**)", "Read(clients/ts/src/schema.d.ts)", "Read(openapi.json)"],
+    "deny": ["Read(target/**)", "Read(openapi.json)"],
     "additionalDirectories": ["../fliks/backend/src"]
   }
 }
