@@ -4,6 +4,7 @@ pub mod events;
 pub mod gateway;
 pub mod hw;
 pub mod jobs;
+pub mod live;
 pub mod probe;
 pub mod proc;
 pub mod remux;
@@ -55,7 +56,7 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
-        jobs::delete),
+        jobs::delete, live::open_handler, live::list_handler, live::get_handler),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, ResolveRequest,
         ResolveResponse, SessionExpired)),
     modifiers(&Bearer)
@@ -118,6 +119,8 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         .route("/v1/events", get(sessions::events))
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
+        .route("/v1/live", get(live::list_handler).post(live::open_handler))
+        .route("/v1/live/{sid}", get(live::get_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state);
     control.merge(serve::router(rt))
@@ -165,6 +168,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             "scan".into(),
             "fingerprint".into(),
             "subtitle-extract".into(),
+            "live".into(),
         ],
         instance_id: s.instance_id.clone(),
     })

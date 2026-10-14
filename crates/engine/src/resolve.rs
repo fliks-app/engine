@@ -17,7 +17,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Key {
     credential: u64,
-    media: u32,
+    media: ResolveMediaId,
     purpose: ResolvePurpose,
     subtitle_id: Option<u32>,
     stream_index: Option<u32>,
@@ -43,9 +43,10 @@ pub enum ResolveError {
 }
 
 /// What one data-plane request asks for.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Ask<'a> {
-    pub media: u32,
+    /// A media file id, or a live sid (`purpose: live`).
+    pub media: ResolveMediaId,
     pub credential: &'a str,
     pub purpose: ResolvePurpose,
     pub subtitle_id: Option<u32>,
@@ -75,12 +76,12 @@ impl Default for Resolver {
     }
 }
 
-/// A sprite grant may come without a path: the engine serves its own.
+/// A sprite grant may come without a path (the engine serves its own), a live one has none.
 fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, ResolveError> {
     if !res.allow {
         return Err(ResolveError::Denied);
     }
-    if res.path.is_none() && purpose != ResolvePurpose::Sprite {
+    if res.path.is_none() && !matches!(purpose, ResolvePurpose::Sprite | ResolvePurpose::Live) {
         return Err(ResolveError::Unavailable);
     }
     Ok(Resolved {
@@ -98,7 +99,7 @@ impl Resolver {
     ) -> Result<Resolved, ResolveError> {
         let key = Key {
             credential: self.hasher.hash_one(ask.credential),
-            media: ask.media,
+            media: ask.media.clone(),
             purpose: ask.purpose,
             subtitle_id: ask.subtitle_id,
             stream_index: ask.stream_index,
@@ -139,7 +140,7 @@ impl Resolver {
     async fn call(&self, host: Option<&Host>, ask: &Ask<'_>) -> Option<ResolveResponse> {
         let host = host?;
         let body = serde_json::to_vec(&ResolveRequest {
-            media_id: ResolveMediaId::File(ask.media),
+            media_id: ask.media.clone(),
             credential: ask.credential.into(),
             purpose: ask.purpose,
             subtitle_id: ask.subtitle_id,
@@ -179,7 +180,8 @@ impl Resolver {
     pub fn purge(&self, owner: Option<&str>, media: &[u32]) {
         self.cache.lock().unwrap().retain(|k, e| {
             let by_owner = owner.is_none_or(|o| e.res.owner_id.as_deref() == Some(o));
-            let by_media = media.is_empty() || media.contains(&k.media);
+            let by_media = media.is_empty()
+                || matches!(&k.media, ResolveMediaId::File(m) if media.contains(m));
             !(by_owner && by_media)
         });
     }

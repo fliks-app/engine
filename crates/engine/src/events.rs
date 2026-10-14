@@ -24,6 +24,8 @@ fn name(e: &EngineEvent) -> &'static str {
         EngineEvent::HwFallback { .. } => "HwFallback",
         EngineEvent::BgJobProgress { .. } => "BgJobProgress",
         EngineEvent::BgJobDone { .. } => "BgJobDone",
+        EngineEvent::LiveAttempt { .. } => "LiveAttempt",
+        EngineEvent::LiveReleased { .. } => "LiveReleased",
     }
 }
 

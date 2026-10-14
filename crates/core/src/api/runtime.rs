@@ -1,6 +1,8 @@
 //! Wire types of the session runtime (M3): sessions, jobs, cache, revocation, events and the
 //! host resolver contract. Times are f64 epoch milliseconds (no 64-bit integers on the wire).
-use super::{BgJobState, DecideRequest, Decision, HdrFormat, HwAccel, JobResult, TonemapCurve};
+use super::{
+    BgJobState, DecideRequest, Decision, HdrFormat, HwAccel, JobResult, LiveProbe, TonemapCurve,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
@@ -353,7 +355,7 @@ pub enum Track {
 pub enum EngineEvent {
     #[serde(rename_all = "camelCase")]
     SessionOpened { session: Box<SessionSnapshot> },
-    /// `stopped`, `expired`, `evicted`, `revoked`.
+    /// `stopped`, `expired`, `evicted`, `revoked`; live viewers also `failed`.
     #[serde(rename_all = "camelCase")]
     SessionEnded { session_id: String, reason: String },
     /// The rung or hardware a session is served from changed.
@@ -414,6 +416,24 @@ pub enum EngineEvent {
         result: Option<JobResult>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+    },
+    /// One attempt at feeding a live session from an upstream: `error` absent = it feeds the
+    /// session now, present = it failed.
+    #[serde(rename_all = "camelCase")]
+    LiveAttempt {
+        capacity_token: String,
+        /// Position in the upstreams of the open that started the session.
+        upstream: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        probe: Option<LiveProbe>,
+    },
+    /// A live session ended and its upstream closed: `idle` or `failed` (every upstream failed).
+    #[serde(rename_all = "camelCase")]
+    LiveReleased {
+        capacity_token: String,
+        reason: String,
     },
 }
 

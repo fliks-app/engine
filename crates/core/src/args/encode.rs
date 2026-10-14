@@ -761,17 +761,21 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
     }
 }
 
+/// The live transcode's encoder. [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:47-54]
+pub fn live_h264_encoder(hw: HwAccel) -> String {
+    match hw {
+        HwAccel::None => "libx264".into(),
+        hw => format!("h264_{}", hw_name(hw)),
+    }
+}
+
 /// Live video: copy, or H.264 on the backend's encoder cut on a time grid.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:135-156]
 pub fn live_video(o: &LiveArgs) -> Vec<String> {
     if o.mode == LiveMode::Remux {
         return s(&["-c:v", "copy"]);
     }
-    let encoder = match o.hw_accel {
-        HwAccel::None => "libx264".to_string(),
-        hw => format!("h264_{}", hw_name(hw)),
-    };
-    let mut a = vec!["-c:v".to_string(), encoder];
+    let mut a = vec!["-c:v".to_string(), live_h264_encoder(o.hw_accel)];
     if o.hw_accel == HwAccel::None {
         a.extend(s(&["-preset", "veryfast", "-tune", "zerolatency"]));
     }

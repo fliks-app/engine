@@ -12,7 +12,7 @@ use crate::jsnum::{js_string as js, round, seconds, to_fixed};
 
 /// Under `-hls_time` so the muxer cuts on every forced IDR.
 const HLS_TIME_MARGIN: f64 = 0.0001;
-const LIVE_USER_AGENT: &str = "VLC/3.0.20 LibVLC/3.0.20";
+pub const LIVE_USER_AGENT: &str = "VLC/3.0.20 LibVLC/3.0.20";
 /// The top rung's stereo budget.
 const REMUX_STEREO_BPS: f64 = 192_000.0;
 
@@ -322,6 +322,30 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
     Ok(a)
 }
 
+/// `-user_agent` (VLC's when empty) and `-headers` of an ffmpeg or ffprobe reading an upstream.
+/// [ts:backend/src/modules/livetv/livetv-http.ts:36,64-68]
+pub fn http_header_args(
+    user_agent: Option<&str>,
+    referer: Option<&str>,
+    extra: &[(String, String)],
+) -> Vec<String> {
+    let ua = user_agent
+        .filter(|u| !u.is_empty())
+        .unwrap_or(LIVE_USER_AGENT);
+    let mut a = vec!["-user_agent".to_string(), ua.to_string()];
+    let mut headers: String = referer
+        .filter(|r| !r.is_empty())
+        .map(|r| format!("Referer: {r}\r\n"))
+        .unwrap_or_default();
+    for (k, v) in extra {
+        headers.push_str(&format!("{k}: {v}\r\n"));
+    }
+    if !headers.is_empty() {
+        a.extend(["-headers".into(), headers]);
+    }
+    a
+}
+
 /// A live channel into ffmpeg's sliding-window HLS muxer.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:99-208]
 pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
@@ -336,17 +360,12 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         "5",
         "-rw_timeout",
         "15000000",
-        "-user_agent",
     ]);
-    a.push(
-        o.user_agent
-            .clone()
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| LIVE_USER_AGENT.into()),
-    );
-    if let Some(r) = o.referer.as_deref().filter(|r| !r.is_empty()) {
-        a.extend(["-headers".into(), format!("Referer: {r}\r\n")]);
-    }
+    a.extend(http_header_args(
+        o.user_agent.as_deref(),
+        o.referer.as_deref(),
+        &o.extra_headers,
+    ));
     let probe = js_max(3.0, o.probe_seconds.unwrap_or(3.0));
     a.extend([
         "-analyzeduration".into(),

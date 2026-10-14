@@ -164,6 +164,96 @@ fn job(mode: &str, args: &[String]) {
     }
 }
 
+/// Live TV: the probe answers by URL, a run writes a sliding window of segments by URL (`fail`
+/// exits at once, `stall` writes one segment then goes silent, `dies` exits after three).
+fn live(args: &[String]) {
+    let url = args.last().unwrap();
+    if args.iter().any(|a| a == "csv=p=0") {
+        match () {
+            _ if url.contains("noprobe") => std::process::exit(1),
+            _ if url.contains("hevc") => print!("hevc,video\naac,audio\nmpegts\n"),
+            _ if url.contains("manifest") => print!("h264,video\naac,audio\nhls\n"),
+            _ => print!("h264,video\naac,audio\nmpegts\n"),
+        }
+        return;
+    }
+    let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let input = at("-i").clone();
+    let pattern = at("-hls_segment_filename").clone();
+    let dir = std::path::Path::new(&pattern)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("argv.log"))
+        .unwrap();
+    writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
+    if input.contains("fail") {
+        eprintln!("fake ffmpeg: {input}: Connection refused");
+        std::process::exit(1)
+    }
+    let ext = if pattern.ends_with(".ts") {
+        "ts"
+    } else {
+        "m4s"
+    };
+    let fmp4 = ext == "m4s";
+    let existing = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| {
+            let n = e.unwrap().file_name().to_string_lossy().into_owned();
+            n.strip_prefix("seg-")?
+                .split('.')
+                .next()?
+                .parse::<u32>()
+                .ok()
+        })
+        .max();
+    let append = at("-hls_flags").contains("append_list");
+    let first = if append {
+        existing.map_or(0, |m| m + 1)
+    } else {
+        0
+    };
+    if fmp4 {
+        std::fs::write(dir.join("init.mp4"), b"init").unwrap();
+    }
+    let mut window: Vec<u32> = vec![];
+    for n in first.. {
+        let written = n - first;
+        if input.contains("stall") && written == 1 || input.contains("dies") && written == 3 {
+            if input.contains("dies") {
+                eprintln!("fake ffmpeg: {input}: end of file");
+                std::process::exit(1)
+            }
+            hang()
+        }
+        std::fs::write(
+            dir.join(format!("seg-{n:05}.{ext}")),
+            format!("segment {n}"),
+        )
+        .unwrap();
+        window.push(n);
+        if window.len() > 5 {
+            let _ = std::fs::remove_file(dir.join(format!("seg-{:05}.{ext}", window.remove(0))));
+        }
+        let mut m3u8 = format!(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{}\n",
+            window[0]
+        );
+        if fmp4 {
+            m3u8.push_str("#EXT-X-MAP:URI=\"init.mp4\"\n");
+        }
+        for w in &window {
+            m3u8.push_str(&format!("#EXTINF:2.000000,\nseg-{w:05}.{ext}\n"));
+        }
+        std::fs::write(dir.join("index.m3u8"), m3u8).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+    }
+}
+
 fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
@@ -178,6 +268,7 @@ fn main() {
             hang()
         }
         "talk" => talk(),
+        "live" => live(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("sprite" | "slowsprite" | "hangsprite" | "failsprite" | "flakysprite") => {

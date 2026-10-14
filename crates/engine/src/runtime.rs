@@ -498,6 +498,7 @@ pub struct Runtime {
     /// The one ffmpeg budget: session runs, extracts, background jobs and probe samples.
     pub slots: Arc<Slots>,
     pub jobs: crate::jobs::Jobs,
+    pub live: crate::live::Live,
     reg: Mutex<Reg>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -530,6 +531,7 @@ impl Runtime {
             fpcalc,
             slots: Slots::new(crate::slots::auto_size()),
             jobs: Default::default(),
+            live: Default::default(),
             reg: Mutex::new(Reg::default()),
             locks: Mutex::new(HashMap::new()),
         })
@@ -562,7 +564,7 @@ impl Runtime {
         })
     }
 
-    fn caps(&self) -> Option<HostCaps> {
+    pub(crate) fn caps(&self) -> Option<HostCaps> {
         self.hw.snapshot().map(|s| s.host_caps())
     }
 
@@ -921,7 +923,12 @@ impl Runtime {
                 reason: "revoked".into(),
             });
         }
-        gone.len() as u32
+        // Live viewers belong to no media file: only an owner-wide revoke reaches them.
+        let live = match owner {
+            Some(o) if files.is_empty() => self.live.revoke(self, o),
+            _ => 0,
+        };
+        gone.len() as u32 + live
     }
 
     /// Rescan or deletion: every job of the file dies, its cache and sprite go; sessions stay.
@@ -964,7 +971,7 @@ impl Runtime {
         self.caps().map_or(HwAccel::None, |c| c.hw_accel)
     }
 
-    fn device(&self, caps: &HostCaps) -> fliks_engine_core::hw::Device {
+    pub(crate) fn device(&self, caps: &HostCaps) -> fliks_engine_core::hw::Device {
         fliks_engine_core::hw::Device {
             platform: caps.platform,
             render_node: self.hw.snapshot().map(|h| h.render_node),
@@ -1946,6 +1953,8 @@ impl Runtime {
 
     /// Boot purge, then the GC, throttle and cache loops.
     pub fn start(self: &Arc<Self>) {
+        // A crashed engine's live windows must not be appended to. [ts:modules/livetv/services/livetv-session.service.ts:258-262]
+        remove_dir(&crate::live::root(&self.cache));
         let rt = self.clone();
         tokio::spawn(async move {
             let root = rt.cache.root.clone();
@@ -1980,6 +1989,7 @@ impl Runtime {
     /// Kills every job and background job (engine shutdown).
     pub async fn shutdown(self: &Arc<Self>) {
         crate::jobs::shutdown(self).await;
+        crate::live::shutdown(self).await;
         let jobs: Vec<Arc<Job>> = self
             .reg
             .lock()
