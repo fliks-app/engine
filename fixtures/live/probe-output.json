@@ -1,0 +1,20 @@
+{"fn":"parseProbeOutput","cases":[
+{"input":{"stdout":"h264,video\naac,audio\nmpegts\n"},"expected":{"video":"h264","audio":"aac","container":"mpegts"}},
+{"input":{"stdout":"mpeg2video,video\nmp2,audio\nac3,audio\nmpegts\n"},"expected":{"video":"mpeg2video","audio":"mp2","container":"mpegts"}},
+{"input":{"stdout":"hevc,video\neac3,audio\nmov,mp4,m4a,3gp,3g2,mj2\n"},"expected":{"video":"hevc","audio":"eac3","container":"mov,mp4,m4a,3gp,3g2,mj2"}},
+{"input":{"stdout":"aac,audio\nmpegts\n"},"expected":{"video":null,"audio":"aac","container":"mpegts"}},
+{"input":{"stdout":"h264,video\n"},"expected":{"video":"h264","audio":null,"container":null}},
+{"input":{"stdout":""},"expected":{"video":null,"audio":null,"container":null}},
+{"input":{"stdout":"\n\n"},"expected":{"video":null,"audio":null,"container":null}},
+{"input":{"stdout":"hls\n"},"expected":{"video":null,"audio":null,"container":"hls"}},
+{"input":{"stdout":"h264,video\naac,audio\nhls\n"},"expected":{"video":"h264","audio":"aac","container":"hls"}},
+{"input":{"stdout":"h264,video\nh264,video\naac,audio\nmp3,audio\nmpegts\n"},"expected":{"video":"h264","audio":"aac","container":"mpegts"}},
+{"input":{"stdout":"dvb_teletext,subtitle\nh264,video\nscte_35,data\naac,audio\nmpegts\n"},"expected":{"video":"h264","audio":"aac","container":"mpegts"}},
+{"input":{"stdout":"ttf,attachment\nh264,video\nmatroska,webm\n"},"expected":{"video":"h264","audio":null,"container":"matroska,webm"}},
+{"input":{"stdout":"  h264,video  \r\n aac,audio\r\nmpegts\r\n"},"expected":{"video":"h264","audio":"aac","container":"mpegts"}},
+{"input":{"stdout":"h264,video\naac,audio\nmpegts\nflv\n"},"expected":{"video":"h264","audio":"aac","container":"mpegts"}},
+{"input":{"stdout":",video\n,audio\nmpegts\n"},"expected":{"video":"","audio":"","container":"mpegts"}},
+{"input":{"stdout":"h264,Video\naac,AUDIO\nmpegts\n"},"expected":{"video":null,"audio":null,"container":"h264,Video"}},
+{"input":{"stdout":"mpegts\nh264,video\n"},"expected":{"video":"h264","audio":null,"container":"mpegts"}},
+{"input":{"stdout":"h264,video,extra\nmpegts\n"},"expected":{"video":null,"audio":null,"container":"h264,video,extra"}}
+]}

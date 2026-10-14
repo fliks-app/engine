@@ -1,0 +1,15 @@
+{"fn":"isManifestContentType","cases":[
+{"input":{"contentType":"video/mp2t"},"expected":false},
+{"input":{"contentType":"application/vnd.apple.mpegurl"},"expected":true},
+{"input":{"contentType":"application/x-mpegURL"},"expected":true},
+{"input":{"contentType":"audio/mpegurl"},"expected":true},
+{"input":{"contentType":"application/dash+xml"},"expected":true},
+{"input":{"contentType":"text/html; charset=utf-8"},"expected":true},
+{"input":{"contentType":"TEXT/PLAIN"},"expected":true},
+{"input":{"contentType":"application/json"},"expected":true},
+{"input":{"contentType":"application/octet-stream"},"expected":false},
+{"input":{"contentType":"video/MP2T"},"expected":false},
+{"input":{"contentType":"text/xml"},"expected":true},
+{"input":{"contentType":"application/xml"},"expected":true},
+{"input":{"contentType":""},"expected":false}
+]}

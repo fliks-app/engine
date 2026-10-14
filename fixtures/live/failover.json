@@ -1,0 +1,17 @@
+{"fn":"failover","cases":[
+{"input":{"upstreams":1,"script":["ok"]},"expected":{"attempts":[0],"ended":false,"failoverIndex":0,"restarts":0,"failures":[0]}},
+{"input":{"upstreams":1,"script":["fail","ok"]},"expected":{"attempts":[0,0],"ended":false,"failoverIndex":1,"restarts":1,"failures":[1]}},
+{"input":{"upstreams":1,"script":["fail","fail"]},"expected":{"attempts":[0,0],"ended":true,"failoverIndex":2,"restarts":2,"failures":[2]}},
+{"input":{"upstreams":2,"script":["ok"]},"expected":{"attempts":[0],"ended":false,"failoverIndex":0,"restarts":0,"failures":[0,0]}},
+{"input":{"upstreams":2,"script":["fail","ok"]},"expected":{"attempts":[0,1],"ended":false,"failoverIndex":1,"restarts":1,"failures":[1,0]}},
+{"input":{"upstreams":2,"script":["fail","fail","ok"]},"expected":{"attempts":[0,1,0],"ended":false,"failoverIndex":2,"restarts":2,"failures":[1,1]}},
+{"input":{"upstreams":2,"script":["fail","fail","fail","fail"]},"expected":{"attempts":[0,1,0,1],"ended":true,"failoverIndex":4,"restarts":4,"failures":[2,2]}},
+{"input":{"upstreams":3,"script":["fail","fail","fail","fail","fail","ok"]},"expected":{"attempts":[0,1,2,0,1,2],"ended":false,"failoverIndex":5,"restarts":5,"failures":[2,2,1]}},
+{"input":{"upstreams":2,"script":["ok","drop","ok"]},"expected":{"attempts":[0,1],"ended":false,"failoverIndex":1,"restarts":1,"failures":[1,0]}},
+{"input":{"upstreams":2,"script":["ok","drop","fail","ok"]},"expected":{"attempts":[0,1,0],"ended":false,"failoverIndex":2,"restarts":2,"failures":[1,1]}},
+{"input":{"upstreams":2,"script":["ok","drop","ok","drop","ok","drop","fail"]},"expected":{"attempts":[0,1,0,1],"ended":true,"failoverIndex":4,"restarts":4,"failures":[2,2]}},
+{"input":{"upstreams":3,"script":["ok","drop","fail","ok","drop","ok"]},"expected":{"attempts":[0,1,2,0],"ended":false,"failoverIndex":3,"restarts":3,"failures":[1,1,1]}},
+{"input":{"upstreams":1,"script":["ok","drop","ok","drop"]},"expected":{"attempts":[0,0],"ended":true,"failoverIndex":2,"restarts":2,"failures":[2]}},
+{"input":{"upstreams":3,"script":["fail","ok","drop","fail","fail","fail","ok"]},"expected":{"attempts":[0,1,2,0,1,2],"ended":false,"failoverIndex":5,"restarts":5,"failures":[2,2,1]}},
+{"input":{"upstreams":2,"script":["ok","drop","ok","drop","ok","drop","ok","drop"]},"expected":{"attempts":[0,1,0,1],"ended":true,"failoverIndex":4,"restarts":4,"failures":[2,2]}}
+]}
