@@ -15,7 +15,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "cache",
+        "operationId": "get_cache",
         "responses": {
           "200": {
             "description": "",
@@ -33,7 +33,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "cache_delete",
+        "operationId": "delete_cache",
         "parameters": [
           {
             "name": "mediaFileId",
@@ -280,7 +280,7 @@
         "tags": [
           "jobs"
         ],
-        "operationId": "list",
+        "operationId": "list_jobs",
         "responses": {
           "200": {
             "description": "",
@@ -301,7 +301,7 @@
         "tags": [
           "jobs"
         ],
-        "operationId": "create",
+        "operationId": "create_job",
         "requestBody": {
           "content": {
             "application/json": {
@@ -334,7 +334,7 @@
         "tags": [
           "jobs"
         ],
-        "operationId": "get_one",
+        "operationId": "get_job",
         "responses": {
           "200": {
             "description": "",
@@ -355,7 +355,7 @@
         "tags": [
           "jobs"
         ],
-        "operationId": "delete",
+        "operationId": "cancel_job",
         "responses": {
           "204": {
             "description": "cancelled (an ended job is left as is)"
@@ -437,7 +437,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "list",
+        "operationId": "list_sessions",
         "parameters": [
           {
             "name": "ownerId",
@@ -484,7 +484,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "open",
+        "operationId": "open_session",
         "requestBody": {
           "content": {
             "application/json": {
@@ -520,7 +520,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "get_one",
+        "operationId": "get_session",
         "responses": {
           "200": {
             "description": "",
@@ -541,7 +541,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "delete",
+        "operationId": "delete_session",
         "parameters": [
           {
             "name": "reason",
@@ -568,7 +568,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "command",
+        "operationId": "command_session",
         "requestBody": {
           "content": {
             "application/json": {
@@ -597,7 +597,7 @@
         "tags": [
           "sessions"
         ],
-        "operationId": "heartbeat",
+        "operationId": "heartbeat_session",
         "requestBody": {
           "content": {
             "application/json": {

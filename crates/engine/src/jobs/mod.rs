@@ -591,7 +591,7 @@ fn free_bytes(_: &Path) -> Option<u64> {
 
 type S = State<Arc<AppState>>;
 
-#[utoipa::path(post, path = "/v1/jobs", request_body = JobRequest, responses(
+#[utoipa::path(post, path = "/v1/jobs", operation_id = "create_job", request_body = JobRequest, responses(
     (status = 200, body = JobAccepted, description = "queued, or the in-flight identical request"),
     (status = 400, description = "relative path or unusable request")))]
 pub async fn create(State(s): S, Json(req): Json<JobRequest>) -> Response {
@@ -601,12 +601,12 @@ pub async fn create(State(s): S, Json(req): Json<JobRequest>) -> Response {
     }
 }
 
-#[utoipa::path(get, path = "/v1/jobs", responses((status = 200, body = Vec<JobSnapshot>)))]
+#[utoipa::path(get, path = "/v1/jobs", operation_id = "list_jobs", responses((status = 200, body = Vec<JobSnapshot>)))]
 pub async fn list(State(s): S) -> Json<Vec<JobSnapshot>> {
     Json(s.rt.jobs.snapshots())
 }
 
-#[utoipa::path(get, path = "/v1/jobs/{id}", responses(
+#[utoipa::path(get, path = "/v1/jobs/{id}", operation_id = "get_job", responses(
     (status = 200, body = JobSnapshot), (status = 404, description = "unknown job")))]
 pub async fn get_one(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     match s.rt.jobs.get(&id) {
@@ -615,7 +615,7 @@ pub async fn get_one(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     }
 }
 
-#[utoipa::path(delete, path = "/v1/jobs/{id}", responses(
+#[utoipa::path(delete, path = "/v1/jobs/{id}", operation_id = "cancel_job", responses(
     (status = 204, description = "cancelled (an ended job is left as is)"),
     (status = 404, description = "unknown job")))]
 pub async fn delete(State(s): S, UrlPath(id): UrlPath<String>) -> StatusCode {
