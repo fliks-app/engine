@@ -1,7 +1,7 @@
-//! Golden packaging calls (`fixtures/mp4/*.json`) and the `MP4_FUZZ_DIR` replay.
+//! Golden packaging calls (`fixtures/mp4/*.json`; `BLESS=1` rewrites `expected`).
 mod common;
 
-use common::diff;
+use common::{Fixture, blessing, diff};
 use fliks_engine_core::api::{Keyframe, MediaInfo, SourceScan};
 use fliks_engine_core::mp4::{self, BoxRef, IdMap, Mp4Error, RemuxAssemblyPlan, TrackInfo};
 use serde::de::DeserializeOwned;
@@ -279,6 +279,22 @@ fn check(v: &Value) -> Option<String> {
     }
 }
 
+/// What `expected` becomes: the value, or the error (a Node `code` is kept, else a RangeError).
+fn blessed(v: &Value) -> Value {
+    match run(s(&v["fn"]), &v["args"]) {
+        Ok(got) => json!({ "ok": got }),
+        Err(Mp4Error::Msg(m)) => json!({ "error": m, "type": "Error" }),
+        Err(Mp4Error::OutOfRange) => {
+            let old = &v["expected"];
+            if old.get("code").is_some() {
+                old.clone()
+            } else {
+                json!({ "error": "out of range", "type": "RangeError", "code": "ERR_OUT_OF_RANGE" })
+            }
+        }
+    }
+}
+
 fn report(what: &str, n: usize, failed: &[String]) {
     for f in failed.iter().take(10) {
         eprintln!("FAIL {f}");
@@ -296,39 +312,18 @@ fn mp4_fixtures_reproduce_the_host() {
         if p.extension().is_none_or(|x| x != "json") {
             continue;
         }
-        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        if let Some(m) = check(&v) {
+        let mut fx = Fixture::load(&p);
+        if let Some(m) = check(&fx.root) {
+            if blessing() {
+                let expected = blessed(&fx.root);
+                fx.bless(None, expected);
+                fx.save();
+                n += 1;
+                continue;
+            }
             failed.push(format!("{}: {m}", p.file_name().unwrap().to_string_lossy()));
         }
         n += 1;
     }
     report("fixtures/mp4", n, &failed);
-}
-
-/// No-op unless `MP4_FUZZ_DIR` holds `mp4-*.ndjson` from the host harness.
-#[test]
-fn mp4_fuzz_replay() {
-    let Ok(dir) = std::env::var("MP4_FUZZ_DIR") else {
-        return;
-    };
-    let (mut n, mut failed) = (0, vec![]);
-    for e in std::fs::read_dir(dir).unwrap() {
-        let p = e.unwrap().path();
-        let name = p.file_name().unwrap().to_string_lossy().into_owned();
-        if !(name.starts_with("mp4-") && name.ends_with(".ndjson")) {
-            continue;
-        }
-        for line in std::fs::read_to_string(&p).unwrap().lines() {
-            let v: Value = serde_json::from_str(line).unwrap();
-            if let Some(m) = check(&v) {
-                failed.push(format!(
-                    "{name} #{} {}: {m}\n  args {}",
-                    v["i"], v["fn"], v["args"]
-                ));
-            }
-            n += 1;
-        }
-    }
-    eprintln!("mp4 fuzz: {n} inputs, {} mismatches", failed.len());
-    report("mp4 fuzz", n, &failed);
 }

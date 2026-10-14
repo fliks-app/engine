@@ -1,8 +1,8 @@
 //! Golden probes (`fixtures/probe/*.json`): the recorded output of ffprobe, mkvmerge and
-//! ffmpeg of one file, replayed through `probe()`, must give the host's `MediaInfo`.
+//! ffmpeg of one file, replayed through `probe()`, must give `expected` (`BLESS=1` rewrites it).
 mod common;
 
-use common::diff;
+use common::{Fixture, blessing, diff};
 use fliks_engine_core::probe::{Outcome, ProbeOpts, ToolError, Tools, probe};
 use serde_json::{Value, json};
 use std::future::Future;
@@ -219,11 +219,7 @@ fn got(o: &Outcome) -> Value {
 
 #[test]
 fn probe_reproduces_the_host() {
-    // PROBE_FIXTURES_DIR: a larger throwaway run of the host harness (see docs/tests.md).
-    let dir = std::env::var_os("PROBE_FIXTURES_DIR").map_or_else(
-        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/probe"),
-        PathBuf::from,
-    );
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/probe");
     let (mut n, mut failed) = (0, vec![]);
     let mut entries: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
@@ -235,7 +231,8 @@ fn probe_reproduces_the_host() {
         if !name.ends_with(".json") || name.starts_with('_') {
             continue;
         }
-        let f: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let mut fx = Fixture::load(&p);
+        let f = fx.root.clone();
         let tools = Replay::new(&f);
         let opts = ProbeOpts {
             crop: f["opts"]["crop"].as_bool().unwrap(),
@@ -262,6 +259,14 @@ fn probe_reproduces_the_host() {
             .count();
         if unused > 0 {
             d.push(format!("{unused} recorded tool runs not made"));
+        }
+        if !d.is_empty() && blessing() {
+            let mut new = got(&outcome);
+            new["nulls"] = f["expected"]["nulls"].clone();
+            fx.bless(None, new);
+            fx.save();
+            n += 1;
+            continue;
         }
         if !d.is_empty() {
             failed.push(format!("{name}\n  {}", d.join("\n  ")));

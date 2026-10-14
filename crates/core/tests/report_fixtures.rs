@@ -2,7 +2,7 @@
 //! (clock offset, tone-map report, QoE pipeline) for every decide fixture's input.
 mod common;
 
-use common::diff;
+use common::{Fixture, blessing, diff};
 use fliks_engine_core::api::{BurnInKind, DecideRequest, HostCaps, StreamingConfig};
 use fliks_engine_core::decide::decide;
 use fliks_engine_core::session::open_report;
@@ -12,12 +12,10 @@ use std::path::PathBuf;
 #[test]
 fn open_report_reproduces_the_host() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-    let all: Value = serde_json::from_str(
-        &std::fs::read_to_string(root.join("report/open-report.json")).unwrap(),
-    )
-    .unwrap();
+    let mut fx = Fixture::load(&root.join("report/open-report.json"));
+    let all = fx.root.clone();
     let (mut n, mut failed) = (0, vec![]);
-    for c in all["cases"].as_array().unwrap() {
+    for (i, c) in all["cases"].as_array().unwrap().iter().enumerate() {
         let name = c["decide"].as_str().unwrap();
         let f: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join(format!("decide/{name}.json"))).unwrap(),
@@ -46,11 +44,14 @@ fn open_report_reproduces_the_host() {
         });
         let mut dd = vec![];
         diff("", &got, &c["expected"], &mut dd);
-        if !dd.is_empty() {
+        if !dd.is_empty() && blessing() {
+            fx.bless(Some(i), got);
+        } else if !dd.is_empty() {
             failed.push(format!("{name}: {}", dd.join("; ")));
         }
         n += 1;
     }
+    fx.save();
     for f in failed.iter().take(10) {
         eprintln!("FAIL {f}");
     }

@@ -1,7 +1,7 @@
-//! Golden size estimates (`fixtures/estimate-sizes/*.json`, from the host's real controller method).
+//! Golden size estimates (`fixtures/estimate-sizes/*.json`, `BLESS=1` rewrites `expected`).
 mod common;
 
-use common::diff;
+use common::{Fixture, blessing, diff};
 use fliks_engine_core::api::{EstimateSizesRequest, MediaInfo};
 use fliks_engine_core::decide::estimate_sizes;
 use serde_json::Value;
@@ -24,7 +24,11 @@ fn estimate_sizes_reproduces_expected() {
         let got = serde_json::to_value(estimate_sizes(&req)).unwrap();
         let mut d = vec![];
         diff("", &got, &f["expected"], &mut d);
-        if !d.is_empty() {
+        if !d.is_empty() && blessing() {
+            let mut fx = Fixture::load(&p);
+            fx.bless(None, got);
+            fx.save();
+        } else if !d.is_empty() {
             failed.push(format!("{name}\n  {}", d.join("\n  ")));
         }
         n += 1;

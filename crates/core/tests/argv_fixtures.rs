@@ -1,8 +1,9 @@
 //! Every `fixtures/argv/*.json` must give the host's argv element by element, or its error.
 mod argv_common;
+mod common;
 
 use argv_common::{first_diff, run};
-use serde_json::Value;
+use common::{Fixture, blessing};
 
 #[test]
 fn argv_matches_host() {
@@ -16,10 +17,15 @@ fn argv_matches_host() {
     assert!(!files.is_empty(), "no fixtures in {dir}");
     let mut failed = vec![];
     for f in &files {
-        let v: Value = serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap();
+        let mut fx = Fixture::load(f);
+        let v = fx.root.clone();
         let name = f.file_name().unwrap().to_string_lossy().into_owned();
         match run(&v) {
             Ok(got) if got == v["expected"] => {}
+            Ok(got) if blessing() => {
+                fx.bless(None, got);
+                fx.save();
+            }
             Ok(got) => failed.push(format!("{name}: {}", first_diff(&got, &v["expected"]))),
             Err(e) => failed.push(format!("{name}: {e}")),
         }

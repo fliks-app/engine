@@ -13,6 +13,3 @@ name = "fliks_engine_core"
 serde.workspace = true
 serde_json.workspace = true
 utoipa.workspace = true
-
-[dev-dependencies]
-insta = { version = "1", features = ["json", "glob"] }

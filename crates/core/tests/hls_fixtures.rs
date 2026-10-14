@@ -1,7 +1,7 @@
-//! Golden playlists (`fixtures/hls/*.json`, one host call each) and the `HLS_FUZZ_DIR` replay.
+//! Golden playlists (`fixtures/hls/*.json`, one call each; `BLESS=1` rewrites `expected`).
 mod common;
 
-use common::diff;
+use common::{Fixture, blessing, diff};
 use fliks_engine_core::api::{AudioPlan, VideoStreamInfo};
 use fliks_engine_core::decide::dolby_vision::{dv_standalone_codecs, dv_supplemental_codecs};
 use fliks_engine_core::hls::parse_source_fps;
@@ -209,39 +209,18 @@ fn hls_fixtures_reproduce_the_host() {
         if p.extension().is_none_or(|x| x != "json") {
             continue;
         }
-        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        if let Some(m) = check(&v) {
+        let mut fx = Fixture::load(&p);
+        if let Some(m) = check(&fx.root) {
+            if blessing() {
+                let got = run(s(&fx.root["fn"]), &fx.root["args"]);
+                fx.bless(None, json!({ "ok": got }));
+                fx.save();
+                n += 1;
+                continue;
+            }
             failed.push(format!("{}: {m}", p.file_name().unwrap().to_string_lossy()));
         }
         n += 1;
     }
     report("fixtures/hls", n, &failed);
-}
-
-/// No-op unless `HLS_FUZZ_DIR` holds `hls-*.ndjson` from the host harness.
-#[test]
-fn hls_fuzz_replay() {
-    let Ok(dir) = std::env::var("HLS_FUZZ_DIR") else {
-        return;
-    };
-    let (mut n, mut failed) = (0, vec![]);
-    for e in std::fs::read_dir(dir).unwrap() {
-        let p = e.unwrap().path();
-        let name = p.file_name().unwrap().to_string_lossy().into_owned();
-        if !(name.starts_with("hls-") && name.ends_with(".ndjson")) {
-            continue;
-        }
-        for line in std::fs::read_to_string(&p).unwrap().lines() {
-            let v: Value = serde_json::from_str(line).unwrap();
-            if let Some(m) = check(&v) {
-                failed.push(format!(
-                    "{name} #{} {}: {m}\n  args {}",
-                    v["i"], v["fn"], v["args"]
-                ));
-            }
-            n += 1;
-        }
-    }
-    eprintln!("hls fuzz: {n} inputs, {} mismatches", failed.len());
-    report("hls fuzz", n, &failed);
 }
