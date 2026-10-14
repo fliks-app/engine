@@ -249,7 +249,9 @@ fn live(args: &[String]) {
         for w in &window {
             m3u8.push_str(&format!("#EXTINF:2.000000,\nseg-{w:05}.{ext}\n"));
         }
-        std::fs::write(dir.join("index.m3u8"), m3u8).unwrap();
+        // Atomic like ffmpeg's playlist: a reader never sees it half-written.
+        std::fs::write(dir.join("index.m3u8.tmp"), m3u8).unwrap();
+        std::fs::rename(dir.join("index.m3u8.tmp"), dir.join("index.m3u8")).unwrap();
         std::thread::sleep(Duration::from_millis(300));
     }
 }

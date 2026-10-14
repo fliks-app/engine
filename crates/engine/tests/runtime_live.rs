@@ -398,17 +398,25 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
             json!(2)
         )
     );
-    let r = e
-        .get(
-            &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
-            "alice-jwt",
-            &[],
-        )
-        .await;
+    // A run counts as started when its first segment exists: the playlist follows it.
+    let mut text = String::new();
+    for _ in 0..100 {
+        let r = e
+            .get(
+                &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
+                "alice-jwt",
+                &[],
+            )
+            .await;
+        text = r.text();
+        if text.contains("seg-00003.m4s") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert!(
-        r.text().contains("seg-00003.m4s"),
-        "numbering continues: {}",
-        r.text()
+        text.contains("seg-00003.m4s"),
+        "numbering continues: {text}"
     );
 }
 
