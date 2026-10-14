@@ -4,7 +4,7 @@ Work the host asks for outside playback: one generic job system (`engine::jobs`)
 
 ## 1. Wire (`core::api::jobs`)
 
-- `POST /v1/jobs` `JobRequest { kind, media: MediaRef, priority?, force? }` -> `{ jobId }`. `kind` is tagged by `type`: `{ type: "Sprite", info: MediaInfo }`. An identical request (same `kind` and `media`, priority and `force` ignored) still queued or running answers its `jobId`: one run, one `BgJobDone`. 400 on a relative path, an unusable request (sprite without a positive `info.durationSeconds`) or before the first `PUT /v1/config`. [new]
+- `POST /v1/jobs` `JobRequest { kind, media: MediaRef, priority?, force? }` -> `{ jobId }`. `kind` is tagged by `type`: `{ type: "Sprite", info: MediaInfo }`. An identical request (same `kind` and `media`, priority and `force` ignored) still queued or running answers its `jobId`: one run, one `BgJobDone`. 400 on a relative path or an unusable request (sprite without a positive `info.durationSeconds`). [new]
 - `GET /v1/jobs` -> `[JobSnapshot]` (oldest first), `GET /v1/jobs/{id}` -> `JobSnapshot` or 404. `JobSnapshot { jobId, kind, mediaFileId, priority, state, pct, createdMs, startedMs?, endedMs?, result?, error? }`; `state`: `queued`, `running`, `paused` (every run it holds is preempted), `done`, `failed`, `cancelled`. Ended jobs stay listed: the last 200. [new]
 - `DELETE /v1/jobs/{id}`: 204 (a queued job leaves the queue, a running one is stopped through `proc` section 1's stop, an ended one is untouched), 404 when unknown. [new]
 - Events: `BgJobProgress { jobId, pct }` at most once per second per job while it runs (`pct` 0 to 100, f64); `BgJobDone { jobId, state, result?, error? }` once per job (`state` done/failed/cancelled; `result` on done, `error` otherwise). Results are data (`JobResult`, tagged by `type`): files a job writes stay in the engine's cache and are served by the data plane, never handed to the host as a path (M9: no shared filesystem). [new]
@@ -13,7 +13,7 @@ Work the host asks for outside playback: one generic job system (`engine::jobs`)
 ## 2. Queue and lifecycle
 
 - At most 2 jobs run at once (`SPRITE_CONCURRENCY` [ts:thumb:56]); the others wait in a queue ordered by `priority` (`high`, `normal` default, `low`), then arrival. [ts:thumb:245-270] (FIFO only there)
-- A job that writes files first checks the free space of the cache root's filesystem: below `streaming.jobMinFreeBytes` (default 1 GiB, 0 disables) it ends `failed` with `not enough disk space: <free> bytes free under <dir>, jobMinFreeBytes is <min>`. Checked when the job leaves the queue, not at `POST`. [new]
+- A job that writes files first checks the free space of the cache root's filesystem: below `streaming.jobMinFreeBytes` (default 1 GiB, 0 disables) it ends `failed` with `not enough disk space: <free> bytes free under <dir>, jobMinFreeBytes is <min>`. Checked once the job runs, before it writes (an existing sprite answered without a write skips it). [new]
 - Cancellation (DELETE, `POST /v1/invalidate` of its file, engine shutdown) stops the job's ffmpeg runs (SIGTERM, SIGKILL after 2 s), removes its temporary files and ends it `cancelled`. Shutdown awaits every job. [new]
 - Invalidate also deletes the file's engine sprite (`sprites/v1/<file>`). [new]
 
@@ -30,7 +30,7 @@ One budget for every ffmpeg the engine runs: playback (session runs, I-frame and
 ## 4. Background runs
 
 - Spawned through `proc::Ffmpeg` (own process group, kill-on-drop, `PR_SET_PDEATHSIG`) behind `ionice -c3 nice -n19` when both are on PATH (Linux). [ts:common/utils/spawn-priority.ts]
-- Every 200 ms: the slot's pause verdict is applied; `core::session::job_watch` (stderr lines and CPU time are progress, paused time exempt, `jobStallTimeoutMs`) kills a hung run, and a run past 30 s of unpaused wall time is killed. Either is a run failure (reason `stalled` / `timeout`). [ts:thumb:672-690,735-745]
+- Every 200 ms: the slot's pause verdict is applied; `core::session::job_watch` (stderr lines and CPU time are progress, paused time exempt, `jobStallTimeoutMs`) kills a hung run, and a run past 30 s of unpaused wall time is killed. Either is a run failure (`ffmpeg stalled` / `ffmpeg timed out`). [ts:thumb:672-690,735-745]
 
 ## 5. Sprite (`core::jobs::sprite`, `engine::jobs::sprite`)
 
@@ -39,7 +39,7 @@ Input: `media.path`, `info`. Output: `<cacheRoot>/sprites/v1/<mediaFileId>/sprit
 - Existing: without `force`, a readable `sprite.json` ends the job `done` at once with its contents. [ts:thumb:163-174]
 - Duration `d` = `info.durationSeconds`. Interval: `d < 300` -> 2, `d <= 3600` -> 5, `d <= 7200` -> 15, else 30. `count = ceil(d / interval)`, `columns = 10`, `rows = ceil(count / 10)`, `thumbWidth = 240`. [ts:thumb:285-287,780-785]
 - Seek offset = `input_seek_seconds(0, source_timeline(info))` (tile times count from the first frame); HDR = `video[0].colorTransfer` is `smpte2084` or `arib-std-b67`; crop = `video[0].crop`. [ts:thumb:139-150,43-47]
-- Frame `i` (0-based) at `i * interval + offset`, written to `frames/frame-<i+1, 4 digits>.jpg`, one ffmpeg each, `min(slots size, count)` workers. A failed frame is logged; at 5 failures the extraction stops; more than `count * 0.1` failures fail the job (`Too many frame extractions failed (<n>/<count>) — sprite would be mostly empty`). Missing frames are then filled from the nearest present one (lower first at equal distance) so the tiler's sequence has no gap. [ts:thumb:495-660]
+- Frame `i` (0-based) at `i * interval + offset`, written to `frames/frame-<i+1, 4 digits>.jpg`, one ffmpeg each, `min(slots size, count)` workers. A failed frame is logged; at 5 failures the extraction stops and the job fails (`Sprite aborted: <n> failures out of <m> attempts`); more than `count * 0.1` failures fail the job (`Too many frame extractions failed (<n>/<count>) — sprite would be mostly empty`). Missing frames are then filled from the nearest present one (lower first at equal distance) so the tiler's sequence has no gap. [ts:thumb:495-660]
 - Extractor (`pick_extractor`): darwin: VideoToolbox; linux: VAAPI on the detected render node when the host runs `vaapi` or `qsv` and there is no crop, QSV for a crop on a `qsv` host, CUDA on an `nvenc` host, else software; software whenever a playback run holds a slot (the GPU belongs to the transcode). [ts:ext/index.ts:20-75] [ts:thumb:103-113]
 - Argv per extractor: [ts:ext/sw.extractor.ts] [ts:ext/vaapi.extractor.ts] [ts:ext/qsv.extractor.ts] [ts:ext/cuda.extractor.ts] [ts:ext/videotoolbox.extractor.ts] [ts:ext/tonemap.ts]; seek printed as JS `String(x)`.
 - Tile: `-nostdin -hide_banner -loglevel error -start_number 1 -i <frames>/frame-%04d.jpg -vf tile=10x<rows> -q:v 5 -y <out>`. [ts:thumb:710-735]
@@ -51,11 +51,12 @@ Golden vectors: `fixtures/jobs/sprite/*.json` (layout, frame argv, tile argv, se
 
 ## 6. Adding a kind
 
-A variant of `core::api::JobKind` (and `JobResult` when it returns data), its pure part in `core::jobs`, a branch in `engine::jobs::run_kind` with `writes_files()`. The runner hands it a `Ctx`: `ffmpeg(argv)` (a background slot, pause, watchdog, stop on cancel), `progress(pct)`, `cancelled()`, `out_dir`.
+A variant of `core::api::JobKind` (and `JobResult` when it returns data), its validation in `engine::jobs::submit`, its pure part in `core::jobs`, a branch in `engine::jobs::run` calling its module. That module gets a `Ctx`: `ffmpeg(argv)` (a background slot, pause, watchdog, stop on cancel), `progress(pct)`, `cancelled()`, `check_disk(dir)` before writing under the engine cache, `media_path()`.
 
 ## 7. Deviations
 
 - Playback counts against the budget and preempts background runs; the TS pool held background work only, FIFO, with no pause. A shrunk budget pauses (TS: drains).
 - The sprite extractor follows the detected backend and render node (TS: `/dev/dri/renderD129`/`128` and `/dev/nvidiactl` existence, `THUMB_HWACCEL_DEVICE`); QSV crop only on a `qsv` host, nothing but software on Windows (as the TS).
+- An extraction stopped at 5 failures fails the job; the TS tiled what it had and backfilled the rest.
 - `thumbHeight` comes from the JPEG header, not `ffprobe`; per-run timeouts count unpaused time only; no global 10-minute sprite timeout (the watchdog covers hung runs).
 - Sprites live in the engine cache (`sprites/v1`), not `<cacheDir>/thumbnails`; the host's activity/command rows and `task.progress` become `BgJobProgress`/`BgJobDone`.

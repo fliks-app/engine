@@ -541,6 +541,61 @@ async fn subtitles_iframes_and_sprites() {
 
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn sprite_job_on_real_clips_is_served() {
+    // The tone-map chain's zscale keeps the height even (`h=-2`).
+    for (clip, h) in [(h264_clip(10), 135), (hevc_hdr_clip(), 136)] {
+        let p = play(clip).await;
+        let mut rx = p.e.rt.events.subscribe();
+        let r =
+            p.e.control(
+                "POST",
+                "/v1/jobs",
+                Some(json!({ "kind": { "type": "Sprite", "info": p.info },
+                    "media": { "mediaFileId": 1, "path": p.file } })),
+            )
+            .await;
+        let id = r.json()["jobId"].as_str().unwrap().to_string();
+        let done = loop {
+            match tokio::time::timeout(Duration::from_secs(120), rx.recv()).await {
+                Ok(Ok(EngineEvent::BgJobDone {
+                    job_id,
+                    state,
+                    result,
+                    error,
+                })) if job_id == id => {
+                    break (state, result, error);
+                }
+                Ok(_) => {}
+                Err(_) => panic!("no BgJobDone"),
+            }
+        };
+        let count = (p.info.duration_seconds.unwrap() / 2.0).ceil() as u32;
+        let meta = json!({ "interval": 2, "columns": 10, "thumbWidth": 240, "thumbHeight": h, "count": count });
+        let v = serde_json::to_value(&done).unwrap();
+        assert_eq!(
+            v,
+            json!(["done", { "type": "Sprite", "sprite": meta }, null]),
+            "{:?}",
+            p.file
+        );
+        let j =
+            p.e.get("/api/stream/1/thumbnails/sprite.json", "alice-jwt", &[])
+                .await;
+        assert_eq!((j.status, j.json()), (200, meta));
+        let jpg =
+            p.e.get("/api/stream/1/thumbnails/sprite.jpg", "alice-jwt", &[])
+                .await;
+        assert_eq!(jpg.status, 200);
+        assert_eq!(
+            fliks_engine_core::jobs::sprite::jpeg_size(&jpg.body),
+            Some((2400, h))
+        );
+        assert!(p.e.ffmpeg_pids().is_empty());
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn direct_play_byte_ranges_of_a_real_file() {
     let p = play(h264_clip(10)).await;
     let bytes = std::fs::read(&p.file).unwrap();
