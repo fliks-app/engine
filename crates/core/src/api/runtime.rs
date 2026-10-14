@@ -288,22 +288,21 @@ pub enum Track {
 
 /// `GET /v1/events` (SSE): the SSE event name is `type`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "type", rename_all_fields = "camelCase")]
+#[serde(tag = "type")]
 pub enum EngineEvent {
-    SessionOpened {
-        session: Box<SessionSnapshot>,
-    },
+    #[serde(rename_all = "camelCase")]
+    SessionOpened { session: Box<SessionSnapshot> },
     /// `stopped`, `expired`, `evicted`, `revoked`.
-    SessionEnded {
-        session_id: String,
-        reason: String,
-    },
+    #[serde(rename_all = "camelCase")]
+    SessionEnded { session_id: String, reason: String },
     /// The rung or hardware a session is served from changed.
+    #[serde(rename_all = "camelCase")]
     PipelineChanged {
         session_id: String,
         quality: String,
         hw_accel: HwAccel,
     },
+    #[serde(rename_all = "camelCase")]
     SegmentServed {
         session_id: String,
         track: Track,
@@ -317,6 +316,7 @@ pub enum EngineEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cmcd_raw: Option<String>,
     },
+    #[serde(rename_all = "camelCase")]
     JobStarted {
         job_key: String,
         media_file_id: u32,
@@ -324,12 +324,14 @@ pub enum EngineEvent {
         start_segment: u32,
         hw_accel: HwAccel,
     },
+    #[serde(rename_all = "camelCase")]
     JobEnded {
         job_key: String,
         state: JobState,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exit_code: Option<i32>,
     },
+    #[serde(rename_all = "camelCase")]
     HwFallback {
         job_key: String,
         from: HwAccel,
