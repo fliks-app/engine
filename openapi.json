@@ -1,0 +1,1264 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "fliks-engine",
+    "description": "fliks video engine: control plane, supervisor",
+    "license": {
+      "name": "AGPL-3.0-or-later",
+      "identifier": "AGPL-3.0-or-later"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/capabilities": {
+      "get": {
+        "tags": [],
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/config": {
+      "get": {
+        "tags": [],
+        "operationId": "get_config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineConfig"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "put_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EngineConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineConfig"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision lower than current"
+          }
+        }
+      }
+    },
+    "/v1/hello": {
+      "get": {
+        "tags": [],
+        "operationId": "hello",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Hello"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AudioStreamInfo": {
+        "type": "object",
+        "required": [
+          "streamIndex",
+          "codec",
+          "language"
+        ],
+        "properties": {
+          "audioDescription": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "bitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "channelLayout": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "codec": {
+            "type": "string"
+          },
+          "commentary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "endSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "isDefault": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "language": {
+            "type": "string"
+          },
+          "languageTag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sampleRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "startTimeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "streamIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AutoQualityMode": {
+        "type": "string",
+        "enum": [
+          "directplay",
+          "abr"
+        ]
+      },
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "hwAccel",
+          "encoders",
+          "decoders",
+          "tonemapAlgos",
+          "gpus",
+          "platform",
+          "pauseCapability"
+        ],
+        "properties": {
+          "decoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultGpu": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gpus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Gpu"
+            }
+          },
+          "hwAccel": {
+            "type": "string",
+            "description": "`vaapi` | `nvenc` | `qsv` | `amf` | `videotoolbox` | `none`"
+          },
+          "pauseCapability": {
+            "type": "string",
+            "description": "`signal` | `stdin` | `none`"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "tonemapAlgos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Chapter": {
+        "type": "object",
+        "required": [
+          "startSeconds",
+          "endSeconds"
+        ],
+        "properties": {
+          "endSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "startSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CodecCondition": {
+        "type": "object",
+        "required": [
+          "codec"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string"
+          },
+          "maxBitDepth": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxHeight": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxLevel": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxWidth": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "profiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CropInfo": {
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "x": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "y": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "DeviceProfile": {
+        "type": "object",
+        "description": "Mirrors `DeviceProfileDto`; bitrates and counts are f64 (JS numbers).",
+        "required": [
+          "directPlayProfiles"
+        ],
+        "properties": {
+          "appVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audioChannelsByCodec": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "codecConditions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CodecCondition"
+            }
+          },
+          "cropsBlackBarsLocally": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dedupesAudioByLanguage": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "deviceName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceType": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeviceType"
+              }
+            ]
+          },
+          "directPlayProfiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectPlayProfile"
+            }
+          },
+          "dolbyVisionProfiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "maxAudioChannels": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxStreamingBitrate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "needsHlsSubtitles": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "probesSegZero": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rejectCopy": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsAbr": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsDirectPlay": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsDolbyVision": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsHdr": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsHlsSubtitles": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsIFrameTrickPlay": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsImageSubtitles": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supportsMuxedAudioRendition": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "switchesDirectPlayAudio": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "systemName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tonemapsHdrLocally": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "useTs": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "useTsOnSingleAudio": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeviceType": {
+        "type": "string",
+        "enum": [
+          "mobile",
+          "desktop"
+        ]
+      },
+      "DirectPlayProfile": {
+        "type": "object",
+        "required": [
+          "containers",
+          "videoCodecs",
+          "audioCodecs"
+        ],
+        "properties": {
+          "audioCodecs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "videoCodecs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "EngineConfig": {
+        "type": "object",
+        "properties": {
+          "hostToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "hostUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Resolver callback base URL of the host.",
+            "default": null
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0,
+            "minimum": 0
+          },
+          "streaming": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StreamingConfig"
+              }
+            ],
+            "default": {
+              "autoCropEnabled": true,
+              "autoQualityMode": "directplay",
+              "gpuRenderNode": "auto",
+              "qsvPreset": "faster",
+              "segmentDuration": 3.0,
+              "subtitlePrewarm": "playback",
+              "throttleEnabled": true,
+              "throttleThresholdSeconds": 90.0,
+              "tonemapAlgo": "auto",
+              "tonemapCurve": "mobius"
+            }
+          }
+        }
+      },
+      "Gpu": {
+        "type": "object",
+        "required": [
+          "renderNode",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "renderNode": {
+            "type": "string"
+          }
+        }
+      },
+      "HdrFormat": {
+        "type": "string",
+        "enum": [
+          "HDR10",
+          "HLG"
+        ]
+      },
+      "HdrMetadata": {
+        "type": "object",
+        "required": [
+          "masteringDisplay",
+          "maxCll",
+          "maxFall"
+        ],
+        "properties": {
+          "masteringDisplay": {
+            "type": "string"
+          },
+          "maxCll": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "maxFall": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Hello": {
+        "type": "object",
+        "required": [
+          "engineVersion",
+          "protocolVersion",
+          "features",
+          "instanceId"
+        ],
+        "properties": {
+          "engineVersion": {
+            "type": "string"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Keyframe": {
+        "type": "object",
+        "required": [
+          "pts",
+          "dts"
+        ],
+        "properties": {
+          "dts": {
+            "type": "number",
+            "format": "double"
+          },
+          "pts": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "MediaInfo": {
+        "type": "object",
+        "required": [
+          "video",
+          "audio",
+          "subtitles"
+        ],
+        "properties": {
+          "audio": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudioStreamInfo"
+            }
+          },
+          "chapters": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            }
+          },
+          "durationSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "formatBitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "formatName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "formatStartSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bumped when probing changes what it records; triggers a re-probe.",
+            "minimum": 0
+          },
+          "subtitles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubtitleStreamInfo"
+            }
+          },
+          "timestampBreakSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Absent until the background scan ran; `null` when there is no break."
+          },
+          "video": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VideoStreamInfo"
+            }
+          }
+        }
+      },
+      "QsvPreset": {
+        "type": "string",
+        "enum": [
+          "veryfast",
+          "faster",
+          "fast",
+          "medium",
+          "slow",
+          "slower",
+          "veryslow"
+        ]
+      },
+      "SourceScan": {
+        "type": "object",
+        "description": "Mirrors `SourceScan` (source-scan.ts); `audioConfigChanges` is keyed by audio stream index.",
+        "required": [
+          "keyframes",
+          "end",
+          "audioConfigChanges"
+        ],
+        "properties": {
+          "audioConfigChanges": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "breakSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "end": {
+            "type": "number",
+            "format": "double"
+          },
+          "keyframes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Keyframe"
+            }
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "StreamingConfig": {
+        "type": "object",
+        "description": "The `streaming_*` settings, already resolved by the host. Defaults match the host's.",
+        "properties": {
+          "autoCropEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "autoQualityMode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutoQualityMode"
+              }
+            ],
+            "default": "directplay"
+          },
+          "cacheMaxBytes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Absent: the engine default.",
+            "default": null
+          },
+          "cacheTtlMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Absent: the engine default.",
+            "default": null
+          },
+          "ffmpegSlots": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Absent: derived from cgroup/CPU budget.",
+            "default": null,
+            "minimum": 0
+          },
+          "gpuRenderNode": {
+            "type": "string",
+            "description": "`auto` or a `/dev/dri/renderD*` path.",
+            "default": "auto"
+          },
+          "qsvPreset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QsvPreset"
+              }
+            ],
+            "default": "faster"
+          },
+          "segmentDuration": {
+            "type": "number",
+            "format": "double",
+            "default": 3.0
+          },
+          "subtitlePrewarm": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SubtitlePrewarm"
+              }
+            ],
+            "default": "playback"
+          },
+          "throttleEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "throttleThresholdSeconds": {
+            "type": "number",
+            "format": "double",
+            "default": 90.0
+          },
+          "tonemapAlgo": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TonemapAlgo"
+              }
+            ],
+            "default": "auto"
+          },
+          "tonemapCurve": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TonemapCurve"
+              }
+            ],
+            "default": "mobius"
+          }
+        }
+      },
+      "SubtitlePrewarm": {
+        "type": "string",
+        "enum": [
+          "off",
+          "playback",
+          "import"
+        ]
+      },
+      "SubtitleStreamInfo": {
+        "type": "object",
+        "required": [
+          "streamIndex",
+          "codec",
+          "language",
+          "forced",
+          "hearingImpaired",
+          "isImageBased"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string"
+          },
+          "forced": {
+            "type": "boolean"
+          },
+          "hearingImpaired": {
+            "type": "boolean"
+          },
+          "isImageBased": {
+            "type": "boolean",
+            "description": "Bitmap subtitles (PGS, VOBSUB, DVB) need burn-in."
+          },
+          "language": {
+            "type": "string"
+          },
+          "languageTag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streamIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TonemapAlgo": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "opencl",
+          "vaapi",
+          "qsv"
+        ]
+      },
+      "TonemapCurve": {
+        "type": "string",
+        "enum": [
+          "hable",
+          "mobius",
+          "reinhard"
+        ]
+      },
+      "VideoStreamInfo": {
+        "type": "object",
+        "required": [
+          "streamIndex",
+          "codec"
+        ],
+        "properties": {
+          "avgFrameRate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bitDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "bitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "codec": {
+            "type": "string"
+          },
+          "colorPrimaries": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorRange": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorSpace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorTransfer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "crop": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CropInfo"
+              }
+            ]
+          },
+          "displayAspectRatio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dvBlPresent": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dvBlSignalCompatId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "dvElPresent": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dvLevel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "dvProfile": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "dvRpuPresent": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "endSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "firstFrameSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "frameRate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hdr10Plus": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hdrFormat": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HdrFormat"
+              }
+            ]
+          },
+          "hdrMetadata": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HdrMetadata"
+              }
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "pixelFormat": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reorderFrames": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "startTimeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "streamIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}
