@@ -71,13 +71,13 @@ fn assign_to_job(child: &Child) {
         );
         job as usize
     });
-    if let Some(h) = child.raw_handle() {
-        if unsafe { AssignProcessToJobObject(job as _, h as _) } == 0 {
-            tracing::warn!(
-                "job object assign failed: {}",
-                std::io::Error::last_os_error()
-            );
-        }
+    if let Some(h) = child.raw_handle()
+        && unsafe { AssignProcessToJobObject(job as _, h as _) } == 0
+    {
+        tracing::warn!(
+            "job object assign failed: {}",
+            std::io::Error::last_os_error()
+        );
     }
 }
 

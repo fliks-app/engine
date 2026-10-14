@@ -29,7 +29,7 @@ pub fn random_hex(bytes: usize) -> String {
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "fliks-engine", version = env!("CARGO_PKG_VERSION")),
+    info(title = "fliks-engine", version = "1"),
     paths(hello, capabilities, get_config, put_config),
     components(schemas(MediaInfo, DeviceProfile, SourceScan)),
     modifiers(&Bearer)
@@ -135,4 +135,17 @@ async fn put_config(
     }
     *cur = new.clone();
     Ok(Json(new))
+}
+
+#[cfg(test)]
+mod openapi_version {
+    // The spec version tracks the protocol, not the crate, so release bumps don't drift openapi.json.
+    #[test]
+    fn matches_protocol() {
+        use utoipa::OpenApi;
+        assert_eq!(
+            super::ApiDoc::openapi().info.version,
+            fliks_engine_core::api::PROTOCOL_VERSION.to_string()
+        );
+    }
 }
