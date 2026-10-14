@@ -2470,6 +2470,14 @@
             "type": "string",
             "description": "`decision.response.playUrl` with `sid=` appended."
           },
+          "playbackClockOffsetS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Source container time less the served timeline's: add it to a container time (an EDL\nrange) to reach the player's clock; 0 on Direct Play."
+          },
           "profileHash": {
             "type": [
               "string",
@@ -2477,8 +2485,59 @@
             ],
             "description": "Cache profile hash; absent on Direct Play."
           },
+          "qoePipeline": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QoePipeline"
+              }
+            ]
+          },
           "sessionId": {
             "type": "string"
+          },
+          "tonemapAlgo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The tone-map step the session runs: `vaapi`, `qsv`, `opencl`, `vulkan`, `cuda`,\n`videotoolbox` or `cpu`; absent without one."
+          },
+          "tonemapCurve": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TonemapCurve",
+                "description": "The curve that tone-map applies; absent when it takes none."
+              }
+            ]
+          }
+        }
+      },
+      "PipelineStage": {
+        "type": "object",
+        "required": [
+          "hw",
+          "kind"
+        ],
+        "properties": {
+          "hw": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`qsv`, `vaapi`, `nvenc`, `amf`, `videotoolbox` or `cpu`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Decoder or encoder id."
           }
         }
       },
@@ -2840,6 +2899,158 @@
           },
           "ok": {
             "type": "boolean"
+          }
+        }
+      },
+      "QoeOutput": {
+        "type": "object",
+        "properties": {
+          "bitrate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "codec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hdr": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HdrFormat"
+              }
+            ]
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The pinned rung; `null` on `auto`."
+          },
+          "requested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the client asked for: `auto` or a rung name."
+          }
+        }
+      },
+      "QoePipeline": {
+        "type": "object",
+        "description": "What the server does to the session's stream, for QoE reports. `null` members: not\nre-encoded (or, for `audioTranscode`, Direct Play).",
+        "properties": {
+          "audioTranscode": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "burnIn": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BurnInKind"
+              }
+            ]
+          },
+          "crop": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "decode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              }
+            ]
+          },
+          "encode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PipelineStage"
+              }
+            ]
+          },
+          "output": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QoeOutput"
+              }
+            ]
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QoeSource"
+              }
+            ]
+          },
+          "tonemap": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As `tonemapAlgo`."
+          }
+        }
+      },
+      "QoeSource": {
+        "type": "object",
+        "properties": {
+          "codec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hdr": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HDR10`, `HLG` or `DV`."
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

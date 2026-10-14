@@ -1,6 +1,6 @@
 //! Wire types of the session runtime (M3): sessions, jobs, cache, revocation, events and the
 //! host resolver contract. Times are f64 epoch milliseconds (no 64-bit integers on the wire).
-use super::{DecideRequest, Decision, HwAccel};
+use super::{DecideRequest, Decision, HdrFormat, HwAccel, TonemapCurve};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
@@ -113,6 +113,67 @@ pub struct OpenSessionResponse {
     pub play_path: String,
     pub decision: Decision,
     pub hints: Hints,
+    /// Source container time less the served timeline's: add it to a container time (an EDL
+    /// range) to reach the player's clock; 0 on Direct Play.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playback_clock_offset_s: Option<f64>,
+    /// The tone-map step the session runs: `vaapi`, `qsv`, `opencl`, `vulkan`, `cuda`,
+    /// `videotoolbox` or `cpu`; absent without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tonemap_algo: Option<String>,
+    /// The curve that tone-map applies; absent when it takes none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tonemap_curve: Option<TonemapCurve>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qoe_pipeline: Option<QoePipeline>,
+}
+
+/// What the server does to the session's stream, for QoE reports. `null` members: not
+/// re-encoded (or, for `audioTranscode`, Direct Play).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QoePipeline {
+    pub source: Option<QoeSource>,
+    pub output: Option<QoeOutput>,
+    pub decode: Option<PipelineStage>,
+    pub encode: Option<PipelineStage>,
+    /// As `tonemapAlgo`.
+    pub tonemap: Option<String>,
+    pub burn_in: Option<BurnInKind>,
+    pub crop: Option<bool>,
+    pub audio_transcode: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QoeSource {
+    pub codec: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// `HDR10`, `HLG` or `DV`.
+    pub hdr: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QoeOutput {
+    pub codec: Option<String>,
+    pub hdr: Option<HdrFormat>,
+    /// The pinned rung; `null` on `auto`.
+    pub quality: Option<String>,
+    pub bitrate: Option<u32>,
+    /// What the client asked for: `auto` or a rung name.
+    pub requested: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineStage {
+    pub hw: bool,
+    /// `qsv`, `vaapi`, `nvenc`, `amf`, `videotoolbox` or `cpu`.
+    pub kind: String,
+    /// Decoder or encoder id.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

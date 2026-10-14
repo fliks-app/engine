@@ -611,6 +611,13 @@ impl Runtime {
             self.prewarm(&session, q.as_deref(), session.req.start_at_s);
         }
         let info = &session.req.decide.info;
+        let report = core_session::open_report(
+            &session.req.decide,
+            &decision,
+            &config.streaming,
+            &caps,
+            session.req.burn_in.as_ref().map(|b| b.kind),
+        );
         Ok(OpenSessionResponse {
             session_id: sid.clone(),
             profile_hash: (session.plan.kind != SessionKind::Directplay)
@@ -623,6 +630,10 @@ impl Runtime {
                 scan_missing: session.req.decide.scan.is_none(),
             },
             decision,
+            playback_clock_offset_s: Some(report.playback_clock_offset_s),
+            tonemap_algo: report.tonemap_algo,
+            tonemap_curve: report.tonemap_curve,
+            qoe_pipeline: Some(report.qoe_pipeline),
         })
     }
 

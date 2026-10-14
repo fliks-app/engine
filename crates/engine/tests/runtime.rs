@@ -554,6 +554,12 @@ async fn dolby_vision_remux_carries_its_codec_strings() {
             "{name}"
         );
         assert_eq!(s["decision"]["response"]["dolbyVision"], true, "{name}");
+        assert_eq!(s["qoePipeline"]["source"]["hdr"], "DV", "{name}");
+        assert!(
+            s["qoePipeline"]["output"].is_null(),
+            "{name}: not re-encoded"
+        );
+        assert!(s["playbackClockOffsetS"].is_number(), "{name}");
         let sid = s["sessionId"].as_str().unwrap();
         let m = e
             .get(

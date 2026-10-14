@@ -5,6 +5,7 @@ mod filters;
 mod output;
 
 pub use encode::{Encoded, encode};
+pub(crate) use encode::{ReportNeeds, stage_report};
 pub use encoders::encoder_args;
 pub use output::{file, iframe, live, remux, vod};
 

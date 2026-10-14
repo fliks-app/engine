@@ -273,14 +273,17 @@ struct DecodeNeeds<'a> {
     opencl_tonemap: bool,
 }
 
-/// How the source reaches memory, plus the tone-map device bridges.
-/// [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:660-882]
-fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) -> DecodeStage {
+/// The decoder a resolved pipeline reads the source with. [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:660-705]
+fn pick_decoder(
+    p: &Pipeline,
+    source_video_codec: Option<&str>,
+    depth: u32,
+    caps: &HostCaps,
+) -> &'static Decoder {
     let hw = p.effective;
-    let codec = n.source_video_codec.and_then(normalise_source_codec);
-    let reported = n.source_video_codec.is_some_and(|c| !c.is_empty());
-    let amf_native = p.amf_opencl_available && hw == HwAccel::Amf;
-    let decoder = match codec {
+    let codec = source_video_codec.and_then(normalise_source_codec);
+    let reported = source_video_codec.is_some_and(|c| !c.is_empty());
+    match codec {
         Some(c) if p.qsv_native => find(&format!(
             "{}{}",
             codec_name(c),
@@ -290,10 +293,13 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
                 "_qsv_decode"
             }
         )),
-        Some(c) if amf_native => find(&format!("{}_d3d11va_native_decode", codec_name(c))),
+        Some(c) if p.amf_opencl_available && hw == HwAccel::Amf => {
+            find(&format!("{}_d3d11va_native_decode", codec_name(c)))
+        }
+        // A reported codec without a HW decoder here decodes on the CPU.
         _ => resolve_decoder(
             codec.unwrap_or(VideoCodec::H264),
-            n.source_bit_depth,
+            depth,
             if reported && codec.is_none() {
                 HwAccel::None
             } else {
@@ -301,7 +307,83 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
             },
             caps,
         ),
-    };
+    }
+}
+
+/// `tonemap_cuda` on NVENC, else the OpenCL bounce of NVENC/AMF and of no-base or RPU sources.
+/// [ts:backend/src/modules/streaming/transcoding/encode-pipeline.ts:31-53]
+fn tonemap_bounces(
+    tonemap: bool,
+    hw: HwAccel,
+    dv_no_base: bool,
+    dv_apply_rpu: bool,
+    caps: &HostCaps,
+) -> (bool, bool) {
+    let cuda = tonemap && hw == HwAccel::Nvenc && caps.probe("cuda");
+    let opencl = tonemap
+        && !cuda
+        && caps.probe("opencl")
+        && (matches!(hw, HwAccel::Nvenc | HwAccel::Amf)
+            || dv_no_base
+            || (dv_apply_rpu && hw == HwAccel::None));
+    (cuda, opencl)
+}
+
+/// What a session's pipeline reports: its tone-map step, whether that step takes a curve, and
+/// its decoder. [ts:backend/src/modules/streaming/transcoding/encode-pipeline.ts:306-358]
+pub(crate) struct StageReport {
+    pub tonemap: Option<&'static str>,
+    pub curve_applies: bool,
+    pub decoder_hw: HwAccel,
+    pub decoder_id: &'static str,
+}
+
+pub(crate) struct ReportNeeds<'a> {
+    pub tonemap: bool,
+    pub dv_no_base: bool,
+    pub dv_apply_rpu: bool,
+    /// Any burn-in.
+    pub burn_in: bool,
+    pub source_video_codec: Option<&'a str>,
+    pub source_bit_depth: u32,
+    /// No-base DV reshaped to HDR10: `apply_dovi` runs no curve.
+    pub hdr10_target: bool,
+}
+
+pub(crate) fn stage_report(p: &Pipeline, n: &ReportNeeds, caps: &HostCaps) -> StageReport {
+    let hw = p.effective;
+    let (cuda, opencl) = tonemap_bounces(n.tonemap, hw, n.dv_no_base, n.dv_apply_rpu, caps);
+    let codec = n.source_video_codec.and_then(normalise_source_codec);
+    let tonemap = n.tonemap.then(|| match hw {
+        HwAccel::Qsv | HwAccel::Vaapi if p.use_vaapi_tonemap => "vaapi",
+        HwAccel::Qsv | HwAccel::Vaapi => match p.path {
+            TonemapPath::Vaapi => "vaapi",
+            TonemapPath::Opencl => "opencl",
+            TonemapPath::Qsv => "qsv",
+            TonemapPath::Vulkan => "vulkan",
+        },
+        _ if cuda => "cuda",
+        _ if opencl || (hw == HwAccel::Amf && p.amf_opencl_available) => "opencl",
+        HwAccel::Videotoolbox if !n.burn_in && vt_surface_decodable(codec, caps) => "videotoolbox",
+        _ => "cpu",
+    });
+    let decoder = pick_decoder(p, n.source_video_codec, n.source_bit_depth, caps);
+    StageReport {
+        tonemap,
+        curve_applies: !n.hdr10_target
+            && matches!(tonemap, Some("opencl" | "vulkan" | "cpu" | "cuda")),
+        decoder_hw: decoder.hw(),
+        decoder_id: decoder.id,
+    }
+}
+
+/// How the source reaches memory, plus the tone-map device bridges.
+/// [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:660-882]
+fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) -> DecodeStage {
+    let hw = p.effective;
+    let codec = n.source_video_codec.and_then(normalise_source_codec);
+    let amf_native = p.amf_opencl_available && hw == HwAccel::Amf;
+    let decoder = pick_decoder(p, n.source_video_codec, n.source_bit_depth, caps);
     let surface = decoder.surface();
     let mut args = decoder.input_args(dev);
     // A CPU decoder inits no device, yet the qsv encoder's filters need one.
@@ -474,13 +556,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     };
     let hw = p.effective;
     let use_vulkan = p.path == TonemapPath::Vulkan && hw == HwAccel::Vaapi;
-    let cuda = o.tonemap && hw == HwAccel::Nvenc && caps.probe("cuda");
-    let opencl = o.tonemap
-        && !cuda
-        && caps.probe("opencl")
-        && (matches!(hw, HwAccel::Nvenc | HwAccel::Amf)
-            || dv_no_base
-            || (dv_apply_rpu && hw == HwAccel::None));
+    let (cuda, opencl) = tonemap_bounces(o.tonemap, hw, dv_no_base, dv_apply_rpu, caps);
 
     let early = o.early;
     let preset = if early {
