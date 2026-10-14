@@ -424,6 +424,11 @@ pub enum EngineEvent {
         capacity_token: String,
         /// Position in the upstreams of the open that started the session.
         upstream: u32,
+        /// URL of that upstream, so a host that lost the open's list can still place it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upstream_url: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upstream_priority: Option<i32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

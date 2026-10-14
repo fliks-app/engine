@@ -574,6 +574,8 @@ fn attempt(rt: &Runtime, pipe: &Pipe, upstream: usize, error: Option<String>) {
     rt.events.emit(EngineEvent::LiveAttempt {
         capacity_token: pipe.capacity_token.clone(),
         upstream: upstream as u32,
+        upstream_url: Some(pipe.upstreams[upstream].url.clone()),
+        upstream_priority: Some(pipe.upstreams[upstream].priority),
         error,
         probe,
     });
