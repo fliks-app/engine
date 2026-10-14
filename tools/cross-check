@@ -1,7 +1,20 @@
-#!/bin/sh
+#!/bin/bash
 # Clippy for the Windows and macOS targets without their toolchains: catches cfg-gated compile errors
-# before CI. Tests for those platforms still only run in CI.
-set -e
+# before CI. Tests for those platforms still only run in CI. The C of `ring` (TLS) is cross-compiled
+# with `zig cc` (on PATH, else fetched by mise).
+set -euo pipefail
+zig=$(command -v zig || mise exec zig@0.14.1 -- sh -c 'command -v zig')
+bin=$(mktemp -d)
+trap 'rm -rf "$bin"' EXIT
+for t in x86_64-pc-windows-gnu:x86_64-windows-gnu aarch64-apple-darwin:aarch64-macos; do
+  rust=${t%%:*} triple=${t#*:} var=${rust//-/_}
+  # cc-rs adds clang target flags zig reads its own way.
+  printf '#!/bin/bash\na=(); skip=0\nfor x in "$@"; do\n  if [ $skip = 1 ]; then skip=0; continue; fi\n  case $x in --target=*) ;; -arch) skip=1 ;; *) a+=("$x") ;; esac\ndone\nexec %s cc -target %s "${a[@]}"\n' \
+    "$zig" "$triple" > "$bin/cc-$rust"
+  printf '#!/bin/sh\nexec %s ar "$@"\n' "$zig" > "$bin/ar-$rust"
+  chmod +x "$bin/cc-$rust" "$bin/ar-$rust"
+  export "CC_$var=$bin/cc-$rust" "AR_$var=$bin/ar-$rust"
+done
 for t in x86_64-pc-windows-gnu aarch64-apple-darwin; do
   rustup target list --installed | grep -qx "$t" || rustup target add "$t"
   echo "== $t"

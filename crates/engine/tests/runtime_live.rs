@@ -845,12 +845,8 @@ async fn direct_tees_one_upstream_and_packages_a_manifest() {
     assert!(e.ffmpeg_pids().is_empty(), "direct runs no ffmpeg");
 
     // A playlist behind a stream's content type, or saying so, is packaged instead.
-    for (ch, path) in [("10", "sniff.ts"), ("11", "list.m3u8"), ("12", "https")] {
-        let url = if path == "https" {
-            "https://up.example/x.ts".into()
-        } else {
-            format!("{up}/{path}")
-        };
+    for (ch, path) in [("10", "sniff.ts"), ("11", "list.m3u8")] {
+        let url = format!("{up}/{path}");
         let m = open(
             &e,
             open_req(ch, vec![upstream(&url, 0)], direct.clone(), "alice", ch),

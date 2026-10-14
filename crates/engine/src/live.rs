@@ -19,6 +19,7 @@ use fliks_engine_core::api::{
 use fliks_engine_core::args::{self, LiveArgs};
 use fliks_engine_core::live::{self as core_live, Failover};
 use http_body_util::{BodyExt, Empty};
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use serde::Deserialize;
@@ -69,7 +70,33 @@ pub struct Live {
     /// Key -> the in-flight start, so concurrent opens share one attempt and its outcome.
     opening: Mutex<HashMap<String, watch::Receiver<Outcome>>>,
     seq: AtomicU64,
-    client: Client<HttpConnector, Empty<Bytes>>,
+    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+}
+
+/// http and https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them).
+fn https() -> HttpsConnector<HttpConnector> {
+    let tls = HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .unwrap_or_else(|e| {
+            tracing::warn!("no root certificates ({e}): https upstreams will fail");
+            let roots = rustls::RootCertStore::empty();
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            HttpsConnectorBuilder::new().with_tls_config(config)
+        });
+    tls.https_or_http().enable_http1().build()
+}
+
+/// An error with its causes: hyper's own text hides a refused certificate.
+fn causes(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut src = e.source();
+    while let Some(s) = src {
+        out = format!("{out}: {s}");
+        src = s.source();
+    }
+    out
 }
 
 impl Default for Live {
@@ -78,7 +105,7 @@ impl Default for Live {
             reg: Default::default(),
             opening: Default::default(),
             seq: AtomicU64::new(0),
-            client: Client::builder(TokioExecutor::new()).build_http(),
+            client: Client::builder(TokioExecutor::new()).build(https()),
         }
     }
 }
@@ -671,7 +698,7 @@ async fn highest_segment(dir: &Path) -> Option<u32> {
     top
 }
 
-/// A GET that follows up to 5 plain-HTTP redirects; `Err` is the reason to record.
+/// A GET (http or https) following up to 5 redirects; `Err` is the reason to record.
 async fn http_get(
     rt: &Runtime,
     u: &fliks_engine_core::api::LiveUpstream,
@@ -693,12 +720,7 @@ async fn http_get(
             b = b.header(k, v);
         }
         let req = b.body(Empty::new()).map_err(|e| e.to_string())?;
-        let res = rt
-            .live
-            .client
-            .request(req)
-            .await
-            .map_err(|e| e.to_string())?;
+        let res = rt.live.client.request(req).await.map_err(|e| causes(&e))?;
         let status = res.status();
         if status.is_redirection()
             && let Some(loc) = res
@@ -710,13 +732,12 @@ async fn http_get(
                 let uri: hyper::Uri = url
                     .parse()
                     .map_err(|e: hyper::http::uri::InvalidUri| e.to_string())?;
-                format!("http://{}{loc}", uri.authority().map_or("", |a| a.as_str()))
+                let scheme = uri.scheme_str().unwrap_or("http");
+                let host = uri.authority().map_or("", |a| a.as_str());
+                format!("{scheme}://{host}{loc}")
             } else {
                 loc.to_string()
             };
-            if !url.to_ascii_lowercase().starts_with("http://") {
-                return Err(format!("redirected to {url}"));
-            }
             continue;
         }
         if !status.is_success() {
@@ -733,19 +754,10 @@ async fn http_get(
 /// Opens the shared upstream of a direct pipe and tees it to the viewers. [ts:svc:929-999]
 async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     let u = &pipe.upstreams[i];
-    if !u.url.to_ascii_lowercase().starts_with("http://") {
-        let mut m = pipe.m.lock().unwrap();
-        m.not_streamable = true;
-        m.last_error = Some("not streamable directly (no TLS client)".into());
-        return false;
-    }
     let res = match tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, http_get(rt, u)).await {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
-            let mut m = pipe.m.lock().unwrap();
-            // A redirect to https cannot be teed: package it instead.
-            m.not_streamable = e.starts_with("redirected to");
-            m.last_error = Some(e);
+            pipe.m.lock().unwrap().last_error = Some(e);
             return false;
         }
         Err(_) => {
