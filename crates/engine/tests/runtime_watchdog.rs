@@ -146,9 +146,12 @@ async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
     e.rt.stop(&sid, "stopped").await;
     // A request racing the end of its session registers a run nobody owns.
     e.rt.prewarm_remux(&s, 0.0);
-    until("the orphan run", 10, || e.ffmpeg_pids().len() == 1).await;
+    until("the orphan run", 10, || {
+        e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
+    })
+    .await;
     e.rt.gc_tick().await;
-    assert!(e.ffmpeg_pids().is_empty());
+    gone(&e, "the reaped orphan").await;
     assert!(e.rt.job(&s.key(JobKind::Remux)).is_none());
 }
 
@@ -159,7 +162,10 @@ async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_r
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
+    until("the run", 10, || {
+        e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
+    })
+    .await;
     let first = e.rt.job(&s.key(JobKind::Remux)).unwrap();
     // 1 s of silence, then the polite stop is ignored and the 2 s grace ends in a kill.
     until("the stall kill", 10, || !first.producing()).await;
@@ -193,7 +199,10 @@ async fn a_run_burning_cpu_without_output_is_not_killed_until_it_goes_idle() {
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
+    until("the run", 10, || {
+        e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
+    })
+    .await;
     let job = e.rt.job(&s.key(JobKind::Remux)).unwrap();
     tokio::time::sleep(Duration::from_millis(3000)).await;
     assert!(
@@ -244,7 +253,10 @@ async fn an_early_companion_that_outlives_its_media_time_is_killed() {
     let mut ev = e.rt.events.subscribe();
     let sid = open(&e, &file, resume()).await;
     let s = e.rt.peek(&sid).unwrap();
-    until("both runs", 10, || e.ffmpeg_pids().len() == 2).await;
+    until("both runs", 10, || {
+        e.ffmpeg_pids().len() == 2 && e.rt.job(&s.key(JobKind::Early)).is_some()
+    })
+    .await;
     let early = e.rt.job(&s.key(JobKind::Early)).unwrap();
     // 2 segments + 1 s of media, then the 1 s grace.
     until("the early kill", 20, || !early.producing()).await;
