@@ -289,3 +289,17 @@ fn every_wire_key_is_in_its_schema() {
     assert!(all.is_empty(), "schemas without a wire check: {all:?}");
     assert!(errs.is_empty(), "{}", errs.join("\n"));
 }
+
+#[test]
+fn operation_ids_are_unique() {
+    let mut seen = std::collections::HashSet::new();
+    for (path, item) in doc()["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            let id = op["operationId"].as_str().unwrap();
+            assert!(
+                seen.insert(id),
+                "duplicate operationId {id} ({method} {path})"
+            );
+        }
+    }
+}

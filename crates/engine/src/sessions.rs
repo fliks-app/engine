@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 type S = State<Arc<AppState>>;
 
-#[utoipa::path(post, path = "/v1/sessions", request_body = OpenSessionRequest, responses(
+#[utoipa::path(post, path = "/v1/sessions", operation_id = "open_session", request_body = OpenSessionRequest, responses(
     (status = 200, body = OpenSessionResponse),
     (status = 400, description = "no config set yet, or an invalid ownerId/path"),
     (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
@@ -40,13 +40,13 @@ pub struct ListQuery {
     media_file_id: Option<u32>,
 }
 
-#[utoipa::path(get, path = "/v1/sessions", params(ListQuery),
+#[utoipa::path(get, path = "/v1/sessions", operation_id = "list_sessions", params(ListQuery),
     responses((status = 200, body = Vec<SessionSnapshot>)))]
 pub async fn list(State(s): S, Query(q): Query<ListQuery>) -> Json<Vec<SessionSnapshot>> {
     Json(s.rt.list(q.owner_id.as_deref(), q.media_file_id))
 }
 
-#[utoipa::path(get, path = "/v1/sessions/{sid}", responses(
+#[utoipa::path(get, path = "/v1/sessions/{sid}", operation_id = "get_session", responses(
     (status = 200, body = SessionSnapshot), (status = 404, description = "unknown or ended session")))]
 pub async fn get_one(State(s): S, Path(sid): Path<String>) -> Response {
     match s.rt.peek(&sid) {
@@ -61,7 +61,7 @@ pub struct DeleteQuery {
     reason: Option<String>,
 }
 
-#[utoipa::path(delete, path = "/v1/sessions/{sid}", params(DeleteQuery),
+#[utoipa::path(delete, path = "/v1/sessions/{sid}", operation_id = "delete_session", params(DeleteQuery),
     responses((status = 204, description = "gone (idempotent)")))]
 pub async fn delete(
     State(s): S,
@@ -73,7 +73,7 @@ pub async fn delete(
     StatusCode::NO_CONTENT
 }
 
-#[utoipa::path(post, path = "/v1/sessions/{sid}/heartbeat", request_body = HeartbeatRequest, responses(
+#[utoipa::path(post, path = "/v1/sessions/{sid}/heartbeat", operation_id = "heartbeat_session", request_body = HeartbeatRequest, responses(
     (status = 200, body = HeartbeatResponse), (status = 403, description = "not the session's owner")))]
 pub async fn heartbeat(
     State(s): S,
@@ -93,7 +93,7 @@ pub async fn heartbeat(
     .into_response()
 }
 
-#[utoipa::path(post, path = "/v1/sessions/{sid}/command", request_body = SessionCommand, responses(
+#[utoipa::path(post, path = "/v1/sessions/{sid}/command", operation_id = "command_session", request_body = SessionCommand, responses(
     (status = 204, description = "done"), (status = 404, description = "unknown session"),
     (status = 409, description = "no running job, or the host cannot pause ffmpeg")))]
 pub async fn command(
@@ -137,7 +137,7 @@ pub async fn invalidate(State(s): S, Json(r): Json<InvalidateRequest>) -> Json<I
     })
 }
 
-#[utoipa::path(get, path = "/v1/cache", responses((status = 200, body = CacheSummary)))]
+#[utoipa::path(get, path = "/v1/cache", operation_id = "get_cache", responses((status = 200, body = CacheSummary)))]
 pub async fn cache(State(s): S) -> Json<CacheSummary> {
     Json(s.rt.cache_summary().await)
 }
@@ -149,7 +149,7 @@ pub struct CacheQuery {
     owner_id: Option<String>,
 }
 
-#[utoipa::path(delete, path = "/v1/cache", params(CacheQuery),
+#[utoipa::path(delete, path = "/v1/cache", operation_id = "delete_cache", params(CacheQuery),
     responses((status = 200, body = CacheDeleteResult, description = "live entries are kept")))]
 pub async fn cache_delete(State(s): S, Query(q): Query<CacheQuery>) -> Json<CacheDeleteResult> {
     Json(CacheDeleteResult {
