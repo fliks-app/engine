@@ -1,33 +1,11 @@
+mod common;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use fliks_engine::hw::{Hw, Snapshot};
-use fliks_engine_core::api::{HwAccel, Platform};
-use fliks_engine_core::hw::Detected;
+use common::cpu_host;
 use http_body_util::BodyExt;
-use std::sync::Arc;
 use tower::ServiceExt;
-
-/// A detected CPU-only host, the same caps as the golden `cpu` decision vectors.
-fn cpu_host() -> Arc<Hw> {
-    Hw::fixed(Snapshot {
-        detected: Detected {
-            hw_accel: HwAccel::None,
-            platform: Platform::Linux,
-            libfdk_aac: false,
-            vaapi_writes_hdr_metadata: false,
-            probes: vec![],
-            encoders: vec![],
-            decoders: vec![],
-            disabled_encoders: vec![],
-            disabled_decoders: vec![],
-        },
-        gpus: vec![],
-        pause_capability: "none".into(),
-        render_node: "/dev/dri/renderD128".into(),
-    })
-}
 
 async fn call(
     method: &str,

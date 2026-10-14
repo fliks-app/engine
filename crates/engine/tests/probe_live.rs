@@ -1,9 +1,11 @@
 //! Real tools on the probe corpus against the host's recorded results; a no-op unless
 //! `PROBE_CORPUS_DIR` is set (tools: `FFPROBE_PATH`, `FFMPEG_PATH`, `MKVMERGE_PATH`).
+mod common;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use common::cpu_host;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -42,7 +44,7 @@ async fn corpus_matches_the_host() {
         eprintln!("PROBE_CORPUS_DIR not set: skipped");
         return;
     };
-    let app = fliks_engine::app("secret".into());
+    let app = fliks_engine::app("secret".into(), cpu_host());
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/probe");
     let mut entries: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
@@ -100,7 +102,7 @@ async fn corpus_matches_the_host() {
 
 #[tokio::test]
 async fn probe_validates_the_request() {
-    let app = fliks_engine::app("secret".into());
+    let app = fliks_engine::app("secret".into(), cpu_host());
     let rel = json!({ "media": { "mediaFileId": 1, "path": "-v" }, "crop": false, "mkvTags": false, "moviehash": false });
     assert_eq!(post(&app, rel).await.0, StatusCode::BAD_REQUEST);
     let missing = json!({ "media": { "mediaFileId": 1, "path": "/nonexistent/file.mkv" }, "crop": true, "mkvTags": true, "moviehash": true });
