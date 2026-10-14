@@ -22,7 +22,7 @@ JSON over HTTP, SSE for events (planned). Two planes:
 | Endpoint | Status |
 |---|---|
 | `GET /v1/hello`, `GET`/`PUT /v1/config` (409 on lower revision) | M0 implemented |
-| `GET /v1/capabilities` (`Capabilities` of the detected host; 503 + `Retry-After: 1` until the first detection run ends; `FFMPEG_PATH` selects the ffmpeg, see `docs/spec/hw.md`) | M2 implemented |
+| `GET /v1/capabilities` (`Capabilities` of the detected host plus `hostCaps`, the exact state the decision reads; 503 + `Retry-After: 1` until the first detection run ends; `FFMPEG_PATH` selects the ffmpeg, see `docs/spec/hw.md`) | M2 implemented |
 | `POST /v1/estimate-sizes` (`{ info, fileSize? }` -> `[{ key, label, estimatedSize }]`, see `docs/spec/estimate-sizes.md`) | M1 implemented |
 | `POST /v1/probe` (`{ media: { mediaFileId, path }, crop, mkvTags, moviehash }` -> `{ ok, info?, moviehash?, error? }`: `ok: false` means ffprobe could not tell, never "no subtitles"; see `docs/spec/probe.md`) | M2 implemented |
 | Detection re-runs when `PUT /v1/config` changes `streaming.gpuRenderNode`; the previous snapshot is served meanwhile | M2 implemented |

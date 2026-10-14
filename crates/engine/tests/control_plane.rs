@@ -52,6 +52,15 @@ async fn hello_ok() {
 }
 
 #[tokio::test]
+async fn capabilities_carry_host_caps() {
+    let (s, v) = call("GET", "/v1/capabilities", Some("secret"), "").await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["hwAccel"], "none");
+    assert_eq!(v["hostCaps"]["hwAccel"], "none");
+    assert!(v["hostCaps"]["probes"].is_array());
+}
+
+#[tokio::test]
 async fn config_revision_rule() {
     // One router per call is stateless, so drive a single router through several requests.
     let app = fliks_engine::app("secret".into(), cpu_host());

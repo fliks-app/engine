@@ -57,6 +57,15 @@ pub struct Capabilities {
     pub pause_capability: String,
 }
 
+/// `GET /v1/capabilities`: the summary plus the exact host state the decision reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilitiesResponse {
+    #[serde(flatten)]
+    pub capabilities: Capabilities,
+    pub host_caps: HostCaps,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum QsvPreset {

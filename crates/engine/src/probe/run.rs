@@ -113,14 +113,16 @@ async fn capture(
     timeout: Duration,
     max_out: usize,
 ) -> Result<(String, String), ToolError> {
-    let mut child = Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| spawn_error(cmd, &e))?;
+    let mut child = crate::proc::spawn(
+        Command::new(cmd)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true),
+    )
+    .await
+    .map_err(|e| spawn_error(cmd, &e))?;
     let (out, err) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
     let run = async {
         let ((out, err), status) = tokio::join!(
@@ -182,14 +184,16 @@ impl Tools for ProcessTools {
     ) -> impl Future<Output = Result<(), ToolError>> + Send {
         let cmd = self.bin.ffprobe.clone();
         async move {
-            let mut child = Command::new(&cmd)
-                .args(&args)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()
-                .map_err(|e| spawn_error(&cmd, &e))?;
+            let mut child = crate::proc::spawn(
+                Command::new(&cmd)
+                    .args(&args)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .kill_on_drop(true),
+            )
+            .await
+            .map_err(|e| spawn_error(&cmd, &e))?;
             let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
             let stderr = child.stderr.take().unwrap();
             // The last 2000 bytes of stderr, collected while stdout is read.
