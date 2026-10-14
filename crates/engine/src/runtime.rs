@@ -4,18 +4,23 @@ use crate::cache::{Cache, remove_dir, valid_owner};
 use crate::events::Events;
 use crate::hw::Hw;
 use crate::proc::{Exit, Ffmpeg};
+use crate::remux::Assembler;
 use crate::resolve::Resolver;
 use fliks_engine_core::api::{
     Decision, EngineConfig, EngineEvent, Hints, HostCaps, HwAccel, JobState, JobStats,
     MEDIA_INFO_SCHEMA_VERSION, OpenSessionRequest, OpenSessionResponse, PlayMethod, SessionKind,
     SessionSnapshot, StreamingConfig,
 };
+use fliks_engine_core::mp4::{
+    grid_segment_index, remux_assembly_plan, remux_audio_grid, remux_run_start,
+};
 use fliks_engine_core::session::{
-    self as core_session, CacheEntryInfo, CachePolicy, ExistingRun, JobIdleAction, JobIdleInput,
-    JobIdleState, PauseCapability, ResolveInput, ResumeAction, RunProgress, SegmentName,
-    SegmentSet, SessionPlan, SessionVariant, ThrottleDecision, ThrottleInput, TranscodeRun, Viewer,
-    job_idle, live_session_expired, parse_segment_name, plan_gc, seconds_to_segment,
-    segment_index_to_seconds, session_key, session_to_evict, tombstone_revivable,
+    self as core_session, CacheEntryInfo, CachePolicy, EARLY_PROBE_SEGMENTS, EARLY_WAIT_MS,
+    ExistingRun, JobIdleAction, JobIdleInput, JobIdleState, PauseCapability, ResolveInput,
+    ResumeAction, RunProgress, SegmentName, SegmentSet, SessionPlan, SessionVariant,
+    ThrottleDecision, ThrottleInput, TranscodeRun, Viewer, job_idle, live_session_expired,
+    parse_segment_name, plan_gc, seconds_to_segment, segment_index_to_seconds, session_key,
+    session_to_evict, tombstone_revivable, variant_hash,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -28,6 +33,7 @@ use tokio::time::Instant;
 
 const WATCH_EVERY: Duration = Duration::from_millis(200);
 const THROTTLE_EVERY: Duration = Duration::from_secs(5);
+const SEGMENT_WAIT: Duration = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
 const INIT_NON_EMPTY: Duration = Duration::from_millis(core_session::INIT_NON_EMPTY_WAIT_MS as u64);
 
 pub fn now_ms() -> i64 {
@@ -50,6 +56,17 @@ struct SessionMut {
     last_requested_segment: Option<u32>,
     last_segment_at_ms: Option<i64>,
     served: Option<(String, HwAccel)>,
+    /// What the client plays now: an ABR switch moves a DirectStream session to a rung.
+    kind: SessionKind,
+}
+
+/// Which run of a session a job is. [ts:modules/streaming/transcoding/variant.ts:11-27]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobKind {
+    Main,
+    /// Seg-0 and seg-1 of a resume, next to the main run.
+    Early,
+    Remux,
 }
 
 pub struct Session {
@@ -69,8 +86,42 @@ pub struct Session {
 }
 
 impl Session {
+    fn variant(&self, kind: JobKind) -> SessionVariant {
+        match kind {
+            JobKind::Main => SessionVariant::Main,
+            JobKind::Early => SessionVariant::Early,
+            JobKind::Remux => core_session::remux_variant_of(&self.req, &self.plan),
+        }
+    }
+
+    /// Cache key of a run kind: the profile hash and its variant suffix.
+    pub fn cache_hash(&self, kind: JobKind) -> String {
+        variant_hash(&self.hash, &self.variant(kind))
+    }
+
+    pub fn key(&self, kind: JobKind) -> String {
+        session_key(
+            self.media_file_id,
+            self.owner.as_deref(),
+            &self.cache_hash(kind),
+        )
+    }
+
     pub fn job_key(&self) -> String {
-        session_key(self.media_file_id, self.owner.as_deref(), &self.hash)
+        self.key(JobKind::Main)
+    }
+
+    pub fn served_kind(&self) -> SessionKind {
+        self.m.lock().unwrap().kind
+    }
+
+    /// The run snapshots and job commands follow: the remux one while the client plays it.
+    pub fn primary_key(&self) -> String {
+        self.key(if self.served_kind() == SessionKind::Remux {
+            JobKind::Remux
+        } else {
+            JobKind::Main
+        })
     }
 
     pub fn pinned(&self) -> bool {
@@ -100,6 +151,23 @@ impl Session {
         );
         pos.max(job.map_or(0, |j| j.start_segment))
     }
+
+    /// The resume floor of a remux run, on its keyframe grid when it has one.
+    /// [ts:modules/streaming/streaming.controller.ts:428-450]
+    fn remux_floor(&self, job: Option<&Job>) -> u32 {
+        let pos = match &self.plan.remux_grid {
+            Some(g) => {
+                grid_segment_index(&g.boundaries, self.position_s(), self.plan.timeline.origin)
+                    as u32
+            }
+            None => seconds_to_segment(
+                self.position_s(),
+                self.plan.segment_duration,
+                self.plan.source_fps,
+            ),
+        };
+        pos.max(job.map_or(0, |j| j.start_segment))
+    }
 }
 
 struct JobMut {
@@ -112,11 +180,14 @@ struct JobMut {
     paused: bool,
     frontier_hint: Option<u32>,
     killed: bool,
+    /// A remux run's assembler still builds segments after the process exited.
+    pending: bool,
 }
 
 /// One ffmpeg run of a session key (`docs/spec/runtime.md` section 2).
 pub struct Job {
     pub key: String,
+    pub kind: JobKind,
     pub hash: String,
     pub media_file_id: u32,
     pub owner: Option<String>,
@@ -133,13 +204,19 @@ pub struct Job {
     pub duration: f64,
     pub restarts: u32,
     proc: Ffmpeg,
+    remux: Option<Arc<Mutex<Assembler>>>,
     m: Mutex<JobMut>,
     changed: watch::Sender<u64>,
 }
 
 impl Job {
+    /// Track `t`'s own directory: var_stream_map's `<t>/`, a remux run's audio `<t>/`.
+    fn split(&self, t: usize) -> bool {
+        self.var_stream_map || (self.kind == JobKind::Remux && t > 0)
+    }
+
     pub fn track_dir(&self, t: usize) -> PathBuf {
-        if self.var_stream_map {
+        if self.split(t) {
             self.dir.join(t.to_string())
         } else {
             self.dir.clone()
@@ -147,7 +224,7 @@ impl Job {
     }
 
     pub fn init_path(&self, t: usize) -> PathBuf {
-        let name = if self.var_stream_map {
+        let name = if self.split(t) {
             format!("init_{t}.mp4")
         } else {
             "init.mp4".into()
@@ -159,8 +236,9 @@ impl Job {
         self.track_dir(t).join(format!("seg-{n:04}.{}", self.ext))
     }
 
+    /// The process lives or its output is still being assembled.
     pub fn producing(&self) -> bool {
-        self.proc.exited().is_none()
+        self.proc.exited().is_none() || self.m.lock().unwrap().pending
     }
 
     pub fn killed(&self) -> bool {
@@ -190,6 +268,9 @@ impl Job {
         let sent = self.proc.pause(cap, pause).await;
         if sent {
             self.m.lock().unwrap().paused = pause;
+            if let Some(a) = &self.remux {
+                a.lock().unwrap().pause(pause);
+            }
         }
         sent
     }
@@ -297,16 +378,25 @@ impl Job {
         changed
     }
 
-    fn existing_run(&self) -> ExistingRun {
+    /// `audio`: the 1-based rendition a remux request is for.
+    fn existing_run(&self, audio: Option<usize>) -> ExistingRun {
         let exit = self.proc.exited();
         ExistingRun {
             exit_code: exit.and_then(|e| e.code),
             signal: exit.is_some_and(|e| e.signal),
-            output_pending: false,
+            output_pending: self.m.lock().unwrap().pending,
             start_segment: self.start_segment,
-            remux: false,
-            assembler: None,
+            remux: self.remux.is_some(),
+            assembler: self
+                .remux
+                .as_ref()
+                .map(|a| a.lock().unwrap().progress(audio)),
         }
+    }
+
+    /// Waits until the watcher saw the run end and its output was assembled.
+    async fn settled(&self) {
+        self.wait_for(Duration::from_secs(3600), |_| false).await;
     }
 }
 
@@ -321,6 +411,22 @@ pub async fn non_empty_within(p: &Path, timeout: Duration) -> bool {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+/// What a new job runs, before its process exists.
+struct Run {
+    key: String,
+    kind: JobKind,
+    quality: String,
+    dir: PathBuf,
+    var_stream_map: bool,
+    tracks: usize,
+    ext: &'static str,
+    start: u32,
+    /// (actual, requested)
+    hw: (HwAccel, HwAccel),
+    restarts: u32,
+    remux: Option<Arc<Mutex<Assembler>>>,
 }
 
 #[derive(Default)]
@@ -483,6 +589,7 @@ impl Runtime {
                     last_requested_segment: None,
                     last_segment_at_ms: None,
                     served: None,
+                    kind: plan.kind,
                 }),
                 plan,
                 req,
@@ -555,11 +662,16 @@ impl Runtime {
             if rt.job(&key).is_some_and(|j| j.producing()) {
                 return;
             }
+            // Players that fetch seg-0 on a load-then-seek get it from the early companion.
+            if start > 0 && s.plan.probes_seg_zero {
+                rt.early_job(&s, &quality).await;
+            }
             let lock = rt.lock_for(&key);
             let _g = lock.lock().await;
             if rt.job(&key).is_none_or(|j| !j.producing()) {
                 let hw = rt.detected_hw();
-                rt.spawn_job(&s, &quality, start, (hw, hw), 0).await;
+                rt.spawn_job(&s, &quality, start, (hw, hw), 0, JobKind::Main)
+                    .await;
             }
         });
     }
@@ -622,6 +734,16 @@ impl Runtime {
         }
     }
 
+    /// A video request names what the client plays: the remux variant or a rung.
+    /// [ts:modules/streaming/streaming.controller.ts:2274-2282]
+    pub fn note_kind(&self, s: &Session, remux: bool) {
+        s.m.lock().unwrap().kind = if remux {
+            SessionKind::Remux
+        } else {
+            SessionKind::Transcode
+        };
+    }
+
     /// Notes the rung and hardware a segment came from; a change is a `PipelineChanged`.
     pub fn note_served(&self, s: &Session, quality: &str, hw: HwAccel) {
         let changed = {
@@ -642,14 +764,14 @@ impl Runtime {
     }
 
     pub fn snapshot(&self, s: &Session) -> SessionSnapshot {
-        let job = self.job(&s.job_key()).map(|j| j.stats());
+        let job = self.job(&s.primary_key()).map(|j| j.stats());
         let m = s.m.lock().unwrap();
         SessionSnapshot {
             session_id: s.sid.clone(),
             owner_id: s.owner.clone(),
             media_file_id: s.media_file_id,
             profile_hash: (s.plan.kind != SessionKind::Directplay).then(|| s.hash.clone()),
-            kind: s.plan.kind,
+            kind: m.kind,
             quality: m.quality.clone(),
             client: s.req.client.clone(),
             tags: s.req.tags.clone(),
@@ -712,7 +834,16 @@ impl Runtime {
                 .collect();
             reg.sessions.retain(|_, s| !matches(s));
             reg.tombstones.retain(|_, s| !matches(s));
-            let keys: Vec<String> = gone.iter().map(|s| s.job_key()).collect();
+            let keys: Vec<String> = reg
+                .jobs
+                .iter()
+                .filter(|(_, j)| {
+                    gone.iter().any(|s| {
+                        s.owner == j.owner && s.media_file_id == j.media_file_id && s.hash == j.hash
+                    })
+                })
+                .map(|(k, _)| k.clone())
+                .collect();
             let jobs: Vec<Arc<Job>> = keys.iter().filter_map(|k| reg.jobs.remove(k)).collect();
             (gone, jobs)
         };
@@ -758,7 +889,7 @@ impl Runtime {
     }
 
     pub async fn pause_job(&self, s: &Session, pause: bool) -> bool {
-        match self.job(&s.job_key()) {
+        match self.job(&s.primary_key()) {
             Some(j) => j.pause(self.pause_capability(), pause).await,
             None => false,
         }
@@ -770,7 +901,15 @@ impl Runtime {
         self.caps().map_or(HwAccel::None, |c| c.hw_accel)
     }
 
-    /// Kills the key's previous run, purges the rung from `start` and spawns.
+    fn device(&self, caps: &HostCaps) -> fliks_engine_core::hw::Device {
+        fliks_engine_core::hw::Device {
+            platform: caps.platform,
+            render_node: self.hw.snapshot().map(|h| h.render_node),
+            opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+        }
+    }
+
+    /// Kills the key's previous run, purges the rung from `start` and spawns a main or early run.
     /// [ts:modules/streaming/transcoding/transcoding.service.ts:790-860]
     async fn spawn_job(
         self: &Arc<Self>,
@@ -779,16 +918,20 @@ impl Runtime {
         start: u32,
         (hw, requested_hw): (HwAccel, HwAccel),
         restarts: u32,
+        kind: JobKind,
     ) -> Option<Arc<Job>> {
-        let key = s.job_key();
+        let key = s.key(kind);
         if let Some(old) = self.job(&key)
             && old.producing()
         {
             old.kill().await;
         }
-        let dir = self
-            .cache
-            .rung_dir(s.owner.as_deref(), s.media_file_id, &s.hash, quality);
+        let dir = self.cache.rung_dir(
+            s.owner.as_deref(),
+            s.media_file_id,
+            &s.cache_hash(kind),
+            quality,
+        );
         let var_stream_map = s.plan.multi_audio;
         let tracks = if var_stream_map {
             s.req.decide.info.audio.len() + 1
@@ -804,12 +947,7 @@ impl Runtime {
             .await;
         }
         let caps = self.caps().unwrap_or_default();
-        let platform = caps.platform;
-        let dev = fliks_engine_core::hw::Device {
-            platform,
-            render_node: self.hw.snapshot().map(|h| h.render_node),
-            opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
-        };
+        let dev = self.device(&caps);
         let dir_s = dir.to_string_lossy().into_owned();
         let build = |hw| {
             let args = core_session::vod_args(&core_session::RunInput {
@@ -822,6 +960,7 @@ impl Runtime {
                 quality,
                 start_segment: start,
                 hw,
+                early: kind == JobKind::Early,
             });
             fliks_engine_core::args::vod(&args, &caps, &dev)
         };
@@ -836,9 +975,122 @@ impl Runtime {
                 return None;
             }
         };
-        tracing::info!(key, quality, start, ?hw, "ffmpeg start");
+        let run = Run {
+            key,
+            kind,
+            quality: quality.into(),
+            dir,
+            var_stream_map,
+            tracks,
+            ext,
+            start,
+            hw: (hw, requested_hw),
+            restarts,
+            remux: None,
+        };
+        self.launch(s, run, &argv).await
+    }
+
+    /// A copy-video run from `start`: one file per GOP into its own directory, assembled onto
+    /// the session's remux directory. [ts:modules/streaming/transcoding/transcoding.service.ts:1447-1580]
+    async fn spawn_remux(self: &Arc<Self>, s: &Arc<Session>, start: u32) -> Option<Arc<Job>> {
+        let key = s.key(JobKind::Remux);
+        if let Some(old) = self.job(&key)
+            && old.producing()
+        {
+            old.kill().await;
+        }
+        let caps = self.caps().unwrap_or_default();
+        let plan = &s.plan;
+        let grid = plan.remux_grid.as_ref();
+        let audio_grid = remux_audio_grid(
+            Some(core_session::remux_audio_basis(&s.decision)),
+            caps.libfdk_aac,
+        );
+        let origin = plan.timeline.origin;
+        let seg = plan.segment_duration;
+        let run = match remux_run_start(grid, start as usize, seg, origin, audio_grid) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(key, "remux run: {e}");
+                return None;
+            }
+        };
+        let dir = self.cache.rung_dir(
+            s.owner.as_deref(),
+            s.media_file_id,
+            &s.cache_hash(JobKind::Remux),
+            "remux",
+        );
+        // Per run: a run still being reaped must not delete this one's GOPs.
+        let gop_dir = dir.join(format!("gop-{}", crate::random_hex(4)));
+        if let Err(e) = tokio::fs::create_dir_all(&gop_dir).await {
+            tracing::error!(key, "mkdir {}: {e}", gop_dir.display());
+            return None;
+        }
+        let gop_s = gop_dir.to_string_lossy().into_owned();
+        let args = core_session::remux_args(
+            &core_session::RunInput {
+                req: &s.req,
+                decision: &s.decision,
+                streaming: &s.streaming,
+                plan,
+                input_path: &s.path,
+                output_dir: &gop_s,
+                quality: "remux",
+                start_segment: start,
+                hw: HwAccel::None,
+                early: false,
+            },
+            &run,
+        );
+        let argv = match fliks_engine_core::args::remux(&args, &caps) {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::error!(key, "remux argv: {e}");
+                return None;
+            }
+        };
+        let renditions = if plan.multi_audio {
+            s.req.decide.info.audio.len()
+        } else {
+            0
+        };
+        let asm_plan = remux_assembly_plan(
+            grid,
+            start as usize,
+            &run,
+            origin,
+            Some(seg),
+            Some(renditions as u32),
+        );
+        let run = Run {
+            key,
+            kind: JobKind::Remux,
+            quality: "remux".into(),
+            dir: dir.clone(),
+            var_stream_map: false,
+            tracks: renditions + 1,
+            ext: "m4s",
+            start,
+            hw: (HwAccel::None, HwAccel::None),
+            restarts: 0,
+            remux: Some(Arc::new(Mutex::new(Assembler::new(asm_plan, dir, gop_dir)))),
+        };
+        self.launch(s, run, &argv).await
+    }
+
+    /// Spawns ffmpeg, registers the job and starts its watcher.
+    async fn launch(
+        self: &Arc<Self>,
+        s: &Arc<Session>,
+        r: Run,
+        argv: &[String],
+    ) -> Option<Arc<Job>> {
+        let key = r.key;
+        tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let proc = match Ffmpeg::spawn(&self.ffmpeg, &argv).await {
+        let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(key, "spawn {}: {e}", self.ffmpeg);
@@ -847,32 +1099,35 @@ impl Runtime {
         };
         let job = Arc::new(Job {
             key: key.clone(),
+            kind: r.kind,
             hash: s.hash.clone(),
             media_file_id: s.media_file_id,
             owner: s.owner.clone(),
-            quality: quality.into(),
-            dir,
-            var_stream_map,
-            tracks,
-            ext,
-            start_segment: start,
-            requested_hw,
-            hw,
+            quality: r.quality.clone(),
+            dir: r.dir,
+            var_stream_map: r.var_stream_map,
+            tracks: r.tracks,
+            ext: r.ext,
+            start_segment: r.start,
+            requested_hw: r.hw.1,
+            hw: r.hw.0,
             segment_duration: s.plan.segment_duration,
             fps: s.plan.source_fps,
             duration: s.plan.duration,
-            restarts,
+            restarts: r.restarts,
             proc,
             m: Mutex::new(JobMut {
-                sets: vec![SegmentSet::default(); tracks],
-                inits: vec![false; tracks],
+                sets: vec![SegmentSet::default(); r.tracks],
+                inits: vec![false; r.tracks],
                 settled: false,
                 last_access_ms: now_ms(),
                 idle: JobIdleState::default(),
                 paused: false,
                 frontier_hint: None,
                 killed: false,
+                pending: r.remux.is_some(),
             }),
+            remux: r.remux,
             changed: watch::channel(0).0,
         });
         job.scan().await;
@@ -884,12 +1139,34 @@ impl Runtime {
         self.events.emit(EngineEvent::JobStarted {
             job_key: key,
             media_file_id: s.media_file_id,
-            quality: quality.into(),
-            start_segment: start,
-            hw_accel: hw,
+            quality: r.quality,
+            start_segment: r.start,
+            hw_accel: r.hw.0,
         });
         tokio::spawn(self.clone().watch(job.clone(), s.clone()));
         Some(job)
+    }
+
+    /// Drops `job` from the registry unless another run replaced it.
+    fn unregister(&self, job: &Arc<Job>) {
+        let mut reg = self.reg.lock().unwrap();
+        if reg.jobs.get(&job.key).is_some_and(|j| Arc::ptr_eq(j, job)) {
+            reg.jobs.remove(&job.key);
+        }
+    }
+
+    /// One assembler pass off the async threads; true when it gave up.
+    async fn pump(job: &Job) -> bool {
+        let Some(a) = job.remux.clone() else {
+            return false;
+        };
+        tokio::task::spawn_blocking(move || {
+            let mut a = a.lock().unwrap();
+            a.pump();
+            a.stopped()
+        })
+        .await
+        .unwrap_or(true)
     }
 
     /// Follows the run's output until it exits, then falls back to the CPU when the hardware
@@ -902,6 +1179,12 @@ impl Runtime {
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async move {
             loop {
+                if Self::pump(&job).await && !job.killed() {
+                    // Its output cannot be served: the next request starts over.
+                    tracing::error!(key = job.key, "remux assembly gave up, stopping the run");
+                    self.unregister(&job);
+                    job.kill().await;
+                }
                 if job.scan().await {
                     job.changed.send_modify(|v| *v += 1);
                 }
@@ -913,8 +1196,13 @@ impl Runtime {
                     _ = job.proc.wait() => {}
                 }
             }
-            job.scan().await;
             let exit = job.proc.exited().unwrap();
+            if let Some(a) = job.remux.clone() {
+                let clean = exit.code == Some(0) && !job.killed();
+                let _ = tokio::task::spawn_blocking(move || a.lock().unwrap().finish(clean)).await;
+            }
+            job.scan().await;
+            job.m.lock().unwrap().pending = false;
             let state = job.state();
             if state == JobState::Failed {
                 tracing::warn!(
@@ -957,19 +1245,27 @@ impl Runtime {
         let dir = job.dir.clone();
         let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         let hw = (HwAccel::None, job.requested_hw);
-        self.spawn_job(s, &job.quality, job.start_segment, hw, job.restarts + 1)
-            .await;
+        self.spawn_job(
+            s,
+            &job.quality,
+            job.start_segment,
+            hw,
+            job.restarts + 1,
+            job.kind,
+        )
+        .await;
     }
 
-    /// Waits for a file of `job`, following the job that replaced it on the same rung (a CPU
-    /// fallback) until the deadline.
+    /// Waits up to `timeout` for a file of `job`, following the job that replaced it on the same
+    /// rung (a CPU fallback).
     async fn wait_file(
         &self,
         mut job: Arc<Job>,
         track: usize,
         name: SegmentName,
+        timeout: Duration,
     ) -> (Arc<Job>, bool) {
-        let deadline = Instant::now() + Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
+        let deadline = Instant::now() + timeout;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             let ok = match name {
@@ -1016,7 +1312,7 @@ impl Runtime {
                 }
             } else {
                 let input = ResolveInput {
-                    run: e.existing_run(),
+                    run: e.existing_run(None),
                     requested_segment: requested,
                     quality_match,
                     present: e.m.lock().unwrap().sets[0].clone(),
@@ -1039,7 +1335,87 @@ impl Runtime {
                 }
             }
         }
-        self.spawn_job(s, quality, requested, hw, restarts).await
+        self.spawn_job(s, quality, requested, hw, restarts, JobKind::Main)
+            .await
+    }
+
+    /// The session's remux run for a request at `requested` (`audio`: the 1-based rendition),
+    /// reused while the assembler can reach it. [ts:modules/streaming/transcoding/transcoding.service.ts:1447-1470]
+    async fn ensure_remux(
+        self: &Arc<Self>,
+        s: &Arc<Session>,
+        mut requested: u32,
+        audio: Option<usize>,
+    ) -> Option<Arc<Job>> {
+        let key = s.key(JobKind::Remux);
+        let lock = self.lock_for(&key);
+        let _g = lock.lock().await;
+        if let Some(e) = self.job(&key) {
+            if e.proc.exited().is_some() {
+                e.settled().await;
+            }
+            let input = ResolveInput {
+                run: e.existing_run(audio),
+                requested_segment: requested,
+                quality_match: true,
+                present: SegmentSet::default(),
+            };
+            match core_session::resolve_existing(&input) {
+                ResumeAction::Serve | ResumeAction::Wait => {
+                    e.touch();
+                    return Some(e);
+                }
+                ResumeAction::Respawn(r) => {
+                    if r.kill {
+                        e.kill().await;
+                    }
+                    requested = r.start_segment.unwrap_or(e.start_segment);
+                }
+            }
+        }
+        self.spawn_remux(s, requested).await
+    }
+
+    /// The early companion of `quality`: reused while it runs or once it ended cleanly, else
+    /// killed, cleaned and spawned again. [ts:modules/streaming/transcoding/transcoding.service.ts:965-1060]
+    async fn early_job(self: &Arc<Self>, s: &Arc<Session>, quality: &str) -> Option<Arc<Job>> {
+        let key = s.key(JobKind::Early);
+        let lock = self.lock_for(&key);
+        let _g = lock.lock().await;
+        if let Some(e) = self.job(&key) {
+            let clean = e.proc.exited().is_some_and(|x| x.code == Some(0));
+            if e.quality == quality && (e.producing() || clean) {
+                e.touch();
+                return Some(e);
+            }
+            self.unregister(&e);
+            e.kill().await;
+            let dir = e.dir.clone();
+            let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
+        }
+        let hw = self.detected_hw();
+        self.spawn_job(s, quality, 0, (hw, hw), 0, JobKind::Early)
+            .await
+    }
+
+    /// A file of the early companion within its short wait, `None` to fall through to the main.
+    async fn early_file(&self, early: Arc<Job>, track: usize, name: SegmentName) -> Option<Fetch> {
+        let t0 = Instant::now();
+        let wait = Duration::from_millis(EARLY_WAIT_MS.into());
+        let (job, landed) = self.wait_file(early, track, name, wait).await;
+        if !landed {
+            tracing::warn!(
+                key = job.key,
+                ?name,
+                "early companion missed its wait, main instead"
+            );
+            return None;
+        }
+        let path = match name {
+            SegmentName::Init(_) => job.init_path(track),
+            SegmentName::Segment(n) => job.segment_path(track, n),
+        };
+        Some(finish(path, job, true, t0).await)
     }
 
     /// A video file of `quality` (`docs/spec/runtime.md` section 4).
@@ -1052,6 +1428,16 @@ impl Runtime {
         let key = s.job_key();
         let existing = self.job(&key);
         let same = existing.as_ref().filter(|j| j.quality == quality).cloned();
+        let early = self
+            .job(&s.key(JobKind::Early))
+            .filter(|e| e.quality == quality);
+        // The early companion's init is decode-compatible and lands first.
+        // [ts:modules/streaming/streaming.controller.ts:2289-2345]
+        if let (SegmentName::Init(_), Some(_), Some(e)) = (name, &same, &early)
+            && let Some(f) = self.early_file(e.clone(), 0, name).await
+        {
+            return f;
+        }
         if let (Some(j), SegmentName::Segment(n)) = (&same, name)
             && j.has(0, n)
         {
@@ -1082,22 +1468,38 @@ impl Runtime {
                 return ready(path, existing, 0.0, true);
             }
         }
+        // A resume's seg-0/seg-1 probe and an init go to the bounded early companion, never
+        // relocating the main. [ts:modules/streaming/streaming.controller.ts:2409-2480]
+        let floor = s.resume_floor(existing.as_deref());
+        let probe = s.plan.probes_seg_zero
+            && match name {
+                SegmentName::Init(_) => same.is_none(),
+                SegmentName::Segment(n) => floor > EARLY_PROBE_SEGMENTS && n < EARLY_PROBE_SEGMENTS,
+            };
+        if probe {
+            let early = match early {
+                Some(e) => Some(e),
+                None => self.early_job(s, quality).await,
+            };
+            if let Some(e) = early.filter(|e| e.quality == quality)
+                && let Some(f) = self.early_file(e, 0, name).await
+            {
+                return f;
+            }
+        }
         let t0 = Instant::now();
         let job = match (name, same) {
             (SegmentName::Init(_), Some(j)) => j,
-            (SegmentName::Init(_), None) => {
-                let floor = s.resume_floor(existing.as_deref());
-                match self.ensure_job(s, quality, floor).await {
-                    Some(j) => j,
-                    None => return Fetch::Failed,
-                }
-            }
+            (SegmentName::Init(_), None) => match self.ensure_job(s, quality, floor).await {
+                Some(j) => j,
+                None => return Fetch::Failed,
+            },
             (SegmentName::Segment(n), _) => match self.ensure_job(s, quality, n).await {
                 Some(j) => j,
                 None => return Fetch::Failed,
             },
         };
-        let (job, landed) = self.wait_file(job, 0, name).await;
+        let (job, landed) = self.wait_file(job, 0, name, SEGMENT_WAIT).await;
         let path = match name {
             SegmentName::Init(_) => job.init_path(0),
             SegmentName::Segment(n) => job.segment_path(0, n),
@@ -1139,13 +1541,97 @@ impl Runtime {
         if track >= job.tracks {
             return Fetch::NotFound;
         }
+        // A resume's rendition init and first segments come from the early companion.
+        // [ts:modules/streaming/streaming.controller.ts:2008-2060]
+        let want_early = job.start_segment > 0
+            && match name {
+                SegmentName::Init(_) => true,
+                SegmentName::Segment(n) => n < EARLY_PROBE_SEGMENTS,
+            };
+        if want_early {
+            let early = match self
+                .job(&s.key(JobKind::Early))
+                .filter(|e| e.quality == job.quality)
+            {
+                Some(e) => Some(e),
+                None => self.early_job(s, &job.quality).await,
+            };
+            if let Some(e) = early.filter(|e| e.quality == job.quality)
+                && let Some(f) = self.early_file(e, track, name).await
+            {
+                return f;
+            }
+        }
         let t0 = Instant::now();
-        let (job, landed) = self.wait_file(job, track, name).await;
+        let (job, landed) = self.wait_file(job, track, name, SEGMENT_WAIT).await;
         let path = match name {
             SegmentName::Init(_) => job.init_path(track),
             SegmentName::Segment(n) => job.segment_path(track, n),
         };
         finish(path, job, landed, t0).await
+    }
+
+    /// A file of the remux run: `track` 0 is the video, `i > 0` audio rendition `i`. A file
+    /// any run of the session assembled is served as is (same samples, same timeline).
+    /// [ts:modules/streaming/streaming.controller.ts:1940-1975,2345-2380,2482-2500]
+    pub async fn remux_file(
+        self: &Arc<Self>,
+        s: &Arc<Session>,
+        track: usize,
+        name: SegmentName,
+    ) -> Fetch {
+        let dir = self.cache.rung_dir(
+            s.owner.as_deref(),
+            s.media_file_id,
+            &s.cache_hash(JobKind::Remux),
+            "remux",
+        );
+        let path = match (track, name) {
+            (0, SegmentName::Init(_)) => dir.join("init.mp4"),
+            (0, SegmentName::Segment(n)) => dir.join(format!("seg-{n:04}.m4s")),
+            (t, SegmentName::Init(_)) => dir.join(format!("{t}/init_{t}.mp4")),
+            (t, SegmentName::Segment(n)) => dir.join(format!("{t}/seg-{n:04}.m4s")),
+        };
+        let existing = self.job(&s.key(JobKind::Remux));
+        if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > 0) {
+            if let Some(j) = &existing {
+                j.touch();
+            }
+            return ready(path, existing, 0.0, true);
+        }
+        let start = match name {
+            SegmentName::Init(_) => s.remux_floor(existing.as_deref()),
+            SegmentName::Segment(n) => n,
+        };
+        let audio = (track > 0).then_some(track);
+        let t0 = Instant::now();
+        let Some(job) = self.ensure_remux(s, start, audio).await else {
+            return Fetch::Failed;
+        };
+        if track >= job.tracks {
+            return Fetch::NotFound;
+        }
+        let (job, landed) = self.wait_file(job, track, name, SEGMENT_WAIT).await;
+        finish(path, job, landed, t0).await
+    }
+
+    /// Starts the remux run at the segment a `startAt` falls in, unless one runs.
+    /// [ts:modules/streaming/streaming.controller.ts:2155-2180]
+    pub fn prewarm_remux(self: &Arc<Self>, s: &Arc<Session>, start_at: f64) {
+        if self
+            .job(&s.key(JobKind::Remux))
+            .is_some_and(|j| j.producing())
+        {
+            return;
+        }
+        let start = match &s.plan.remux_grid {
+            Some(g) => grid_segment_index(&g.boundaries, start_at, s.plan.timeline.origin) as u32,
+            None => seconds_to_segment(start_at, s.plan.segment_duration, None),
+        };
+        let (rt, s) = (self.clone(), s.clone());
+        tokio::spawn(async move {
+            rt.ensure_remux(&s, start, None).await;
+        });
     }
 
     // ---- periodic work ----
@@ -1190,6 +1676,7 @@ impl Runtime {
                             && s.hash == job.hash
                     })
                     .count() as u32;
+                let process_running = job.producing();
                 let input = {
                     let m = job.m.lock().unwrap();
                     JobIdleInput {
@@ -1197,7 +1684,7 @@ impl Runtime {
                         last_access_ms: m.last_access_ms,
                         has_base_hash: true,
                         viewers,
-                        process_running: job.producing(),
+                        process_running,
                         state: m.idle,
                     }
                 };
@@ -1232,7 +1719,7 @@ impl Runtime {
             let reg = self.reg.lock().unwrap();
             reg.jobs
                 .values()
-                .filter(|j| j.producing())
+                .filter(|j| j.proc.exited().is_none())
                 .map(|j| {
                     let viewers = reg
                         .sessions
@@ -1249,6 +1736,30 @@ impl Runtime {
                 .collect()
         };
         for (job, viewers) in work {
+            let variant = match job.kind {
+                JobKind::Main => SessionVariant::Main,
+                JobKind::Early => SessionVariant::Early,
+                JobKind::Remux => SessionVariant::Remux {
+                    audio_index: None,
+                    keyframe_grid: true,
+                },
+            };
+            let remux = job.remux.as_ref().map(|a| {
+                let a = a.lock().unwrap();
+                let (start_seconds, frontier_seconds) = a.span();
+                let last = viewers
+                    .iter()
+                    .filter_map(|v| v.last_requested_segment)
+                    .max()
+                    .unwrap_or(0);
+                RunProgress::Remux {
+                    start_seconds,
+                    frontier_seconds,
+                    boundaries: (0..=last as usize)
+                        .map(|i| a.segment_content_seconds(i))
+                        .collect(),
+                }
+            });
             let input = {
                 let m = job.m.lock().unwrap();
                 ThrottleInput {
@@ -1256,15 +1767,17 @@ impl Runtime {
                     enabled: streaming.throttle_enabled,
                     threshold_seconds: streaming.throttle_threshold_seconds,
                     paused: m.paused,
-                    process_exited: !job.producing(),
-                    variant: Some(SessionVariant::Main),
+                    process_exited: job.proc.exited().is_some(),
+                    variant: Some(variant),
                     viewers,
-                    run: RunProgress::Transcode(TranscodeRun {
-                        start_segment: job.start_segment,
-                        frontier_hint: m.frontier_hint,
-                        present: m.sets[0].clone(),
-                        segment_duration: job.segment_duration,
-                        fps: job.fps,
+                    run: remux.unwrap_or_else(|| {
+                        RunProgress::Transcode(TranscodeRun {
+                            start_segment: job.start_segment,
+                            frontier_hint: m.frontier_hint,
+                            present: m.sets[0].clone(),
+                            segment_duration: job.segment_duration,
+                            fps: job.fps,
+                        })
                     }),
                 }
             };
@@ -1294,18 +1807,17 @@ impl Runtime {
     /// Entry dirs a job or session uses: never evicted.
     fn live_dirs(&self) -> Vec<PathBuf> {
         let reg = self.reg.lock().unwrap();
-        let sessions = reg
-            .sessions
-            .values()
-            .map(|s| (s.owner.clone(), s.media_file_id, s.hash.clone()));
+        let sessions = reg.sessions.values().flat_map(|s| {
+            [JobKind::Main, JobKind::Early, JobKind::Remux].map(|k| {
+                self.cache
+                    .entry_dir(s.owner.as_deref(), s.media_file_id, &s.cache_hash(k))
+            })
+        });
         let jobs = reg
             .jobs
             .values()
-            .map(|j| (j.owner.clone(), j.media_file_id, j.hash.clone()));
-        sessions
-            .chain(jobs)
-            .map(|(o, f, h)| self.cache.entry_dir(o.as_deref(), f, &h))
-            .collect()
+            .filter_map(|j| j.dir.parent().map(Path::to_path_buf));
+        sessions.chain(jobs).collect()
     }
 
     pub async fn cache_summary(&self) -> fliks_engine_core::api::CacheSummary {

@@ -19,7 +19,6 @@ const DEFAULT_SEGMENT_DURATION: f64 = 3.0;
 const DEFAULT_FPS: f64 = 24.0;
 /// Read ceiling of the trusted-streamInfo fast path: AV1-in-Matroska needs ~3 MB to seek.
 const TRUSTED_PROBE_SIZE: &str = "5000000";
-const EARLY_PROBE_SEGMENTS: f64 = 2.0;
 const ENCODE_SAMPLE_RATE: &str = "48000";
 
 pub(super) fn s(v: &[&str]) -> Vec<String> {
@@ -534,7 +533,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         .source_clock_break_seconds
         .map_or(f64::INFINITY, |b| b - format_start)
         .min(if early {
-            EARLY_PROBE_SEGMENTS * seg + 1.0
+            f64::from(crate::session::EARLY_PROBE_SEGMENTS) * seg + 1.0
         } else {
             f64::INFINITY
         });

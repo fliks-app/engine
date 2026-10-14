@@ -520,3 +520,65 @@ async fn invalidate_and_cache_delete_remove_entries() {
         1
     );
 }
+
+#[tokio::test]
+async fn dolby_vision_remux_carries_its_codec_strings() {
+    let (e, file) = setup().await;
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/decide");
+    for (name, codecs, supplemental) in [
+        (
+            "safari-tvos-dv-p81-mp4-cpu-auto",
+            None,
+            Some("dvh1.08.06/db1p"),
+        ),
+        ("safari-tvos-dv-p5-mp4-cpu-auto", Some("dvh1.05.06"), None),
+    ] {
+        let fx: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixtures.join(format!("{name}.json"))).unwrap(),
+        )
+        .unwrap();
+        let mut decide = fx["input"].clone();
+        decide["media"]["mediaFileId"] = json!(7);
+        decide["media"]["path"] = json!(file);
+        let r = e
+            .control(
+                "POST",
+                "/v1/sessions",
+                Some(json!({ "decide": decide, "ownerId": "alice" })),
+            )
+            .await;
+        assert_eq!(r.status, 200, "{}", r.text());
+        let s = r.json();
+        assert_eq!(
+            s["decision"]["response"]["playMethod"], "DirectStream",
+            "{name}"
+        );
+        assert_eq!(s["decision"]["response"]["dolbyVision"], true, "{name}");
+        let sid = s["sessionId"].as_str().unwrap();
+        let m = e
+            .get(
+                &format!("/api/stream/7/master.m3u8?sid={sid}&remux=1"),
+                "alice-jwt",
+                &[],
+            )
+            .await
+            .text();
+        let line = m
+            .lines()
+            .find(|l| l.contains("NAME=\"remux\""))
+            .unwrap_or_default();
+        match supplemental {
+            Some(sup) => assert!(
+                line.contains(&format!("SUPPLEMENTAL-CODECS=\"{sup}\"")) && line.contains("hvc1"),
+                "{name}: {line}"
+            ),
+            None => assert!(!line.contains("SUPPLEMENTAL-CODECS"), "{name}: {line}"),
+        }
+        if let Some(c) = codecs {
+            assert!(
+                line.contains(&format!("CODECS=\"{c}")) && line.contains("VIDEO-RANGE=PQ"),
+                "{name}: {line}"
+            );
+        }
+    }
+}
