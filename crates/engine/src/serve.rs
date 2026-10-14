@@ -1,5 +1,7 @@
 //! Data plane: the host's `/api/stream/...` routes, byte for byte, authorized by the host
 //! resolver. Spec: `docs/spec/runtime.md` section 6.
+// The error side of these helpers is the HTTP answer itself.
+#![allow(clippy::result_large_err)]
 use crate::resolve::{Ask, Host, ResolveError, Resolved};
 use crate::runtime::{Fetch, Runtime, Session};
 use axum::{
@@ -13,7 +15,9 @@ use axum::{
 };
 use fliks_engine_core::api::{EngineEvent, ResolvePurpose, SessionExpired, SessionKind, Track};
 use fliks_engine_core::args::{IframeArgs, iframe};
-use fliks_engine_core::decide::timeline::real_segment_seconds;
+use fliks_engine_core::decide::timeline::{
+    frame_seconds_of, real_segment_seconds, uniform_segment_count,
+};
 use fliks_engine_core::hls::{
     Rendition, audio_playlist, iframe_index, iframe_resolution, master_playlist, subtitle_playlist,
     variant_playlist,
@@ -614,6 +618,21 @@ async fn respond(
         .into_response()
 }
 
+/// A segment past the playlist's last one would spawn a run seeking past the end. [new]
+fn past_end(s: &Session, name: SegmentName) -> bool {
+    let SegmentName::Segment(n) = name else {
+        return false;
+    };
+    let p = &s.plan;
+    p.duration > 0.0
+        && f64::from(n)
+            >= uniform_segment_count(
+                p.duration,
+                real_segment_seconds(p.segment_duration, p.source_fps),
+                frame_seconds_of(p.source_fps),
+            )
+}
+
 fn seg_name(seg: &str) -> Result<SegmentName, Response> {
     parse_segment_name(seg).ok_or_else(|| {
         text(
@@ -658,6 +677,9 @@ async fn segment(
             "remux runs are not served by the engine yet",
         );
     }
+    if past_end(&s, name) {
+        return text(StatusCode::NOT_FOUND, "Segment not found");
+    }
     let fetch = rt.video_file(&s, &quality, name).await;
     respond(&rt, &s, fetch, name, Track::Video, &quality, &headers, &q).await
 }
@@ -692,6 +714,9 @@ async fn audio_seg(
         );
     }
     if !s.plan.multi_audio {
+        return text(StatusCode::NOT_FOUND, "Segment not found");
+    }
+    if past_end(&s, name) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
     let fetch = rt.audio_file(&s, idx as usize + 1, name).await;

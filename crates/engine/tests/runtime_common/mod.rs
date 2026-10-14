@@ -348,8 +348,10 @@ impl Engine {
     }
 }
 
-/// Generates a clip with ffmpeg's lavfi sources, once per path.
-pub fn clip(dir: &Path, name: &str, args: &[&str]) -> PathBuf {
+/// Generates a clip with ffmpeg's lavfi sources, once per name; `args` split on whitespace.
+pub fn clip(name: &str, args: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join("fliks-engine-e2e-media");
+    std::fs::create_dir_all(&dir).unwrap();
     let out = dir.join(name);
     if out.exists() {
         return out;
@@ -357,7 +359,7 @@ pub fn clip(dir: &Path, name: &str, args: &[&str]) -> PathBuf {
     let tmp = dir.join(format!("tmp-{}-{name}", fliks_engine::random_hex(4)));
     let st = std::process::Command::new(ffmpeg())
         .args(["-hide_banner", "-loglevel", "error", "-y"])
-        .args(args)
+        .args(args.split_whitespace())
         .arg(&tmp)
         .status()
         .expect("ffmpeg");
@@ -366,123 +368,44 @@ pub fn clip(dir: &Path, name: &str, args: &[&str]) -> PathBuf {
     out
 }
 
-pub fn media_dir() -> PathBuf {
-    let d = std::env::temp_dir().join("fliks-engine-e2e-media");
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
+const X264: &str = "-c:v libx264 -preset veryfast -pix_fmt yuv420p -g 48";
 
-/// 10 s H.264 SDR 1280x720 24 fps + AAC stereo.
+/// H.264 SDR 1280x720 24 fps + AAC stereo.
 pub fn h264_clip(seconds: u32) -> PathBuf {
-    let t = seconds.to_string();
+    let s = seconds;
     clip(
-        &media_dir(),
-        &format!("h264-{seconds}s.mkv"),
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("testsrc2=size=1280x720:rate=24:duration={t}"),
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("sine=frequency=440:sample_rate=48000:duration={t}"),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-pix_fmt",
-            "yuv420p",
-            "-g",
-            "48",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-shortest",
-        ],
+        &format!("h264-{s}s.mkv"),
+        &format!(
+            "-f lavfi -i testsrc2=size=1280x720:rate=24:duration={s} \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration={s} {X264} -c:a aac -ac 2 -shortest"
+        ),
     )
 }
 
 /// 10 s HEVC Main10 HDR10 1280x720 + AAC.
 pub fn hevc_hdr_clip() -> PathBuf {
     clip(
-        &media_dir(),
-        "hevc-hdr10.mkv",
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=1280x720:rate=24:duration=10",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=330:sample_rate=48000:duration=10",
-            "-c:v",
-            "libx265",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p10le",
-            "-x265-params",
-            "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
-            "-color_primaries",
-            "bt2020",
-            "-color_trc",
-            "smpte2084",
-            "-colorspace",
-            "bt2020nc",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-shortest",
-        ],
+        "hevc-hdr10-v2.mkv",
+        "-f lavfi -i testsrc2=size=1280x720:rate=24:duration=10 \
+         -f lavfi -i sine=frequency=330:sample_rate=48000:duration=10 \
+         -vf setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc,format=yuv420p10le \
+         -c:v libx265 -preset ultrafast \
+         -x265-params log-level=error:hdr10=1:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400 \
+         -c:a aac -ac 2 -shortest",
     )
 }
 
 /// 10 s H.264 with two audio tracks (eng, fra).
 pub fn multi_audio_clip() -> PathBuf {
     clip(
-        &media_dir(),
         "multi-audio.mkv",
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=1280x720:rate=24:duration=10",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=48000:duration=10",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=880:sample_rate=48000:duration=10",
-            "-map",
-            "0:v",
-            "-map",
-            "1:a",
-            "-map",
-            "2:a",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-pix_fmt",
-            "yuv420p",
-            "-g",
-            "48",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-metadata:s:a:0",
-            "language=eng",
-            "-metadata:s:a:1",
-            "language=fra",
-            "-shortest",
-        ],
+        &format!(
+            "-f lavfi -i testsrc2=size=1280x720:rate=24:duration=10 \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration=10 \
+             -f lavfi -i sine=frequency=880:sample_rate=48000:duration=10 \
+             -map 0:v -map 1:a -map 2:a {X264} -c:a aac -ac 2 \
+             -metadata:s:a:0 language=eng -metadata:s:a:1 language=fra -shortest"
+        ),
     )
 }
 

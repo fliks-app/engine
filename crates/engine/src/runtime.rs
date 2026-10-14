@@ -914,8 +914,6 @@ impl Runtime {
                 }
             }
             job.scan().await;
-            job.m.lock().unwrap().settled = true;
-            job.changed.send_modify(|v| *v += 1);
             let exit = job.proc.exited().unwrap();
             let state = job.state();
             if state == JobState::Failed {
@@ -931,28 +929,65 @@ impl Runtime {
                 state,
                 exit_code: exit.code,
             });
-            let crashed_early = state == JobState::Failed && !job.has(0, job.start_segment);
-            if !(crashed_early && job.hw != HwAccel::None) {
-                return;
+            // The replacement is registered before the waiters wake, so they move on to it.
+            if state == JobState::Failed
+                && !job.has(0, job.start_segment)
+                && job.hw != HwAccel::None
+            {
+                self.clone().fall_back(&job, &s).await;
             }
-            let lock = self.lock_for(&job.key);
-            let _g = lock.lock().await;
-            if !self.job(&job.key).is_some_and(|j| Arc::ptr_eq(&j, &job)) {
-                return;
-            }
-            tracing::warn!(key = job.key, from = ?job.hw, "hardware run failed, CPU fallback");
-            self.events.emit(EngineEvent::HwFallback {
-                job_key: job.key.clone(),
-                from: job.hw,
-                to: HwAccel::None,
-                stderr_tail: job.proc.stderr_tail(),
-            });
-            let dir = job.dir.clone();
-            let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
-            let hw = (HwAccel::None, job.requested_hw);
-            self.spawn_job(&s, &job.quality, job.start_segment, hw, job.restarts + 1)
-                .await;
+            job.m.lock().unwrap().settled = true;
+            job.changed.send_modify(|v| *v += 1);
         })
+    }
+
+    async fn fall_back(self: Arc<Self>, job: &Arc<Job>, s: &Arc<Session>) {
+        let lock = self.lock_for(&job.key);
+        let _g = lock.lock().await;
+        if !self.job(&job.key).is_some_and(|j| Arc::ptr_eq(&j, job)) {
+            return;
+        }
+        tracing::warn!(key = job.key, from = ?job.hw, "hardware run failed, CPU fallback");
+        self.events.emit(EngineEvent::HwFallback {
+            job_key: job.key.clone(),
+            from: job.hw,
+            to: HwAccel::None,
+            stderr_tail: job.proc.stderr_tail(),
+        });
+        let dir = job.dir.clone();
+        let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
+        let hw = (HwAccel::None, job.requested_hw);
+        self.spawn_job(s, &job.quality, job.start_segment, hw, job.restarts + 1)
+            .await;
+    }
+
+    /// Waits for a file of `job`, following the job that replaced it on the same rung (a CPU
+    /// fallback) until the deadline.
+    async fn wait_file(
+        &self,
+        mut job: Arc<Job>,
+        track: usize,
+        name: SegmentName,
+    ) -> (Arc<Job>, bool) {
+        let deadline = Instant::now() + Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let ok = match name {
+                SegmentName::Init(_) => job.wait_init(track, left).await,
+                SegmentName::Segment(n) => job.wait_segment(track, n, left).await,
+            };
+            match self.job(&job.key) {
+                Some(next)
+                    if !ok
+                        && !Arc::ptr_eq(&next, &job)
+                        && next.quality == job.quality
+                        && !left.is_zero() =>
+                {
+                    job = next
+                }
+                _ => return (job, ok),
+            }
+        }
     }
 
     /// The job that serves `quality` for a request at `requested`, spawning or restarting one as
@@ -974,13 +1009,11 @@ impl Runtime {
             // A run that fell back stays on the CPU.
             hw = (e.hw, e.requested_hw);
             let quality_match = e.quality == quality;
-            if !quality_match && e.producing() {
-                if requested == 0 && e.start_segment > 0 {
-                    requested = e.start_segment;
+            // Another rung: start where this request is (an init already asks for the resume floor).
+            if !quality_match {
+                if e.producing() {
+                    e.kill().await;
                 }
-                e.kill().await;
-            } else if !quality_match {
-                // A finished run of another rung: start where this request is.
             } else {
                 let input = ResolveInput {
                     run: e.existing_run(),
@@ -1050,31 +1083,21 @@ impl Runtime {
             }
         }
         let t0 = Instant::now();
-        let (job, landed) = match name {
-            SegmentName::Init(_) => {
-                let job = match same {
+        let job = match (name, same) {
+            (SegmentName::Init(_), Some(j)) => j,
+            (SegmentName::Init(_), None) => {
+                let floor = s.resume_floor(existing.as_deref());
+                match self.ensure_job(s, quality, floor).await {
                     Some(j) => j,
-                    None => {
-                        let floor = s.resume_floor(existing.as_deref());
-                        match self.ensure_job(s, quality, floor).await {
-                            Some(j) => j,
-                            None => return Fetch::Failed,
-                        }
-                    }
-                };
-                let wait = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
-                let ok = job.wait_init(0, wait).await;
-                (job, ok)
+                    None => return Fetch::Failed,
+                }
             }
-            SegmentName::Segment(n) => {
-                let Some(job) = self.ensure_job(s, quality, n).await else {
-                    return Fetch::Failed;
-                };
-                let wait = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
-                let ok = job.wait_segment(0, n, wait).await;
-                (job, ok)
-            }
+            (SegmentName::Segment(n), _) => match self.ensure_job(s, quality, n).await {
+                Some(j) => j,
+                None => return Fetch::Failed,
+            },
         };
+        let (job, landed) = self.wait_file(job, 0, name).await;
         let path = match name {
             SegmentName::Init(_) => job.init_path(0),
             SegmentName::Segment(n) => job.segment_path(0, n),
@@ -1117,13 +1140,10 @@ impl Runtime {
             return Fetch::NotFound;
         }
         let t0 = Instant::now();
-        let wait = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
-        let (path, landed) = match name {
-            SegmentName::Init(_) => (job.init_path(track), job.wait_init(track, wait).await),
-            SegmentName::Segment(n) => (
-                job.segment_path(track, n),
-                job.wait_segment(track, n, wait).await,
-            ),
+        let (job, landed) = self.wait_file(job, track, name).await;
+        let path = match name {
+            SegmentName::Init(_) => job.init_path(track),
+            SegmentName::Segment(n) => job.segment_path(track, n),
         };
         finish(path, job, landed, t0).await
     }
