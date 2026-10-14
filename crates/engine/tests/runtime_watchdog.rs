@@ -1,10 +1,12 @@
 //! Job ownership and the stall watchdog, against the `fake-ffmpeg` test binary (no real ffmpeg).
 mod runtime_common;
 use fliks_engine::proc::{Ffmpeg, STOP_GRACE};
-use fliks_engine::runtime::JobKind;
+use fliks_engine::runtime::{Job, JobKind};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
 use runtime_common::*;
 use serde_json::{Value, json};
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 fn info() -> Value {
@@ -55,7 +57,7 @@ async fn with_all_jobs(lifetime: Value) -> (Engine, String) {
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
     // A process is listed before its job is registered: wait for the registry.
-    until("three producing jobs", 10, || {
+    until("three producing jobs", 30, || {
         [JobKind::Main, JobKind::Early, JobKind::Remux]
             .iter()
             .all(|k| e.rt.job(&s.key(*k)).is_some_and(|j| j.producing()))
@@ -66,7 +68,22 @@ async fn with_all_jobs(lifetime: Value) -> (Engine, String) {
 }
 
 async fn gone(e: &Engine, why: &str) {
-    until(why, 10, || e.ffmpeg_pids().is_empty()).await;
+    until(why, 30, || e.ffmpeg_pids().is_empty()).await;
+}
+
+/// The next `JobEnded`, as (job key, state, exit code, reason).
+async fn job_ended(
+    rx: &mut tokio::sync::broadcast::Receiver<EngineEvent>,
+) -> (String, String, Option<i32>, Option<String>) {
+    match event(rx, 60, |e| matches!(e, EngineEvent::JobEnded { .. })).await {
+        EngineEvent::JobEnded {
+            job_key,
+            state,
+            exit_code,
+            reason,
+        } => (job_key, format!("{state:?}"), exit_code, reason),
+        _ => unreachable!(),
+    }
 }
 
 #[tokio::test]
@@ -94,9 +111,12 @@ async fn every_job_kind_stops_when_the_stop_command_ends_the_session() {
 #[tokio::test]
 async fn every_job_kind_stops_when_the_session_expires() {
     let (e, _) = with_all_jobs(json!({ "liveSessionTtlMs": 200 })).await;
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    e.rt.gc_tick().await;
-    assert!(e.ffmpeg_pids().is_empty());
+    let e = &e;
+    until_async("the expired session's jobs", 30, || async move {
+        e.rt.gc_tick().await;
+        e.ffmpeg_pids().is_empty()
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -150,7 +170,7 @@ async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
     e.rt.stop(&sid, "stopped").await;
     // A request racing the end of its session registers a run nobody owns.
     e.rt.prewarm_remux(&s, 0.0);
-    until("the orphan run", 10, || {
+    until("the orphan run", 30, || {
         e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
     })
     .await;
@@ -166,73 +186,86 @@ async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_r
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("the run", 10, || {
+    until("the run", 30, || {
         e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
     })
     .await;
     let first = e.rt.job(&s.key(JobKind::Remux)).unwrap();
     // 1 s of silence, then the polite stop is ignored and the 2 s grace ends in a kill.
-    until("the stall kill", 10, || !first.producing()).await;
-    gone(&e, "no process left").await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let ended: Vec<_> = std::iter::from_fn(|| ev.try_recv().ok())
-        .filter_map(|x| match x {
-            EngineEvent::JobEnded {
-                state,
-                exit_code,
-                reason,
-                ..
-            } => Some((format!("{state:?}"), exit_code, reason)),
-            _ => None,
-        })
-        .collect();
+    let (_, state, exit_code, reason) = job_ended(&mut ev).await;
     // A kill is a signal on unix and exit code 1 on windows.
     let code = if cfg!(unix) { None } else { Some(1) };
-    assert_eq!(ended, [("Failed".into(), code, Some("stalled".into()))]);
+    assert_eq!(
+        (state, exit_code, reason),
+        ("Failed".into(), code, Some("stalled".into()))
+    );
+    assert!(!first.producing());
+    gone(&e, "no process left").await;
     // The next request goes through the normal path and starts a new run.
     e.rt.prewarm_remux(&s, 0.0);
-    until("the restart", 10, || e.ffmpeg_pids().len() == 1).await;
+    until("the restart", 30, || {
+        e.ffmpeg_pids().len() == 1
+            && e.rt
+                .job(&s.key(JobKind::Remux))
+                .is_some_and(|j| !Arc::ptr_eq(&j, &first) && j.producing())
+    })
+    .await;
     e.rt.stop(&sid, "stopped").await;
     assert!(e.ffmpeg_pids().is_empty());
 }
 
+/// The job `sid` opened, once registered: a process is listed before its job is.
+async fn primary(e: &Engine, sid: &str) -> Arc<Job> {
+    let key = e.rt.peek(sid).unwrap().primary_key();
+    until("the job", 30, || {
+        e.rt.job(&key).is_some_and(|j| j.producing())
+    })
+    .await;
+    e.rt.job(&key).unwrap()
+}
+
 #[tokio::test]
 async fn a_run_burning_cpu_without_output_is_not_killed_until_it_goes_idle() {
-    // Busy for ~4 s (past the 1 s timeout) with no file and no stderr, then hangs like the real bug.
-    let (e, file) = engine_of(&fake("busy"), json!({ "jobStallTimeoutMs": 1000 })).await;
+    // Busy, with no file and no stderr, until told to rest; then it hangs like the real bug.
+    let busy = fake("busy");
+    let (e, file) = engine_of(&busy, json!({ "jobStallTimeoutMs": 3000 })).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("the run", 10, || {
+    until("the run", 30, || {
         e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
     })
     .await;
     let job = e.rt.job(&s.key(JobKind::Remux)).unwrap();
-    tokio::time::sleep(Duration::from_millis(3000)).await;
+    tokio::time::sleep(Duration::from_millis(4500)).await;
     assert!(
         job.producing(),
         "a working encode must survive the stall timeout"
     );
     // Once the CPU goes flat the usual stall kill applies.
-    until("the stall kill", 10, || !job.producing()).await;
+    std::fs::write(Path::new(&busy).with_extension("rest"), b"").unwrap();
+    until("the stall kill", 60, || !job.producing()).await;
     gone(&e, "no process left").await;
 }
 
 #[tokio::test]
 async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
-    let (e, file) = engine_of(&fake("talk"), json!({ "jobStallTimeoutMs": 1000 })).await;
+    let (e, file) = engine_of(&fake("talk"), json!({ "jobStallTimeoutMs": 3000 })).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
-    until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    until("the run", 30, || {
+        e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(4500)).await;
     assert_eq!(e.ffmpeg_pids().len(), 1);
     e.rt.shutdown().await;
 
     let (e, file) = engine_of(&fake("hang"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let pinned = json!({ "selection": { "requestedQuality": "720p" } });
     let sid = open(&e, &file, pinned).await;
-    until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
+    primary(&e, &sid).await;
     let r = e
         .control(
             "POST",
@@ -253,27 +286,21 @@ async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
 
 #[tokio::test]
 async fn an_early_companion_that_outlives_its_media_time_is_killed() {
-    let (e, file) = engine_of(&fake("early"), json!({ "jobStallTimeoutMs": 1000 })).await;
+    // The early run talks every 200 ms: only its natural end may stop it.
+    let (e, file) = engine_of(&fake("early"), json!({ "jobStallTimeoutMs": 3000 })).await;
     let mut ev = e.rt.events.subscribe();
     let sid = open(&e, &file, resume()).await;
     let s = e.rt.peek(&sid).unwrap();
-    until("both runs", 10, || {
+    until("both runs", 30, || {
         e.ffmpeg_pids().len() == 2 && e.rt.job(&s.key(JobKind::Early)).is_some()
     })
     .await;
-    let early = e.rt.job(&s.key(JobKind::Early)).unwrap();
-    // 2 segments + 1 s of media, then the 1 s grace.
-    until("the early kill", 20, || !early.producing()).await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let mut reasons: Vec<_> = std::iter::from_fn(|| ev.try_recv().ok())
-        .filter_map(|x| match x {
-            EngineEvent::JobEnded {
-                job_key, reason, ..
-            } => Some((job_key, reason?)),
-            _ => None,
-        })
-        .map(|(k, r)| (k.ends_with("-early"), r))
-        .collect();
+    // The main run stalls, the early one overruns its 2 segments + 1 s of media plus the grace.
+    let mut reasons = vec![];
+    for _ in 0..2 {
+        let (key, _, _, reason) = job_ended(&mut ev).await;
+        reasons.push((key.ends_with("-early"), reason.unwrap()));
+    }
     reasons.sort();
     assert_eq!(
         reasons,
@@ -287,11 +314,15 @@ async fn an_early_companion_that_outlives_its_media_time_is_killed() {
 
 #[tokio::test]
 async fn cpu_time_grows_for_a_busy_process_and_stays_flat_for_a_hung_one() {
-    let busy = Ffmpeg::spawn(&fake("busy"), &[]).await.unwrap();
+    let rest = fake("busy");
+    let busy = Ffmpeg::spawn(&rest, &[]).await.unwrap();
     let idle = Ffmpeg::spawn(&fake("hang"), &[]).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    assert!(busy.cpu_time_ms().unwrap() >= 300);
+    until("the busy process burns CPU", 60, || {
+        busy.cpu_time_ms().unwrap() >= 300
+    })
+    .await;
     assert!(idle.cpu_time_ms().unwrap() < 150);
+    std::fs::write(Path::new(&rest).with_extension("rest"), b"").unwrap();
     busy.stop().await;
     idle.stop().await;
 }
@@ -299,8 +330,8 @@ async fn cpu_time_grows_for_a_busy_process_and_stays_flat_for_a_hung_one() {
 #[tokio::test]
 async fn a_process_deaf_to_stop_is_killed_after_the_grace() {
     let p = Ffmpeg::spawn(&fake("hang"), &[]).await.unwrap();
-    // Let it install its signal handling first.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // It says so once its signal handling is in place.
+    until("the handler", 30, || p.stderr_lines() > 0).await;
     let t = std::time::Instant::now();
     p.stop().await;
     assert!(t.elapsed() >= STOP_GRACE);

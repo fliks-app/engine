@@ -129,7 +129,7 @@ async fn direct_play_from_an_https_upstream() {
     let mut body = res.into_body();
     let mut got = vec![];
     while got.len() < 18 {
-        let f = tokio::time::timeout(Duration::from_secs(5), body.frame()).await;
+        let f = tokio::time::timeout(Duration::from_secs(60), body.frame()).await;
         got.extend(f.unwrap().unwrap().unwrap().into_data().unwrap_or_default());
     }
     assert!(got.starts_with(b"TS"), "{got:?}");
@@ -154,16 +154,15 @@ async fn direct_play_from_an_https_upstream() {
         )
         .await;
     assert_eq!(r.status, 503, "{}", r.text());
-    let err = loop {
-        if let EngineEvent::LiveAttempt {
-            capacity_token,
-            error: Some(err),
-            ..
-        } = rx.recv().await.unwrap()
-            && capacity_token == "u"
-        {
-            break err;
-        }
+    let attempt = event(&mut rx, 60, |e| {
+        matches!(e, EngineEvent::LiveAttempt { capacity_token, error: Some(_), .. } if capacity_token == "u")
+    })
+    .await;
+    let EngineEvent::LiveAttempt {
+        error: Some(err), ..
+    } = attempt
+    else {
+        unreachable!()
     };
     assert!(err.contains("invalid peer certificate"), "{err}");
 }

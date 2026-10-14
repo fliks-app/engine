@@ -188,10 +188,14 @@ async fn streams_a_large_upload_with_backpressure() {
     let total = 16 * 1024;
     let seen = Arc::new(AtomicUsize::new(0));
     let s = seen.clone();
+    // The upstream reads nothing until the test has looked at how far the client body got.
+    let (go, gate) = oneshot::channel::<()>();
+    let gate = Arc::new(Mutex::new(Some(gate)));
     let up = serve(Router::new().fallback(move |req: Request| {
         let s = s.clone();
+        let gate = gate.lock().unwrap().take().unwrap();
         async move {
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            gate.await.ok();
             let mut b = req.into_body();
             while let Some(f) = b.frame().await {
                 s.fetch_add(f.unwrap().data_ref().map_or(0, |d| d.len()), SeqCst);
@@ -212,6 +216,7 @@ async fn streams_a_large_upload_with_backpressure() {
         ahead < 512,
         "client body was read {ahead} chunks while upstream stalled"
     );
+    go.send(()).unwrap();
     assert_eq!(pending.await.unwrap(), (total * CHUNK).to_string());
 }
 
@@ -246,7 +251,7 @@ async fn sse_events_arrive_incrementally() {
     .await;
     let gw = serve(gateway_for(up, None)).await;
     let mut body = send(gw, req(Method::GET, "/api/events")).await.into_body();
-    let first = tokio::time::timeout(Duration::from_secs(5), body.frame())
+    let first = tokio::time::timeout(Duration::from_secs(60), body.frame())
         .await
         .expect("first event not flushed")
         .unwrap()

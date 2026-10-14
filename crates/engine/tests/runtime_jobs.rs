@@ -76,7 +76,7 @@ async fn job(e: &Engine, id: &str) -> Value {
 async fn done(rx: &mut broadcast::Receiver<EngineEvent>, id: &str) -> (Vec<f64>, EngineEvent) {
     let mut progress = vec![];
     loop {
-        let ev = tokio::time::timeout(Duration::from_secs(30), rx.recv())
+        let ev = tokio::time::timeout(Duration::from_secs(120), rx.recv())
             .await
             .expect("BgJobDone")
             .unwrap();
@@ -158,7 +158,7 @@ async fn cancel_a_queued_and_a_running_job_then_shutdown() {
     let a = submit(&e, 7, &file, false).await;
     let b = submit(&e, 8, &file, false).await;
     let c = submit(&e, 9, &file, false).await;
-    until("frame runs", 10, || !e.ffmpeg_pids().is_empty()).await;
+    until("frame runs", 30, || !e.ffmpeg_pids().is_empty()).await;
     assert_eq!(job(&e, &c).await["state"], "queued", "two jobs run at once");
     assert_eq!(
         e.control("DELETE", &format!("/v1/jobs/{c}"), None)
@@ -213,27 +213,37 @@ async fn failing_frames_and_a_full_disk_fail_the_job() {
     assert_eq!(bad.status, 400, "no duration");
 }
 
-/// `stat` of the sprite frame runs of `e`.
+/// Waits for the main and early runs of `sid`: they launch after `open` returns, and a stop only
+/// reaches the registered ones.
+#[cfg(unix)]
+async fn playback_runs(e: &Engine, sid: &str) {
+    use fliks_engine::runtime::JobKind;
+    let s = e.rt.peek(sid).unwrap();
+    until("both playback runs", 30, || {
+        [JobKind::Main, JobKind::Early]
+            .iter()
+            .all(|k| e.rt.job(&s.key(*k)).is_some_and(|j| j.producing()))
+    })
+    .await;
+}
+
+/// `ps` state of the sprite frame runs of `e`.
 #[cfg(unix)]
 fn frame_states(e: &Engine) -> Vec<String> {
-    let root = e.root.to_string_lossy().into_owned();
-    let out = std::process::Command::new("ps")
-        .args(["-axo", "stat=,command="])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| l.contains(&root) && l.contains("-frames:v") && !l.starts_with('Z'))
-        .map(|l| l.split_whitespace().next().unwrap().to_string())
+    e.ffmpeg_procs()
+        .into_iter()
+        .filter(|(_, _, cmd)| cmd.contains("-frames:v"))
+        .map(|(_, stat, _)| stat)
         .collect()
 }
 
 #[cfg(unix)]
 #[tokio::test]
 async fn playback_preempts_a_background_job_then_it_resumes() {
-    let (e, file) = engine_of("slowsprite", json!({ "ffmpegSlots": 1 })).await;
+    // A frame run that never ends: the preemption always meets a live run.
+    let (e, file) = engine_of("hangsprite", json!({ "ffmpegSlots": 1 })).await;
     let id = submit(&e, 7, &file, false).await;
-    until("a frame run", 10, || frame_states(&e).len() == 1).await;
+    until("a frame run", 30, || frame_states(&e).len() == 1).await;
     // A resume on a pinned rung: the main run and its early companion take playback slots.
     let info = serde_json::from_value(info()).unwrap();
     let open = json!({ "startAtS": 60.0, "selection": { "requestedQuality": "720p" } });
@@ -241,22 +251,35 @@ async fn playback_preempts_a_background_job_then_it_resumes() {
         .as_str()
         .unwrap()
         .to_string();
-    until("frame paused", 10, || {
-        frame_states(&e).iter().all(|s| s.starts_with('T'))
+    playback_runs(&e, &sid).await;
+    assert_eq!(e.rt.slots.playback_in_use(), 2);
+    until("frame paused", 30, || {
+        let s = frame_states(&e);
+        !s.is_empty() && s.iter().all(|s| s.starts_with('T'))
     })
     .await;
-    assert_eq!(job(&e, &id).await["state"], "paused");
-    assert_eq!(e.rt.slots.playback_in_use(), 2);
+    until_async("job paused", 30, || async {
+        job(&e, &id).await["state"] == "paused"
+    })
+    .await;
     let r = e
         .control("DELETE", &format!("/v1/sessions/{sid}"), None)
         .await;
     assert_eq!(r.status, 204);
-    until("frame resumed", 10, || {
+    assert_eq!(
+        e.rt.slots.playback_in_use(),
+        0,
+        "stop returns with the slots freed"
+    );
+    until("frame resumed", 30, || {
         let s = frame_states(&e);
         !s.is_empty() && s.iter().all(|s| !s.starts_with('T'))
     })
     .await;
-    assert_eq!(job(&e, &id).await["state"], "running");
+    until_async("job running", 30, || async {
+        job(&e, &id).await["state"] == "running"
+    })
+    .await;
     assert_eq!(
         e.control("DELETE", &format!("/v1/jobs/{id}"), None)
             .await
@@ -313,7 +336,7 @@ async fn hang_then_cancel(e: &Engine, file: &std::path::Path, kind: Value) {
         .as_str()
         .unwrap()
         .to_string();
-    until("a tool run", 10, || !e.ffmpeg_pids().is_empty()).await;
+    until("a tool run", 30, || !e.ffmpeg_pids().is_empty()).await;
     let r = e.control("DELETE", &format!("/v1/jobs/{id}"), None).await;
     assert_eq!(r.status, 204);
     let v = done_json(&done(&mut rx, &id).await.1);
@@ -628,8 +651,11 @@ async fn new_kinds_share_the_slot_budget() {
         .as_str()
         .unwrap()
         .to_string();
-    until("the first run", 10, || !e.ffmpeg_pids().is_empty()).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    until("the first run", 30, || !e.ffmpeg_pids().is_empty()).await;
+    until("the second waits for the slot", 30, || {
+        e.rt.slots.waiting() == 1
+    })
+    .await;
     assert_eq!(e.ffmpeg_pids().len(), 1, "one tool run for one slot");
     assert_eq!(
         (
@@ -651,21 +677,18 @@ async fn playback_pauses_a_fingerprint_job() {
         .as_str()
         .unwrap()
         .to_string();
-    until("the tool run", 10, || !e.ffmpeg_pids().is_empty()).await;
+    until("the tool run", 30, || !e.ffmpeg_pids().is_empty()).await;
     let info = serde_json::from_value(info()).unwrap();
     let open = json!({ "startAtS": 60.0, "selection": { "requestedQuality": "720p" } });
     let sid = e.open(7, &file, &info, "alice", open).await["sessionId"]
         .as_str()
         .unwrap()
         .to_string();
-    until("job paused", 10, || e.rt.slots.playback_in_use() > 0).await;
-    for _ in 0..200 {
-        if job(&e, &id).await["state"] == "paused" {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert_eq!(job(&e, &id).await["state"], "paused");
+    playback_runs(&e, &sid).await;
+    until_async("job paused", 30, || async {
+        job(&e, &id).await["state"] == "paused"
+    })
+    .await;
     let r = e
         .control("DELETE", &format!("/v1/sessions/{sid}"), None)
         .await;

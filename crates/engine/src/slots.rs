@@ -63,6 +63,11 @@ impl Slots {
         self.st.lock().unwrap().playback
     }
 
+    /// Background runs queued for a slot.
+    pub fn waiting(&self) -> usize {
+        self.st.lock().unwrap().queue.len()
+    }
+
     /// Never waits: playback runs first, past the size if need be.
     pub fn playback(self: &Arc<Self>) -> PlaybackSlot {
         let mut st = self.st.lock().unwrap();
