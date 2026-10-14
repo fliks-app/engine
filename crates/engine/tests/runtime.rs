@@ -16,7 +16,20 @@ fn info() -> Value {
 }
 
 async fn setup() -> (Engine, std::path::PathBuf) {
-    let e = engine().await;
+    setup_with(json!({})).await
+}
+
+async fn setup_with(lifetime: Value) -> (Engine, std::path::PathBuf) {
+    let e = engine_with(
+        host(
+            fliks_engine_core::api::HwAccel::None,
+            "/dev/dri/renderD128",
+            "signal",
+        ),
+        &ffmpeg(),
+        lifetime,
+    )
+    .await;
     let dir = temp_dir("media");
     let file = dir.join("movie.mkv");
     std::fs::write(
@@ -366,7 +379,6 @@ async fn revoke_ends_sessions_and_purges_the_resolver_cache() {
         .control("POST", "/v1/revoke", Some(json!({ "ownerId": "alice" })))
         .await;
     assert_eq!(r.json()["sessions"], 1);
-    // The revoked owner's grant was dropped: the next request asks the host again.
     let before = e.stub.calls();
     let gone = e
         .get(
@@ -376,6 +388,10 @@ async fn revoke_ends_sessions_and_purges_the_resolver_cache() {
         )
         .await;
     assert_eq!(gone.status, 410);
+    assert_eq!(e.stub.calls(), before);
+    // Without a sid the resolver is asked again, the grant having been purged.
+    let none = e.get("/api/stream/7/master.m3u8", "alice-jwt", &[]).await;
+    assert_eq!(none.status, 410);
     assert_eq!(e.stub.calls(), before + 1);
     assert_eq!(
         e.get(
@@ -587,4 +603,83 @@ async fn dolby_vision_remux_carries_its_codec_strings() {
             );
         }
     }
+}
+
+const SID_ROUTES: [&str; 8] = [
+    "master.m3u8",
+    "720p/index.m3u8",
+    "720p/init.mp4",
+    "720p/seg-0.m4s",
+    "audio/1/index.m3u8",
+    "audio/1/seg-0.m4s",
+    "iframe/index.m3u8",
+    "subtitles/embedded/2/index.m3u8",
+];
+
+/// Every sid-bound route answers 410 with the host down and no resolver call.
+async fn assert_all_gone(e: &Engine, sid: &str) {
+    e.stub.set_down(true);
+    let before = e.stub.calls();
+    for r in SID_ROUTES {
+        let res = e
+            .get(&format!("/api/stream/7/{r}?sid={sid}"), "carol-jwt", &[])
+            .await;
+        assert_eq!(res.status, 410, "{r}");
+        assert_eq!(res.json()["code"], "session_expired", "{r}");
+    }
+    assert_eq!(e.stub.calls(), before);
+}
+
+#[tokio::test]
+async fn a_deleted_sid_answers_410_on_every_route() {
+    let (e, file) = setup().await;
+    let s = open(&e, &file, "alice").await;
+    let sid = s["sessionId"].as_str().unwrap();
+    let d = e
+        .control("DELETE", &format!("/v1/sessions/{sid}"), None)
+        .await;
+    assert_eq!(d.status, 204);
+    assert_all_gone(&e, sid).await;
+}
+
+#[tokio::test]
+async fn a_revoked_sid_answers_410_on_every_route() {
+    let (e, file) = setup().await;
+    let s = open(&e, &file, "alice").await;
+    let sid = s["sessionId"].as_str().unwrap();
+    let body = json!({ "ownerId": "alice" });
+    assert_eq!(
+        e.control("POST", "/v1/revoke", Some(body)).await.json()["sessions"],
+        1
+    );
+    assert_all_gone(&e, sid).await;
+}
+
+#[tokio::test]
+async fn an_expired_sid_past_the_revive_window_answers_410() {
+    let (e, file) = setup_with(json!({ "liveSessionTtlMs": 100, "sessionReviveTtlMs": 100 })).await;
+    let s = open(&e, &file, "alice").await;
+    let sid = s["sessionId"].as_str().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    e.rt.gc_tick().await;
+    assert_all_gone(&e, sid).await;
+}
+
+#[tokio::test]
+async fn a_revivable_expired_sid_keeps_serving() {
+    let (e, file) =
+        setup_with(json!({ "liveSessionTtlMs": 100, "sessionReviveTtlMs": 60000 })).await;
+    let s = open(&e, &file, "alice").await;
+    let sid = s["sessionId"].as_str().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    e.rt.gc_tick().await;
+    assert!(e.rt.peek(sid).is_none());
+    let m = e
+        .get(
+            &format!("/api/stream/7/master.m3u8?sid={sid}"),
+            "alice-jwt",
+            &[],
+        )
+        .await;
+    assert_eq!(m.status, 200);
 }
