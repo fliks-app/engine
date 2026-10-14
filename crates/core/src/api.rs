@@ -21,14 +21,6 @@ mod double_option {
     }
 }
 
-fn media_info_schema_version() -> u32 {
-    MEDIA_INFO_SCHEMA_VERSION
-}
-
-fn source_scan_schema_version() -> u32 {
-    SOURCE_SCAN_SCHEMA_VERSION
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Hello {
@@ -335,9 +327,9 @@ pub struct MediaInfo {
     pub chapters: Option<Vec<Chapter>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// Bumped when probing changes what it records; triggers a re-probe.
-    #[serde(default = "media_info_schema_version")]
-    pub schema_version: u32,
+    /// Bumped when probing changes what it records; absent on blobs persisted before the engine existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -445,8 +437,8 @@ pub struct SourceScan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_seconds: Option<f64>,
     pub audio_config_changes: BTreeMap<u32, bool>,
-    #[serde(default = "source_scan_schema_version")]
-    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
 }
 
 #[cfg(test)]
@@ -498,10 +490,7 @@ mod tests {
     fn media_info_absent_stays_absent_and_unknown_ignored() {
         let v = json!({ "video": [], "audio": [], "subtitles": [], "future": 1 });
         let out = roundtrip::<MediaInfo>(&v);
-        assert_eq!(
-            out,
-            json!({ "video": [], "audio": [], "subtitles": [], "schemaVersion": 1 })
-        );
+        assert_eq!(out, json!({ "video": [], "audio": [], "subtitles": [] }));
     }
 
     #[test]

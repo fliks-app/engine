@@ -1,0 +1,377 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": false,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 6,
+          "codec": "dts",
+          "copy": false,
+          "index": 0,
+          "language": "eng",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [
+            "AudioChannelsNotSupported",
+            "AudioCodecNotSupported"
+          ],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "nvenc",
+      "mediaFileId": 1,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "av1",
+      "playMethod": "Transcode",
+      "playUrl": "/api/stream/1/master.m3u8?token=t",
+      "qualities": [
+        {
+          "height": 2160,
+          "id": "2160p",
+          "isRemux": false,
+          "label": "4K",
+          "totalBitrateBps": 20192000,
+          "width": 3840
+        },
+        {
+          "height": 2160,
+          "id": "eco-2160p",
+          "isRemux": false,
+          "label": "4K",
+          "lowBandwidth": true,
+          "totalBitrateBps": 8192000,
+          "width": 3840
+        },
+        {
+          "height": 1080,
+          "id": "1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "totalBitrateBps": 8192000,
+          "width": 1920
+        },
+        {
+          "height": 1080,
+          "id": "eco-1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 3192000,
+          "width": 1920
+        },
+        {
+          "height": 720,
+          "id": "720p",
+          "isRemux": false,
+          "label": "720p",
+          "totalBitrateBps": 4128000,
+          "width": 1280
+        },
+        {
+          "height": 720,
+          "id": "eco-720p",
+          "isRemux": false,
+          "label": "720p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 1628000,
+          "width": 1280
+        },
+        {
+          "height": 480,
+          "id": "480p",
+          "isRemux": false,
+          "label": "480p",
+          "totalBitrateBps": 2096000,
+          "width": 854
+        },
+        {
+          "height": 360,
+          "id": "360p",
+          "isRemux": false,
+          "label": "360p",
+          "totalBitrateBps": 1064000,
+          "width": 640
+        },
+        {
+          "height": 240,
+          "id": "240p",
+          "isRemux": false,
+          "label": "240p",
+          "totalBitrateBps": 564000,
+          "width": 426
+        },
+        {
+          "height": 144,
+          "id": "144p",
+          "isRemux": false,
+          "label": "144p",
+          "totalBitrateBps": 248000,
+          "width": 256
+        }
+      ],
+      "quality": "auto",
+      "source": {
+        "audioBitRate": 1509000,
+        "audioChannelLayout": "5.1(side)",
+        "audioChannels": 6,
+        "audioCodec": "dts",
+        "audioLanguage": "eng",
+        "audioSampleRate": 48000,
+        "colorPrimaries": "bt709",
+        "colorSpace": "bt709",
+        "colorTransfer": "bt709",
+        "container": "mkv",
+        "durationSeconds": 5400,
+        "formatBitRate": 82000000,
+        "frameRate": "24000/1001",
+        "height": 2160,
+        "videoBitDepth": 10,
+        "videoBitRate": 78000000,
+        "videoCodec": "hevc",
+        "videoLevel": 153,
+        "videoProfile": "main 10",
+        "width": 3840
+      },
+      "tonemapping": false,
+      "transcodeBitrateByQuality": {
+        "1080p": {
+          "audioBitrateBps": 192000,
+          "totalBitrateBps": 8192000,
+          "videoBitrateBps": 8000000
+        },
+        "144p": {
+          "audioBitrateBps": 48000,
+          "totalBitrateBps": 248000,
+          "videoBitrateBps": 200000
+        },
+        "2160p": {
+          "audioBitrateBps": 192000,
+          "totalBitrateBps": 20192000,
+          "videoBitrateBps": 20000000
+        },
+        "240p": {
+          "audioBitrateBps": 64000,
+          "totalBitrateBps": 564000,
+          "videoBitrateBps": 500000
+        },
+        "360p": {
+          "audioBitrateBps": 64000,
+          "totalBitrateBps": 1064000,
+          "videoBitrateBps": 1000000
+        },
+        "480p": {
+          "audioBitrateBps": 96000,
+          "totalBitrateBps": 2096000,
+          "videoBitrateBps": 2000000
+        },
+        "720p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 4128000,
+          "videoBitrateBps": 4000000
+        },
+        "eco-1080p": {
+          "audioBitrateBps": 192000,
+          "totalBitrateBps": 3192000,
+          "videoBitrateBps": 3000000
+        },
+        "eco-2160p": {
+          "audioBitrateBps": 192000,
+          "totalBitrateBps": 8192000,
+          "videoBitrateBps": 8000000
+        },
+        "eco-720p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 1628000,
+          "videoBitrateBps": 1500000
+        }
+      },
+      "transcodeReasons": [
+        {
+          "flag": "VideoCodecNotSupported",
+          "message": "Codec \"hevc\" not supported"
+        },
+        {
+          "flag": "ContainerNotSupported",
+          "message": "Container \"mkv\" not supported"
+        },
+        {
+          "flag": "AudioChannelsNotSupported",
+          "message": "6 channels > max 2"
+        },
+        {
+          "flag": "AudioCodecNotSupported",
+          "message": "Audio codec \"dts\" is not playable here"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "av1",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "nvenc",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [
+      "cuda",
+      "cudaHdr10"
+    ],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "codecConditions": [
+        {
+          "codec": "h264",
+          "maxBitDepth": 8,
+          "maxLevel": 52,
+          "profiles": [
+            "baseline",
+            "main",
+            "high"
+          ]
+        },
+        {
+          "codec": "av1",
+          "maxBitDepth": 10
+        }
+      ],
+      "deviceName": "Chrome",
+      "deviceType": "desktop",
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "aac",
+            "mp3",
+            "opus",
+            "flac"
+          ],
+          "containers": [
+            "mp4",
+            "webm"
+          ],
+          "videoCodecs": [
+            "h264",
+            "vp9",
+            "av1"
+          ]
+        }
+      ],
+      "maxAudioChannels": 2,
+      "supportsAbr": true,
+      "supportsDirectPlay": true,
+      "supportsHdr": false,
+      "supportsHlsSubtitles": false,
+      "switchesDirectPlayAudio": false,
+      "systemName": "Linux"
+    },
+    "info": {
+      "audio": [
+        {
+          "bitRate": 1509000,
+          "channelLayout": "5.1(side)",
+          "channels": 6,
+          "codec": "dts",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "profile": "DTS-HD MA",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 82000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 78000000,
+          "codec": "hevc",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 2160,
+          "level": 153,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 3840
+        }
+      ]
+    },
+    "media": {
+      "contentType": "video/x-matroska",
+      "ext": ".mkv",
+      "mediaFileId": 1,
+      "path": "/media/hevc-4k-highbitrate-mkv.mkv"
+    },
+    "scan": null,
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "web-chrome hevc-4k-highbitrate-mkv nvenc auto",
+  "source": "synthetic"
+}

@@ -2,6 +2,7 @@
 
 - [tests.md](tests.md): one line per test set.
 - `spec/<domain>.md`: port specs (written before each port).
+  - [spec/decide.md](spec/decide.md): the play-method decision (`evaluate()`), ladder, audio plan, HDR/DV, host caps.
 
 ## Tags
 

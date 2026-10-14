@@ -1,0 +1,208 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "bitrateBps": 128000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": true,
+      "audioPlan": {
+        "bitrateBps": 128000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "copy": true,
+          "index": 0,
+          "language": "und",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": []
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "video/x-matroska",
+      "dolbyVision": true,
+      "hwAccel": "none",
+      "mediaFileId": 1,
+      "outputAudioCodec": "aac",
+      "outputContainer": "mkv",
+      "outputVideoCodec": "hevc",
+      "playMethod": "DirectPlay",
+      "playUrl": "/api/stream/1tok",
+      "qualities": [
+        {
+          "height": 1080,
+          "id": "original",
+          "isRemux": false,
+          "label": "1080p",
+          "totalBitrateBps": 8128000,
+          "width": 1920
+        },
+        {
+          "height": 1080,
+          "id": "eco-1080p-hdr",
+          "isRemux": false,
+          "label": "1080p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 2392000,
+          "width": 1920
+        },
+        {
+          "height": 720,
+          "id": "720p-hdr",
+          "isRemux": false,
+          "label": "720p",
+          "totalBitrateBps": 2928000,
+          "width": 1280
+        },
+        {
+          "height": 480,
+          "id": "480p-hdr",
+          "isRemux": false,
+          "label": "480p",
+          "totalBitrateBps": 1496000,
+          "width": 854
+        }
+      ],
+      "quality": "original",
+      "source": {
+        "audioBitRate": 128000,
+        "audioChannels": 2,
+        "audioCodec": "aac",
+        "audioLanguage": "und",
+        "colorPrimaries": "bt2020",
+        "colorSpace": "bt2020nc",
+        "colorTransfer": "smpte2084",
+        "container": "mkv",
+        "durationSeconds": 100,
+        "frameRate": "24",
+        "hdrFormat": "HDR10",
+        "height": 1080,
+        "videoBitDepth": 10,
+        "videoBitRate": 8000000,
+        "videoCodec": "hevc",
+        "videoLevel": 120,
+        "videoProfile": "main 10",
+        "width": 1920
+      },
+      "tonemapping": false,
+      "transcodeReasons": [],
+      "videoCopyStream": true
+    },
+    "transcodeTonemapping": true,
+    "useHdrLadder": true,
+    "videoVariant": {
+      "bitDepth": 10,
+      "codec": "hevc",
+      "hdr": "HDR10"
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "codecConditions": [
+        {
+          "codec": "hevc",
+          "maxBitDepth": 10,
+          "maxHeight": 2160,
+          "maxLevel": 180,
+          "maxWidth": 3840,
+          "profiles": [
+            "main",
+            "main 10"
+          ]
+        }
+      ],
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "aac"
+          ],
+          "containers": [
+            "mkv"
+          ],
+          "videoCodecs": [
+            "hevc"
+          ]
+        }
+      ],
+      "maxAudioChannels": 6,
+      "supportsDirectPlay": true,
+      "supportsDolbyVision": true,
+      "supportsHdr": true
+    },
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitDepth": 10,
+          "bitRate": 8000000,
+          "codec": "hevc",
+          "colorPrimaries": "bt2020",
+          "colorRange": "tv",
+          "colorSpace": "bt2020nc",
+          "colorTransfer": "smpte2084",
+          "dvBlSignalCompatId": 0,
+          "dvLevel": 6,
+          "dvProfile": 5,
+          "frameRate": "24",
+          "hdrFormat": "HDR10",
+          "height": 1080,
+          "level": 120,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    },
+    "media": {
+      "contentType": "video/x-matroska",
+      "ext": ".mkv",
+      "mediaFileId": 1,
+      "path": "/m/in.mkv"
+    },
+    "scan": null,
+    "selection": {
+      "tokenParam": "tok"
+    }
+  },
+  "name": "dovi-play-method: StreamBuilderService — Dolby Vision play-method DirectPlays P5 untouched for a client that can present DV",
+  "source": "dovi-play-method"
+}

@@ -1,0 +1,294 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "bitrateBps": 640000,
+        "channels": 6,
+        "codec": "eac3",
+        "mode": "copy"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": true,
+      "audioPlan": {
+        "bitrateBps": 640000,
+        "channels": 6,
+        "codec": "eac3",
+        "mode": "copy"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 640000,
+          "channels": 6,
+          "codec": "eac3",
+          "copy": true,
+          "index": 0,
+          "language": "eng",
+          "outputChannels": 6,
+          "outputCodec": "eac3",
+          "reasonFlags": [],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": true,
+      "contentType": "video/mp4",
+      "dolbyVision": true,
+      "hwAccel": "none",
+      "mediaFileId": 1,
+      "outputAudioCodec": "eac3",
+      "outputContainer": "mp4",
+      "outputVideoCodec": "hevc",
+      "playMethod": "DirectPlay",
+      "playUrl": "/api/stream/1?token=t",
+      "qualities": [
+        {
+          "height": 2160,
+          "id": "original",
+          "isRemux": false,
+          "label": "4K",
+          "totalBitrateBps": 25000000,
+          "width": 3840
+        },
+        {
+          "height": 2160,
+          "id": "eco-2160p",
+          "isRemux": false,
+          "label": "4K",
+          "lowBandwidth": true,
+          "totalBitrateBps": 8192000,
+          "width": 3840
+        },
+        {
+          "height": 1080,
+          "id": "1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "totalBitrateBps": 8192000,
+          "width": 1920
+        },
+        {
+          "height": 1080,
+          "id": "eco-1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 3192000,
+          "width": 1920
+        },
+        {
+          "height": 720,
+          "id": "720p",
+          "isRemux": false,
+          "label": "720p",
+          "totalBitrateBps": 4128000,
+          "width": 1280
+        },
+        {
+          "height": 720,
+          "id": "eco-720p",
+          "isRemux": false,
+          "label": "720p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 1628000,
+          "width": 1280
+        },
+        {
+          "height": 480,
+          "id": "480p",
+          "isRemux": false,
+          "label": "480p",
+          "totalBitrateBps": 2096000,
+          "width": 854
+        },
+        {
+          "height": 360,
+          "id": "360p",
+          "isRemux": false,
+          "label": "360p",
+          "totalBitrateBps": 1064000,
+          "width": 640
+        },
+        {
+          "height": 240,
+          "id": "240p",
+          "isRemux": false,
+          "label": "240p",
+          "totalBitrateBps": 564000,
+          "width": 426
+        },
+        {
+          "height": 144,
+          "id": "144p",
+          "isRemux": false,
+          "label": "144p",
+          "totalBitrateBps": 248000,
+          "width": 256
+        }
+      ],
+      "quality": "original",
+      "source": {
+        "audioBitRate": 640000,
+        "audioChannels": 6,
+        "audioCodec": "eac3",
+        "audioLanguage": "eng",
+        "audioSampleRate": 48000,
+        "container": "mp4",
+        "durationSeconds": 5400,
+        "formatBitRate": 25000000,
+        "frameRate": "24000/1001",
+        "height": 2160,
+        "videoBitDepth": 10,
+        "videoBitRate": 24000000,
+        "videoCodec": "hevc",
+        "videoLevel": 150,
+        "videoProfile": "main 10",
+        "width": 3840
+      },
+      "tonemapping": false,
+      "transcodeReasons": [],
+      "videoCopyStream": true
+    },
+    "transcodeTonemapping": true,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "hevc",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "cropsBlackBarsLocally": true,
+      "deviceName": "mpv",
+      "deviceType": "desktop",
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "aac",
+            "ac3",
+            "eac3",
+            "dts",
+            "truehd",
+            "flac",
+            "opus",
+            "mp3"
+          ],
+          "containers": [
+            "mkv",
+            "mp4",
+            "webm"
+          ],
+          "videoCodecs": [
+            "h264",
+            "hevc",
+            "av1",
+            "vp9"
+          ]
+        }
+      ],
+      "dolbyVisionProfiles": [
+        5,
+        8
+      ],
+      "maxAudioChannels": 8,
+      "supportsDirectPlay": true,
+      "supportsHdr": false,
+      "systemName": "Windows",
+      "tonemapsHdrLocally": true
+    },
+    "info": {
+      "audio": [
+        {
+          "bitRate": 640000,
+          "channels": 6,
+          "codec": "eac3",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 25000000,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 24000000,
+          "codec": "hevc",
+          "colorRange": "tv",
+          "displayAspectRatio": "16:9",
+          "dvBlPresent": true,
+          "dvBlSignalCompatId": 0,
+          "dvElPresent": false,
+          "dvLevel": 6,
+          "dvProfile": 5,
+          "dvRpuPresent": true,
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 2160,
+          "level": 150,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 3840
+        }
+      ]
+    },
+    "media": {
+      "contentType": "video/mp4",
+      "ext": ".mp4",
+      "mediaFileId": 1,
+      "path": "/media/dv-p5-mp4.mp4"
+    },
+    "scan": null,
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "desktop-mpv dv-p5-mp4 cpu auto",
+  "source": "synthetic"
+}
