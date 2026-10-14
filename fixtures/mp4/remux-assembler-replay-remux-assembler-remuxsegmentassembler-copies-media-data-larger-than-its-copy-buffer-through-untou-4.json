@@ -1,0 +1,16 @@
+{
+  "args": {
+    "moofs": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAH0AAAABR0cnVuAAABAAAAAAEAAAfQAAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAF3AA==",
+    "trackId": 1,
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": {
+      "end": "4000",
+      "lastDuration": "2000"
+    }
+  },
+  "fn": "videoDecodeExtent",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler copies media data larger than its copy buffer through untouched",
+  "source": "remux-assembler"
+}

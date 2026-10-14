@@ -1,0 +1,43 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "channels": 6,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "audioStreams": [
+      {
+        "channels": 6
+      },
+      {
+        "channels": 2
+      }
+    ],
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 1,
+    "sourceHeight": 2160,
+    "sourceWidth": 3840,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"und\",LANGUAGE=\"und\",DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"6\",URI=\"/api/stream/1/audio/0/index.m3u8\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"und #2\",LANGUAGE=\"und\",DEFAULT=NO,AUTOSELECT=NO,CHANNELS=\"2\",URI=\"/api/stream/1/audio/1/index.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=38364000,AVERAGE-BANDWIDTH=25576000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"2160p-hdr\",CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=9114000,AVERAGE-BANDWIDTH=6076000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"1080p-hdr\",CODECS=\"hvc1.2.4.L120.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/1080p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4776000,AVERAGE-BANDWIDTH=3184000,RESOLUTION=1280x720,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"720p-hdr\",CODECS=\"hvc1.2.4.L93.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/720p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2532000,AVERAGE-BANDWIDTH=1688000,RESOLUTION=854x482,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"480p-hdr\",CODECS=\"hvc1.2.4.L93.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/480p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=18864000,AVERAGE-BANDWIDTH=12576000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-2160p-hdr\",CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4164000,AVERAGE-BANDWIDTH=2776000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-1080p-hdr\",CODECS=\"hvc1.2.4.L120.B0,mp4a.40.2\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-1080p-hdr/index.m3u8"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist: replay master-playlist generateMasterPlaylist — audio rendition CHANNELS declares the resolved output channels on the HDR ladder too",
+  "source": "master-playlist"
+}

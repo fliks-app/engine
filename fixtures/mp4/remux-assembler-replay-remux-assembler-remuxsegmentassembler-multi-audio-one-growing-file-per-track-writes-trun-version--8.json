@@ -1,0 +1,25 @@
+{
+  "args": {
+    "buf": "AAAAWG1vb2YAAABQdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAAAAAAAAAAAAAAAACR0cnVuAAAPAQAAAAEAAAAAAAAEAAAAAAICAAAA////+w==",
+    "traf": {
+      "payloadStart": 16,
+      "size": 80,
+      "start": 8,
+      "type": "traf"
+    },
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": [
+      {
+        "cts": -5,
+        "duration": 1024,
+        "flags": 33554432,
+        "size": 2
+      }
+    ]
+  },
+  "fn": "trunSamples",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) writes trun version 1 for a negative CTS: version 0 is unsigned and cannot round-trip it",
+  "source": "remux-assembler"
+}

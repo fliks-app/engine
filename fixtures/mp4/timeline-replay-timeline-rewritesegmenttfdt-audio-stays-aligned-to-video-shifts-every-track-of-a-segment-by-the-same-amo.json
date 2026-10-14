@@ -1,0 +1,26 @@
+{
+  "args": {
+    "init": "AAAAsG1vb3YAAABUdHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGUAAABUdHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ],
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "timeline: replay timeline rewriteSegmentTfdt audio stays aligned to video shifts every track of a segment by the same amount",
+  "source": "timeline"
+}

@@ -1,0 +1,19 @@
+{
+  "args": {
+    "audioIndex": 1,
+    "frameRate": "24000/1001",
+    "live": {
+      "kind": "remux"
+    },
+    "mediaFileId": 42,
+    "resolvedDuration": 125.5,
+    "segmentDuration": 3,
+    "sid": "s1"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"/api/stream/42/audio/1/init_2.mp4?sid=s1\"\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0000.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0001.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0002.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0003.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0004.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0005.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0006.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0007.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0008.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0009.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0010.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0011.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0012.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0013.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0014.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0015.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0016.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0017.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0018.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0019.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0020.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0021.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0022.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0023.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0024.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0025.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0026.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0027.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0028.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0029.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0030.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0031.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0032.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0033.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0034.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0035.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0036.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0037.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0038.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0039.m4s?sid=s1\n#EXTINF:3.000,\n/api/stream/42/audio/1/seg-0040.m4s?sid=s1\n#EXTINF:2.500,\n/api/stream/42/audio/1/seg-0041.m4s?sid=s1\n#EXT-X-ENDLIST"
+  },
+  "fn": "audioRoute",
+  "name": "synthetic audio route {\"kind\":\"remux\"}",
+  "source": "synthetic"
+}

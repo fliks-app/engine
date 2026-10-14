@@ -1,0 +1,15 @@
+{
+  "args": {
+    "durations": [],
+    "seg": {
+      "prefix": "/api/stream/7/720p/seg-",
+      "suffix": ".m4s?token=t"
+    }
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-ENDLIST"
+  },
+  "fn": "variableVodPlaylist",
+  "name": "synthetic variable empty",
+  "source": "synthetic"
+}

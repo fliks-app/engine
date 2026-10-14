@@ -1,0 +1,19 @@
+{
+  "args": {
+    "boundaries": [
+      0,
+      3,
+      6,
+      9,
+      12
+    ],
+    "origin": 0,
+    "seconds": 1
+  },
+  "expected": {
+    "ok": 0
+  },
+  "fn": "gridSegmentIndex",
+  "name": "synthetic grid index break 1",
+  "source": "synthetic"
+}

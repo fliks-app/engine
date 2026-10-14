@@ -1,0 +1,26 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "channels": 6,
+        "codec": "ac3",
+        "mode": "copy"
+      }
+    ],
+    "mediaFileId": 7,
+    "muxedAudio": {
+      "language": "fre",
+      "title": "VF"
+    },
+    "sourceFrameRate": 24,
+    "sourceHeight": 1080,
+    "sourceWidth": 1920,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"VF\",LANGUAGE=\"fre\",DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"6\"\n#EXT-X-STREAM-INF:BANDWIDTH=12864000,AVERAGE-BANDWIDTH=8576000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=6576000,AVERAGE-BANDWIDTH=4384000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"720p\",CODECS=\"avc1.64001f,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3576000,AVERAGE-BANDWIDTH=2384000,RESOLUTION=854x482,FRAME-RATE=24,NAME=\"480p\",CODECS=\"avc1.64001f,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=2076000,AVERAGE-BANDWIDTH=1384000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"avc1.64001e,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1326000,AVERAGE-BANDWIDTH=884000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"avc1.640015,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=876000,AVERAGE-BANDWIDTH=584000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"avc1.64000d,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=5364000,AVERAGE-BANDWIDTH=3576000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"avc1.640028,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=2826000,AVERAGE-BANDWIDTH=1884000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"avc1.64001f,ac-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-720p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master audio muxed-named",
+  "source": "synthetic"
+}

@@ -1,0 +1,48 @@
+{
+  "args": {
+    "end": -19.72,
+    "keyframes": [
+      {
+        "dts": -23.799999999999997,
+        "pts": -23.72
+      },
+      {
+        "dts": -21.799999999999997,
+        "pts": -21.72
+      }
+    ],
+    "origin": -23.72,
+    "segDur": 2
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        -23.72,
+        -21.72,
+        -19.72
+      ],
+      "durations": [
+        2,
+        2
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2
+      ],
+      "keyframes": [
+        {
+          "dts": -23.799999999999997,
+          "pts": -23.72
+        },
+        {
+          "dts": -21.799999999999997,
+          "pts": -21.72
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler lifts a grid that starts before 0 onto 0",
+  "source": "remux-assembler"
+}

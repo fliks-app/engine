@@ -1,0 +1,16 @@
+{
+  "args": {
+    "moofs": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAnEAAAABR0cnVuAAABAAAAAAEAAAfQAAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAdTAA==",
+    "trackId": 1,
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": {
+      "end": "12000",
+      "lastDuration": "2000"
+    }
+  },
+  "fn": "videoDecodeExtent",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler advances the frontier past the tail once a clean exit assembles the last segment",
+  "source": "remux-assembler"
+}

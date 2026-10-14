@@ -1,0 +1,59 @@
+{
+  "args": {
+    "audioRenditions": 1,
+    "grid": {
+      "boundaries": [
+        0,
+        4
+      ],
+      "durations": [
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        1
+      ],
+      "keyframes": [
+        {
+          "dts": 0.14,
+          "pts": 0
+        }
+      ]
+    },
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 1,
+      "boundaries": [
+        0,
+        4
+      ],
+      "firstDecode": 0.14,
+      "firstGop": [
+        0,
+        1
+      ],
+      "gopDts": [
+        0.14
+      ],
+      "gopPts": [
+        0
+      ],
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) treats a delta of exactly 0n as already resolved, not \"not yet open\"",
+  "source": "remux-assembler"
+}

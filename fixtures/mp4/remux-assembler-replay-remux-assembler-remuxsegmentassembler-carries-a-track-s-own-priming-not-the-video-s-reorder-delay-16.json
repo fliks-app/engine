@@ -1,0 +1,20 @@
+{
+  "args": {
+    "init": "AAAA+G1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAADIAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGUAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAQAAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        "200"
+      ],
+      [
+        2,
+        "1024"
+      ]
+    ]
+  },
+  "fn": "readInitEdits",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler carries a track's own priming, not the video's reorder delay, into its served edit",
+  "source": "remux-assembler"
+}

@@ -1,0 +1,21 @@
+{
+  "args": {
+    "audioIndex": 1,
+    "frameRate": "24000/1001",
+    "live": {
+      "kind": "transcode",
+      "sourceFps": 23.976023976023978,
+      "useTs": true
+    },
+    "mediaFileId": 42,
+    "resolvedDuration": 125.5,
+    "segmentDuration": 3,
+    "sid": "s1"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0000.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0001.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0002.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0003.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0004.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0005.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0006.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0007.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0008.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0009.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0010.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0011.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0012.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0013.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0014.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0015.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0016.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0017.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0018.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0019.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0020.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0021.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0022.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0023.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0024.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0025.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0026.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0027.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0028.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0029.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0030.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0031.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0032.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0033.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0034.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0035.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0036.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0037.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0038.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0039.ts?sid=s1\n#EXTINF:3.003,\n/api/stream/42/audio/1/seg-0040.ts?sid=s1\n#EXTINF:2.377,\n/api/stream/42/audio/1/seg-0041.ts?sid=s1\n#EXT-X-ENDLIST"
+  },
+  "fn": "audioRoute",
+  "name": "synthetic audio route {\"kind\":\"transcode\",\"useTs\":true,\"sourceFps\":23.976023976023978}",
+  "source": "synthetic"
+}

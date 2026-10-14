@@ -1,0 +1,15 @@
+{
+  "args": {
+    "firstDecode": -23.799999999999997,
+    "start": -23.72
+  },
+  "expected": {
+    "ok": {
+      "shift": 23.72,
+      "video": 0.0799999999999983
+    }
+  },
+  "fn": "remuxEdits",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler lifts a grid that starts before 0 onto 0",
+  "source": "remux-assembler"
+}

@@ -1,0 +1,81 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        1.4,
+        4.4,
+        7.4,
+        10.4
+      ],
+      "durations": [
+        3.0000000000000004,
+        3,
+        3
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 1.4,
+          "pts": 1.4
+        },
+        {
+          "dts": 4.4,
+          "pts": 4.4
+        },
+        {
+          "dts": 7.4,
+          "pts": 7.4
+        }
+      ]
+    },
+    "origin": 1.4,
+    "run": {
+      "audioStartSeconds": 1.4,
+      "seekSeconds": 3.4,
+      "startNumber": 2
+    },
+    "startSegment": 2
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        1.4,
+        4.4,
+        7.4,
+        10.4
+      ],
+      "firstDecode": 1.4,
+      "firstGop": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "gopDts": [
+        1.4,
+        4.4,
+        7.4
+      ],
+      "gopPts": [
+        1.4,
+        4.4,
+        7.4
+      ],
+      "seekSeconds": 3.4,
+      "segmentDuration": 3,
+      "start": 1.4,
+      "startNumber": 2,
+      "startSegment": 2
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan origin 2",
+  "source": "synthetic"
+}

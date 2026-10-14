@@ -2,7 +2,6 @@
 mod encode;
 mod encoders;
 mod filters;
-mod num;
 mod output;
 
 pub use encode::{Encoded, encode};

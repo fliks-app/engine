@@ -1,0 +1,57 @@
+{
+  "args": {
+    "frameRate": "25",
+    "live": {
+      "kind": "remux",
+      "remuxGrid": {
+        "boundaries": [
+          0,
+          7.966,
+          15.974,
+          19.937,
+          25
+        ],
+        "durations": [
+          7.966,
+          8.008,
+          3.963000000000001,
+          5.062999999999999
+        ],
+        "firstKeyframe": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "keyframes": [
+          {
+            "dts": 0,
+            "pts": 0
+          },
+          {
+            "dts": 7.966,
+            "pts": 7.966
+          },
+          {
+            "dts": 15.974,
+            "pts": 15.974
+          },
+          {
+            "dts": 19.937,
+            "pts": 19.937
+          }
+        ]
+      }
+    },
+    "mediaFileId": 42,
+    "resolvedDuration": 125.5,
+    "segmentDuration": 3
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-I-FRAMES-ONLY\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0000.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0001.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0002.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0003.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0004.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0005.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0006.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0007.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0008.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0009.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0010.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0011.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0012.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0013.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0014.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0015.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0016.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0017.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0018.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0019.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0020.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0021.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0022.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0023.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0024.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0025.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0026.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0027.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0028.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0029.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0030.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0031.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0032.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0033.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0034.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0035.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0036.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0037.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0038.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0039.ts\n#EXTINF:3.000,\n/api/stream/42/iframe/seg-0040.ts\n#EXTINF:2.500,\n/api/stream/42/iframe/seg-0041.ts\n#EXT-X-ENDLIST"
+  },
+  "fn": "iframeRoute",
+  "name": "synthetic iframe route {\"kind\":\"remux\",\"remuxGrid\":{\"durations\":[7.966,8.008,3.963000000000001,5.062999999999999],\"boundaries\":[0,7.966,15.974,19.937,25],\"keyframes\":[{\"pts\":0,\"dts\":0},{\"pts\":7.966,\"dts\":7.966},{\"pts\":15.974,\"dts\":15.974},{\"pts\":19.937,\"dts\":19.937}],\"firstKeyframe\":[0,1,2,3,4]}}",
+  "source": "synthetic"
+}

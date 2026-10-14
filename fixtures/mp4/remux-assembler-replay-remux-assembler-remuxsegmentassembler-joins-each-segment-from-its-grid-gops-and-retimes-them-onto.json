@@ -1,0 +1,98 @@
+{
+  "args": {
+    "grid": {
+      "boundaries": [
+        0,
+        4,
+        8,
+        12
+      ],
+      "durations": [
+        4,
+        4,
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "keyframes": [
+        {
+          "dts": -0.08,
+          "pts": 0
+        },
+        {
+          "dts": 1.92,
+          "pts": 2
+        },
+        {
+          "dts": 3.92,
+          "pts": 4
+        },
+        {
+          "dts": 5.92,
+          "pts": 6
+        },
+        {
+          "dts": 7.92,
+          "pts": 8
+        },
+        {
+          "dts": 9.92,
+          "pts": 10
+        }
+      ]
+    },
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 0,
+      "boundaries": [
+        0,
+        4,
+        8,
+        12
+      ],
+      "firstDecode": -0.08,
+      "firstGop": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "gopDts": [
+        -0.08,
+        1.92,
+        3.92,
+        5.92,
+        7.92,
+        9.92
+      ],
+      "gopPts": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10
+      ],
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler joins each segment from its grid GOPs and retimes them onto the served timeline",
+  "source": "remux-assembler"
+}

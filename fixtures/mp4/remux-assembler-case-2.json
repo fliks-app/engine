@@ -1,0 +1,13 @@
+{
+  "args": {
+    "timeline": {
+      "origin": 0
+    }
+  },
+  "expected": {
+    "ok": 0
+  },
+  "fn": "servedShift",
+  "name": "remux-assembler: case",
+  "source": "remux-assembler"
+}

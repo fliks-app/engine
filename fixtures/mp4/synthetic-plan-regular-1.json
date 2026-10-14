@@ -1,0 +1,115 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        0,
+        4,
+        6,
+        10,
+        12,
+        13
+      ],
+      "durations": [
+        4,
+        2,
+        4,
+        2,
+        1
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 2,
+          "pts": 2
+        },
+        {
+          "dts": 4,
+          "pts": 4
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        },
+        {
+          "dts": 8,
+          "pts": 8
+        },
+        {
+          "dts": 10,
+          "pts": 10
+        },
+        {
+          "dts": 12,
+          "pts": 12
+        }
+      ]
+    },
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": 1,
+      "startNumber": 1
+    },
+    "startSegment": 1
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        0,
+        4,
+        6,
+        10,
+        12,
+        13
+      ],
+      "firstDecode": 0,
+      "firstGop": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "gopDts": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12
+      ],
+      "gopPts": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        10,
+        12
+      ],
+      "seekSeconds": 1,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 1,
+      "startSegment": 1
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan regular 1",
+  "source": "synthetic"
+}

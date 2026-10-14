@@ -1,0 +1,81 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        0.083,
+        2.085,
+        4.087,
+        6
+      ],
+      "durations": [
+        2.002,
+        2.002,
+        1.9130000000000003
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0.083
+        },
+        {
+          "dts": 2.002,
+          "pts": 2.085
+        },
+        {
+          "dts": 4.004,
+          "pts": 4.087
+        }
+      ]
+    },
+    "origin": 0.083,
+    "run": {
+      "audioStartSeconds": 0.083,
+      "seekSeconds": 2.083,
+      "startNumber": 2
+    },
+    "startSegment": 2
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        0.083,
+        2.085,
+        4.087,
+        6
+      ],
+      "firstDecode": 0,
+      "firstGop": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "gopDts": [
+        0,
+        2.002,
+        4.004
+      ],
+      "gopPts": [
+        0.083,
+        2.085,
+        4.087
+      ],
+      "seekSeconds": 2.083,
+      "segmentDuration": 3,
+      "start": 0.083,
+      "startNumber": 2,
+      "startSegment": 2
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan open gop 2",
+  "source": "synthetic"
+}

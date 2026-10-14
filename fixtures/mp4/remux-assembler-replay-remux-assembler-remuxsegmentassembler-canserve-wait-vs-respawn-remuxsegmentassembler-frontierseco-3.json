@@ -1,0 +1,98 @@
+{
+  "args": {
+    "grid": {
+      "boundaries": [
+        45,
+        49,
+        53,
+        57
+      ],
+      "durations": [
+        4,
+        4,
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "keyframes": [
+        {
+          "dts": 44.92,
+          "pts": 45
+        },
+        {
+          "dts": 46.92,
+          "pts": 47
+        },
+        {
+          "dts": 48.92,
+          "pts": 49
+        },
+        {
+          "dts": 50.92,
+          "pts": 51
+        },
+        {
+          "dts": 52.92,
+          "pts": 53
+        },
+        {
+          "dts": 54.92,
+          "pts": 55
+        }
+      ]
+    },
+    "origin": 45,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 0,
+      "boundaries": [
+        45,
+        49,
+        53,
+        57
+      ],
+      "firstDecode": 44.92,
+      "firstGop": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "gopDts": [
+        44.92,
+        46.92,
+        48.92,
+        50.92,
+        52.92,
+        54.92
+      ],
+      "gopPts": [
+        45,
+        47,
+        49,
+        51,
+        53,
+        55
+      ],
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 45,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler.canServe (wait vs respawn) RemuxSegmentAssembler.frontierSeconds is content time, not source pts, with a non-zero origin (real grid)",
+  "source": "remux-assembler"
+}

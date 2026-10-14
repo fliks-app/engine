@@ -1,0 +1,19 @@
+{
+  "args": {
+    "durations": [
+      3.003,
+      2.961,
+      4.2
+    ],
+    "seg": {
+      "prefix": "seg-",
+      "suffix": ".m4s"
+    }
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:5\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:3.003,\nseg-0000.m4s\n#EXTINF:2.961,\nseg-0001.m4s\n#EXTINF:4.200,\nseg-0002.m4s\n#EXT-X-ENDLIST"
+  },
+  "fn": "variableVodPlaylist",
+  "name": "streaming.controller: replay streaming.controller buildVariableVodPlaylist emits one EXTINF per real duration and TARGETDURATION = ceil(max)",
+  "source": "streaming.controller"
+}

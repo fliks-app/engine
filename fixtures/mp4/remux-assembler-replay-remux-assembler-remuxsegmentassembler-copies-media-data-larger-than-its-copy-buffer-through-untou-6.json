@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAF3AA=="
+  },
+  "expected": {
+    "ok": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAF3AA=="
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler copies media data larger than its copy buffer through untouched",
+  "source": "remux-assembler"
+}

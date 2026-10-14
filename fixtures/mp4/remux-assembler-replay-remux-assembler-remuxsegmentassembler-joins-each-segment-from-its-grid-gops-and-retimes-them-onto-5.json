@@ -1,0 +1,11 @@
+{
+  "args": {
+    "init": "AAAA+G1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAABQAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGUAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAAAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": []
+  },
+  "fn": "parseTrexDefaults",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler joins each segment from its grid GOPs and retimes them onto the served timeline",
+  "source": "remux-assembler"
+}

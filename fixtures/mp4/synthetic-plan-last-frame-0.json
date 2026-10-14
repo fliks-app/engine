@@ -1,0 +1,76 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        0,
+        3,
+        6
+      ],
+      "durations": [
+        3,
+        3
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 3,
+          "pts": 3
+        },
+        {
+          "dts": 5.98,
+          "pts": 5.98
+        }
+      ]
+    },
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        0,
+        3,
+        6
+      ],
+      "firstDecode": 0,
+      "firstGop": [
+        0,
+        1,
+        3
+      ],
+      "gopDts": [
+        0,
+        3,
+        5.98
+      ],
+      "gopPts": [
+        0,
+        3,
+        5.98
+      ],
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan last frame 0",
+  "source": "synthetic"
+}

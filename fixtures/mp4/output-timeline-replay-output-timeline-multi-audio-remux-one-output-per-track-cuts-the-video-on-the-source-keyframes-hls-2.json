@@ -1,0 +1,47 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": {
+      "boundaries": [
+        0,
+        6,
+        12
+      ],
+      "durations": [
+        6,
+        6
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        }
+      ]
+    },
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 0,
+      "seekSeconds": -0.01,
+      "startNumber": 0
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "output-timeline: replay output-timeline multi-audio remux (one output per track) cuts the video on the source keyframes (hls_time 0) with a grid, the uniform duration without one",
+  "source": "output-timeline"
+}

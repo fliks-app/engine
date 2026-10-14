@@ -1,0 +1,16 @@
+{
+  "args": {
+    "moofs": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAPoAAAABR0cnVuAAABAAAAAAEAAAfQAAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAALuAA==",
+    "trackId": 1,
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": {
+      "end": "6000",
+      "lastDuration": "2000"
+    }
+  },
+  "fn": "videoDecodeExtent",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler refuses a GOP file that opens another keyframe than planned",
+  "source": "remux-assembler"
+}

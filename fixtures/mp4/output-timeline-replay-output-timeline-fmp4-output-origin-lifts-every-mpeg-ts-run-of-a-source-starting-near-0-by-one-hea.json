@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 12,
+    "timeline": {
+      "formatStart": 0,
+      "origin": 0
+    }
+  },
+  "expected": {
+    "ok": 12
+  },
+  "fn": "inputSeekSeconds",
+  "name": "output-timeline: replay output-timeline fMP4 output origin lifts every MPEG-TS run of a source starting near 0 by one headroom",
+  "source": "output-timeline"
+}

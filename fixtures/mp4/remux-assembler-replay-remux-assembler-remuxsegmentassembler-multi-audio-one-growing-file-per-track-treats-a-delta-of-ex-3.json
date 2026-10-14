@@ -1,0 +1,19 @@
+{
+  "args": {
+    "init": "AAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAAAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) treats a delta of exactly 0n as already resolved, not \"not yet open\"",
+  "source": "remux-assembler"
+}

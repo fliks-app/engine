@@ -1,0 +1,19 @@
+{
+  "args": {
+    "audioGrid": null,
+    "grid": null,
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 9
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 27,
+      "seekSeconds": 27,
+      "startNumber": 9
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "synthetic run start none 9 copy",
+  "source": "synthetic"
+}

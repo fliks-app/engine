@@ -1,0 +1,16 @@
+{
+  "args": {
+    "init": "AAAApG1vb3YAAAAYbXZoZAAAAAAAAAAAAAAAAAAAA+gAAACEdHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAADBlZHRzAAAAKGVsc3QAAAAAAAAAAgAAAfT/////AAEAAAAAAAAAAACgAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAD6AAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        "-7840"
+      ]
+    ]
+  },
+  "fn": "readInitEdits",
+  "name": "timeline: replay timeline track edits folds empty edits ahead of the media into the offset",
+  "source": "timeline"
+}

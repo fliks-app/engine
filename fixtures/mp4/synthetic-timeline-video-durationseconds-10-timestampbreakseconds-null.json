@@ -1,0 +1,21 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "durationSeconds": 10,
+      "subtitles": [],
+      "timestampBreakSeconds": null,
+      "video": []
+    }
+  },
+  "expected": {
+    "ok": {
+      "end": 10,
+      "formatStart": 0,
+      "origin": 0
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "synthetic timeline {\"video\":[],\"durationSeconds\":10,\"timestampBreakSeconds\":null}",
+  "source": "synthetic"
+}

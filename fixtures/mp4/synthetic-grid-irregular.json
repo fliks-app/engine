@@ -1,0 +1,92 @@
+{
+  "args": {
+    "end": 18,
+    "frameSeconds": 0.04,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 2,
+        "pts": 2
+      },
+      {
+        "dts": 4,
+        "pts": 4
+      },
+      {
+        "dts": 7,
+        "pts": 7
+      },
+      {
+        "dts": 9,
+        "pts": 9
+      },
+      {
+        "dts": 13,
+        "pts": 13
+      },
+      {
+        "dts": 15,
+        "pts": 15
+      }
+    ],
+    "origin": 0,
+    "segDur": 6
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        7,
+        13,
+        18
+      ],
+      "durations": [
+        7,
+        6,
+        5
+      ],
+      "firstKeyframe": [
+        0,
+        3,
+        5,
+        7
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 2,
+          "pts": 2
+        },
+        {
+          "dts": 4,
+          "pts": 4
+        },
+        {
+          "dts": 7,
+          "pts": 7
+        },
+        {
+          "dts": 9,
+          "pts": 9
+        },
+        {
+          "dts": 13,
+          "pts": 13
+        },
+        {
+          "dts": 15,
+          "pts": 15
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "synthetic grid irregular",
+  "source": "synthetic"
+}

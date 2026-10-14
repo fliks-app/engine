@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 15,
+    "timeline": {
+      "formatStart": 2.779,
+      "origin": 2.8
+    }
+  },
+  "expected": {
+    "ok": 15.021
+  },
+  "fn": "inputSeekSeconds",
+  "name": "output-timeline: replay output-timeline MPEG-TS clock break stops a transcode reading at the break, counted from the container start",
+  "source": "output-timeline"
+}

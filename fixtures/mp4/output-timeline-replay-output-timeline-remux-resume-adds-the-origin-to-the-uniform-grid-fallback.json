@@ -1,0 +1,22 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": null,
+    "origin": 2.8,
+    "segmentDuration": 3,
+    "startSegment": 3
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 11.8,
+      "seekSeconds": 11.8,
+      "startNumber": 3
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "output-timeline: replay output-timeline remux resume adds the origin to the uniform-grid fallback",
+  "source": "output-timeline"
+}

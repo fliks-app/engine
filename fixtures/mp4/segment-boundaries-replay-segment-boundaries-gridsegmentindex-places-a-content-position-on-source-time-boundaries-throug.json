@@ -1,0 +1,23 @@
+{
+  "args": {
+    "boundaries": [
+      2.8,
+      5.8,
+      8.8,
+      11.8,
+      14.8,
+      17.8,
+      20.8,
+      23.8,
+      26.8
+    ],
+    "origin": 2.8,
+    "seconds": 20
+  },
+  "expected": {
+    "ok": 6
+  },
+  "fn": "gridSegmentIndex",
+  "name": "segment-boundaries: replay segment-boundaries gridSegmentIndex places a content position on source-time boundaries through the origin",
+  "source": "segment-boundaries"
+}

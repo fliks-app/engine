@@ -1,0 +1,31 @@
+{
+  "args": {
+    "audioRenditions": 1,
+    "grid": null,
+    "origin": 10,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 1,
+      "boundaries": null,
+      "firstDecode": null,
+      "firstGop": null,
+      "gopDts": null,
+      "gopPts": null,
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 10,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) anchors the uniform fallback grid on the plan origin, not the run's own landing point",
+  "source": "remux-assembler"
+}

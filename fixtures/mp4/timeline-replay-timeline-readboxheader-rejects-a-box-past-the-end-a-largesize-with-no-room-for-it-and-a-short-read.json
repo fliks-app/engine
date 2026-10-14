@@ -1,0 +1,14 @@
+{
+  "args": {
+    "buf": "AAAAeG1vb2Y=",
+    "end": 200,
+    "off": 0,
+    "start": 100
+  },
+  "expected": {
+    "ok": null
+  },
+  "fn": "readBoxHeader",
+  "name": "timeline: replay timeline readBoxHeader rejects a box past the end, a largesize with no room for it, and a short read",
+  "source": "timeline"
+}

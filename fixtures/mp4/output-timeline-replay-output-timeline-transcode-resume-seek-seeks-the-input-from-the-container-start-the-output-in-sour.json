@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 60,
+    "timeline": {
+      "formatStart": 3.18,
+      "origin": 4.2
+    }
+  },
+  "expected": {
+    "ok": 61.02
+  },
+  "fn": "inputSeekSeconds",
+  "name": "output-timeline: replay output-timeline transcode resume seek seeks the input from the container start, the output in source time",
+  "source": "output-timeline"
+}

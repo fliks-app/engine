@@ -1,0 +1,18 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "1"
+      ]
+    ],
+    "seg": "AAAAGHN0eXBtc2RoAAAAAG1zZGhtc2l4AAAAJHNpZHgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqG1vb2YAAAAQbWZoZAAAAAAAAAABAAAATHRyYWYAAAAQdGZoZAAAAAAAAAABAAAAEHRmZHQAAAAAAAATiAAAACR0cnVuAAADAQAAAAIAAAAAAAACAAAAAAoAAAIAAAAADAAAAER0cmFmAAAAFHRmaGQAAAAIAAAAAgAABAAAAAAQdGZkdAAAAAAAACMoAAAAGHRydW4AAAIBAAAAAQAAAAAAAAAFAAAAI21kYXQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "expected": {
+    "error": "fragment of track 2, absent from the init",
+    "type": "Error"
+  },
+  "fn": "retimeFragments",
+  "name": "synthetic retime absent track",
+  "source": "synthetic"
+}

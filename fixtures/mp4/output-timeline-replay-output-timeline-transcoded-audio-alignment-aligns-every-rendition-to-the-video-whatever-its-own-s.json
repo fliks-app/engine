@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 12,
+    "timeline": {
+      "formatStart": 2.8,
+      "origin": 2.8
+    }
+  },
+  "expected": {
+    "ok": 12
+  },
+  "fn": "inputSeekSeconds",
+  "name": "output-timeline: replay output-timeline transcoded audio alignment aligns every rendition to the video, whatever its own start",
+  "source": "output-timeline"
+}

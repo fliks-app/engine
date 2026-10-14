@@ -1,0 +1,16 @@
+{
+  "args": {
+    "moofs": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAnEAAAABR0cnVuAAABAAAAAAEAAAfQAAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAdPEA==",
+    "trackId": 1,
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": {
+      "end": "12000",
+      "lastDuration": "2000"
+    }
+  },
+  "fn": "videoDecodeExtent",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler joins each segment from its grid GOPs and retimes them onto the served timeline",
+  "source": "remux-assembler"
+}

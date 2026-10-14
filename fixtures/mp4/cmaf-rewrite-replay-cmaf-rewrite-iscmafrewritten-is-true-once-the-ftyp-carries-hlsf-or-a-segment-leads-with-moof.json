@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGGZ0eXBpc281AAAAAGlzbzVobHNm"
+  },
+  "expected": {
+    "ok": true
+  },
+  "fn": "isCmafRewritten",
+  "name": "cmaf-rewrite: replay cmaf-rewrite isCmafRewritten is true once the ftyp carries hlsf or a segment leads with moof",
+  "source": "cmaf-rewrite"
+}

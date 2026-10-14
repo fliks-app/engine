@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "av1",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 7,
+    "sourceFrameRate": 23.976,
+    "sourceHeight": 240,
+    "sourceWidth": 426,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master hdr av1 HDR10 426x240",
+  "source": "synthetic"
+}

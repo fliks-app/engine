@@ -1,0 +1,70 @@
+{
+  "args": {
+    "end": 25,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 7.966,
+        "pts": 7.966
+      },
+      {
+        "dts": 15.974,
+        "pts": 15.974
+      },
+      {
+        "dts": 19.937,
+        "pts": 19.937
+      }
+    ],
+    "origin": 0,
+    "segDur": 6
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        7.966,
+        15.974,
+        19.937,
+        25
+      ],
+      "durations": [
+        7.966,
+        8.008,
+        3.963000000000001,
+        5.062999999999999
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 7.966,
+          "pts": 7.966
+        },
+        {
+          "dts": 15.974,
+          "pts": 15.974
+        },
+        {
+          "dts": 19.937,
+          "pts": 19.937
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "streaming.controller: case",
+  "source": "streaming.controller"
+}

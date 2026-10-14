@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGGZ0eXBpc281AAAAAGlzbzVpc282"
+  },
+  "expected": {
+    "ok": false
+  },
+  "fn": "isCmafRewritten",
+  "name": "cmaf-rewrite: replay cmaf-rewrite isCmafRewritten is false for raw FFmpeg output (leading styp, no hlsf)",
+  "source": "cmaf-rewrite"
+}

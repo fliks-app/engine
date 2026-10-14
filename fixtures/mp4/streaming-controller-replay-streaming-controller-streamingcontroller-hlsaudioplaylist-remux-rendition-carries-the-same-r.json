@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "durationSeconds": 25,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "",
+          "frameRate": "25",
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "end": 25,
+      "formatStart": 0,
+      "origin": 0
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "streaming.controller: replay streaming.controller StreamingController.hlsAudioPlaylist (remux rendition) carries the same real durations as the video remux playlist, not a uniform grid",
+  "source": "streaming.controller"
+}

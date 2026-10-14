@@ -1,0 +1,17 @@
+{
+  "args": {
+    "boundaries": [
+      0,
+      3,
+      6
+    ],
+    "origin": 0,
+    "seconds": 5.5
+  },
+  "expected": {
+    "ok": 1
+  },
+  "fn": "gridSegmentIndex",
+  "name": "synthetic grid index last frame 5.5",
+  "source": "synthetic"
+}

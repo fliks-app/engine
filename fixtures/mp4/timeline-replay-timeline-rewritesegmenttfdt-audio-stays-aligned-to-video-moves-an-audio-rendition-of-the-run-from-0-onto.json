@@ -1,0 +1,23 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAAAVAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 0,
+    "startPts": 2.8,
+    "tracks": [
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAAsFAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt audio stays aligned to video moves an audio rendition of the run from 0 onto the origin",
+  "source": "timeline"
+}

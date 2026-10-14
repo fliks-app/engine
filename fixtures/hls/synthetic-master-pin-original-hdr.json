@@ -1,0 +1,25 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 7,
+    "onlyQuality": "original",
+    "sourceFrameRate": 24,
+    "sourceHeight": 2160,
+    "sourceWidth": 3840,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=37788000,AVERAGE-BANDWIDTH=25192000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"2160p-hdr\",CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/2160p-hdr/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master pin original hdr",
+  "source": "synthetic"
+}

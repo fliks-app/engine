@@ -2,7 +2,6 @@
 //! [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:660-1409]
 use super::encoders::{amf_ends_on_gpu, build, nvenc_ends_on_gpu};
 use super::filters::{FilterContext, Overlay, image_burn_in, video_filters};
-use super::num::{js, parse_bitrate, round, seconds};
 use super::{BurnInKind, EncoderInput, LiveArgs, LiveMode, QsvTuning, Target, VodArgs};
 use crate::api::{AudioCodec, AudioPlan, CodecVariant, HdrFormat, HostCaps, HwAccel, Platform};
 use crate::api::{TonemapAlgo, VideoCodec};
@@ -13,6 +12,7 @@ use crate::decide::timeline::real_segment_seconds;
 use crate::decide::tonemap::{EncodeContext, Pipeline, TonemapPath, resolve_pipeline};
 use crate::hw::Device;
 use crate::hw::decoders::{DECODERS, Decoder, Surface, find};
+use crate::jsnum::{js_string as js, round, seconds};
 use crate::ladder::{codec_factor, hevc_main_tier_cap_bps};
 
 const DEFAULT_SEGMENT_DURATION: f64 = 3.0;
@@ -712,4 +712,39 @@ pub fn live_video(o: &LiveArgs) -> Vec<String> {
         format!("expr:gte(t,n_forced*{})", js(o.segment_seconds)),
     ]);
     a
+}
+
+/// `parseBitrateToBps`: `8M`, `500k`, `192k` or bare bps; anything else is 0.
+pub fn parse_bitrate(s: &str) -> f64 {
+    let t = s.trim();
+    let (num, unit) = match t.char_indices().last() {
+        Some((i, c)) if "kKmM".contains(c) => (t[..i].trim_end(), Some(c.to_ascii_lowercase())),
+        _ => (t, None),
+    };
+    let (int, frac) = num.split_once('.').unwrap_or((num, "0"));
+    let digits = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit());
+    if !digits(int) || !digits(frac) {
+        return 0.0;
+    }
+    let n: f64 = num.parse().unwrap_or(0.0);
+    match unit {
+        Some('m') => round(n * 1e6),
+        Some('k') => round(n * 1e3),
+        _ => round(n),
+    }
+}
+
+#[cfg(test)]
+mod bitrate_tests {
+    use super::*;
+
+    #[test]
+    fn bitrates() {
+        assert_eq!(parse_bitrate("8M"), 8e6);
+        assert_eq!(parse_bitrate(" 192k "), 192e3);
+        assert_eq!(parse_bitrate("1.5 M"), 1.5e6);
+        assert_eq!(parse_bitrate("8000000"), 8e6);
+        assert_eq!(parse_bitrate("8MB"), 0.0);
+        assert_eq!(parse_bitrate(".5M"), 0.0);
+    }
 }

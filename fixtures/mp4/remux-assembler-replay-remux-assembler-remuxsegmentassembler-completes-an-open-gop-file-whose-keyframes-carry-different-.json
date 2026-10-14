@@ -1,0 +1,78 @@
+{
+  "args": {
+    "end": 8,
+    "keyframes": [
+      {
+        "dts": -0.08,
+        "pts": 0
+      },
+      {
+        "dts": 1.8,
+        "pts": 2
+      },
+      {
+        "dts": 3.8,
+        "pts": 4
+      },
+      {
+        "dts": 5.8,
+        "pts": 6
+      },
+      {
+        "dts": 7.8,
+        "pts": 8
+      }
+    ],
+    "origin": 0,
+    "segDur": 2
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        2,
+        4,
+        6,
+        8
+      ],
+      "durations": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "keyframes": [
+        {
+          "dts": -0.08,
+          "pts": 0
+        },
+        {
+          "dts": 1.8,
+          "pts": 2
+        },
+        {
+          "dts": 3.8,
+          "pts": 4
+        },
+        {
+          "dts": 5.8,
+          "pts": 6
+        },
+        {
+          "dts": 7.8,
+          "pts": 8
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler completes an open-GOP file whose keyframes carry different pts-dts offsets",
+  "source": "remux-assembler"
+}

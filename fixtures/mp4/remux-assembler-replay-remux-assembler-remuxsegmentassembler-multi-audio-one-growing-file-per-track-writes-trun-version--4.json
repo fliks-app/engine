@@ -1,0 +1,18 @@
+{
+  "args": {
+    "buf": "AAAAgG1vb3YAAAB4dHJhaw==",
+    "end": 238,
+    "off": 0,
+    "start": 12
+  },
+  "expected": {
+    "ok": {
+      "payloadStart": 20,
+      "size": 128,
+      "type": "moov"
+    }
+  },
+  "fn": "readBoxHeader",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) writes trun version 1 for a negative CTS: version 0 is unsigned and cannot round-trip it",
+  "source": "remux-assembler"
+}

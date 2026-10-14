@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 6,
+    "timeline": {
+      "formatStart": 3.18,
+      "origin": 4.2
+    }
+  },
+  "expected": {
+    "ok": 7.02
+  },
+  "fn": "inputSeekSeconds",
+  "name": "source-timeline: replay source-timeline inputSeekSeconds counts from the container start, which precedes a late video",
+  "source": "source-timeline"
+}

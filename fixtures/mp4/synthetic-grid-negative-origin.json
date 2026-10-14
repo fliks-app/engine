@@ -1,0 +1,68 @@
+{
+  "args": {
+    "end": 6,
+    "frameSeconds": 0.04,
+    "keyframes": [
+      {
+        "dts": -1.5,
+        "pts": -1.5
+      },
+      {
+        "dts": 0.5,
+        "pts": 0.5
+      },
+      {
+        "dts": 2.5,
+        "pts": 2.5
+      },
+      {
+        "dts": 4.5,
+        "pts": 4.5
+      }
+    ],
+    "origin": -1.5,
+    "segDur": 3
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        -1.5,
+        2.5,
+        4.5,
+        6
+      ],
+      "durations": [
+        4,
+        2,
+        1.5
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        3,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": -1.5,
+          "pts": -1.5
+        },
+        {
+          "dts": 0.5,
+          "pts": 0.5
+        },
+        {
+          "dts": 2.5,
+          "pts": 2.5
+        },
+        {
+          "dts": 4.5,
+          "pts": 4.5
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "synthetic grid negative origin",
+  "source": "synthetic"
+}

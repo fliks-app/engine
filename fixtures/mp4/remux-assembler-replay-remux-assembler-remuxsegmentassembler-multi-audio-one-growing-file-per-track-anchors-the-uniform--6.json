@@ -1,0 +1,21 @@
+{
+  "args": {
+    "buf": "AAAAVG1vb2YAAABMdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAAAAAAAAAmFgAAAACB0cnVuAAAHAQAAAAEAAAAAAAAEAAAAAAICAAAA",
+    "traf": {
+      "payloadStart": 16,
+      "size": 76,
+      "start": 8,
+      "type": "traf"
+    }
+  },
+  "expected": {
+    "ok": {
+      "value": "624000",
+      "valueOffset": 44,
+      "version": 1
+    }
+  },
+  "fn": "readTfdt",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) anchors the uniform fallback grid on the plan origin, not the run's own landing point",
+  "source": "remux-assembler"
+}

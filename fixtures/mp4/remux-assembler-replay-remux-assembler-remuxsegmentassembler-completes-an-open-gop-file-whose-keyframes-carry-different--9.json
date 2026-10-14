@@ -1,0 +1,12 @@
+{
+  "args": {
+    "seg": "AAAATG1vb2YAAABEdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAAAAAAABh0cnVuAAABAAAAAAIAAAcwAAAAKA==",
+    "trackId": 1
+  },
+  "expected": {
+    "ok": "0"
+  },
+  "fn": "firstTfdt",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler completes an open-GOP file whose keyframes carry different pts-dts offsets",
+  "source": "remux-assembler"
+}

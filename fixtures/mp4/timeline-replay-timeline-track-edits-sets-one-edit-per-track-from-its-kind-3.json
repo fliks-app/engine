@@ -1,0 +1,26 @@
+{
+  "args": {
+    "init": "AAABEG1vb3YAAAAYbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAUAAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAD6AAAAAFGhkbHIAAAAAAAAAAHZpZGUAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAABgAAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 16000
+        }
+      ],
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 48000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "timeline: replay timeline track edits sets one edit per track, from its kind",
+  "source": "timeline"
+}

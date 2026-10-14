@@ -1,0 +1,19 @@
+{
+  "args": {
+    "init": "AAAAXG1vb3YAAABUdHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "timeline: case",
+  "source": "timeline"
+}

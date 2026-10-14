@@ -1,0 +1,33 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "codec": "aac",
+        "mode": "copy"
+      }
+    ],
+    "canEmitHdrLadder": true,
+    "deviceType": "desktop",
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 7,
+    "sourceFrameRate": 24,
+    "sourceHeight": 2160,
+    "sourceVideoBitrateBps": 100000000,
+    "sourceVideoCodec": "hevc",
+    "sourceWidth": 3840,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=37788000,AVERAGE-BANDWIDTH=25192000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"2160p-hdr\",CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=8538000,AVERAGE-BANDWIDTH=5692000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"1080p-hdr\",CODECS=\"hvc1.2.4.L120.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4392000,AVERAGE-BANDWIDTH=2928000,RESOLUTION=1280x720,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"720p-hdr\",CODECS=\"hvc1.2.4.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2244000,AVERAGE-BANDWIDTH=1496000,RESOLUTION=854x482,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"480p-hdr\",CODECS=\"hvc1.2.4.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=18288000,AVERAGE-BANDWIDTH=12192000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-2160p-hdr\",CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3588000,AVERAGE-BANDWIDTH=2392000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-1080p-hdr\",CODECS=\"hvc1.2.4.L120.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p-hdr/index.m3u8"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist.golden: replay master-playlist.golden generateMasterPlaylist — golden manifests (characterization) HDR HEVC ladder (4K) — Main-tier-clamped bandwidth",
+  "source": "master-playlist.golden"
+}

@@ -1,0 +1,22 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAAAAAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 25,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAYagAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt shifts a run-relative tfdt onto its absolute grid position",
+  "source": "timeline"
+}

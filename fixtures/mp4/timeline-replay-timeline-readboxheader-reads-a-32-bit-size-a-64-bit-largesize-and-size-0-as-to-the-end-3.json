@@ -1,0 +1,18 @@
+{
+  "args": {
+    "buf": "AAAAAG1kYXQ=",
+    "end": 200,
+    "off": 0,
+    "start": 100
+  },
+  "expected": {
+    "ok": {
+      "payloadStart": 108,
+      "size": 100,
+      "type": "mdat"
+    }
+  },
+  "fn": "readBoxHeader",
+  "name": "timeline: replay timeline readBoxHeader reads a 32-bit size, a 64-bit largesize, and size 0 as to the end",
+  "source": "timeline"
+}

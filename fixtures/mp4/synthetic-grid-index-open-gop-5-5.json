@@ -1,0 +1,18 @@
+{
+  "args": {
+    "boundaries": [
+      0.083,
+      2.085,
+      4.087,
+      6
+    ],
+    "origin": 0.083,
+    "seconds": 5.5
+  },
+  "expected": {
+    "ok": 2
+  },
+  "fn": "gridSegmentIndex",
+  "name": "synthetic grid index open gop 5.5",
+  "source": "synthetic"
+}

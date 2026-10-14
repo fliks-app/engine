@@ -1,0 +1,22 @@
+{
+  "args": {
+    "boundaries": [
+      0,
+      7.966,
+      15.974,
+      19.937,
+      25.317,
+      31.865,
+      38.997,
+      43.001
+    ],
+    "origin": 0,
+    "seconds": 20
+  },
+  "expected": {
+    "ok": 3
+  },
+  "fn": "gridSegmentIndex",
+  "name": "streaming.controller: replay streaming.controller remux playlist cannot drift out of A/V sync announces the real cut durations, and the seek grid agrees with them",
+  "source": "streaming.controller"
+}

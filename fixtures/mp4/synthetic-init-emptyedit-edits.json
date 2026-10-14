@@ -1,0 +1,12 @@
+{
+  "args": {
+    "init": "AAAAHGZ0eXBpc281AAACAGlzbzVpc282bXA0MQAAAJhtb292AAAAkHRyYWsAAAAgdGtoZAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAX/////AAEAAAAAAERtZGlhAAAAHG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAAAAAACBoZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAA"
+  },
+  "expected": {
+    "error": "track 1 has an empty edit and no movie timescale",
+    "type": "Error"
+  },
+  "fn": "readInitEdits",
+  "name": "synthetic init emptyEdit edits",
+  "source": "synthetic"
+}

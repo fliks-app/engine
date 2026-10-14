@@ -1,0 +1,28 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "formatStartSeconds": -24,
+      "subtitles": [],
+      "timestampBreakSeconds": 55.5,
+      "video": [
+        {
+          "codec": "",
+          "firstFrameSeconds": -23.717689,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "clockBreak": 55.5,
+      "end": 55.5,
+      "formatStart": -24,
+      "origin": -23.717689
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "synthetic timeline {\"video\":[{\"firstFrameSeconds\":-23.717689}],\"formatStartSeconds\":-24,\"timestampBreakSeconds\":55.5}",
+  "source": "synthetic"
+}

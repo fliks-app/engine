@@ -1,0 +1,54 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": {
+      "boundaries": [
+        2.8,
+        5.8,
+        8.8,
+        17.8
+      ],
+      "durations": [
+        3,
+        3.000000000000001,
+        9
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 2.7199999999999998,
+          "pts": 2.8
+        },
+        {
+          "dts": 5.72,
+          "pts": 5.8
+        },
+        {
+          "dts": 8.72,
+          "pts": 8.8
+        }
+      ]
+    },
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 1
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 5.744,
+      "seekSeconds": 5.72,
+      "startNumber": 1
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "output-timeline: replay output-timeline multi-audio remux (one output per track) repeats the run window on every audio output (ffmpeg does not carry an output -ss/-to across outputs)",
+  "source": "output-timeline"
+}

@@ -1,0 +1,30 @@
+{
+  "args": {
+    "grid": null,
+    "origin": 45,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 10
+    },
+    "startSegment": 10
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 0,
+      "boundaries": null,
+      "firstDecode": null,
+      "firstGop": null,
+      "gopDts": null,
+      "gopPts": null,
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 45,
+      "startNumber": 10,
+      "startSegment": 10
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler.canServe (wait vs respawn) RemuxSegmentAssembler.frontierSeconds is content time, not source pts, with a non-zero origin (uniform fallback)",
+  "source": "remux-assembler"
+}

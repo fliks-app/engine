@@ -1,0 +1,83 @@
+{
+  "args": {
+    "end": 57,
+    "keyframes": [
+      {
+        "dts": 44.92,
+        "pts": 45
+      },
+      {
+        "dts": 46.92,
+        "pts": 47
+      },
+      {
+        "dts": 48.92,
+        "pts": 49
+      },
+      {
+        "dts": 50.92,
+        "pts": 51
+      },
+      {
+        "dts": 52.92,
+        "pts": 53
+      },
+      {
+        "dts": 54.92,
+        "pts": 55
+      }
+    ],
+    "origin": 45,
+    "segDur": 4
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        45,
+        49,
+        53,
+        57
+      ],
+      "durations": [
+        4,
+        4,
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "keyframes": [
+        {
+          "dts": 44.92,
+          "pts": 45
+        },
+        {
+          "dts": 46.92,
+          "pts": 47
+        },
+        {
+          "dts": 48.92,
+          "pts": 49
+        },
+        {
+          "dts": 50.92,
+          "pts": 51
+        },
+        {
+          "dts": 52.92,
+          "pts": 53
+        },
+        {
+          "dts": 54.92,
+          "pts": 55
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler.canServe (wait vs respawn) RemuxSegmentAssembler.frontierSeconds is content time, not source pts, with a non-zero origin (real grid)",
+  "source": "remux-assembler"
+}

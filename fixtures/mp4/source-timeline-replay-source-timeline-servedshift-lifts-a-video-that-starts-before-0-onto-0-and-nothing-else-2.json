@@ -1,0 +1,13 @@
+{
+  "args": {
+    "timeline": {
+      "origin": 2.8
+    }
+  },
+  "expected": {
+    "ok": 0
+  },
+  "fn": "servedShift",
+  "name": "source-timeline: replay source-timeline servedShift lifts a video that starts before 0 onto 0, and nothing else",
+  "source": "source-timeline"
+}

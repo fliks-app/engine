@@ -4,7 +4,6 @@ pub mod args;
 mod build;
 pub mod crop;
 mod ffjson;
-mod js;
 mod lang;
 mod mkv;
 pub mod moviehash;
@@ -148,11 +147,11 @@ impl FirstPackets {
         }
         let mut cols = line.split(',');
         let (index, time) = (cols.next().unwrap_or(""), cols.next());
-        let Some(pts) = time.and_then(js::parse_float) else {
+        let Some(pts) = time.and_then(crate::jsnum::parse_float) else {
             return true;
         };
         let origin = *self.origin.get_or_insert(pts);
-        if let Some(stream) = js::number(index).map(|n| n as u32)
+        if let Some(stream) = crate::jsnum::number(index).map(|n| n as u32)
             && self.wanted.contains(&stream)
         {
             self.firsts.entry(stream).or_insert(pts);

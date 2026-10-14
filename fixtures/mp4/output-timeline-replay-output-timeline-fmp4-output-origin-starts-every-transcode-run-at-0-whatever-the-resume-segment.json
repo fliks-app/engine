@@ -1,0 +1,15 @@
+{
+  "args": {
+    "contentSeconds": 60,
+    "timeline": {
+      "formatStart": 2.8,
+      "origin": 2.8
+    }
+  },
+  "expected": {
+    "ok": 60
+  },
+  "fn": "inputSeekSeconds",
+  "name": "output-timeline: replay output-timeline fMP4 output origin starts every transcode run at 0, whatever the resume segment",
+  "source": "output-timeline"
+}

@@ -1,0 +1,21 @@
+{
+  "args": {
+    "durations": [
+      7.966,
+      8.008,
+      3.963000000000001,
+      5.062999999999999
+    ],
+    "init": "init.mp4",
+    "seg": {
+      "prefix": "/api/stream/7/720p/seg-",
+      "suffix": ".m4s?token=t"
+    }
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:9\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.966,\n/api/stream/7/720p/seg-0000.m4s?token=t\n#EXTINF:8.008,\n/api/stream/7/720p/seg-0001.m4s?token=t\n#EXTINF:3.963,\n/api/stream/7/720p/seg-0002.m4s?token=t\n#EXTINF:5.063,\n/api/stream/7/720p/seg-0003.m4s?token=t\n#EXT-X-ENDLIST"
+  },
+  "fn": "variableVodPlaylist",
+  "name": "synthetic variable spec grid",
+  "source": "synthetic"
+}

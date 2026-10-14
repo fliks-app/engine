@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAAAAA=="
+  },
+  "expected": {
+    "ok": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAAAAA=="
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler carries a track's own priming, not the video's reorder delay, into its served edit",
+  "source": "remux-assembler"
+}

@@ -1,0 +1,34 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "channels": 6,
+        "codec": "eac3",
+        "mode": "transcode"
+      },
+      {
+        "channels": 8,
+        "codec": "eac3",
+        "mode": "copy"
+      }
+    ],
+    "audioStreams": [
+      {
+        "channels": 8
+      },
+      {
+        "channels": 8
+      }
+    ],
+    "mediaFileId": 1,
+    "sourceHeight": 1080,
+    "sourceWidth": 1920,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"und\",LANGUAGE=\"und\",DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"6\",URI=\"/api/stream/1/audio/0/index.m3u8\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"und #2\",LANGUAGE=\"und\",DEFAULT=NO,AUTOSELECT=NO,CHANNELS=\"8\",URI=\"/api/stream/1/audio/1/index.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=12960000,AVERAGE-BANDWIDTH=8640000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=6768000,AVERAGE-BANDWIDTH=4512000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"720p\",CODECS=\"avc1.64001f,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/720p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3576000,AVERAGE-BANDWIDTH=2384000,RESOLUTION=854x482,FRAME-RATE=24,NAME=\"480p\",CODECS=\"avc1.64001f,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/480p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1980000,AVERAGE-BANDWIDTH=1320000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"avc1.64001e,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/360p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1230000,AVERAGE-BANDWIDTH=820000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"avc1.640015,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/240p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=780000,AVERAGE-BANDWIDTH=520000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"avc1.64000d,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/144p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5460000,AVERAGE-BANDWIDTH=3640000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"avc1.640028,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3018000,AVERAGE-BANDWIDTH=2012000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"avc1.64001f,ec-3\",AUDIO=\"audio\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-720p/index.m3u8"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist: replay master-playlist generateMasterPlaylist — audio rendition CHANNELS declares the resolved output channels, not the source layout",
+  "source": "master-playlist"
+}

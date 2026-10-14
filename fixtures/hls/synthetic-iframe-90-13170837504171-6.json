@@ -1,0 +1,17 @@
+{
+  "args": {
+    "duration": 90.13170837504171,
+    "frameSeconds": 0.04,
+    "seg": {
+      "prefix": "iframe/seg-",
+      "suffix": ".ts"
+    },
+    "segDuration": 6
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-I-FRAMES-ONLY\n#EXTINF:6.000,\niframe/seg-0000.ts\n#EXTINF:6.000,\niframe/seg-0001.ts\n#EXTINF:6.000,\niframe/seg-0002.ts\n#EXTINF:6.000,\niframe/seg-0003.ts\n#EXTINF:6.000,\niframe/seg-0004.ts\n#EXTINF:6.000,\niframe/seg-0005.ts\n#EXTINF:6.000,\niframe/seg-0006.ts\n#EXTINF:6.000,\niframe/seg-0007.ts\n#EXTINF:6.000,\niframe/seg-0008.ts\n#EXTINF:6.000,\niframe/seg-0009.ts\n#EXTINF:6.000,\niframe/seg-0010.ts\n#EXTINF:6.000,\niframe/seg-0011.ts\n#EXTINF:6.000,\niframe/seg-0012.ts\n#EXTINF:6.000,\niframe/seg-0013.ts\n#EXTINF:6.000,\niframe/seg-0014.ts\n#EXTINF:0.132,\niframe/seg-0015.ts\n#EXT-X-ENDLIST"
+  },
+  "fn": "iframePlaylist",
+  "name": "synthetic iframe 90.13170837504171 6",
+  "source": "synthetic"
+}

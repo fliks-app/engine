@@ -1,0 +1,83 @@
+{
+  "args": {
+    "end": 12,
+    "keyframes": [
+      {
+        "dts": -0.2,
+        "pts": 0
+      },
+      {
+        "dts": 1.8,
+        "pts": 2
+      },
+      {
+        "dts": 3.8,
+        "pts": 4
+      },
+      {
+        "dts": 5.8,
+        "pts": 6
+      },
+      {
+        "dts": 7.8,
+        "pts": 8
+      },
+      {
+        "dts": 9.8,
+        "pts": 10
+      }
+    ],
+    "origin": 0,
+    "segDur": 4
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        4,
+        8,
+        12
+      ],
+      "durations": [
+        4,
+        4,
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "keyframes": [
+        {
+          "dts": -0.2,
+          "pts": 0
+        },
+        {
+          "dts": 1.8,
+          "pts": 2
+        },
+        {
+          "dts": 3.8,
+          "pts": 4
+        },
+        {
+          "dts": 5.8,
+          "pts": 6
+        },
+        {
+          "dts": 7.8,
+          "pts": 8
+        },
+        {
+          "dts": 9.8,
+          "pts": 10
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler carries a track's own priming, not the video's reorder delay, into its served edit",
+  "source": "remux-assembler"
+}

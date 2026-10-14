@@ -1,0 +1,16 @@
+{
+  "args": {
+    "moofs": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAPoAAAABR0cnVuAAABAAAAAAEAAADIAAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAALuAA==",
+    "trackId": 1,
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": {
+      "end": "4200",
+      "lastDuration": "200"
+    }
+  },
+  "fn": "videoDecodeExtent",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler doesn't let a clean exit code publish a GOP a truncated trailer only renamed",
+  "source": "remux-assembler"
+}

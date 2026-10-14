@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "768"
+      ],
+      [
+        2,
+        "6144"
+      ]
+    ],
+    "seg": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAFAAAAADRtb29mAAAALHRyYWYAAAAQdGZoZAAAAAAAAAACAAAAFHRmZHQBAAAA/////////BA="
+  },
+  "expected": {
+    "ok": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAIAAAAADRtb29mAAAALHRyYWYAAAAQdGZoZAAAAAAAAAACAAAAFHRmZHQBAAAAAAAAAAAAFBA="
+  },
+  "fn": "retimeFragments",
+  "name": "timeline: replay timeline track edits moves every track by its own tick count, a negative run start included",
+  "source": "timeline"
+}

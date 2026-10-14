@@ -1,0 +1,21 @@
+{
+  "args": {
+    "durationHint": "25",
+    "frameRate": "23.976",
+    "live": {
+      "remuxGrid": null,
+      "sourceFps": 23.81
+    },
+    "mediaFileId": 42,
+    "quality": "remux",
+    "resolvedDuration": 25,
+    "segmentDuration": 6,
+    "token": "abc"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"/api/stream/42/remux/init.mp4?token=abc\"\n#EXTINF:6.000,\n/api/stream/42/remux/seg-0000.m4s?token=abc\n#EXTINF:6.000,\n/api/stream/42/remux/seg-0001.m4s?token=abc\n#EXTINF:6.000,\n/api/stream/42/remux/seg-0002.m4s?token=abc\n#EXTINF:6.000,\n/api/stream/42/remux/seg-0003.m4s?token=abc\n#EXTINF:1.000,\n/api/stream/42/remux/seg-0004.m4s?token=abc\n#EXT-X-ENDLIST"
+  },
+  "fn": "variantRoute",
+  "name": "synthetic route remux {\"remuxGrid\":null,\"sourceFps\":23.81}",
+  "source": "synthetic"
+}

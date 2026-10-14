@@ -1,0 +1,18 @@
+{
+  "args": {
+    "duration": 0.5,
+    "frameSeconds": 0.04,
+    "init": "/api/stream/7/720p/init.mp4?token=t",
+    "seg": {
+      "prefix": "/api/stream/7/720p/seg-",
+      "suffix": ".m4s?token=t"
+    },
+    "segDuration": 6
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"/api/stream/7/720p/init.mp4?token=t\"\n#EXTINF:0.500,\n/api/stream/7/720p/seg-0000.m4s?token=t\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "synthetic vod 0.5 6",
+  "source": "synthetic"
+}

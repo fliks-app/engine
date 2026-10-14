@@ -1,0 +1,19 @@
+{
+  "args": {
+    "init": "AAAADGZ0eXAAAAAAAAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAACgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAAAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": [
+      [
+        10,
+        {
+          "isVideo": false,
+          "timescale": 48000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) coalesces per-frame fragments into one moof/trun per served segment",
+  "source": "remux-assembler"
+}

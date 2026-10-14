@@ -1,0 +1,64 @@
+{
+  "args": {
+    "end": 15,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 5,
+        "pts": 5
+      },
+      {
+        "dts": 10,
+        "pts": 10
+      },
+      {
+        "dts": 20,
+        "pts": 20
+      }
+    ],
+    "origin": 0,
+    "segDur": 6
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        10,
+        20
+      ],
+      "durations": [
+        10,
+        10
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 5,
+          "pts": 5
+        },
+        {
+          "dts": 10,
+          "pts": 10
+        },
+        {
+          "dts": 20,
+          "pts": 20
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "segment-boundaries: replay segment-boundaries computeSegmentGrid extends the timeline when a keyframe sits past the end",
+  "source": "segment-boundaries"
+}

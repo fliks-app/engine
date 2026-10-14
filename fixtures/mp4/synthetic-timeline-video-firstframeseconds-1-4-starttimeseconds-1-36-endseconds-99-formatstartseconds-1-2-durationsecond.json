@@ -1,0 +1,29 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "durationSeconds": 100,
+      "formatStartSeconds": 1.2,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "",
+          "endSeconds": 99,
+          "firstFrameSeconds": 1.4,
+          "startTimeSeconds": 1.36,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "end": 99,
+      "formatStart": 1.2,
+      "origin": 1.4
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "synthetic timeline {\"video\":[{\"firstFrameSeconds\":1.4,\"startTimeSeconds\":1.36,\"endSeconds\":99}],\"formatStartSeconds\":1.2,\"durationSeconds\":100}",
+  "source": "synthetic"
+}

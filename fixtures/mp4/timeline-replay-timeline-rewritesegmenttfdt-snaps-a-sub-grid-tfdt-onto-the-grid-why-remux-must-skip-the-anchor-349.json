@@ -1,0 +1,22 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAX7QAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 25,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAYagAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt snaps a sub-grid tfdt onto the grid — why remux must skip the anchor (#349)",
+  "source": "timeline"
+}

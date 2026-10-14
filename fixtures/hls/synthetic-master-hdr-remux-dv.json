@@ -1,0 +1,27 @@
+{
+  "args": {
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "includeRemux": true,
+    "mediaFileId": 7,
+    "remuxCodecs": "hvc1.2.4.L153.B0",
+    "remuxSupplementalCodecs": "dvh1.08.06/db4h",
+    "sourceFrameRate": 24,
+    "sourceHdrFormat": "HDR10",
+    "sourceHeight": 2160,
+    "sourceWidth": 3840,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,AVERAGE-BANDWIDTH=8000000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"remux\",CODECS=\"hvc1.2.4.L153.B0,mp4a.40.2\",SUPPLEMENTAL-CODECS=\"dvh1.08.06/db4h\",CLOSED-CAPTIONS=NONE\n/api/stream/7/remux/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master hdr remux dv",
+  "source": "synthetic"
+}

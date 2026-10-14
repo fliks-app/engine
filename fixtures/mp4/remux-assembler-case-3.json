@@ -1,0 +1,15 @@
+{
+  "args": {
+    "firstDecode": -0.08,
+    "start": 0
+  },
+  "expected": {
+    "ok": {
+      "shift": 0,
+      "video": 0.08
+    }
+  },
+  "fn": "remuxEdits",
+  "name": "remux-assembler: case",
+  "source": "remux-assembler"
+}

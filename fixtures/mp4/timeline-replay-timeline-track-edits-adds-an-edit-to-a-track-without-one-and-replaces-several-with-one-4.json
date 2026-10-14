@@ -1,0 +1,16 @@
+{
+  "args": {
+    "init": "AAAAmG1vb3YAAAAYbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAACgAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAD6AAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        "160"
+      ]
+    ]
+  },
+  "fn": "readInitEdits",
+  "name": "timeline: replay timeline track edits adds an edit to a track without one, and replaces several with one",
+  "source": "timeline"
+}

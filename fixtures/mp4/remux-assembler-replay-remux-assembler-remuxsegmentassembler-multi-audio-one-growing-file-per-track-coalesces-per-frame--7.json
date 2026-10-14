@@ -1,0 +1,17 @@
+{
+  "args": {
+    "init": "AAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAABQAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU=",
+    "seconds": [
+      [
+        1,
+        0.08
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAABQAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "fn": "withInitEdits",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) coalesces per-frame fragments into one moof/trun per served segment",
+  "source": "remux-assembler"
+}

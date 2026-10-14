@@ -1,0 +1,11 @@
+{
+  "args": {
+    "init": "AAAA+G1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAADIAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGUAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAQAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": []
+  },
+  "fn": "parseTrexDefaults",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler carries a track's own priming, not the video's reorder delay, into its served edit",
+  "source": "remux-assembler"
+}

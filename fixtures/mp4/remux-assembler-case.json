@@ -1,0 +1,83 @@
+{
+  "args": {
+    "end": 12,
+    "keyframes": [
+      {
+        "dts": -0.08,
+        "pts": 0
+      },
+      {
+        "dts": 1.92,
+        "pts": 2
+      },
+      {
+        "dts": 3.92,
+        "pts": 4
+      },
+      {
+        "dts": 5.92,
+        "pts": 6
+      },
+      {
+        "dts": 7.92,
+        "pts": 8
+      },
+      {
+        "dts": 9.92,
+        "pts": 10
+      }
+    ],
+    "origin": 0,
+    "segDur": 4
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        4,
+        8,
+        12
+      ],
+      "durations": [
+        4,
+        4,
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "keyframes": [
+        {
+          "dts": -0.08,
+          "pts": 0
+        },
+        {
+          "dts": 1.92,
+          "pts": 2
+        },
+        {
+          "dts": 3.92,
+          "pts": 4
+        },
+        {
+          "dts": 5.92,
+          "pts": 6
+        },
+        {
+          "dts": 7.92,
+          "pts": 8
+        },
+        {
+          "dts": 9.92,
+          "pts": 10
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: case",
+  "source": "remux-assembler"
+}

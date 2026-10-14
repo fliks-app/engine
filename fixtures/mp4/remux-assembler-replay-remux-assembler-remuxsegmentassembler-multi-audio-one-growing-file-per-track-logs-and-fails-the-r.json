@@ -1,0 +1,11 @@
+{
+  "args": {
+    "init": "AAAADGZ0eXAAAAAAAAAACG1vb3Y="
+  },
+  "expected": {
+    "ok": []
+  },
+  "fn": "parseInitTracks",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) logs and fails the run when a track's init never becomes parseable",
+  "source": "remux-assembler"
+}

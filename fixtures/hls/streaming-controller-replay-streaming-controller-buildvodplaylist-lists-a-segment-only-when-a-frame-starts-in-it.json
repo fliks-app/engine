@@ -1,0 +1,17 @@
+{
+  "args": {
+    "duration": 120.001,
+    "frameSeconds": 0.04,
+    "seg": {
+      "prefix": "seg-",
+      "suffix": ".m4s"
+    },
+    "segDuration": 3
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:3.000,\nseg-0000.m4s\n#EXTINF:3.000,\nseg-0001.m4s\n#EXTINF:3.000,\nseg-0002.m4s\n#EXTINF:3.000,\nseg-0003.m4s\n#EXTINF:3.000,\nseg-0004.m4s\n#EXTINF:3.000,\nseg-0005.m4s\n#EXTINF:3.000,\nseg-0006.m4s\n#EXTINF:3.000,\nseg-0007.m4s\n#EXTINF:3.000,\nseg-0008.m4s\n#EXTINF:3.000,\nseg-0009.m4s\n#EXTINF:3.000,\nseg-0010.m4s\n#EXTINF:3.000,\nseg-0011.m4s\n#EXTINF:3.000,\nseg-0012.m4s\n#EXTINF:3.000,\nseg-0013.m4s\n#EXTINF:3.000,\nseg-0014.m4s\n#EXTINF:3.000,\nseg-0015.m4s\n#EXTINF:3.000,\nseg-0016.m4s\n#EXTINF:3.000,\nseg-0017.m4s\n#EXTINF:3.000,\nseg-0018.m4s\n#EXTINF:3.000,\nseg-0019.m4s\n#EXTINF:3.000,\nseg-0020.m4s\n#EXTINF:3.000,\nseg-0021.m4s\n#EXTINF:3.000,\nseg-0022.m4s\n#EXTINF:3.000,\nseg-0023.m4s\n#EXTINF:3.000,\nseg-0024.m4s\n#EXTINF:3.000,\nseg-0025.m4s\n#EXTINF:3.000,\nseg-0026.m4s\n#EXTINF:3.000,\nseg-0027.m4s\n#EXTINF:3.000,\nseg-0028.m4s\n#EXTINF:3.000,\nseg-0029.m4s\n#EXTINF:3.000,\nseg-0030.m4s\n#EXTINF:3.000,\nseg-0031.m4s\n#EXTINF:3.000,\nseg-0032.m4s\n#EXTINF:3.000,\nseg-0033.m4s\n#EXTINF:3.000,\nseg-0034.m4s\n#EXTINF:3.000,\nseg-0035.m4s\n#EXTINF:3.000,\nseg-0036.m4s\n#EXTINF:3.000,\nseg-0037.m4s\n#EXTINF:3.000,\nseg-0038.m4s\n#EXTINF:3.000,\nseg-0039.m4s\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "streaming.controller: replay streaming.controller buildVodPlaylist lists a segment only when a frame starts in it",
+  "source": "streaming.controller"
+}

@@ -1,0 +1,22 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": null,
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 1
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 3,
+      "seekSeconds": 3,
+      "startNumber": 1
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "synthetic run start none 1 aac",
+  "source": "synthetic"
+}

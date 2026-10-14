@@ -1,0 +1,20 @@
+{
+  "args": {
+    "includeRemux": true,
+    "mediaFileId": 7,
+    "remuxCodecs": "avc1.640029",
+    "remuxHeight": 1724,
+    "remuxWidth": 4096,
+    "sourceFrameRate": 24,
+    "sourceHeight": 1716,
+    "sourceVideoBitrateBps": 9876543,
+    "sourceWidth": 4096,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=10068543,AVERAGE-BANDWIDTH=10068543,RESOLUTION=4096x1724,FRAME-RATE=24,NAME=\"remux\",CODECS=\"avc1.640029,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/remux/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master remux 4096x1716",
+  "source": "synthetic"
+}

@@ -1,0 +1,24 @@
+{
+  "args": {
+    "data": [
+      "CQ=="
+    ],
+    "samples": [
+      {
+        "cts": -512,
+        "duration": 1024,
+        "flags": 0,
+        "size": 1
+      }
+    ],
+    "sequenceNumber": 1,
+    "tfdt": "0",
+    "trackId": 2
+  },
+  "expected": {
+    "ok": "AAAAaG1vb2YAAAAQbWZoZAAAAAAAAAABAAAAUHRyYWYAAAAQdGZoZAACAAAAAAACAAAAFHRmZHQBAAAAAAAAAAAAAAAAAAAkdHJ1bgEADwEAAAABAAAAcAAABAAAAAABAAAAAP///gAAAAAJbWRhdAk="
+  },
+  "fn": "buildFragment",
+  "name": "synthetic build fragment negative cts",
+  "source": "synthetic"
+}

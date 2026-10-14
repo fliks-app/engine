@@ -1,0 +1,13 @@
+{
+  "args": {
+    "timeline": {
+      "origin": -23.72
+    }
+  },
+  "expected": {
+    "ok": 23.72
+  },
+  "fn": "servedShift",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler lifts a grid that starts before 0 onto 0",
+  "source": "remux-assembler"
+}
