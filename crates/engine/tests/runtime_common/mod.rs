@@ -332,20 +332,19 @@ impl Engine {
     /// `ffmpeg` processes whose argv names this engine's cache root.
     pub fn ffmpeg_pids(&self) -> Vec<u32> {
         let root = self.root.to_string_lossy().into_owned();
-        let Ok(rd) = std::fs::read_dir("/proc") else {
-            return vec![];
-        };
-        rd.flatten()
-            .filter_map(|e| e.file_name().to_string_lossy().parse::<u32>().ok())
-            .filter(|pid| {
-                std::fs::read(format!("/proc/{pid}/cmdline"))
-                    .map(|c| String::from_utf8_lossy(&c).contains(&root))
-                    .unwrap_or(false)
-            })
-            .filter(|pid| {
+        // `ps` instead of /proc so the same check runs on macOS.
+        let out = std::process::Command::new("ps")
+            .args(["-axo", "pid=,stat=,command="])
+            .output()
+            .expect("ps");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.contains(&root))
+            .filter_map(|l| {
+                let mut f = l.split_whitespace();
+                let pid = f.next()?.parse().ok()?;
                 // A zombie waiting for its reaper is gone already.
-                std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                    .is_ok_and(|s| !s.split(' ').nth(2).is_some_and(|st| st == "Z"))
+                (!f.next()?.starts_with('Z')).then_some(pid)
             })
             .collect()
     }
