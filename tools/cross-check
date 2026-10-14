@@ -1,0 +1,9 @@
+#!/bin/sh
+# Clippy for the Windows and macOS targets without their toolchains: catches cfg-gated compile errors
+# before CI. Tests for those platforms still only run in CI.
+set -e
+for t in x86_64-pc-windows-gnu aarch64-apple-darwin; do
+  rustup target list --installed | grep -qx "$t" || rustup target add "$t"
+  echo "== $t"
+  cargo clippy -q --all-targets --target "$t" -- -D warnings
+done
