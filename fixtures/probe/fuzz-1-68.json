@@ -1,0 +1,49 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"data\",\"codec_name\":\"hdmv_pgs_subtitle\",\"height\":270,\"pix_fmt\":\"yuv420p10le\",\"avg_frame_rate\":\"500/21\",\"has_b_frames\":1,\"time_base\":\"1001/24000\",\"start_time\":\"123.456789\",\"duration\":\"10.5\",\"color_space\":\"bt2020nc\",\"channel_layout\":\"\",\"sample_rate\":\"0\"},{\"index\":1,\"codec_type\":\"video\",\"codec_name\":\"vp9\",\"height\":720,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"25/1\",\"avg_frame_rate\":\"60000/1001\",\"time_base\":\"x\",\"start_time\":\"3600\",\"channels\":0,\"channel_layout\":\"\",\"sample_rate\":\"abc\",\"tags\":{\"rotate\":\"270\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"attachment\",\"codec_name\":\"dts\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":1280,\"height\":1080,\"r_frame_rate\":\"60000/1001\",\"avg_frame_rate\":\"abc\",\"has_b_frames\":0,\"time_base\":\"1/0\",\"start_time\":\"123.456789\",\"bits_per_raw_sample\":\"0\",\"color_space\":\"bt2020nc\",\"channels\":8,\"sample_rate\":\"48000\",\"tags\":{\"LANGUAGE\":\"por\",\"DURATION\":\"00:00:03\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":3,\"codec_name\":\"bin_data\",\"profile\":\"High\",\"level\":-99,\"width\":1280,\"height\":270,\"avg_frame_rate\":\"0/0\",\"time_base\":\"1/0\",\"duration\":\"2.04\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt709\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":45},{\"side_data_type\":\"x\",\"dv_profile\":\"eight\"}],\"channels\":8,\"channel_layout\":\"\",\"sample_rate\":\"abc\",\"tags\":{\"Language\":\"\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"0.000000\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"0.041\",\"end_time\":\"0\",\"tags\":{\"TITLE\":\"Descriptions\"}},{\"start_time\":\"0.041\",\"end_time\":\"-0.5\"},{\"start_time\":\"7261.4\",\"end_time\":\"0.000000\"},{\"start_time\":\"3600\",\"end_time\":\"1.5\",\"tags\":{\"title\":\"English SDH\"}}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":2,\"type\":\"attachment\",\"properties\":{\"language_ietf\":\"es-419\"}},{\"id\":3,\"properties\":{\"language_ietf\":\"zh-Hant\"}},{\"id\":2,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"es-419\"}},{\"id\":4,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"pt-BR\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2570799685,
+  "name": "fuzz-1-68",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

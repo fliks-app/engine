@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"subtitle\",\"codec_name\":\"bin_data\",\"profile\":\"High\",\"height\":0,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"15/2\",\"avg_frame_rate\":\"25/1\",\"has_b_frames\":4,\"time_base\":\"1/24\",\"start_time\":\"3600\",\"duration\":\"2.04\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channels\":0,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\",\"tags\":{\"LANGUAGE\":\"\",\"Title\":\"Main\"}},{\"index\":1,\"codec_type\":\"data\",\"codec_name\":\"dvb_subtitle\",\"profile\":\"High\",\"level\":30,\"width\":1280,\"height\":1080,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"50/1\",\"has_b_frames\":2,\"start_time\":\"1.5\",\"duration\":\"7261.4\",\"channels\":8,\"tags\":{\"language\":\"ENG\",\"title\":\"Descriptions\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":0}}],\"format\":{\"format_name\":\"avi\",\"start_time\":\"0.041\",\"duration\":\"3600\",\"bit_rate\":\"5000000\"}}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3600,
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "avi",
+      "formatStartSeconds": 0.041,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 523643204,
+  "name": "fuzz-1-32",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

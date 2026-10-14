@@ -1,0 +1,50 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"avi\",\"duration\":\"60.5\",\"bit_rate\":\"0\"},\"chapters\":[{\"start_time\":\"1.5\",\"end_time\":\"0.041\"},{\"start_time\":\"123.456789\",\"end_time\":\"10.5\",\"tags\":{\"title\":\"Foreign Parts\"}},{\"start_time\":\"1.5\",\"end_time\":\"3600\",\"tags\":{\"TITLE\":\"Closed Captions\"}},{\"end_time\":\"123.456789\",\"tags\":{\"title\":\"Main\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [
+        {
+          "endSeconds": 3600,
+          "startSeconds": 1.5,
+          "title": "Closed Captions"
+        },
+        {
+          "endSeconds": 123.456789,
+          "startSeconds": 0,
+          "title": "Main"
+        }
+      ],
+      "durationSeconds": 60.5,
+      "error": "No streams detected",
+      "formatName": "avi",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2968789125,
+  "name": "fuzz-1-53",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

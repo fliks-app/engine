@@ -1,0 +1,6854 @@
+[
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": ""
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "\tTchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": " "
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": " (Allemand"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": " (Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": " - VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": " -Francais)Ukr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": " -Hun(Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": " -Spanish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": " -foreign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": " Suedois-Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "-Korean Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": ".Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "5.1"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "5.1 - pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "5.1)Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "5.1)Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "5.1-Heb_Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "5.1-Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "5.1.Español - VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "5.1/VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "AC3"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "AC3 - Japonés(Russian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "AC3(VFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "pol",
+    "title": "AC3)Pol)closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "AC3.Coréenptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "AC3/\tAC3"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "AC3foreign-partsSigns"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Allemand"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Allemand\tEnglish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Allemand.English_Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Allemand.Swe/Italien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "AllemandItalian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Allemand_Chn(Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Allemand_Norvégien\tChinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais\tVietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais - Ger"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais - Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "eng",
+    "title": "Anglais hearingimpaired Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Anglais(VOSTFR_Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais.Norvégien - nonforced"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais/Finlandais - FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais/Swe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Anglais/ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ara\tpt-BR VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "spa",
+    "title": "Ara Espagnol ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ara(FRENCH - Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Ara(Indonesian_Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Ara-x265"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ara.Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Ara_Suédois/Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabe Hebrew\tRon"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Arabe VFi/x265"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabe(foreign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabe)é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Arabe.Chn-Roumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "ArabeFORCED(Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ArabeHungarian_Japonés"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabe  - Cze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Arabic(JapCoréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Arabic-VOSTFR\tHungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Arabic/Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "CC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "nor",
+    "title": "CC - Norvégien(cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "dan",
+    "title": "CC Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "hin",
+    "title": "CC(Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "CCTurc-DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "CC_Deu-sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "CC_Norwegian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Cantonese\tRon_Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Cantonese_Português\tInd"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Cantonese Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Cantonese Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Ces - Ukrainien\tEspanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ces-Japonais Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Ces.Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Ces Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Ces Korean"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chi Dutch(Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Chi Italien(Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chi)Japonés"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Chi.Japonais - x265"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chi.Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Chinese - FRENCH - Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chinese - HébreuCzech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "Chinese Hearing Impaired Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Chinois Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Chinois(ptbr/Portugais"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Chinois)Português(ForeignParts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ChinoisEspañol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Chn\tJap Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chn Chn\tUkrainian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chn Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Chn Roumain/VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chn.Greek/Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Chn.Vietnamese.Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "Chn/sdh - Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Closed Captions - Deutsch"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Closed Captions FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "Closed Captions VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Closed Captions(ClosedCaptionsRoumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ind",
+    "title": "Closed Captions-closed_caption Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ukr",
+    "title": "Closed Captions/Ukr\t"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Closed CaptionsUkrainien Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Closed Captionsnonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "rum",
+    "title": "Closed Captions Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Closed Captions Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fin",
+    "title": "ClosedCaptions\tFin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "spa",
+    "title": "ClosedCaptions - Songs/Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "ClosedCaptions(CC.FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "por",
+    "title": "ClosedCaptions(Portuguese/Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "spa",
+    "title": "ClosedCaptions-Spanish TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "ClosedCaptions_Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Commentary"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Commentary\tForeign Parts)TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Commentary - Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Commentary - ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Commentary(Indonésien Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Commentary-Chi.Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "CommentaryItalien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Commentary_Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Commentary Chn_Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Coréen - Ces Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Coréen-Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Coréen-Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Coréen-Hébreu(Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "CoréenTurkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze\tIndonesian)Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Cze\tSwedish(German"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze\tThailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Cze Jpn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Cze Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze Songs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze(Commentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Cze(Vie)Songs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Cze(ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Cze/Suedois - Kor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Czech"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Czech - Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Czech - Polish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Czech_Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Czech DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Cze ptbr - Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "DTS-HD(CC)DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "DTS-HD)sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "DTS-HD-AC3"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "DTS-HD_Néerlandais Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "DTS-HD VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "DTS-HD ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Dan\tEsp-Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Dan(Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Dan.French"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "DanTha - FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish\tGrec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Danish - Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Danish - Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish)Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish-unforced/Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Danish.Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish/Hun non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Danish/Tur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Danish_Dan-Kor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Danish_Espanol\tCommentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danish x265-Commentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Danois\tEll(Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danois Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Danois.Thaïlandais_Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Danois/UkrainienDut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu - Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu - Kor)Commentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu DTS-HD)Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Deu English/Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Deu Norwegian.ENG"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu.FORCED/Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Deu.VF"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deu/ptbr)foreign-parts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Deu_hearingimpaired SDH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch - Deu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch - Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch(Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch)ArabeChn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Deutsch)Cantonese AC3"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Deutsch/Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "DeutschForeign Parts Full"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Director"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Director\tVie.Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Director\tnot forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Director Korean\tGer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Director(Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Director(Néer\tDeu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Dut\tThaïlandais.Mandarin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dut - Foreign PartsMandarin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dut - Polish - Commentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "dut",
+    "title": "Dut - hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Dut)Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dut.ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Dut_Norwegian Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Dutch\tDeutsch Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Dutch\tRusse_Hungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "dut",
+    "title": "Dutch SDH hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch(Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Dutch(Hun)Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Dutch(Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Dutch)Ger.Hungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch/Ukrainian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "DutchUkrainian\tCommentary"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Dutch_Dut/Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Dutch_VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Dutchnon-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG\tNeerlandais.Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG\tRussian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "ENG Francais(Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG)AC3 ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG-Danish seng"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "eng",
+    "title": "ENG.Roumain.sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG_Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "ENG Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ell VFi\tChi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Ell(Hin pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ell(Italiano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Ell)Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Ell-Dutch.Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Ell-Polish)Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "jpn",
+    "title": "Ell/Japonais hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "English"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "eng",
+    "title": "English\tCC/Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "English(Español"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "English)Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "English.Norvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "English.Polish/Ind"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp\t5.1\tSpa"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp\tMain/Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp.Rum.Full"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "EspCC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp_pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Espagnol ENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espagnol HongroisRoumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espagnol/Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espagnol_Korean"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espanol(Pol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "spa",
+    "title": "Espanol-ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Espanol/Thai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Espanol_ENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Espanolcc\tenglish2"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Espanolnonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Español\tSpa - English"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español - Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español.Rum)Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Español/Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español_Finlandais - Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español_Português"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Español_Songsclosed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Esp Rum"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "FORCED"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "FORCED - Romanian"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "FORCED - Ukr"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "FORCED(Spa\tArabic"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "FORCED-Ukrainian"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "FORCED.Deutsch"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "FORCED/VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "FORCED_Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "FORCED_Indonesian"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "FORCED Kor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "FRENCH Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "FRENCH Italiano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "FRENCH Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "FRENCHSigns"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "FRENCHSwe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Fin - SDH_Flemish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Fin - foreign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Fin(Norwegian/Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Fin(Signs(Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Fin(Turc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Fin)english2\tTur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Fin-Espanol Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Fin_FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Fin_Neerlandais-Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Finlandais\tItalian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finlandais\tRum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Finlandais Pol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finlandais-Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Finlandais-Esp"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finlandais-Ukrainien(Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "kor",
+    "title": "Finlandais.hearing-impaired\tKor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Finlandais_Portugais/Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finlandais_Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Finlandais_hearing-impaired)Ger"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finnish\tHeb Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Finnish\tNor(Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Finnish - Polish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Finnish Commentary)Polish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finnish.Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finnish.Rum)Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Finnish/closed_caption_DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Flemish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Flemish - Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Flemish - ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Flemish(Jap Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Flemish-English_Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Flemish.Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Flemish_Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Flemish_GerSpanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Flemish_Swedish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Flemish Forced Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Flemish Spanish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Forced"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Forced\tnonforced"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Forced Espagnol"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": "heb",
+    "title": "Forced Hébreu)Closed Captions"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Forced)ptbr("
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "ForcedCzech - Mandarin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Forced_Turkish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Foreign Parts"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Foreign Parts - Ces"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Foreign Parts-ThaRussian"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Foreign Parts.TÜRK\tClosed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Foreign Parts_Chinois)Hebrew"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ForeignParts"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "ForeignParts - Ell.Rum"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "ForeignParts Jpn"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ForeignParts/Foreign Parts"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "ForeignParts/sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Francais - Czech"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Francais-Italien - FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Francais/Arabe(Spanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "FrancaisSpanish.TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Francais_Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français\tVOSTFR/Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français Ger"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français foreign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français(VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français-VFi/Allemand"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français.Roumain Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français/Español-Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français/Swe\tThai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "FrançaisVietnamien)Pol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "Français_İngilizce/closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Français Hébreu.Deu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French\tGerman_Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French\tNéerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French(seng"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French.Foreign Parts.German"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French/Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French/Rus)Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French/Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "FrenchDirector(Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "French_Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Frenchforeign-parts_cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Full"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Full\tforeign-parts.Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Full Swe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Full(Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Full.Danish_Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Full_Cze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ger"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ger(Chn.Roumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Ger(Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ger(Thailandais\tRum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ger)Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ger/Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German FlemishEll"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German-Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German.Hun/Português"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German/Mandarin Director"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German_Turc_Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "German Finnish)Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Gre"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Gre\tCes"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Gre - Nor - Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Gre - Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Gre 5.1.Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Gre(Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Gre)"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Gre)Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Gre)Russe-not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "rum",
+    "title": "Gre-cc)Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Gre-non-forcedThailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Gre.NldHI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Gre/Polonais/Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Gre/Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "GreHin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Grec)PorPolonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Grec.Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "GrecJapanese - CC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Greek - Director(Polish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Greek - Ukrainien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Greek)Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Greek-Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Greek.Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "GreekArabic\t "
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Greek_DTS-HD\tKor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "HI Hin/Polish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "HI)Norwegian.Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "HI/Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "HI/Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "HI_ptbr_AC3"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Hearing Impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Hearing Impaired\tHebrewDut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "jpn",
+    "title": "Hearing Impaired Main Jpn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "Hearing Impaired Roumain - TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "kor",
+    "title": "Hearing Impaired-Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Hearing ImpairedSpanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "heb",
+    "title": "Hearing Impaired Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Heb\tNon Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Heb - Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Heb - Tchèque - VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "cze",
+    "title": "Heb CC/Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Heb Thai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Heb İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Heb)Dan - Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Heb-JaponaisVietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "pol",
+    "title": "Heb.hearingimpaired)Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Heb_Non Forced-Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Hebrew\tDeu sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Hebrew\tRus - Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Hebrew(Anglais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "Hebrew)Closed Captions\tTrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "HebrewNon Forced(Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Hebrew Arabe"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Heb Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Hebé"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Hin\tItaliano/Italien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Hin(Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Hin)Director_VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Hin-HI - Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Hin-Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "hin",
+    "title": "Hin-hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hin.Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "HinPol(Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hin_Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hindi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hindi\tFull-5.1"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Hindi -  )Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Hindi(Italian-Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Hindi.Jpn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "HindiTurSwedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Hindi_Allemand"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Hin Tha - Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hongrois - NéerJpn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hongrois - not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hongrois(Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "spa",
+    "title": "Hongrois(hearing-impaired/Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Hongrois)Espanol/Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "hun",
+    "title": "Hongrois.nonforced\thearingimpaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "kor",
+    "title": "Hongrois Kor sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Hun\tDirector\tTurkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Hun(Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hun. "
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Hun_Chinois - Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Hungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Hungarian\tDut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Hun Italiano.Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Hébreu\tnot forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Hébreu - Cze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Hébreu - Tur-Hindi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Hébreu-Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Hébreu-Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "heb",
+    "title": "Hébreu-SDH\tSuédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "HébreuJaponés"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "heb",
+    "title": "Hébreu closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Hébreu seng - Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Ind"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Ind)İngilizce(Ind"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "IndCze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Ind_Closed Captions-Vietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Ind_HI-Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Indonesian"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Indonesian foreign_part)Spanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Indonesian(Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Indonesian)Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Indonesian/Rum)Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "IndonesianGrecc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Indonesian_ENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Indonesian Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Indonesian Turkish_Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "tha",
+    "title": "Indonesian hearingimpaired)Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Indonésien Hindi Swe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Indonésien)Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Indonésien_Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ind )VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Ind Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ita"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ita\tForeign Parts)Ukr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Ita - Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ita - ForcedFinlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ita(TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ita-Allemand"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ita-Hun.seng"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ita-Russian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ita-TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italian(Português"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italian)Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italian)Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italian.Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ItalianItalien.TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ItalianItalien_pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano\tInd Japonés"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Italiano(VFi Flemish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano)Cantonese)Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano)Polish)Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ita",
+    "title": "Italiano-hearingimpaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Italiano-seng_Español"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano.Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italiano_sengSigns"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italien\tFinlandais\tVietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italien/Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ItalienSigns"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Italien_Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jap Hongrois-not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Jap)Coréen/French"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jap)Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Jap/FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jap/ptbrDutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jap_Full-Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "JapaneseFORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "JapanesePortuguês(Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais(TurcDeutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais)Czech.Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais)Swe\tDut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais-Indonesian/Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais-unforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais/Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "JaponaisHindi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Japonais_FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Japonés"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Japonés(Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Japonés(Hebrew(Esp"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Japonés)NorwegianCoréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Japonés.Hebrew_ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "Japonés/Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "JaponésDirector"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "JaponésDut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Japonés Songs)Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Jap Italien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jpn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jpn - Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Jpn(Ind"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Jpn)FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor(CoréenIndonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor-Chinese Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor.Chinois-not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor/Greek-Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "KorHeb.5.1"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor_Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor_DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Kor_Rus)Vietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Korean"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Korean\t - Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Korean\tDanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "kor",
+    "title": "Korean - Korean(sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Korean - Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Korean)Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Korean/ENG/Turc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "KoreanNorvégien)"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino\tseng/Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino Main nonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino(Indonésien Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino(Polish Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino(Ukr-Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Latino.Chinois/Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Main\tHI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Main - Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Main(Arabic/Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Main(Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Main(Hungarian\tThai"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Main-foreign-parts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "Main.Hun - Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Main/VFF_İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "MainKorean"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Main_Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin\tRussian - Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin\tTurCzech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin Polonais non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin)Turc-Ind"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin-Hebrew Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "MandarinMain.Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Mandarin Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Neerlandais(Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ger",
+    "title": "Neerlandais)hearing-impaired)Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "NeerlandaisDTS-HD TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Neerlandais Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nld\tSuedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nld Ell\tNon Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nld.DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nld.Ukrainian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Nld/Korean_Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Non Forced Full)Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Non Forced(Ukrainian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "Non Forced)hearingimpaired.Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Nor\tVietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Nor - Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Nor Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Nor)Nor)Fin"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Nor/ForeignParts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Norvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Norvégien - Chinese/x265"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "nor",
+    "title": "Norvégien - sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "NorvégienVietnamien-ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hin",
+    "title": "Norvégienseng/Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Norvégien Spa"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Norwegian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Norwegian)Italiano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Norwegian-Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Norwegian/Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "NorwegianLatino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "Norwegian_Rumhearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néer Nor Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "dut",
+    "title": "Néer sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néer(Ell_SDH"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néer(FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néer-Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Néerlandais\tChn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néerlandais\tSongs(İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néerlandais)Commentary_Hungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néerlandais/Norwegian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Néerlandais/ç-unforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "NéerlandaisCze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "NéerlandaisUkrainien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Néerlandais_VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Néer Italian_Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Pol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Pol\tFull"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Pol(Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Pol/Esp_Ger"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Pol_Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Pol_Ron-"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polish\tUkrainienItalien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polish - Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Polish Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Polish.Thaïlandais - Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "hun",
+    "title": "PolishThailandais - Hungarian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Polonais Suédois_Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polonais)Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Polonais)ç/Ger"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "PolonaisRusse"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Polonais_Danish Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Polonais Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por\t5.1"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por\tCze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Por - Italiano/Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por Dan)Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por.ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portugais - Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portugais Jap\tNeerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portugais-Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portugais/Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portuguese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portuguese\tArabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Portuguese/Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portuguese/Portuguese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "PortugueseFORCED.Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "PortugueseItaliano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Portuguese_Néer"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Português"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Português - Gre Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Português Ukr)Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Português(Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Português/Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Português_Latino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Português Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Por Flemish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Por German  "
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Romanian\tENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Romanian(Spanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Romanian)Japonés Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "rum",
+    "title": "Romanian)closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Romanian-seng - Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Romanian.Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Ron-Anglais-Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Ron/Czech - Portuguese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Ron/Pol.Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "RonClosedCaptions)Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "RonCoréen Coréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Roumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Roumain(Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Roumain)Anglais\tLatino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Roumain/Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Roumain/Ukrainien.French"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Rum - Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "RumClosed Captions Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Rum Vietnamien_ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Rus - Chi/Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Rus - Hongrois-Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Rus - Por_Italien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Rus Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Rus é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Rus)PortuguêsAra"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Rus-Português\tNld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe Hindi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe Norvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe("
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Russe(Greek(Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Russe)Turc-English"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe.Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "RusseDanois Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Russe_Tha-VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russe_VietnamienHI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Russe Anglais-French"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russian\tEnglishSuédois"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russian\tFORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russian - non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Russian(GreFin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "SDH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "por",
+    "title": "SDH\tPortugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fin",
+    "title": "SDH\tUkrainian.Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "SDH - Chn  "
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "SDHJap(Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "SDH_Swe Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "SDH_VFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Songs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Songs Espanol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Songs HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Songs Russe.Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Songs-Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Songs.Rus"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Songs/ "
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Songs/Japonais non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ind",
+    "title": "Songs/unforced-Indonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Songs Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa - not forced)Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa(Finlandais/Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa(Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa-Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa-Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa.Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "SpaCzech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spanish - non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spanish Romanian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spanish/Coréen"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spanish/Non Forced(Forced"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Spa ForeignParts.Kor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois\tunforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois)Gre"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois-Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois-TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Suedois.HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "SuedoisCommentary/Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Suedois Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Suédois\tRusse/Director"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Suédois\tSwe Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Suédois\tTurkish\tThailandais"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Suédois - foreign-parts.Nld"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Suédois(Flemish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Suédois(Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "Suédois/Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Suédois/Turc/Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "SuédoisDTS-HD Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Suédois_Arabic/Ukr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "por",
+    "title": "Swe-Portuguese)CC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Swe.FRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swe.Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Swe/Español"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "SwePolish CC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swedish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Swedish\tpt-BR Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "swe",
+    "title": "Swedish - SDH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Swedish(FRENCH(Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swedish)Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Swedish)Italiano_Cze"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Swedish)Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Swedish.Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swedish.unforced.Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "Swedish/Closed CaptionsCes"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Swedish Heb Español"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Swedish nonforced.Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Tchèque"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Tchèque\tItalien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "Tchèque - Polish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Tchèque)Foreign Parts-Fin"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "Tchèque.ForeignParts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "Tchèqueseng(Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "tha",
+    "title": "Tha cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Tha-Neerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Tha/Ukr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Tha/İngilizce VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Thai\tpt-BR\tFinnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Thai - Esp - Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Thai Turc-Vietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Thai/Francais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "tha",
+    "title": "Thai/hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thailandais - ForcedVFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Thailandais - Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "Thailandais(Kor Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thailandais)"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Thailandais)Espagnol"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Thailandais)Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "Thailandais)Mandarin/Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thailandais)Tha"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thailandais)foreign_part Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Thailandais-Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thaïlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thaïlandais\tIndonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Thaïlandais - Dutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thaïlandais(Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Thaïlandais)Allemand_Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Thaïlandais/Non Forced Roumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thaïlandais/İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "ThaïlandaisHébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "Thaïlandais_Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "eng",
+    "title": "Thaïlandais Anglais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Thaïlandais Nor(Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "Thaïlandais Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench\tPolish - Ces"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench - foreign_part)Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench(Hun VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench)Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench)Thai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "TrueFrench.cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench.İngilizceIndonésien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench_Deutsch - Danish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "TrueFrench VFi_Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Tur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Tur\tHearing Impaired_Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Tur ptbr-Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Tur)AraItalien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "tur",
+    "title": "Tur-CC Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Tur-Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Tur/Arabe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Tur/French - ENG"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turc\tHebrew - Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Turc Vie/ptbr"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turc(foreign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turc-Turc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turc/seng"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "TurcDTS-HD Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "TurcItaliano(Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Turc_Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Turkish\tTrueFrench\tTur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Turkish - Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "Turkish Arabe"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Turkish(foreign-parts\tPor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "jpn",
+    "title": "Turkish-Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "TurkishHun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "TÜRK - Ger\tNorvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "TÜRK Full Ukrainien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "TÜRK)Spanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "TÜRK-ç)unforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "TÜRK/Nor"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "TÜRK Roumain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukr-seng-nonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "UkrThailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukrainian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukrainian - RoumainThai"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ukrainian - VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ukr",
+    "title": "Ukrainian(SDH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "Ukrainian)Danois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukrainian-Director_foreign-parts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "Ukrainian.Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "UkrainianVF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ukr",
+    "title": "Ukrainien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ukrainien\tGerman"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Ukrainien\tRussian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ukrainien - Jap\tFRENCH"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ukr",
+    "title": "Ukrainien -  sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Ukrainien-Deutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Ukrainien-Thai_Russian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Ukrainien.VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Ukrainien/Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "Ukrainienseng - ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF - Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF - Rum"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF VF\tDan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF-Suedois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "VFDeutsch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF\tCoréen"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF - Chn Flemish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF - FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF Finnish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF Songs\tNorwegian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF(Finlandais_Ukrainien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF)é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF_Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF_Ita\tFull"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF_Rum_Mandarin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFF Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "VFTurkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi - Neerlandais/Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi-Tur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi.Norwegian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi.not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi.é)DTS-HD"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi_TrueFrench_CC"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VFi_Ukr Chinois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "VF Closed Captions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VF Cze(Chinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR Ell"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR FrenchRussian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR)Fin_Japonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR)Jap_seng"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR.Turkish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR/Espanol Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFRDeutsch.TrueFrench"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "VOSTFR Néerlandais FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Vie - VFi_Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Vie(VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Vie)VFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Vie)VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "Vie-TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "Vie/Hungarian\tNéerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamese NéerlandaisFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamese(DutPortuguês"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ita",
+    "title": "Vietnamese(Italian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Vietnamese(Russian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "Vietnamese.Spa.Cantonese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamien"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamien - Foreign Parts.nonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "Vietnamien - Russe.Hin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "Vietnamien Turc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ger",
+    "title": "Vietnamien-Ger.İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vietnamien.seng 5.1"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "Vietnamien/ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "cze",
+    "title": "Vie Hearing Impaired)Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "Vie sengDutch"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "jpn",
+    "title": "cc - Jap"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "cc - é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "cc(Francais(Hongrois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "cc.TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "cc/VFF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "cc_cc"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "gre",
+    "title": "closed_caption.Main/Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ind",
+    "title": "closed_caption Indonesian"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "english2"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "swe",
+    "title": "english2 - ClosedCaptions Swe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "english2-Tha"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "english2FRENCH/Por"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "english2VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "english2_Cantonese-ClosedCaptions"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "english2_Français"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "english2_Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dut",
+    "title": "english2_Néer"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "foreign-parts"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "foreign-parts 5.1"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "foreign-parts Ron"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "foreign-parts(Ces"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "foreign-parts)AC3 Spanish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "foreign-parts)Foreign Parts"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "foreign-parts.Grec"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "foreign-parts.Latino"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "foreign-parts/Français"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "foreign_part"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "foreign_part\tDanish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "foreign_part - İngilizce"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "swe",
+    "title": "foreign_part)Swedish"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "foreign_part Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "chi",
+    "title": "hearing-impaired - Chn"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "hun",
+    "title": "hearing-impaired(Hun"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "eng",
+    "title": "hearing-impaired.ENG.Chinese"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "hearing-impaired/Foreign Parts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "vie",
+    "title": "hearing-impairedLatino-Vietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "hearingimpaired"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "hearingimpaired\tForeign Parts"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "nor",
+    "title": "hearingimpaired/AC3-Norvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "non-forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "non-forced)Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "non-forced.VFi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "non-forced _é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "non-forced english2"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "nonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "nonforced - HI"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "nonforced-Portugais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "dan",
+    "title": "nonforced.Dan"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "nonforced/Cantonese/Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "nonforced_Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "nonforcednon-forced/Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "not forced\tCantonese-Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced\tFrançaisEnglish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "not forced\tFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced\tMain"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced\tnonforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "not forced (Fin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rus",
+    "title": "not forced-Russe.Dut"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced-Suédois"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "pol",
+    "title": "not forced.Polonais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "rus",
+    "title": "not forced/cc Russe"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forcedRum.ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "not forced_VOSTFRChinese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "pt-BR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "pt-BR\tTur"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "pt-BR.Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "pt-BR.sdh VOSTFR"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "pt-BR VFiFin"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ptbr"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ptbr\tFull/Hébreu"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ptbr - Russe/Chi"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ptbr Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "ptbr)Esp/Signs"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "ita",
+    "title": "ptbr)cc - Italiano"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "por",
+    "title": "ptbr-Dan/Vie"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "sdh"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "sdh\tNon Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "por",
+    "title": "sdh - Swe Português"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "sdh Non Forced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "dut",
+    "title": "sdh)Néerlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "sdh.Main"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "rum",
+    "title": "sdh.Ron"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "sdh_Greek"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "sdh_Hungarian/Korean"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "sdh_hearingimpaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "jpn",
+    "title": "sdh Japanese"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "fre",
+    "title": "sdhé(TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "seng"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "seng\tLatino"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "seng Dan.VF"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fin",
+    "title": "seng)Finlandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "seng)Hébreu/Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "seng-Director"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "chi",
+    "title": "seng.Chn"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "seng.Romanian.FORCED"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "sengSpanish"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "seng Polonais(TrueFrench"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "unforced"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tur",
+    "title": "unforced\tTurkish/Director"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "unforced(hearing-impaired"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": null,
+    "title": "unforced-closed_caption"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "unforced_Spa"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "x265"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "ara",
+    "title": "x265 - Arabe_Ara"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "gre",
+    "title": "x265)Grec"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "spa",
+    "title": "x265_Espanol(Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "ç"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "ç Hebrew"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "heb",
+    "title": "ç/Heb"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "nor",
+    "title": "ç Norvégien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "é"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "tha",
+    "title": "é Thailandais"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": true,
+    "language": "vie",
+    "title": "é(sdh - Vietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "é.Ron"
+  },
+  {
+    "forced": true,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "éforeign_part"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "kor",
+    "title": "é Kor - Arabic"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "İngilizce"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "cze",
+    "title": "İngilizce)Ces"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "İngilizce-CzechVietnamien"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "İngilizce."
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": null,
+    "title": "İngilizce.TÜRK"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "fre",
+    "title": "İngilizce.VOSTFR Czech"
+  },
+  {
+    "forced": false,
+    "hearingImpaired": false,
+    "language": "rum",
+    "title": "İngilizce/Rum"
+  }
+]

@@ -1,0 +1,132 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"data\",\"codec_name\":\"hevc\",\"level\":153,\"width\":480,\"height\":720,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"30/1\",\"time_base\":\"0/1\",\"start_time\":\"0.041\",\"duration\":\"-0.5\",\"bits_per_raw_sample\":\"8\",\"channels\":2,\"sample_rate\":\"48000\",\"tags\":{\"LANGUAGE\":\"fre\",\"Title\":\"Closed Captions\",\"rotate\":\"\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"audio\",\"codec_name\":\"av1\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":1920,\"height\":0,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"30/1\",\"avg_frame_rate\":\"0/0\",\"has_b_frames\":1,\"time_base\":\"1/48000\",\"start_time\":\"0\",\"duration\":\"3600\",\"bit_rate\":\"128000\",\"color_transfer\":\"arib-std-b67\",\"color_primaries\":\"bt709\",\"sample_rate\":\"0\",\"tags\":{\"Language\":\"eng\",\"duration\":\"12\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"data\",\"codec_name\":\"hdmv_pgs_subtitle\",\"profile\":\"High\",\"width\":1280,\"display_aspect_ratio\":\"16:9\",\"avg_frame_rate\":\"25\",\"time_base\":\"1/1000\",\"start_time\":\"123.456789\",\"bits_per_raw_sample\":\"10\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"arib-std-b67\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":45},{\"side_data_type\":\"x\",\"dv_profile\":\"eight\"}],\"channels\":1,\"channel_layout\":\"stereo\",\"sample_rate\":\"44100\",\"tags\":{},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":3,\"codec_type\":\"audio\",\"codec_name\":\"vp9\",\"level\":41,\"width\":3840,\"height\":2160,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"24000/1001\",\"avg_frame_rate\":\"-25/1\",\"time_base\":\"1/0\",\"start_time\":\"0.000000\",\"bit_rate\":\"5000000\",\"bits_per_raw_sample\":\"8\",\"color_transfer\":\"bt709\",\"channels\":0,\"tags\":{\"title\":\"Descriptions\",\"DURATION\":\"1:02:03\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":4,\"codec_type\":\"audio\",\"codec_name\":\"mpeg2video\",\"width\":0,\"height\":270,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"-25/1\",\"avg_frame_rate\":\"500/21\",\"time_base\":\"0/1\",\"duration\":\"0\",\"color_transfer\":\"smpte2084\",\"color_range\":\"tv\",\"channels\":1,\"sample_rate\":\"0\",\"tags\":{\"Language\":\"jpn\",\"title\":\"not forced\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska,webm\",\"duration\":\"90\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"1.5\",\"end_time\":\"3600\"},{\"start_time\":\"0\",\"tags\":{\"TITLE\":\"pt-BR\"}},{\"start_time\":\"2.04\",\"end_time\":\"0\",\"tags\":{\"title\":\"English SDH\"}},{\"start_time\":\"2.04\",\"end_time\":\"2.04\",\"tags\":{\"title\":\"Forced\"}}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "5,173.276\n1,125.661\n5,83.929\n5,96.620\n2,39.699\n3,187.600\n4,17.520\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "188600000",
+        "-probesize",
+        "1682977079",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":3,\"channels\":0,\"channel_layout\":\"5.1\",\"sample_rate\":\"48000\"},{\"index\":1,\"channel_layout\":\"5.1\",\"sample_rate\":\"48000\"},{\"index\":5,\"channel_layout\":\"\"}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "enoent": true
+      },
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "bitRate": 128000,
+          "channelLayout": "5.1",
+          "codec": "av1",
+          "commentary": true,
+          "endSeconds": 3600,
+          "isDefault": false,
+          "language": "eng",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "sampleRate": 48000,
+          "startTimeSeconds": 125.661,
+          "streamIndex": 1
+        },
+        {
+          "audioDescription": true,
+          "bitRate": 5000000,
+          "channelLayout": "5.1",
+          "channels": 0,
+          "codec": "vp9",
+          "endSeconds": 3723,
+          "isDefault": true,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 187.6,
+          "streamIndex": 3,
+          "title": "Descriptions"
+        },
+        {
+          "channels": 1,
+          "codec": "mpeg2video",
+          "commentary": true,
+          "endSeconds": 0,
+          "isDefault": false,
+          "language": "jpn",
+          "sampleRate": 0,
+          "startTimeSeconds": 17.52,
+          "streamIndex": 4,
+          "title": "not forced"
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 3600,
+          "startSeconds": 1.5
+        }
+      ],
+      "durationSeconds": 90,
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1682977079,
+  "name": "fuzz-1-19",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "host": null,
+    "reference": null,
+    "size": 131071
+  },
+  {
+    "host": "6c24cf853eb04557",
+    "reference": "6c24cf853eb04557",
+    "size": 131072
+  },
+  {
+    "host": "873fa66515ae58dd",
+    "reference": "873fa66515ae58dd",
+    "size": 200000
+  },
+  {
+    "host": "7422d3db8c398693",
+    "reference": "7422d3db8c398693",
+    "size": 1000003
+  },
+  {
+    "host": "00b768c2fb11da0c",
+    "reference": "00b768c2fb11da0c",
+    "size": 2147483647
+  },
+  {
+    "host": "28d88f471b39d10d",
+    "reference": "28d88f481b39d10d",
+    "size": 2147483648
+  },
+  {
+    "host": "44f5a55abf577c26",
+    "reference": "44f5a55bbf577c26",
+    "size": 3000000000
+  },
+  {
+    "host": "924af9b1f0871e6e",
+    "reference": "924af9b2f0871e6e",
+    "size": 4294967295
+  },
+  {
+    "host": "9f508e45f5e077c1",
+    "reference": "9f508e45f5e077c1",
+    "size": 4294967301
+  },
+  {
+    "host": "34e4bc7bde99bfe7",
+    "reference": "34e4bc7cde99bfe7",
+    "size": 7294967296
+  },
+  {
+    "host": "97b0601fc1d8a806",
+    "reference": "97b06020c1d8a806",
+    "size": 10737430585
+  }
+]

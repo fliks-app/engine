@@ -1,0 +1,58 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"0.000000\",\"duration\":\"60.000000\",\"bit_rate\":\"0\"},\"chapters\":[{\"start_time\":\"0.0\",\"end_time\":\"5.0\",\"tags\":{\"title\":\"x\"}}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [
+        {
+          "endSeconds": 5,
+          "startSeconds": 0,
+          "title": "x"
+        }
+      ],
+      "durationSeconds": 60,
+      "error": "No streams detected",
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 123456789,
+  "name": "no-streams",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -1,0 +1,116 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"data\",\"codec_name\":\"dvd_subtitle\",\"level\":30,\"width\":1280,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"0/1\",\"start_time\":\"2.04\",\"duration\":\"1.5\",\"color_primaries\":\"bt709\",\"channels\":2,\"channel_layout\":\"mono\",\"sample_rate\":\"abc\",\"tags\":{},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"audio\",\"codec_name\":\"opus\",\"width\":1280,\"height\":270,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"15/2\",\"time_base\":\"1/90000\",\"start_time\":\"-0.5\",\"duration\":\"2.04\",\"channels\":0,\"tags\":{\"LANGUAGE\":\"jpn\",\"duration\":\"00:00:03\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"av1\",\"width\":480,\"height\":90,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"abc\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":1,\"time_base\":\"x\",\"color_primaries\":\"bt709\",\"color_range\":\"tv\",\"channel_layout\":\"\",\"tags\":{\"LANGUAGE\":\"ENG\",\"Title\":\"Closed Captions\",\"language\":\"\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":3,\"codec_type\":\"subtitle\",\"codec_name\":\"webvtt\",\"profile\":\"Main 10\",\"level\":30,\"height\":1080,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"1000/1\",\"has_b_frames\":3,\"time_base\":\"1/1000\",\"start_time\":\"-0.5\",\"duration\":\"-0.5\",\"bit_rate\":\"0\",\"bits_per_raw_sample\":\"\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt2020\",\"channels\":2,\"sample_rate\":\"48000\",\"tags\":{\"LANGUAGE\":\"fre\",\"TITLE\":\"French AC3 5.1\"}},{\"index\":4,\"codec_type\":\"attachment\",\"codec_name\":\"av1\",\"width\":1280,\"height\":270,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"30/1\",\"avg_frame_rate\":\"15/2\",\"time_base\":\"x\",\"bits_per_raw_sample\":\"0\",\"color_space\":\"bt2020nc\",\"sample_rate\":\"abc\",\"tags\":{\"title\":\"Forced\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}}],\"format\":{\"format_name\":\"matroska\",\"duration\":\"89.99\",\"bit_rate\":\"1e6\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1981379099",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":1,\"channels\":0}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":2,\"type\":\"audio\",\"properties\":{}},{\"id\":3,\"type\":\"subtitles\",\"properties\":{\"language_ietf\":\"fr-CA-x\"}},{\"id\":4,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"de-DE-1996\"}},{\"id\":3,\"type\":\"subtitles\",\"properties\":{\"language_ietf\":\"fr-CA-x\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "channels": 0,
+          "codec": "opus",
+          "commentary": true,
+          "endSeconds": 3,
+          "isDefault": true,
+          "language": "jpn",
+          "startTimeSeconds": -0.5,
+          "streamIndex": 1
+        },
+        {
+          "audioDescription": true,
+          "channelLayout": "",
+          "codec": "av1",
+          "isDefault": true,
+          "language": "ENG",
+          "streamIndex": 2,
+          "title": "Closed Captions"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 89.99,
+      "formatBitRate": 1000000,
+      "formatName": "matroska",
+      "subtitles": [
+        {
+          "codec": "webvtt",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "fre",
+          "streamIndex": 3,
+          "title": "French AC3 5.1"
+        }
+      ],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1981379099,
+  "name": "fuzz-1-15",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

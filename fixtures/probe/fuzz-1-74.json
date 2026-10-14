@@ -1,0 +1,44 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"truehd\",\"profile\":\"High\",\"width\":1920,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"60000/1001\",\"time_base\":\"1/0\",\"start_time\":\"0.000000\",\"duration\":\"7261.4\",\"color_range\":\"tv\",\"tags\":{\"Language\":\"UND\",\"DURATION\":\"00:00:03.\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"duration\":\"89.99\"},\"chapters\":[{\"start_time\":\"2.04\",\"end_time\":\"10.5\",\"tags\":{\"TITLE\":\"Forced\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [
+        {
+          "endSeconds": 10.5,
+          "startSeconds": 2.04,
+          "title": "Forced"
+        }
+      ],
+      "durationSeconds": 89.99,
+      "error": "No streams detected",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1143736121,
+  "name": "fuzz-1-74",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

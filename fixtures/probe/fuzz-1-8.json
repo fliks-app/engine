@@ -1,0 +1,52 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"subtitle\",\"codec_name\":\"xsub\",\"level\":41,\"height\":270,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"60000/1001\",\"avg_frame_rate\":\"abc\",\"time_base\":\"1/90000\",\"start_time\":\"3600\",\"duration\":\"-0.5\",\"bit_rate\":\"1e3\",\"channel_layout\":\"mono\",\"sample_rate\":\"44100\",\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska\",\"start_time\":\"0\",\"duration\":\"3\"},\"chapters\":[{\"start_time\":\"123.456789\",\"end_time\":\"-0.5\",\"tags\":{\"title\":\"Deutsch\"}},{\"start_time\":\"1.5\",\"end_time\":\"-0.5\"}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"fr-CA\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3,
+      "error": "No streams detected",
+      "formatName": "matroska",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2126813102,
+  "name": "fuzz-1-8",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

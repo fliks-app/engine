@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"ogg\",\"start_time\":\"2.04\",\"duration\":\"90\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"123.456789\",\"end_time\":\"10.5\"},{\"start_time\":\"3600\",\"end_time\":\"123.456789\",\"tags\":{\"title\":\"Main\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 90,
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "ogg",
+      "formatStartSeconds": 2.04,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1626443006,
+  "name": "fuzz-1-14",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

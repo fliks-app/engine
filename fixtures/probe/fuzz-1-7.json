@@ -1,0 +1,53 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"matroska\",\"start_time\":\"3600\",\"duration\":\"60.5\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"fr-CA\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 60.5,
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "matroska",
+      "formatStartSeconds": 3600,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1842032766,
+  "name": "fuzz-1-7",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -4,6 +4,7 @@
 - `spec/<domain>.md`: port specs (written before each port).
   - [spec/decide.md](spec/decide.md): the play-method decision (`evaluate()`), ladder, audio plan, HDR/DV, host caps.
   - [spec/hw.md](spec/hw.md): host capability detection (backend choice, test encodes, probes, GPUs, pause), the source of `Capabilities` and `HostCaps`.
+  - [spec/probe.md](spec/probe.md): media probing (`POST /v1/probe`): ffprobe/mkvmerge/cropdetect to `MediaInfo`, moviehash.
 
 ## Tags
 
@@ -16,6 +17,12 @@
 - decide: the TS throws `No audio encoder for group codec` when a track must re-encode into a group codec that cannot be encoded. That state is unreachable (only an all-copy group settles on such a codec), so the port falls back to AAC instead of failing.
 - decide: no vector is skipped, so the test allowlist `SKIPPED` is empty; the fuzz exclusion list `EXCLUDED` is empty too.
 - decide fuzz (35 000 random inputs, 0 TS throws): the TS never threw, so the unreachable `No audio encoder for group codec` throw above stays the only TS-throws-vs-Rust-returns case. `serde_json` runs with `float_roundtrip`: its default parser can be one ulp off, which flipped exact-boundary comparisons (`fixtures/decide/fuzz-float-roundtrip.json`).
+- probe: the host serialises a NaN number (e.g. a stream `start_time` of `"N/A"`) as `null`; the engine leaves the key absent. The fixtures list those paths in `expected.nulls`.
+- probe moviehash: the host computes the size term with `bytesize & 0xffffffff`, which turns negative once bit 31 of the low word is set (sizes of 2 to 4 GiB modulo 4 GiB), leaving the high word of the hash one short: those hashes never match OpenSubtitles. The engine computes the specified hash; `fixtures/probe/_moviehash.json` holds both values. Fix the host (or drop its hash lookup) before trusting hashes across the switch.
+- probe crop decodes in software only. The host tries VAAPI, CUDA, D3D11VA or VideoToolbox first and falls back to the same `nv12` pixels, so the result is identical and only slower; hardware decode follows hardware detection.
+- probe errors: the text of an unparsable ffprobe output and of a spawn failure is the engine's own (`ok: false` either way); a timeout reads `Command failed: ...` like the host's.
+- probe ffprobe fields of an unexpected type (e.g. `level: "4.1"`) are dropped; the host copies them through. A non-numeric `format.duration` or `start_time` is absent; the host would pass `NaN` to `-ss` and `-analyzeduration`. ffprobe never prints either.
+- probe adds `mkvTags` and `crop` switches, absolute-path validation, `FFPROBE_PATH`/`FFMPEG_PATH`/`MKVMERGE_PATH`, and stamps `schemaVersion` (the pure parser's output does not carry it). The host's warning logs are not ported.
 
 - hw: every detection run recomputes all flags (the TS keeps the flags of probes a re-pin did not re-run), uses the pinned node for the backend choice too, and runs CPU probes serially; `FFMPEG_PATH` is new (the TS only looks `ffmpeg` up on PATH). Details in `spec/hw.md` section 10.
 - hw: `/v1/capabilities` and `/v1/decide` answer 503 until the first detection run ends (the TS treats unprobed encoders as usable and probes as off).
@@ -30,3 +37,6 @@
 - decide `maxAudioChannels` and `audioChannelsByCodec` are `f64` on the wire; a fractional cap (`5.1`) makes the TS report fractional `channels`, which `Decision` (`u32`) truncates. The fuzz only samples integer caps.
 - decide bitrates, sample rates and ids are `u32` on the wire (`MediaInfo` already is); a host sending a fractional or negative `audioStreamIndex`/`burnInSubtitleId` gets a 422 where the TS coerces.
 - `hls-variant-ladder.ts` is not ported: `evaluate()` does not read it (master playlist, M3).
+- probe: `detectEmbeddedSubtitles` and `detectStreams` (embedded-subtitle, subtitle-sync and the media controller) are not ported: they read the same ffprobe JSON but are not part of `MediaInfo`.
+- probe crop samples share one process-wide budget of `cores - 1` runs in the engine; the host's cgroup-aware pool (and its admin override) stays in Node until the engine owns every ffmpeg slot (M3).
+- probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.

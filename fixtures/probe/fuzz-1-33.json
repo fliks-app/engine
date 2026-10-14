@@ -1,0 +1,101 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"dts\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"level\":-99,\"width\":160,\"height\":720,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"1/0\",\"time_base\":\"0/1\",\"start_time\":\"10.5\",\"duration\":\"2.04\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"10\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channel_layout\":\"mono\",\"tags\":{},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"audio\",\"codec_name\":\"h264\",\"level\":153,\"width\":480,\"height\":90,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"25/1\",\"avg_frame_rate\":\"30/1\",\"time_base\":\"1/90000\",\"duration\":\"2.04\",\"color_transfer\":\"arib-std-b67\",\"channels\":1,\"sample_rate\":\"44100\",\"tags\":{\"LANGUAGE\":\"\",\"title\":\"Closed Captions\",\"rotate\":\"90\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}}],\"format\":{\"format_name\":\"mpegts\",\"start_time\":\"3600\",\"duration\":\"3\",\"bit_rate\":\"0\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,56.942\n2,57.195\n2,72.438\n2,30.990\n1,96.104\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "756225009",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "bitRate": 128000,
+          "channelLayout": "mono",
+          "codec": "dts",
+          "commentary": true,
+          "endSeconds": 12.54,
+          "isDefault": true,
+          "language": "und",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "startTimeSeconds": 56.942,
+          "streamIndex": 0
+        },
+        {
+          "audioDescription": true,
+          "channels": 1,
+          "codec": "h264",
+          "commentary": true,
+          "endSeconds": 2.04,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 44100,
+          "startTimeSeconds": 96.104,
+          "streamIndex": 1,
+          "title": "Closed Captions"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 3,
+      "formatName": "mpegts",
+      "formatStartSeconds": 3600,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 756225009,
+  "name": "fuzz-1-33",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

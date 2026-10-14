@@ -1,0 +1,42 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "{path}: Invalid data found when processing input\n",
+      "stdout": "{}"
+    }
+  ],
+  "expected": {
+    "error": "{path}: Invalid data found when processing input",
+    "info": {
+      "audio": [],
+      "error": "{path}: Invalid data found when processing input",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": false
+  },
+  "file": "garbage.bin",
+  "fileSize": 16392,
+  "moviehash": null,
+  "name": "garbage-bin",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}

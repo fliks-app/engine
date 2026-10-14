@@ -1,0 +1,265 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"eac3\",\"width\":1280,\"height\":2160,\"avg_frame_rate\":\"abc\",\"has_b_frames\":2,\"time_base\":\"1/1000\",\"start_time\":\"2.04\",\"duration\":\"0\",\"bit_rate\":\"0\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt709\",\"channels\":8,\"channel_layout\":\"mono\",\"sample_rate\":\"48000\",\"tags\":{\"Language\":\"fre\",\"DURATION\":\"12\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":1,\"codec_type\":\"data\",\"codec_name\":\"ass\",\"profile\":\"DTS-HD MA\",\"width\":0,\"height\":0,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"-25/1\",\"has_b_frames\":4,\"time_base\":\"1/24\",\"bits_per_raw_sample\":\"10\",\"color_transfer\":\"smpte2084\",\"channels\":0,\"channel_layout\":\"5.1(side)\",\"sample_rate\":\"48000\"},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"ass\",\"width\":3840,\"height\":0,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"500/21\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":1,\"start_time\":\"3600\",\"color_transfer\":\"smpte2084\",\"tags\":{\"Language\":\"und\",\"title\":\"Descriptions\",\"duration\":\"00:00:03.\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":3,\"codec_name\":\"hevc\",\"profile\":\"Main 10\",\"width\":1920,\"height\":270,\"display_aspect_ratio\":\"16:9\",\"avg_frame_rate\":\"25/1\",\"time_base\":\"1/90000\",\"start_time\":\"123.456789\",\"duration\":\"-0.5\",\"color_transfer\":\"bt709\",\"color_range\":\"tv\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":180}],\"channels\":6,\"tags\":{\"LANGUAGE\":\"eng\"}}],\"format\":{\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"start_time\":\"2.04\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 133005\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "3,157.688\n4,67.023\n3,N/A\n3,25.178\n2,N/A\n2,141.635\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "3598960000",
+        "-probesize",
+        "2526455536",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "30",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] crop=1920:254:0:8",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "90",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "180",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "270",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] crop=1920:254:0:0",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "360",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] crop=1920:800:0:40",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "480",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "codec": "ass",
+          "commentary": true,
+          "isDefault": false,
+          "language": "und",
+          "startTimeSeconds": 3600,
+          "streamIndex": 2,
+          "title": "Descriptions"
+        }
+      ],
+      "chapters": [],
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 2.04,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "abc",
+          "bitRate": 0,
+          "codec": "eac3",
+          "colorPrimaries": "bt709",
+          "colorSpace": "bt2020nc",
+          "crop": {
+            "height": 800,
+            "width": 1920,
+            "x": 0,
+            "y": 40
+          },
+          "dvBlPresent": false,
+          "dvElPresent": false,
+          "dvRpuPresent": false,
+          "endSeconds": 2.04,
+          "firstFrameSeconds": 133.005,
+          "frameRate": "abc",
+          "hdr10Plus": false,
+          "height": 2160,
+          "reorderFrames": 2,
+          "startTimeSeconds": 2.04,
+          "streamIndex": 0,
+          "width": 1280
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2526455536,
+  "name": "fuzz-1-130",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

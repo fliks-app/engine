@@ -1,0 +1,104 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"attachment\",\"codec_name\":\"webvtt\",\"level\":153,\"width\":1280,\"pix_fmt\":\"yuv420p10le\",\"avg_frame_rate\":\"500/21\",\"time_base\":\"0/1\",\"start_time\":\"3600\",\"channels\":0,\"tags\":{\"title\":\"French AC3 5.1\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":1,\"codec_type\":\"attachment\",\"codec_name\":\"vp9\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":1280,\"height\":0,\"r_frame_rate\":\"15/2\",\"avg_frame_rate\":\"-25/1\",\"time_base\":\"1/48000\",\"start_time\":\"0.041\",\"duration\":\"1.5\",\"bit_rate\":\"1e3\",\"bits_per_raw_sample\":\"10\",\"color_primaries\":\"bt2020\",\"channels\":2,\"sample_rate\":\"0\",\"tags\":{\"LANGUAGE\":\"por\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"aac\",\"profile\":\"DTS-HD MA\",\"level\":153,\"width\":480,\"height\":2160,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"0/1\",\"has_b_frames\":4,\"time_base\":\"1/1000\",\"bit_rate\":\"1e3\",\"color_transfer\":\"unknown\",\"color_range\":\"tv\",\"side_data_list\":[{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":4,\"dv_level\":4,\"rpu_present_flag\":1,\"el_present_flag\":0,\"bl_present_flag\":0,\"dv_bl_signal_compatibility_id\":6}],\"channels\":0,\"channel_layout\":\"stereo\",\"tags\":{\"language\":\"fre\",\"Title\":\"Closed Captions\",\"duration\":\"00:01:02.500000000\",\"rotate\":\"-90\"}},{\"index\":3,\"codec_type\":\"audio\",\"codec_name\":\"mpeg2video\",\"width\":160,\"r_frame_rate\":\"50/1\",\"has_b_frames\":0,\"time_base\":\"1/48000\",\"start_time\":\"0.000000\",\"color_transfer\":\"smpte2084\",\"color_range\":\"tv\",\"channels\":0,\"sample_rate\":\"0\",\"tags\":{\"Language\":\"\",\"rotate\":\"270\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}}],\"format\":{\"format_name\":\"ogg\",\"start_time\":\"0\",\"duration\":\"7261.4\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"10.5\",\"end_time\":\"1.5\"},{\"start_time\":\"1.5\",\"end_time\":\"2.04\",\"tags\":{\"title\":\"not forced\"}},{\"start_time\":\"3600\",\"end_time\":\"0.000000\"}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,N/A\n3,N/A\n1,54.967\n4,25.911\n2,3.607\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "4607000",
+        "-probesize",
+        "2207390857",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":4,\"channels\":2,\"sample_rate\":\"0\"},{\"index\":0,\"channels\":6,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 1000,
+          "channelLayout": "stereo",
+          "channels": 0,
+          "codec": "aac",
+          "endSeconds": 62.5,
+          "isDefault": false,
+          "language": "fre",
+          "profile": "DTS-HD MA",
+          "startTimeSeconds": 3.607,
+          "streamIndex": 2,
+          "title": "Closed Captions"
+        },
+        {
+          "audioDescription": true,
+          "channels": 0,
+          "codec": "mpeg2video",
+          "isDefault": true,
+          "language": "und",
+          "sampleRate": 0,
+          "startTimeSeconds": 0,
+          "streamIndex": 3
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 2.04,
+          "startSeconds": 1.5,
+          "title": "not forced"
+        }
+      ],
+      "durationSeconds": 7261.4,
+      "formatBitRate": 5000000,
+      "formatName": "ogg",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2207390857,
+  "name": "fuzz-1-72",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -1,0 +1,266 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"data\",\"codec_name\":\"dts\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":480,\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"0/1\",\"time_base\":\"1/0\",\"start_time\":\"3600\",\"color_transfer\":\"arib-std-b67\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"44100\",\"tags\":{\"LANGUAGE\":\"zh-Hant\",\"TITLE\":\"Foreign Parts\"}},{\"index\":1,\"codec_type\":\"video\",\"codec_name\":\"hdmv_pgs_subtitle\",\"width\":1280,\"height\":90,\"pix_fmt\":\"yuv420p10le\",\"avg_frame_rate\":\"25/1\",\"has_b_frames\":1,\"time_base\":\"1/1000\",\"duration\":\"0.000000\",\"bit_rate\":\"5000000\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"unknown\",\"color_primaries\":\"bt2020\",\"side_data_list\":[{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":8,\"dv_level\":9,\"rpu_present_flag\":1,\"el_present_flag\":0,\"bl_present_flag\":1,\"dv_bl_signal_compatibility_id\":6}],\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\",\"tags\":{\"Language\":\"\",\"duration\":\"1:02:03\",\"rotate\":\"abc\"}},{\"index\":2,\"codec_type\":\"subtitle\",\"codec_name\":\"opus\",\"level\":153,\"height\":0,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"1000/1\",\"avg_frame_rate\":\"0/1\",\"has_b_frames\":4,\"time_base\":\"1001/24000\",\"start_time\":\"-0.5\",\"duration\":\"0.041\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"unknown\",\"color_primaries\":\"bt2020\",\"channels\":1,\"channel_layout\":\"\",\"sample_rate\":\"44100\",\"tags\":{\"Language\":\"xx\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska,webm\",\"duration\":\"3\",\"bit_rate\":\"0\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "1",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"best_effort_timestamp\": 31,\n            \"side_data_list\": [\n                {\n                    \"side_data_type\": \"Mastering display metadata\",\n                    \"red_x\": 0.708,\n                    \"red_y\": \"14600/50000\",\n                    \"green_x\": \"8500/50000\",\n                    \"green_y\": \"39850/50000\",\n                    \"blue_x\": \"6550/50000\",\n                    \"blue_y\": \"2300/50000\",\n                    \"white_point_x\": \"15635/50000\",\n                    \"min_luminance\": \"1/10000\",\n                    \"max_luminance\": 1000\n                },\n                {\n                    \"side_data_type\": \"Content light level metadata\",\n                    \"max_content\": 1000\n                },\n                {\n                    \"side_data_type\": \"HDR Dynamic Metadata SMPTE2094-40 (HDR10+)\"\n                }\n            ]\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"type\":\"data\",\"properties\":{\"language_ietf\":\"es-419\"}},{\"id\":2,\"type\":\"subtitles\",\"properties\":{\"language_ietf\":\"zh-Hant\"}}]}"
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "1",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "1",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "2",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3,
+      "formatName": "matroska,webm",
+      "subtitles": [
+        {
+          "codec": "opus",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "xx",
+          "languageTag": "zh-Hant",
+          "streamIndex": 2
+        }
+      ],
+      "video": [
+        {
+          "avgFrameRate": "25/1",
+          "bitRate": 5000000,
+          "codec": "hdmv_pgs_subtitle",
+          "colorPrimaries": "bt2020",
+          "colorSpace": "bt2020nc",
+          "colorTransfer": "unknown",
+          "dvBlPresent": true,
+          "dvBlSignalCompatId": 6,
+          "dvElPresent": false,
+          "dvLevel": 9,
+          "dvProfile": 8,
+          "dvRpuPresent": true,
+          "endSeconds": 3723,
+          "firstFrameSeconds": 0.031,
+          "frameRate": "25",
+          "hdr10Plus": true,
+          "height": 90,
+          "pixelFormat": "yuv420p10le",
+          "reorderFrames": 1,
+          "streamIndex": 1,
+          "width": 1280
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1896808953,
+  "name": "fuzz-1-27",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

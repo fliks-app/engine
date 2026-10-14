@@ -1,0 +1,40 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "enoent": true
+      },
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "error": "spawn ffprobe ENOENT",
+    "info": {
+      "audio": [],
+      "error": "spawn ffprobe ENOENT",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": false
+  },
+  "fileSize": 123456789,
+  "name": "ffprobe-missing",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

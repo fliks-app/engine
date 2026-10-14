@@ -1,0 +1,40 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"duration\":\"7261.4\",\"bit_rate\":\"1e6\"}}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 7261.4,
+      "error": "No streams detected",
+      "formatBitRate": 1000000,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2960047687,
+  "name": "fuzz-1-92",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

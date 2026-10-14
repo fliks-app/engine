@@ -1,0 +1,77 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"dts\",\"level\":-99,\"width\":1280,\"height\":0,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"0/0\",\"avg_frame_rate\":\"60000/1001\",\"has_b_frames\":1,\"time_base\":\"1/24\",\"duration\":\"10.5\",\"bits_per_raw_sample\":\"\",\"color_primaries\":\"bt2020\",\"channels\":8,\"sample_rate\":\"48000\",\"tags\":{\"LANGUAGE\":\"UND\",\"Title\":\"Main\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":1,\"codec_type\":\"audio\",\"width\":0,\"height\":90,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"1000/1\",\"avg_frame_rate\":\"25/1\",\"has_b_frames\":1,\"time_base\":\"1/0\",\"start_time\":\"0\",\"duration\":\"0.000000\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"smpte2084\",\"color_primaries\":\"bt2020\",\"channels\":6,\"sample_rate\":\"44100\",\"tags\":{\"LANGUAGE\":\"\",\"title\":\"French AC3 5.1\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska\",\"start_time\":\"0.000000\",\"duration\":\"89.99\",\"bit_rate\":\"0\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,113.006\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"pt-BR\"}},{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"es-419\"}},{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"pt-BR\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channels": 6,
+          "codec": "unknown",
+          "commentary": true,
+          "endSeconds": 0,
+          "isDefault": true,
+          "language": "fre",
+          "languageTag": "pt-BR",
+          "sampleRate": 44100,
+          "startTimeSeconds": 113.006,
+          "streamIndex": 1,
+          "title": "French AC3 5.1"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 89.99,
+      "formatName": "matroska",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2677861552,
+  "name": "fuzz-1-1",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

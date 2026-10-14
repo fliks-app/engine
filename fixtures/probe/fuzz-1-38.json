@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"avi\",\"start_time\":\"-0.5\",\"duration\":\"3\",\"bit_rate\":\"1e6\"}}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3,
+      "error": "No streams detected",
+      "formatBitRate": 1000000,
+      "formatName": "avi",
+      "formatStartSeconds": -0.5,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1801939142,
+  "name": "fuzz-1-38",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

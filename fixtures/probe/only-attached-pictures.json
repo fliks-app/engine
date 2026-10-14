@@ -1,0 +1,79 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"mjpeg\",\"codec_type\":\"video\",\"profile\":\"High\",\"level\":41,\"width\":1920,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"24000/1001\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":2,\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bits_per_raw_sample\":\"8\",\"disposition\":{\"attached_pic\":1}},{\"index\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\",\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bit_rate\":\"128000\",\"disposition\":{\"default\":1},\"tags\":{\"language\":\"eng\"}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"0.000000\",\"duration\":\"60.000000\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,0.000000\n1,0.000000\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 60,
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 123456789,
+  "name": "only-attached-pictures",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

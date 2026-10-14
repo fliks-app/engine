@@ -1,0 +1,149 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"mpeg2video\",\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"0/1\",\"avg_frame_rate\":\"0/0\",\"has_b_frames\":1,\"time_base\":\"1/48000\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"\",\"color_transfer\":\"unknown\",\"channels\":1,\"sample_rate\":\"44100\"},{\"index\":1,\"codec_type\":\"subtitle\",\"codec_name\":\"eac3\",\"profile\":\"LC\",\"level\":153,\"width\":1920,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"500/21\",\"avg_frame_rate\":\"0/0\",\"time_base\":\"1001/24000\",\"start_time\":\"0\",\"color_space\":\"bt2020nc\",\"color_range\":\"tv\",\"side_data_list\":[],\"channel_layout\":\"mono\",\"sample_rate\":\"\",\"tags\":{\"language\":\"\",\"TITLE\":\"Main\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"h264\",\"profile\":\"DTS-HD MA\",\"height\":2160,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"avg_frame_rate\":\"15/2\",\"has_b_frames\":4,\"time_base\":\"1/24\",\"start_time\":\"10.5\",\"duration\":\"0.041\",\"color_primaries\":\"bt2020\",\"side_data_list\":[],\"channels\":2,\"channel_layout\":\"mono\",\"sample_rate\":\"abc\",\"tags\":{\"LANGUAGE\":\"\",\"DURATION\":\"1:02:03\"}},{\"index\":3,\"codec_type\":\"subtitle\",\"codec_name\":\"truehd\",\"width\":0,\"height\":270,\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":0,\"time_base\":\"1/1000\",\"start_time\":\"2.04\",\"bit_rate\":\"128000\",\"sample_rate\":\"48000\",\"tags\":{\"language\":\"eng\",\"LANGUAGE\":\"xx\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":1,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":4,\"codec_type\":\"video\",\"codec_name\":\"eac3\",\"width\":160,\"height\":90,\"r_frame_rate\":\"24000/1001\",\"avg_frame_rate\":\"25\",\"start_time\":\"0.000000\",\"bit_rate\":\"5000000\",\"channels\":8,\"sample_rate\":\"abc\",\"tags\":{\"LANGUAGE\":\"por\",\"title\":\"\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"start_time\":\"3600\",\"bit_rate\":\"1e6\"},\"chapters\":[{\"start_time\":\"0.000000\",\"tags\":{\"TITLE\":\"Japanese 2.0\"}},{\"start_time\":\"0.000000\",\"end_time\":\"0.000000\",\"tags\":{\"title\":\"pt-BR\"}}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "4",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 134601\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "2,58.514\n1,131.953\n0,172.183\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1294893133",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":5,\"channels\":6,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\"},{\"index\":2,\"channels\":6,\"channel_layout\":\"5.1\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 1,
+          "codec": "mpeg2video",
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 44100,
+          "startTimeSeconds": 172.183,
+          "streamIndex": 0
+        },
+        {
+          "channelLayout": "5.1",
+          "channels": 6,
+          "codec": "h264",
+          "endSeconds": 3723,
+          "isDefault": false,
+          "language": "und",
+          "profile": "DTS-HD MA",
+          "startTimeSeconds": 58.514,
+          "streamIndex": 2
+        }
+      ],
+      "chapters": [],
+      "formatBitRate": 1000000,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "formatStartSeconds": 3600,
+      "subtitles": [
+        {
+          "codec": "eac3",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "und",
+          "streamIndex": 1,
+          "title": "Main"
+        },
+        {
+          "codec": "truehd",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 3
+        }
+      ],
+      "video": [
+        {
+          "avgFrameRate": "25",
+          "bitRate": 5000000,
+          "codec": "eac3",
+          "dvBlPresent": false,
+          "dvElPresent": false,
+          "dvRpuPresent": false,
+          "firstFrameSeconds": 0,
+          "frameRate": "23.976",
+          "hdr10Plus": false,
+          "height": 90,
+          "startTimeSeconds": 0,
+          "streamIndex": 4,
+          "width": 160
+        }
+      ]
+    },
+    "nulls": [
+      ".audio[1].sampleRate"
+    ],
+    "ok": true
+  },
+  "fileSize": 1294893133,
+  "name": "fuzz-1-29",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -1,0 +1,152 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"dts\",\"level\":30,\"width\":160,\"r_frame_rate\":\"50/1\",\"avg_frame_rate\":\"15/2\",\"has_b_frames\":3,\"start_time\":\"2.04\",\"duration\":\"0.000000\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt2020\",\"sample_rate\":\"abc\",\"tags\":{\"duration\":\"00:00:03.\",\"language\":\"und\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":1,\"codec_type\":\"video\",\"codec_name\":\"bin_data\",\"width\":1280,\"height\":270,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"500/21\",\"avg_frame_rate\":\"500/21\",\"has_b_frames\":5,\"time_base\":\"1/24\",\"start_time\":\"2.04\",\"bits_per_raw_sample\":\"10\",\"side_data_list\":[{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":4,\"dv_level\":11,\"rpu_present_flag\":0,\"el_present_flag\":0,\"bl_present_flag\":1,\"dv_bl_signal_compatibility_id\":1},{\"side_data_type\":\"x\",\"dv_profile\":\"eight\"}],\"channels\":6,\"sample_rate\":\"\",\"tags\":{\"LANGUAGE\":\"\",\"Title\":\"Commentary\",\"duration\":\"00:00:3.0\",\"rotate\":\"270\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"png\",\"profile\":\"High\",\"width\":0,\"height\":720,\"r_frame_rate\":\"1000/1\",\"avg_frame_rate\":\"60000/1001\",\"time_base\":\"x\",\"duration\":\"123.456789\",\"bit_rate\":\"5000000\",\"color_range\":\"tv\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":45},{\"side_data_type\":\"x\",\"dv_profile\":\"eight\"}],\"channels\":2,\"tags\":{\"title\":\"\",\"DURATION\":\"00:00:03\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"-0.5\",\"duration\":\"3\",\"bit_rate\":\"1e6\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "1",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 129843,\n            \"best_effort_timestamp\": 2982,\n            \"side_data_list\": [\n                {\n                    \"side_data_type\": \"Mastering display metadata\",\n                    \"red_x\": 0.708,\n                    \"red_y\": \"14600/50000\",\n                    \"green_x\": \"8500/50000\",\n                    \"green_y\": \"39850/50000\",\n                    \"blue_x\": \"6550/50000\",\n                    \"blue_y\": \"2300/50000\",\n                    \"white_point_x\": \"15635/50000\",\n                    \"white_point_y\": \"1/0\",\n                    \"min_luminance\": \"1/10000\",\n                    \"max_luminance\": \"10000000/10000\"\n                },\n                {\n                    \"side_data_type\": \"Content light level metadata\",\n                    \"max_average\": 400\n                },\n                {\n                    \"side_data_type\": \"HDR Dynamic Metadata SMPTE2094-40 (HDR10+)\"\n                }\n            ]\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "3540000",
+        "-probesize",
+        "373506350",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":3,\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"0\"},{\"index\":0,\"channels\":6,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\"}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"UND-419\"}},{\"id\":2,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"es-419\"}},{\"id\":3,\"type\":\"audio\",\"properties\":{}},{\"id\":1,\"type\":\"subtitles\",\"properties\":{\"language_ietf\":\"es-419\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "bitRate": 128000,
+          "channelLayout": "stereo",
+          "channels": 6,
+          "codec": "dts",
+          "commentary": true,
+          "endSeconds": 2.04,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 2.04,
+          "streamIndex": 0
+        },
+        {
+          "audioDescription": true,
+          "bitRate": 5000000,
+          "channels": 2,
+          "codec": "png",
+          "endSeconds": 3,
+          "isDefault": true,
+          "language": "und",
+          "languageTag": "es-419",
+          "profile": "High",
+          "streamIndex": 2,
+          "title": ""
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 3,
+      "formatBitRate": 1000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": -0.5,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "500/21",
+          "bitDepth": 10,
+          "codec": "bin_data",
+          "dvBlPresent": true,
+          "dvBlSignalCompatId": 1,
+          "dvElPresent": false,
+          "dvLevel": 11,
+          "dvProfile": 4,
+          "dvRpuPresent": false,
+          "firstFrameSeconds": 5410.125,
+          "frameRate": "23.81",
+          "hdr10Plus": true,
+          "height": 1280,
+          "pixelFormat": "yuv420p10le",
+          "reorderFrames": 5,
+          "startTimeSeconds": 2.04,
+          "streamIndex": 1,
+          "width": 270
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 373506350,
+  "name": "fuzz-1-71",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

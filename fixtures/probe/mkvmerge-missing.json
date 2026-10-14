@@ -1,0 +1,285 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"h264\",\"codec_type\":\"video\",\"profile\":\"High\",\"level\":41,\"width\":1920,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"24000/1001\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":2,\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bits_per_raw_sample\":\"8\"},{\"index\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\",\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bit_rate\":\"128000\",\"disposition\":{\"default\":1},\"tags\":{\"language\":\"eng\"}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"0.000000\",\"duration\":\"60.000000\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 0,\n            \"best_effort_timestamp\": 0,\n            \"side_data_list\": []\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,0.000000\n1,0.000000\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "enoent": true
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "3",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "3",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "9",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "18",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "27",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "36",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "48",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 60,
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 8,
+          "codec": "h264",
+          "displayAspectRatio": "16:9",
+          "dvBlPresent": false,
+          "dvElPresent": false,
+          "dvRpuPresent": false,
+          "firstFrameSeconds": 0,
+          "frameRate": "23.976",
+          "hdr10Plus": false,
+          "height": 1080,
+          "level": 41,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 123456789,
+  "name": "mkvmerge-missing",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

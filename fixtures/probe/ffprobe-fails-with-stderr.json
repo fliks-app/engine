@@ -1,0 +1,40 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "{path}: No such file or directory\n",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "error": "{path}: No such file or directory",
+    "info": {
+      "audio": [],
+      "error": "{path}: No such file or directory",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": false
+  },
+  "fileSize": 123456789,
+  "name": "ffprobe-fails-with-stderr",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}
