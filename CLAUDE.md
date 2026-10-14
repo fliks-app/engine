@@ -29,7 +29,7 @@ Video engine for Fliks (decisions, ffmpeg sessions, segment serving). Standalone
 - Quiet commands: `cargo test -p <crate> 2>&1 | tail -30`, `cargo clippy --all-targets -- -D warnings 2>&1 | tail -30`.
 - Locate with `tools/sym NAME` (or `-p`, `-f FILE`, `-g REGEX`) or rust-analyzer, then read +-40 lines. Do not read `target/`, `openapi.json`.
 - Targeted tests while working, the full suite once at the end.
-- Before pushing code touching `cfg(windows)`/`cfg(unix)`/macOS paths: `tools/cross-check` (clippy for Windows and macOS, no toolchain needed).
+- Before pushing code touching `cfg(windows)`/`cfg(unix)`/macOS paths: `tools/cross-check` (clippy for Windows and macOS; `ring`'s C goes through `zig cc`, fetched by mise when not on PATH).
 
 ## Commits
 

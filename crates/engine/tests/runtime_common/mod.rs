@@ -35,6 +35,8 @@ pub struct Stub {
     pub sprites: Mutex<HashMap<u32, String>>,
     pub calls: Mutex<Vec<ResolveRequest>>,
     pub down: AtomicBool,
+    /// Live sids the host refuses (its per-channel access check).
+    pub live_denied: Mutex<Vec<String>>,
 }
 
 impl Stub {
@@ -82,11 +84,22 @@ async fn resolve(
         format: None,
         ttl_s: Some(60.0),
     };
-    let ResolveMediaId::File(id) = r.media_id else {
-        return Ok(Json(deny));
-    };
     let Some(owner) = stub.owners.lock().unwrap().get(&r.credential).cloned() else {
         return Ok(Json(deny));
+    };
+    let id = match r.media_id {
+        ResolveMediaId::File(id) => id,
+        // Re-asked on every request, like the host's per-poll check.
+        ResolveMediaId::Live(sid) => {
+            let allow = !stub.live_denied.lock().unwrap().contains(&sid);
+            return Ok(Json(ResolveResponse {
+                allow,
+                path: None,
+                owner_id: allow.then_some(owner),
+                format: None,
+                ttl_s: Some(0.0),
+            }));
+        }
     };
     let (path, format) = match (r.purpose, r.subtitle_id) {
         (ResolvePurpose::Subtitle, Some(sub)) => match stub.subtitles.lock().unwrap().get(&sub) {

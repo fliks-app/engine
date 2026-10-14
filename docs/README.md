@@ -11,6 +11,7 @@
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
   - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
   - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite`, `Scan`, `Fingerprint` and `SubtitleExtract` jobs.
+  - [spec/live.md](spec/live.md): live TV (`engine::live`, `core::live`): open/join of a shared upstream, mode decision, probe, failover and stall watchdog, DVR window, direct tee, idle teardown, the `/api/livetv/sessions/:sid/*` data plane and the host's capacity contract.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
@@ -59,6 +60,8 @@
 - remux assembler: a frame of a growing audio file that fails to parse stops the pass after the frames before it were grouped (the TS parses the whole tail first); only the failure path differs.
 - jobs scan: a stream with no packet carrying a time is an error (`no video packet with a time`); the host would store a scan whose `end` is `null`. The video stream index is always known (`MediaInfo`), so the host's `v:0` fallback is unreachable.
 - jobs scan: the engine reads an MPEG-TS file itself to feed ffprobe and its own TS demuxer (the host runs `cat` under `ionice` into ffprobe and a second ffmpeg for the ADTS headers); the demuxer equals an ffmpeg ADTS read on the e2e clips (unit tests cover the rest), a track it cannot read (no PID, scrambled, PMT says not ADTS) reports a possible change.
+- live: the data plane asks the resolver (`purpose: live`) on every route and checks the viewer's owner (the TS served segments to any signed-in user holding the sid); upstream URL schemes are an allowlist and header values reject CR/LF; a direct upstream ending before its first byte fails the attempt (the TS waited for the stall watchdog); a leaving viewer's `direct.ts` closes; segments are found by a 200 ms listing (TS: `fs.watch`), ffmpeg stops with SIGTERM then SIGKILL, Express's `ETag`/`Last-Modified` are not sent. Spec section 6.
+- live: the capacity check moved to the host's request (`atCapacity`), still only consulted when an upstream must open; probes, failovers and releases reach the host as `LiveAttempt`/`LiveReleased` instead of its in-process counters.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
 
 ## Open divergences
@@ -77,4 +80,5 @@
 - session: the 503/404/410 segment rule and the `Retry-After` value are inline in the host's controller (no function to call): hand-written tests, no golden vectors. The job-idle vectors run with the default durations (the host reads them from env at import).
 - args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.
 - args: argv parity is against the TS only; like hw, nvenc, amf/win32, qsv/win32 and videotoolbox argv were never run on those hosts here.
+- live: not ported: QoE production timing (`recordProduction`), the activity registry and the per-stream/per-channel DB writes (the host derives them from `LiveAttempt`, `LiveReleased` and `GET /v1/live`); a live viewer has no `SessionOpened` event (its payload is a VOD snapshot), the open's answer carries the same facts. The direct tee bounds a slow viewer by 256 chunks, not 4 MiB. Only the CPU path ran for real (e2e: remux with failover, transcode into MPEG-TS); hardware live transcodes follow the golden argv.
 - runtime: e2e runs used the CPU only (jellyfin-ffmpeg 8.1.2 on Linux); the CPU fallback is exercised with a VAAPI host on a missing render node, no real GPU run went through the runtime yet. Throttle runs with the `signal` capability only; Windows Job Objects, the `stdin` pause and the `q` stop have no live run.

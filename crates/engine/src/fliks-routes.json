@@ -1,5 +1,6 @@
 [
   { "target": "forward", "path": "/api/stream/info/**" },
   { "target": "forward", "path": "/api/stream/:id/edl" },
-  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/**" }
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/**" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/livetv/sessions/:sid/:file" }
 ]

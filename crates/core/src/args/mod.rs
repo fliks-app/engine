@@ -4,10 +4,10 @@ mod encoders;
 mod filters;
 mod output;
 
-pub use encode::{Encoded, encode};
+pub use encode::{Encoded, encode, live_h264_encoder};
 pub(crate) use encode::{ReportNeeds, stage_report};
 pub use encoders::encoder_args;
-pub use output::{file, iframe, live, remux, vod};
+pub use output::{LIVE_USER_AGENT, file, http_header_args, iframe, live, remux, vod};
 
 use crate::api::{
     AudioPlan, CodecVariant, CropInfo, HdrMetadata, HwAccel, TonemapAlgo, TonemapCurve,
@@ -207,6 +207,9 @@ pub struct LiveArgs {
     pub user_agent: Option<String>,
     #[serde(default)]
     pub referer: Option<String>,
+    /// More request headers, after `Referer` in `-headers`. [new]
+    #[serde(default)]
+    pub extra_headers: Vec<(String, String)>,
     pub hw_accel: HwAccel,
     #[serde(default)]
     pub video_bitrate_bps: Option<f64>,

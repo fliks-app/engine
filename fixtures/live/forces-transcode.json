@@ -1,0 +1,17 @@
+{"fn":"forcesTranscode","cases":[
+{"input":{"probedVideoCodec":null,"activeVideoCodec":null},"expected":true},
+{"input":{"probedVideoCodec":null,"activeVideoCodec":"h264"},"expected":true},
+{"input":{"probedVideoCodec":null,"activeVideoCodec":"hevc"},"expected":true},
+{"input":{"probedVideoCodec":"h264","activeVideoCodec":null},"expected":false},
+{"input":{"probedVideoCodec":"h264","activeVideoCodec":"h264"},"expected":false},
+{"input":{"probedVideoCodec":"h264","activeVideoCodec":"hevc"},"expected":true},
+{"input":{"probedVideoCodec":"hevc","activeVideoCodec":null},"expected":true},
+{"input":{"probedVideoCodec":"hevc","activeVideoCodec":"h264"},"expected":true},
+{"input":{"probedVideoCodec":"hevc","activeVideoCodec":"hevc"},"expected":true},
+{"input":{"probedVideoCodec":"mpeg2video","activeVideoCodec":null},"expected":true},
+{"input":{"probedVideoCodec":"mpeg2video","activeVideoCodec":"h264"},"expected":true},
+{"input":{"probedVideoCodec":"mpeg2video","activeVideoCodec":"hevc"},"expected":true},
+{"input":{"probedVideoCodec":"H264","activeVideoCodec":null},"expected":true},
+{"input":{"probedVideoCodec":"H264","activeVideoCodec":"h264"},"expected":true},
+{"input":{"probedVideoCodec":"H264","activeVideoCodec":"hevc"},"expected":true}
+]}

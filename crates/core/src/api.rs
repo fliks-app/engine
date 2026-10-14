@@ -8,12 +8,14 @@ mod decide;
 mod fingerprint;
 mod jobs;
 mod lifetime;
+mod live;
 mod probe;
 mod runtime;
 pub use decide::*;
 pub use fingerprint::*;
 pub use jobs::*;
 pub use lifetime::*;
+pub use live::*;
 pub use probe::*;
 pub use runtime::*;
 
@@ -181,6 +183,8 @@ pub struct EngineConfig {
     pub streaming: StreamingConfig,
     #[serde(default)]
     pub lifetime: LifetimeConfig,
+    #[serde(default)]
+    pub livetv: LiveTvConfig,
 }
 
 // MediaInfo mirrors `MediaFileInfo` (ffprobe.service.ts). JSON integers stay u32/i32 so the

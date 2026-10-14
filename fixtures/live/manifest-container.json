@@ -1,0 +1,16 @@
+{"fn":"isManifestContainer","cases":[
+{"input":{"container":null},"expected":false},
+{"input":{"container":""},"expected":false},
+{"input":{"container":"hls"},"expected":true},
+{"input":{"container":"HLS"},"expected":true},
+{"input":{"container":"applehttp"},"expected":true},
+{"input":{"container":"dash"},"expected":true},
+{"input":{"container":"mpegts"},"expected":false},
+{"input":{"container":"mov,mp4,m4a,3gp,3g2,mj2"},"expected":false},
+{"input":{"container":"mpegts,hls"},"expected":true},
+{"input":{"container":" hls "},"expected":true},
+{"input":{"container":"hlsx"},"expected":false},
+{"input":{"container":"dash,webm"},"expected":true},
+{"input":{"container":"matroska,webm"},"expected":false},
+{"input":{"container":"flv"},"expected":false}
+]}

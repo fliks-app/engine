@@ -62,14 +62,17 @@ pub struct DeleteQuery {
 }
 
 #[utoipa::path(delete, path = "/v1/sessions/{sid}", operation_id = "delete_session", params(DeleteQuery),
-    responses((status = 204, description = "gone (idempotent)")))]
+    responses((status = 204, description = "gone (idempotent); a live sid leaves its live session")))]
 pub async fn delete(
     State(s): S,
     Path(sid): Path<String>,
     Query(q): Query<DeleteQuery>,
 ) -> StatusCode {
-    s.rt.stop(&sid, q.reason.as_deref().unwrap_or("stopped"))
-        .await;
+    let reason = q.reason.as_deref().unwrap_or("stopped");
+    // A live viewer's sid: it leaves its shared upstream.
+    if !s.rt.live.leave(&s.rt, &sid, reason) {
+        s.rt.stop(&sid, reason).await;
+    }
     StatusCode::NO_CONTENT
 }
 

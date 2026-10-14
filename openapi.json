@@ -366,6 +366,116 @@
         }
       }
     },
+    "/v1/live": {
+      "get": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "list_live",
+        "parameters": [
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LiveSnapshot"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "open_live",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenLiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenLiveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no config set yet, or an invalid request"
+          },
+          "409": {
+            "description": "`live_at_capacity`: a new upstream is needed and `atCapacity` is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`live_unavailable`: every upstream failed; or, without a body, hardware detection has not finished (Retry-After: 1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/live/{sid}": {
+      "get": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "get_live",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSnapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown or ended viewer"
+          }
+        }
+      }
+    },
     "/v1/probe": {
       "post": {
         "tags": [
@@ -558,7 +668,7 @@
         ],
         "responses": {
           "204": {
-            "description": "gone (idempotent)"
+            "description": "gone (idempotent); a live sid leaves its live session"
           }
         }
       }
@@ -1691,6 +1801,19 @@
               "sessionReviveTtlMs": 900000
             }
           },
+          "livetv": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LiveTvConfig"
+              }
+            ],
+            "default": {
+              "channelIdleSeconds": 30,
+              "probeSeconds": 3,
+              "segmentSeconds": 2,
+              "timeshiftMinutes": 15
+            }
+          },
           "revision": {
             "type": "integer",
             "format": "int32",
@@ -1740,7 +1863,7 @@
           },
           {
             "type": "object",
-            "description": "`stopped`, `expired`, `evicted`, `revoked`.",
+            "description": "`stopped`, `expired`, `evicted`, `revoked`; live viewers also `failed`.",
             "required": [
               "sessionId",
               "reason",
@@ -2004,6 +2127,71 @@
                 "type": "string",
                 "enum": [
                   "BgJobDone"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One attempt at feeding a live session from an upstream: `error` absent = it feeds the\nsession now, present = it failed.",
+            "required": [
+              "capacityToken",
+              "upstream",
+              "type"
+            ],
+            "properties": {
+              "capacityToken": {
+                "type": "string"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "probe": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveProbe"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "LiveAttempt"
+                ]
+              },
+              "upstream": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Position in the upstreams of the open that started the session.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A live session ended and its upstream closed: `idle` or `failed` (every upstream failed).",
+            "required": [
+              "capacityToken",
+              "reason",
+              "type"
+            ],
+            "properties": {
+              "capacityToken": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "LiveReleased"
                 ]
               }
             }
@@ -2791,6 +2979,249 @@
           }
         }
       },
+      "LiveCaps": {
+        "type": "object",
+        "description": "What the viewer's player takes.",
+        "properties": {
+          "directPlay": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxBitrateBps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Forces a transcode; snapped to a rung of 1.5, 3, 6, 10 or 20 Mb/s.",
+            "default": null
+          },
+          "useTs": {
+            "type": "boolean",
+            "description": "MPEG-TS segments instead of fMP4.",
+            "default": false
+          }
+        }
+      },
+      "LiveError": {
+        "type": "object",
+        "description": "Body of a refused `POST /v1/live`: `live_at_capacity` (409) or `live_unavailable` (503).",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "LiveMode": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "remux",
+          "transcode"
+        ]
+      },
+      "LiveProbe": {
+        "type": "object",
+        "description": "ffprobe's view of an upstream.",
+        "properties": {
+          "audioCodec": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ffprobe's `format_name` (comma list).",
+            "default": null
+          },
+          "videoCodec": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      },
+      "LiveSnapshot": {
+        "type": "object",
+        "description": "One viewer of a live session (`GET /v1/live`).",
+        "required": [
+          "sessionId",
+          "channelId",
+          "tags",
+          "mode",
+          "capacityToken",
+          "upstream",
+          "openedAtMs",
+          "lastSeenMs",
+          "container",
+          "viewersOnUpstream",
+          "restarts"
+        ],
+        "properties": {
+          "audioCodec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capacityToken": {
+            "type": "string"
+          },
+          "channelId": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string",
+            "description": "`fmp4` or `mpegts`."
+          },
+          "lastSeenMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LiveMode"
+          },
+          "openedAtMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restarts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Failed attempts since the session started.",
+            "minimum": 0
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "upstream": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "videoCodec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "viewersOnUpstream": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Viewers sharing the upstream, this one included.",
+            "minimum": 0
+          }
+        }
+      },
+      "LiveTvConfig": {
+        "type": "object",
+        "description": "`EngineConfig.livetv`: the host's `livetv_*` settings.",
+        "properties": {
+          "channelIdleSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "A session without viewers is torn down after this long.",
+            "default": 30
+          },
+          "fastZap": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`true`: transcode, `false`: remux; absent: transcode on a hardware host only.",
+            "default": null
+          },
+          "probeSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "ffmpeg's input probe window; never below 3.",
+            "default": 3
+          },
+          "segmentSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HLS segment length; floored at 1.",
+            "default": 2
+          },
+          "timeshiftMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "description": "DVR window; floored at 1.",
+            "default": 15
+          }
+        }
+      },
+      "LiveUpstream": {
+        "type": "object",
+        "description": "One way to reach the channel.",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "headers": {
+            "type": "object",
+            "description": "Sent with every request to the upstream; `User-Agent` defaults to VLC's.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Lower first; ties keep the request's order."
+          },
+          "probedAudioCodec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "probedContainer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From an earlier probe (`LiveAttempt.probe`): the engine skips its own."
+          },
+          "probedVideoCodec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "MediaInfo": {
         "type": "object",
         "required": [
@@ -2922,6 +3353,112 @@
           "ts",
           "fmp4"
         ]
+      },
+      "OpenLiveRequest": {
+        "type": "object",
+        "description": "`POST /v1/live`.",
+        "required": [
+          "channelId",
+          "upstreams",
+          "capacityToken"
+        ],
+        "properties": {
+          "atCapacity": {
+            "type": "boolean",
+            "description": "The host's capacity policy refuses a new upstream: answered 409 unless a session is joined."
+          },
+          "capacityToken": {
+            "type": "string",
+            "description": "The host's capacity hold; given back by `LiveReleased` when the session ends."
+          },
+          "caps": {
+            "$ref": "#/components/schemas/LiveCaps"
+          },
+          "channelId": {
+            "type": "string",
+            "description": "Opaque; viewers of one channel, mode, container and bitrate share one upstream."
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "upstreams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveUpstream"
+            }
+          }
+        }
+      },
+      "OpenLiveResponse": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "playPath",
+          "mode",
+          "upstream",
+          "capacityToken",
+          "dvrWindowSeconds",
+          "segmentSeconds",
+          "qoePipeline"
+        ],
+        "properties": {
+          "capacityToken": {
+            "type": "string",
+            "description": "The session's hold: the request's when this open started it, else the joined session's."
+          },
+          "dvrWindowSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "0 for `direct`."
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LiveMode",
+            "description": "The mode served (a remux of a non-H.264 upstream is a transcode)."
+          },
+          "playPath": {
+            "type": "string",
+            "description": "`/api/livetv/sessions/<sid>/index.m3u8`, or `direct.ts` for `direct`."
+          },
+          "probe": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LiveProbe"
+              }
+            ]
+          },
+          "qoePipeline": {
+            "$ref": "#/components/schemas/QoePipeline"
+          },
+          "segmentSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "This viewer's id: the data-plane sid, `DELETE /v1/sessions/{sid}`."
+          },
+          "upstream": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The feeding upstream, a position in the upstreams of the open that started the session.",
+            "minimum": 0
+          }
+        }
       },
       "OpenSessionRequest": {
         "type": "object",

@@ -1,0 +1,17 @@
+{"fn":"isManifestPayload","cases":[
+{"input":{"base64":"I0VYVE0zVQojRVhULVgtVkVSU0lPTjozCg=="},"expected":true},
+{"input":{"base64":"77u/I0VYVE0zVQo="},"expected":true},
+{"input":{"base64":"Cg0JICNFWFRNM1U="},"expected":true},
+{"input":{"base64":"PD94bWwgdmVyc2lvbj0iMS4wIj8+PE1QRD4="},"expected":true},
+{"input":{"base64":"PE1QRCB4bWxucz0idXJuOm1wZWc6ZGFzaCI+"},"expected":true},
+{"input":{"base64":"R0AREABC"},"expected":false},
+{"input":{"base64":"ICAgICAgICAgICAgICAgICAjRVhUTTNV"},"expected":false},
+{"input":{"base64":"ICAgICAgICAgICAgICAjRVhUTTNV"},"expected":false},
+{"input":{"base64":"I0VYVE0="},"expected":false},
+{"input":{"base64":""},"expected":false},
+{"input":{"base64":"I2V4dG0zdQo="},"expected":false},
+{"input":{"base64":"PGh0bWw+PGJvZHk+bm9wZTwvYm9keT48L2h0bWw+"},"expected":false},
+{"input":{"base64":"77s="},"expected":false},
+{"input":{"base64":"77u/ICA8P3htbA=="},"expected":true},
+{"input":{"base64":"AAAAGGZ0eXA="},"expected":false}
+]}

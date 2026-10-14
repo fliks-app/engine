@@ -273,6 +273,9 @@ mod tests {
             "/api/stream/7/720p/seg1.m4s",
             "/api/stream/7/subtitles/embedded/2/index.m3u8",
             "/api/stream/7/thumbnails/sprite.jpg",
+            "/api/livetv/sessions/ab12/index.m3u8",
+            "/api/livetv/sessions/ab12/seg-00012.m4s",
+            "/api/livetv/sessions/ab12/direct.ts",
         ] {
             assert_eq!(at(Method::GET, p), e, "{p}");
             assert_eq!(at(Method::HEAD, p), e, "{p}");
@@ -285,6 +288,10 @@ mod tests {
         assert_eq!(at(Method::GET, "/api/stream"), f);
         assert_eq!(at(Method::GET, "/api/stream//master.m3u8"), f);
         assert_eq!(at(Method::GET, "/api/system/liveness"), f);
+        assert_eq!(at(Method::DELETE, "/api/livetv/sessions/ab12"), f);
+        assert_eq!(at(Method::PUT, "/api/livetv/sessions/ab12/state"), f);
+        assert_eq!(at(Method::POST, "/api/livetv/channels/3/play"), f);
+        assert_eq!(at(Method::GET, "/api/livetv/channels"), f);
         assert_eq!(at(Method::GET, "/v1/hello"), f);
     }
 
