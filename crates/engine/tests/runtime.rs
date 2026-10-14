@@ -417,3 +417,93 @@ async fn hello_lists_the_runtime_and_events_stream() {
         0.0
     );
 }
+
+#[tokio::test]
+async fn the_gateway_serves_the_data_plane_and_forwards_the_rest() {
+    use fliks_engine::gateway::{RouteTable, Upstream};
+    let (e, _) = setup().await;
+    let up = Upstream::parse("http://127.0.0.1:9").unwrap();
+    let gw = listen(fliks_engine::gateway::router(
+        RouteTable::fliks(),
+        up,
+        Some(fliks_engine::serve::router(e.rt.clone())),
+    ))
+    .await;
+    let r = http(
+        "GET",
+        &format!("{gw}/api/stream/7?token=alice-jwt"),
+        &[("range", "bytes=0-9")],
+        None,
+    )
+    .await;
+    assert_eq!(r.status, 206);
+    // The control plane is never public: `/v1/*` is forwarded (the upstream is down here).
+    let v1 = http(
+        "GET",
+        &format!("{gw}/v1/hello"),
+        &[("authorization", &format!("Bearer {TOKEN}"))],
+        None,
+    )
+    .await;
+    assert_eq!(v1.status, 502);
+}
+
+#[tokio::test]
+async fn invalidate_and_cache_delete_remove_entries() {
+    let (e, file) = setup().await;
+    let mk = |owner: &str, id: u32, hash: &str| {
+        let d = e.rt.cache.rung_dir(Some(owner), id, hash, "720p");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("seg-0000.m4s"), [1u8; 100]).unwrap();
+    };
+    mk("alice", 7, "aaaa");
+    mk("bob", 7, "bbbb");
+    mk("alice", 8, "cccc");
+    mk("alice", 9, "dddd");
+    // A session makes its own entry live: never deleted.
+    let s = open(&e, &file, "alice").await;
+    mk("alice", 7, s["profileHash"].as_str().unwrap());
+    let c = e.control("GET", "/v1/cache", None).await.json();
+    assert_eq!(c["entries"].as_array().unwrap().len(), 5);
+    assert_eq!(c["usedBytes"], 500.0);
+    assert_eq!(
+        c["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["live"] == true)
+            .count(),
+        1
+    );
+    let d = e
+        .control("DELETE", "/v1/cache?mediaFileId=8", None)
+        .await
+        .json();
+    assert_eq!(d["removed"], 1);
+    let d = e
+        .control("DELETE", "/v1/cache?ownerId=alice&mediaFileId=7", None)
+        .await
+        .json();
+    assert_eq!(d["removed"], 1, "the live entry stays");
+    let i = e
+        .control("POST", "/v1/invalidate", Some(json!({ "mediaFileId": 7 })))
+        .await
+        .json();
+    assert_eq!(
+        (i["jobs"].as_u64(), i["cacheEntries"].as_u64()),
+        (Some(0), Some(2))
+    );
+    let left = e.control("GET", "/v1/cache", None).await.json();
+    assert_eq!(left["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(left["entries"][0]["mediaFileId"], 9);
+    // Sessions survive an invalidation.
+    assert_eq!(
+        e.control("GET", "/v1/sessions", None)
+            .await
+            .json()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
