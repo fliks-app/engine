@@ -8,5 +8,6 @@ pub mod jobs;
 pub mod jsnum;
 pub mod ladder;
 pub mod mp4;
+pub mod mpegts;
 pub mod probe;
 pub mod session;

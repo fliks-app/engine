@@ -11,7 +11,7 @@ Source: `modules/streaming/services/{source-scan,video-packets}.ts`. The result 
 (already the wire type of the `decide` input; `schemaVersion` is left for the caller to stamp, like probe).
 
 - `ScanPlan::new(info, path)`: first video stream, `mpeg_ts` (`decide::source::is_mpeg_ts`: format name, else
-  extension), the AAC tracks (MPEG-TS only), `format_start`. No video stream: `no video stream to scan`.
+  extension), the AAC tracks (MPEG-TS only). No video stream: `no video stream to scan`.
 - Reorder lead: `known_lead` when `reorderFrames` and `avgFrameRate` are known, else `reorder_args` (ffprobe
   `stream=has_b_frames,avg_frame_rate`, 30 s) and `lead_from_probe(first line)`. `lead_seconds` truncates to
   whole microseconds as ffmpeg does; a frame rate that is not `n/d` with both positive gives 0.
@@ -22,12 +22,31 @@ Source: `modules/streaming/services/{source-scan,video-packets}.ts`. The result 
   else `pts - lead`; keyframes are lines whose flags contain `K`; `end` is the largest `pts + duration`; a
   missing or `N/A` duration is 0. On MPEG-TS only, a decode time more than 0.1 s behind the last one or more
   than 300 s past its end breaks the clock: `breakSeconds` is the `end` so far, the rest is ignored.
-- ADTS (MPEG-TS with AAC): the same bytes feed ffprobe on stdin and `adts_args` (ffmpeg copies each AAC track
-  as raw data on `pipe:3+i`, `-probesize` the file size, `-analyzeduration` the latest track start over the
-  container start + 5 s, rounded up to the microsecond). One `AdtsConfigWalker` per track takes its chunks;
-  it walks the headers across chunk boundaries and notes any whose profile, sampling index or channel
-  configuration (private bit masked) differs from the first. `audio_config_changes` reports a track as
-  changing when ffmpeg failed to run or exited non-zero.
+- ADTS (MPEG-TS with AAC): the caller reads the file once and feeds the same chunks to ffprobe (stdin) and
+  to a `mpegts::Demuxer`. `pid_args(file)` is ffprobe `stream=index,id` (compact output, any `id=0x...` line,
+  repeated lines harmless) and `aac_pids(plan, lines)` maps each AAC track to its PID by stream index (`None`
+  when ffprobe gave none, no guessing by order). `TsDemuxer::new(&pids)` / `push(chunk)` / `finish()` hands
+  back one `Option<AdtsConfigWalker>` per track; the walker notes any header whose profile, sampling index or
+  channel configuration (private bit masked) differs from the first, across PES and chunk boundaries.
+  `audio_config_changes(aac, walkers)` reports a track as changing when its walker is `None`.
+- `mpegts::Demuxer` (no dependency: `core` stays serde-only, and the PAT/PMT/PES subset a scan needs is about 200
+  lines):
+  - Framing: the first run of 4 sync bytes (0x47) at a 188, 192 (M2TS, 4-byte timecode prefix) or 204
+    (Reed-Solomon suffix) spacing fixes the stride (`mpegts` in ffprobe covers all three); a missing sync
+    byte afterwards drops the lock, resets every track and PSI buffer and searches again. A last packet cut
+    by the end of the data is read at `finish`.
+  - Packet: transport-error packets are dropped; a duplicate packet (same continuity counter) is dropped; a
+    continuity gap or a discontinuity indicator drops the rest of the PES in flight (the partial ADTS frame
+    is forgotten) until the next payload_unit_start; adaptation-field-only packets carry no payload and keep
+    the counter; scrambled payload makes the track unreadable.
+  - PES: at payload_unit_start the 9-byte header and its `PES_header_data_length` are skipped, even when the
+    header spans packets; no `00 00 01` start code makes the track unreadable. The ES bytes go straight to the
+    track's walker (a frame may span PES).
+  - PSI: PAT (PID 0) names the PMT PIDs; sections are reassembled across packets (pointer_field, 1 KiB cap,
+    CRC not checked). A PMT (any version, so an update too) listing a tracked PID with a stream type other
+    than 0x0f makes that track unreadable. A tracked PID is fed from the first packet, PMT or not.
+  - `finish` gives `None` for an unreadable track and for one whose walker never saw a frame: both report
+    "may change", the other tracks are unaffected.
 - `PacketReader::finish(audioConfigChanges)`: the `SourceScan`; a stream with no timed packet is an error
   (`no video packet with a time`).
 

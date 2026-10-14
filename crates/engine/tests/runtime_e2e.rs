@@ -1207,7 +1207,7 @@ fn close(a: &Value, b: &Value, what: &str) {
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn scan_job_matches_ffprobe_on_real_files() {
-    // The mkv is scanned by ffprobe on the file, the MPEG-TS from stdin with its ADTS headers read.
+    // The mkv is scanned by ffprobe on the file, the MPEG-TS from stdin with its ADTS headers demuxed.
     for (file, adts) in [(h264_clip(10), false), (ts_clip(), true)] {
         let p = play(file.clone()).await;
         let v = run_job(&p, json!({ "type": "Scan", "info": p.info })).await;
@@ -1232,6 +1232,32 @@ async fn scan_job_matches_ffprobe_on_real_files() {
             json!({})
         };
         assert_eq!(got["audioConfigChanges"], changes, "{file:?}");
+        assert!(p.e.ffmpeg_pids().is_empty());
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn scan_job_of_mpeg_ts_with_two_aac_tracks_matches_the_ffmpeg_read() {
+    // The demuxer's verdict per track equals ffmpeg's ADTS copy; a changed track is found mid-stream.
+    for (change, want) in [(false, [false, false]), (true, [true, false])] {
+        let file = ts_two_aac_clip(change);
+        let p = play(file.clone()).await;
+        let v = run_job(&p, json!({ "type": "Scan", "info": p.info })).await;
+        assert_eq!(v["state"], "done", "{change}: {v}");
+        let tracks: Vec<u32> = p.info.audio.iter().map(|a| a.stream_index).collect();
+        assert_eq!(tracks.len(), 2);
+        let got = &v["result"]["scan"]["audioConfigChanges"];
+        for (i, t) in tracks.iter().enumerate() {
+            assert_eq!(got[t.to_string()], adts_changes(&file, *t), "{change}: {t}");
+            assert_eq!(got[t.to_string()], want[i], "{change}: {t}");
+        }
+        let (g, w) = (&v["result"]["scan"], scan(&file));
+        close(&g["end"], &w["end"], "end");
+        assert_eq!(
+            g["keyframes"].as_array().unwrap().len(),
+            w["keyframes"].as_array().unwrap().len()
+        );
         assert!(p.e.ffmpeg_pids().is_empty());
     }
 }

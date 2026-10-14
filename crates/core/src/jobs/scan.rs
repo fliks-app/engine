@@ -2,7 +2,7 @@
 use super::v;
 use crate::api::{Keyframe, MediaInfo, SourceScan};
 use crate::decide::source::is_mpeg_ts;
-use crate::jsnum::{js_string, number, parse_float};
+use crate::jsnum::{number, parse_float};
 use std::collections::{BTreeMap, HashMap};
 
 /// Slowest storage a whole-file scan still waits out; the packet read times out after
@@ -10,8 +10,6 @@ use std::collections::{BTreeMap, HashMap};
 pub const SCAN_MIN_BYTES_PER_SECOND: f64 = 10.0 * 1024.0 * 1024.0;
 pub const SCAN_MIN_TIMEOUT_MS: u64 = 300_000;
 pub const REORDER_TIMEOUT_MS: u64 = 30_000;
-/// Past the latest first audio packet, how far the ADTS read probes.
-const ADTS_PROBE_MARGIN_SECONDS: f64 = 5.0;
 const ADTS_MIN_FRAME_BYTES: usize = 7;
 /// ffmpeg's backward discontinuity: a decode time 0.1 s behind the last one.
 const CLOCK_BACKWARD_SECONDS: f64 = 0.1;
@@ -32,7 +30,6 @@ pub struct VideoRef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AacTrack {
     pub stream_index: u32,
-    pub start_time_seconds: Option<f64>,
 }
 
 /// What one scan reads: the first video stream and, on MPEG-TS, every AAC track.
@@ -40,7 +37,6 @@ pub struct AacTrack {
 pub struct ScanPlan {
     pub video: VideoRef,
     pub mpeg_ts: bool,
-    pub format_start: f64,
     pub aac: Vec<AacTrack>,
 }
 
@@ -54,7 +50,6 @@ impl ScanPlan {
                 .filter(|a| a.codec == "aac")
                 .map(|a| AacTrack {
                     stream_index: a.stream_index,
-                    start_time_seconds: a.start_time_seconds,
                 })
                 .collect()
         } else {
@@ -67,12 +62,11 @@ impl ScanPlan {
                 avg_frame_rate: v.avg_frame_rate.clone(),
             },
             mpeg_ts,
-            format_start: info.format_start_seconds.unwrap_or(0.0),
             aac,
         })
     }
 
-    /// With AAC tracks the file's bytes go to both ffprobe (stdin) and ffmpeg; else ffprobe opens it.
+    /// With AAC tracks the caller reads the file and feeds ffprobe (stdin) and a `TsDemuxer`; else ffprobe opens it.
     pub fn piped(&self) -> bool {
         !self.aac.is_empty()
     }
@@ -157,27 +151,31 @@ pub fn packet_args(plan: &ScanPlan, file: &str) -> Vec<String> {
     a
 }
 
-/// ffmpeg copying each AAC track as raw ADTS on `pipe:3+i` from the file on stdin. The demuxer
-/// needs every track's parameters first: probe past the latest first packet.
-pub fn adts_args(plan: &ScanPlan, size: u64) -> Vec<String> {
-    let reach = plan
-        .aac
-        .iter()
-        .map(|a| a.start_time_seconds.unwrap_or(plan.format_start) - plan.format_start)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let analyze = ((reach.max(0.0) + ADTS_PROBE_MARGIN_SECONDS) * 1e6).ceil();
-    let mut a = v(&["-v", "error", "-analyzeduration"]);
-    a.push(js_string(analyze));
-    a.extend(v(&["-probesize"]));
-    a.push(size.to_string());
-    a.extend(v(&["-f", "mpegts", "-i", "pipe:0"]));
-    for (i, t) in plan.aac.iter().enumerate() {
-        a.extend(v(&["-map"]));
-        a.push(format!("0:{}", t.stream_index));
-        a.extend(v(&["-c", "copy", "-f", "data"]));
-        a.push(format!("pipe:{}", 3 + i));
-    }
+/// ffprobe's `stream=index,id`: the PID of every stream of a MPEG-TS file.
+pub fn pid_args(file: &str) -> Vec<String> {
+    let mut a = v(&["-v", "error", "-show_entries", "stream=index,id", "-of"]);
+    a.extend(v(&["compact=p=0"]));
+    a.push(file.into());
     a
+}
+
+/// The PID of each AAC track of `plan` (`None` when ffprobe gave none) from `pid_args` lines.
+pub fn aac_pids<'a>(plan: &ScanPlan, lines: impl IntoIterator<Item = &'a str>) -> Vec<Option<u16>> {
+    let pids: HashMap<u32, u16> = lines
+        .into_iter()
+        .filter_map(|l| {
+            let f = fields(l);
+            let id = f.get("id")?.strip_prefix("0x")?;
+            Some((
+                f.get("index")?.parse().ok()?,
+                u16::from_str_radix(id, 16).ok()?,
+            ))
+        })
+        .collect();
+    plan.aac
+        .iter()
+        .map(|t| pids.get(&t.stream_index).copied())
+        .collect()
 }
 
 /// Video packets in decode order, as a copy gets them: decode times Matroska leaves unknown
@@ -283,6 +281,16 @@ pub struct AdtsConfigWalker {
 }
 
 impl AdtsConfigWalker {
+    /// A frame header was read.
+    pub fn seen(&self) -> bool {
+        self.config.is_some()
+    }
+
+    /// Drops the partial frame: the bytes before it were lost.
+    pub fn resync(&mut self) {
+        self.carry.clear();
+    }
+
     pub fn push(&mut self, chunk: &[u8]) {
         let b: Vec<u8> = [self.carry.as_slice(), chunk].concat();
         let mut i = 0;
@@ -315,16 +323,18 @@ impl AdtsConfigWalker {
     }
 }
 
-/// `audioConfigChanges`: a track whose headers could not be read (`ok` false: ffmpeg failed to
-/// start or exited non-zero) is reported as possibly changing.
+/// `audioConfigChanges`: a track whose headers could not be read (`None`) is reported as possibly
+/// changing.
 pub fn audio_config_changes(
     aac: &[AacTrack],
-    walkers: &[AdtsConfigWalker],
-    ok: bool,
+    walkers: &[Option<AdtsConfigWalker>],
 ) -> BTreeMap<u32, bool> {
     aac.iter()
-        .zip(walkers)
-        .map(|(t, w)| (t.stream_index, !ok || w.changed))
+        .enumerate()
+        .map(|(i, t)| {
+            let w = walkers.get(i).and_then(Option::as_ref);
+            (t.stream_index, w.is_none_or(|w| w.changed))
+        })
         .collect()
 }
 
@@ -349,13 +359,26 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_adts_read_flags_every_track() {
-        let aac = [AacTrack {
-            stream_index: 1,
-            start_time_seconds: None,
-        }];
-        let w = [AdtsConfigWalker::default()];
-        assert!(audio_config_changes(&aac, &w, false)[&1]);
-        assert!(!audio_config_changes(&aac, &w, true)[&1]);
+    fn an_unreadable_adts_track_is_flagged_and_pids_follow_stream_indexes() {
+        let aac = [AacTrack { stream_index: 2 }, AacTrack { stream_index: 1 }];
+        let w = [Some(AdtsConfigWalker::default()), None];
+        let c = audio_config_changes(&aac, &w);
+        assert_eq!((c[&2], c[&1]), (false, true));
+        let plan = ScanPlan {
+            video: VideoRef {
+                stream_index: 0,
+                reorder_frames: None,
+                avg_frame_rate: None,
+            },
+            mpeg_ts: true,
+            aac: aac.to_vec(),
+        };
+        let lines = [
+            "index=0|id=0x100",
+            "index=1|id=0x101|",
+            "",
+            "index=1|id=0x101",
+        ];
+        assert_eq!(aac_pids(&plan, lines), [None, Some(0x101)]);
     }
 }

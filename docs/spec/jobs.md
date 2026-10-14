@@ -29,7 +29,7 @@ One budget for every ffmpeg the engine runs: playback (session runs, I-frame and
 
 ## 4. Background runs
 
-- Spawned through `proc::Ffmpeg` (own process group, kill-on-drop, `PR_SET_PDEATHSIG`) behind `ionice -c3 nice -n19` when both are on PATH (Linux). [ts:common/utils/spawn-priority.ts] Every tool of a job goes through `Ctx::pipeline`: one slot for one process or for a pipeline of several (ffprobe + ffmpeg of a scan, ffmpeg + fpcalc of a window), paused and stopped together. Binaries: `ffmpeg` (`FFMPEG_PATH`), `ffprobe` (`FFPROBE_PATH`), `fpcalc` (`FPCALC_PATH`, default `fpcalc`).
+- Spawned through `proc::Ffmpeg` (own process group, kill-on-drop, `PR_SET_PDEATHSIG`) behind `ionice -c3 nice -n19` when both are on PATH (Linux). [ts:common/utils/spawn-priority.ts] Every tool of a job goes through `Ctx::pipeline`: one slot for one process or for a pipeline of several (ffmpeg + fpcalc of a window), paused and stopped together. Binaries: `ffmpeg` (`FFMPEG_PATH`), `ffprobe` (`FFPROBE_PATH`), `fpcalc` (`FPCALC_PATH`, default `fpcalc`).
 - Every 200 ms: the slot's pause verdict is applied; `core::session::job_watch` (stderr lines and CPU time are progress, paused time exempt, `jobStallTimeoutMs`) kills a hung run, and a run past its timeout of unpaused wall time (30 s for a sprite frame or tile, the kind's own below) is killed. Either is a run failure (`<tool> stalled` / `<tool> timed out`). Bytes of the source read and lines parsed count as progress for the watchdog (`Ctx::pulse`), as stderr lines and CPU time do. [ts:thumb:672-690,735-745]
 
 ## 5. Sprite (`core::jobs::sprite`, `engine::jobs::sprite`)
@@ -55,7 +55,7 @@ Input: `media.path`, `info` (a video stream). Output: result `{ type: "Scan", sc
 
 - Reorder lead: known from `info` when it has `reorderFrames` and `avgFrameRate`, else one `ffprobe` read of the stream (30 s), first line.
 - Packets: `ffprobe` on the file (stdout read line by line, `PacketReader::feed_line` until the clock breaks: ffprobe is then stopped), timeout `scan_timeout_ms(size)`. Progress: `pct` = source time read / `info.durationSeconds`, capped at 99.
-- MPEG-TS with AAC tracks (unix): the engine reads the file once and feeds the same bytes to ffprobe (`pipe:0`) and to the ADTS ffmpeg, whose `pipe:3+i` outputs go to one `AdtsConfigWalker` per track. A sink whose tool ended is dropped and the read goes on; ffprobe stopping (clock break) stops the read. `audioConfigChanges` is `true` for every track when ffmpeg failed or exited non-zero. Pipeline = one slot.
+- MPEG-TS with AAC tracks (every OS): a first short `ffprobe` (`stream=index,id`, 30 s) gives each AAC track's PID. Then the engine reads the file once, in 1 MiB chunks, and feeds the same bytes to ffprobe (`pipe:0`) and to a `core::mpegts::Demuxer`, which walks the ADTS headers of those PIDs with one `AdtsConfigWalker` each (no extra process). ffprobe stopping (clock break) stops the read. `audioConfigChanges` is `true` for a track with no PID in the ffprobe answer, whose PES cannot be parsed or whose PID the PMT says is not ADTS; the other tracks keep their own verdict. The packet pipeline = one slot.
 - Failure: a non-zero ffprobe exit not asked for is `ffprobe exited N: <stderr>`; no packet with a time is `no video packet with a time`.
 
 ## 7. Fingerprint (`core::jobs::fingerprint`, `engine::jobs::fingerprint`)
@@ -77,7 +77,7 @@ Input: `media.path`, `info` (its non-image `subtitles` are the tracks). Output: 
 
 ## 9. Adding a kind
 
-A variant of `core::api::JobKind` (and `JobResult` when it returns data), its validation in `engine::jobs::submit`, its pure part in `core::jobs`, a branch in `engine::jobs::run` calling its module. That module gets a `Ctx`: `ffmpeg(argv)` for one ffmpeg run and `pipeline(timeout, cmds, work)` for any tools (one background slot, pause, watchdog, stop on cancel; `Cmd` names the binary and what it exposes: stdout, `pipe:3+`; `work` drives them), `pulse()`, `progress(pct)`, `cancelled()`, `check_disk(dir)` before writing under the engine cache, `media_path()`.
+A variant of `core::api::JobKind` (and `JobResult` when it returns data), its validation in `engine::jobs::submit`, its pure part in `core::jobs`, a branch in `engine::jobs::run` calling its module. That module gets a `Ctx`: `ffmpeg(argv)` for one ffmpeg run and `pipeline(timeout, cmds, work)` for any tools (one background slot, pause, watchdog, stop on cancel; `Cmd` names the binary and whether its stdout is exposed; `work` drives them), `pulse()`, `progress(pct)`, `cancelled()`, `check_disk(dir)` before writing under the engine cache, `media_path()`.
 
 ## 10. Deviations
 
@@ -86,6 +86,6 @@ A variant of `core::api::JobKind` (and `JobResult` when it returns data), its va
 - Sprite failed frames: as the TS backfills, but extraction never stops at 5 failures and there is no `count * 0.1` threshold; only a job with no frame at all fails.
 - `thumbHeight` comes from the JPEG header, not `ffprobe`; per-run timeouts count unpaused time only; no global 10-minute sprite timeout (the watchdog covers hung runs).
 - Sprites live in the engine cache (`sprites/v1`), not `<cacheDir>/thumbnails`; the host's activity/command rows and `task.progress` become `BgJobProgress`/`BgJobDone`.
-- Scan: the engine reads the file itself (tokio) for the piped MPEG-TS case, not `cat` under `ionice`; ADTS headers are read on unix only (elsewhere every AAC track reports a possible change). Progress and the slot, pause and watchdog framework are new.
+- Scan: the engine reads the file itself (tokio) for the piped MPEG-TS case, not `cat` under `ionice`, and a native demuxer reads the ADTS headers in that one pass on every OS (the host runs a second ffmpeg). Progress and the slot, pause and watchdog framework are new.
 - Fingerprint: the head read and the window pipeline run under a background slot (the TS: `withFfmpegSlot` too), ffmpeg of a window is stopped once fpcalc has its `-length`.
 - SubtitleExtract: a job form of the host's warmup (no Command rows, `subtitlePrewarm` stays the host's call); a track missing from `info` is not extracted.

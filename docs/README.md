@@ -58,7 +58,7 @@
 - sprite: the extractor follows the detected backend and render node (the host: device files, `THUMB_HWACCEL_DEVICE`); `thumbHeight` is read from the JPEG header (the host runs ffprobe); per-run timeouts count unpaused time and the global 10-minute timeout is gone (the stall watchdog covers hung runs); failed frames never stop the extraction (the host stops at 5 failures and fails above 10%); the missing ones are backfilled from the nearest and only a job with no frame at all fails; sprites live in the engine cache (`sprites/v1`).
 - remux assembler: a frame of a growing audio file that fails to parse stops the pass after the frames before it were grouped (the TS parses the whole tail first); only the failure path differs.
 - jobs scan: a stream with no packet carrying a time is an error (`no video packet with a time`); the host would store a scan whose `end` is `null`. The video stream index is always known (`MediaInfo`), so the host's `v:0` fallback is unreachable.
-- jobs scan: the engine reads an MPEG-TS file itself to feed ffprobe and the ADTS ffmpeg (the host runs `cat` under `ionice`); ADTS headers are read on unix only, elsewhere every AAC track reports a possible change.
+- jobs scan: the engine reads an MPEG-TS file itself to feed ffprobe and its own TS demuxer (the host runs `cat` under `ionice` into ffprobe and a second ffmpeg for the ADTS headers); the demuxer equals an ffmpeg ADTS read on the e2e clips (unit tests cover the rest), a track it cannot read (no PID, scrambled, PMT says not ADTS) reports a possible change.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
 
 ## Open divergences

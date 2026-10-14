@@ -491,6 +491,63 @@ pub fn ts_clip() -> PathBuf {
     )
 }
 
+/// 4 s H.264 + two AAC tracks in MPEG-TS, the second part (same length) with its first track at 32 kHz
+/// mono when `change`: the concat keeps the ADTS headers, so track 1 changes configuration mid-stream.
+pub fn ts_two_aac_clip(change: bool) -> PathBuf {
+    let part = |name: &str, rate: u32, ch: u32| {
+        clip(
+            name,
+            &format!(
+                "-f lavfi -i testsrc2=size=320x180:rate=24:duration=4 \
+                 -f lavfi -i sine=frequency=440:sample_rate={rate}:duration=4 \
+                 -f lavfi -i sine=frequency=880:sample_rate=48000:duration=4 \
+                 -map 0:v -map 1:a -map 2:a {X264} -c:a aac -ac:a:0 {ch} -ac:a:1 2 -f mpegts"
+            ),
+        )
+    };
+    let a = part("two-aac-a.ts", 48000, 2);
+    if !change {
+        return a;
+    }
+    let b = part("two-aac-b.ts", 32000, 1);
+    let list = a.with_file_name("two-aac.txt");
+    std::fs::write(
+        &list,
+        format!("file '{}'\nfile '{}'\n", a.display(), b.display()),
+    )
+    .unwrap();
+    clip(
+        "two-aac-changed.ts",
+        &format!(
+            "-f concat -safe 0 -i {} -map 0 -c copy -f mpegts",
+            list.display()
+        ),
+    )
+}
+
+/// Whether the ADTS headers of stream `index` change, read the way the engine once did: ffmpeg
+/// copying the track as raw data into the walker.
+pub fn adts_changes(file: &Path, index: u32) -> bool {
+    let out = std::process::Command::new(ffmpeg())
+        .args(["-v", "error", "-i"])
+        .arg(file)
+        .args([
+            "-map",
+            &format!("0:{index}"),
+            "-c",
+            "copy",
+            "-f",
+            "data",
+            "-",
+        ])
+        .output()
+        .expect("ffmpeg");
+    assert!(out.status.success());
+    let mut w = fliks_engine_core::jobs::scan::AdtsConfigWalker::default();
+    w.push(&out.stdout);
+    w.changed
+}
+
 /// 10 s H.264 mkv with two embedded text tracks: SRT (stream 2) and ASS (stream 3, `served.ass`).
 pub fn subs_clip() -> PathBuf {
     let dir = std::env::temp_dir().join("fliks-engine-e2e-media");

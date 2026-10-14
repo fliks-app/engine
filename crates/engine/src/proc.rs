@@ -92,17 +92,11 @@ pub struct Exit {
     pub signal: bool,
 }
 
-/// What a run exposes besides stderr: its stdout, and (unix) output pipes `pipe:3`, `pipe:4`, ...
+/// What a run exposes besides stderr.
 #[derive(Clone, Copy, Default)]
 pub struct Pipes {
     pub stdout: bool,
-    pub fds: usize,
 }
-
-#[cfg(unix)]
-pub type FdReader = tokio::net::unix::pipe::Receiver;
-#[cfg(not(unix))]
-pub type FdReader = tokio::io::Empty;
 
 /// One running ffmpeg: its own process group (unix) or the kill-on-close job (windows).
 /// Dropping the handle kills it.
@@ -111,50 +105,10 @@ pub struct Ffmpeg {
     pid: Option<u32>,
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     stdout: Mutex<Option<ChildStdout>>,
-    fds: Mutex<Vec<Option<FdReader>>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
     stderr_lines: Arc<AtomicU64>,
     exit: watch::Receiver<Option<Exit>>,
     kill: mpsc::Sender<()>,
-}
-
-/// Gives the child `n` pipes as fds 3.. and returns their read ends.
-#[cfg(unix)]
-fn fd_pipes(cmd: &mut Command, n: usize) -> io::Result<Vec<FdReader>> {
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-    let mut readers = vec![];
-    let mut writers: Vec<OwnedFd> = vec![];
-    for _ in 0..n {
-        let (tx, rx) = tokio::net::unix::pipe::pipe()?;
-        let w = tx.into_blocking_fd()?;
-        // Above the target range, so no dup2 below overwrites a source fd.
-        // SAFETY: a valid fd and a minimum; the new fd is owned at once.
-        let hi = unsafe { libc::fcntl(w.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3 + n as i32) };
-        if hi < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        writers.push(unsafe { OwnedFd::from_raw_fd(hi) });
-        readers.push(rx);
-    }
-    if n > 0 {
-        // SAFETY: dup2 only (async-signal-safe).
-        unsafe {
-            cmd.pre_exec(move || {
-                for (i, w) in writers.iter().enumerate() {
-                    if libc::dup2(w.as_raw_fd(), 3 + i as i32) < 0 {
-                        return Err(io::Error::last_os_error());
-                    }
-                }
-                Ok(())
-            });
-        }
-    }
-    Ok(readers)
-}
-
-#[cfg(not(unix))]
-fn fd_pipes(_: &mut Command, _: usize) -> io::Result<Vec<FdReader>> {
-    Ok(vec![])
 }
 
 fn to_exit(s: io::Result<std::process::ExitStatus>) -> Exit {
@@ -199,14 +153,7 @@ impl Ffmpeg {
             .kill_on_drop(true);
         #[cfg(unix)]
         cmd.process_group(0);
-        let fds = fd_pipes(&mut cmd, pipes.fds)?;
-        #[cfg(not(unix))]
-        if pipes.fds > 0 {
-            return Err(io::ErrorKind::Unsupported.into());
-        }
         let mut child = spawn(&mut cmd).await?;
-        // The children hold the write ends now: EOF reaches the readers when they exit.
-        drop(cmd);
         #[cfg(windows)]
         assign_to_job(&child);
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
@@ -247,7 +194,6 @@ impl Ffmpeg {
             pid,
             stdin: tokio::sync::Mutex::new(stdin),
             stdout: Mutex::new(stdout),
-            fds: Mutex::new(fds.into_iter().map(Some).collect()),
             stderr,
             stderr_lines,
             exit,
@@ -262,10 +208,6 @@ impl Ffmpeg {
 
     pub fn take_stdout(&self) -> Option<ChildStdout> {
         self.stdout.lock().unwrap().take()
-    }
-
-    pub fn take_fd(&self, i: usize) -> Option<FdReader> {
-        self.fds.lock().unwrap().get_mut(i)?.take()
     }
 
     pub fn exited(&self) -> Option<Exit> {
