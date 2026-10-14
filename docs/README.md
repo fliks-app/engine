@@ -9,6 +9,7 @@
   - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
+  - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
@@ -53,6 +54,8 @@
 - runtime: subtitles other than WebVTT are converted by ffmpeg (`-f webvtt`), not by the host's SRT/ASS converters (alignment tags and the b/i/u filter differ); embedded extracts are cached under `<root>/subtitles/v1`.
 - runtime: a remux file or a transcode rung already on disk is served without a run (the TS spawns one when no run is registered); the early companion's init gets the 10 s early wait before the main's (the TS waits 60 s on it).
 - remux assembler: a frame of a growing audio file that fails to parse stops the pass after the frames before it were grouped (the TS parses the whole tail first); only the failure path differs.
+- jobs scan: a stream with no packet carrying a time is an error (`no video packet with a time`); the host would store a scan whose `end` is `null`. The video stream index is always known (`MediaInfo`), so the host's `v:0` fallback is unreachable.
+- jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
 
 ## Open divergences
 
@@ -71,3 +74,4 @@
 - args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.
 - args: argv parity is against the TS only; like hw, nvenc, amf/win32, qsv/win32 and videotoolbox argv were never run on those hosts here.
 - runtime: e2e runs used the CPU only (jellyfin-ffmpeg 8.1.2 on Linux); the CPU fallback is exercised with a VAAPI host on a missing render node, no real GPU run went through the runtime yet. Throttle runs with the `signal` capability only; Windows Job Objects, the `stdin` pause and the `q` stop have no live run.
+- subtitles: the job port converts embedded text through ffmpeg's ASS encoder and `jobs::subtitles::ass_to_vtt` (the host's job); `serve::embedded_text` still asks ffmpeg for `-f webvtt` (alignment and b/i/u handling differ). Unify when the extraction job is wired.

@@ -1,0 +1,6 @@
+{"name":"burn-in extraction","source":"SubtitleBurnInService.resolve with jellyfin-ffmpeg 8.1.2","kind":"burn-in-argv","cases":[
+{"expected":{"argv":["-y","-i","sub.mkv","-map","0:2","-c:s","ass","/tmp/fliks-burn-in/3-2.ass"]},"input":{"mediaFileId":3,"streamIndex":2,"videoPath":"sub.mkv"},"name":"embedded text track"},
+{"expected":{"argv":["-y","-i","sub.mkv","-map","0:0","-c:s","ass","/tmp/fliks-burn-in/1-0.ass"]},"input":{"mediaFileId":1,"streamIndex":0,"videoPath":"sub.mkv"},"name":"file 1 stream 0"},
+{"expected":{"argv":["-y","-i","sub.mkv","-map","0:117","-c:s","ass","/tmp/fliks-burn-in/42-117.ass"]},"input":{"mediaFileId":42,"streamIndex":117,"videoPath":"sub.mkv"},"name":"file 42 stream 117"},
+{"expected":{"argv":["-y","-i","sub.mkv","-map","0:999","-c:s","ass","/tmp/fliks-burn-in/12345-999.ass"]},"input":{"mediaFileId":12345,"streamIndex":999,"videoPath":"sub.mkv"},"name":"file 12345 stream 999"}
+]}

@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 mod decide;
+mod fingerprint;
 mod lifetime;
 mod probe;
 mod runtime;
 pub use decide::*;
+pub use fingerprint::*;
 pub use lifetime::*;
 pub use probe::*;
 pub use runtime::*;
