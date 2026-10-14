@@ -1,0 +1,95 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"mjpeg\",\"profile\":\"LC\",\"level\":30,\"width\":160,\"height\":1080,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"abc\",\"time_base\":\"1/90000\",\"start_time\":\"7261.4\",\"color_transfer\":\"arib-std-b67\",\"color_range\":\"tv\",\"tags\":{\"LANGUAGE\":\"eng\"}},{\"index\":1,\"codec_type\":\"data\",\"codec_name\":\"truehd\",\"level\":-99,\"has_b_frames\":0,\"time_base\":\"1001/24000\",\"start_time\":\"0\",\"color_transfer\":\"smpte2084\",\"color_primaries\":\"bt709\",\"color_range\":\"tv\",\"channels\":6,\"sample_rate\":\"48000\",\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"png\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":0,\"height\":1080,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"-25/1\",\"avg_frame_rate\":\"1/0\",\"time_base\":\"1/0\",\"start_time\":\"0.041\",\"duration\":\"0\",\"bits_per_raw_sample\":\"8\",\"color_space\":\"bt2020nc\",\"color_range\":\"tv\",\"channels\":8,\"channel_layout\":\"7.1\",\"tags\":{\"language\":\"zh-Hant\",\"TITLE\":\"English SDH\"}}],\"format\":{\"format_name\":\"flac\",\"duration\":\"60.5\",\"bit_rate\":\"1e6\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "3,45.514\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "7262400000",
+        "-probesize",
+        "2686960327",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"channels\":6,\"channel_layout\":\"\",\"sample_rate\":\"-1\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channels": 6,
+          "codec": "mjpeg",
+          "isDefault": false,
+          "language": "eng",
+          "profile": "LC",
+          "startTimeSeconds": 7261.4,
+          "streamIndex": 0
+        },
+        {
+          "channelLayout": "7.1",
+          "channels": 8,
+          "codec": "png",
+          "endSeconds": 0.041,
+          "isDefault": false,
+          "language": "zh-Hant",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "startTimeSeconds": 0.041,
+          "streamIndex": 2,
+          "title": "English SDH"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 60.5,
+      "formatBitRate": 1000000,
+      "formatName": "flac",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2686960327,
+  "name": "fuzz-1-63",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

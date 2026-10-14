@@ -1,0 +1,54 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"subrip\",\"codec_type\":\"subtitle\",\"disposition\":{\"default\":0},\"tags\":{\"language\":\"eng\"}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"N/A\",\"duration\":\"2.9\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 2.9,
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [
+      ".formatStartSeconds"
+    ],
+    "ok": true
+  },
+  "fileSize": 123456789,
+  "name": "subtitles-only",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

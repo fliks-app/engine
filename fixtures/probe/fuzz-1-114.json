@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"dvb_subtitle\",\"level\":153,\"width\":0,\"height\":2160,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"25/1\",\"has_b_frames\":0,\"color_transfer\":\"bt709\",\"color_primaries\":\"bt709\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":45},{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":7,\"dv_level\":13,\"rpu_present_flag\":1,\"el_present_flag\":1,\"bl_present_flag\":1,\"dv_bl_signal_compatibility_id\":2}],\"channels\":1,\"channel_layout\":\"stereo\",\"tags\":{\"duration\":\"00:00:03\"}}],\"format\":{\"format_name\":\"mpegts\",\"start_time\":\"-0.5\",\"duration\":\"3\",\"bit_rate\":\"1e6\"}}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3,
+      "error": "No streams detected",
+      "formatBitRate": 1000000,
+      "formatName": "mpegts",
+      "formatStartSeconds": -0.5,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2555608581,
+  "name": "fuzz-1-114",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

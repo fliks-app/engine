@@ -1,5 +1,6 @@
 //! Control plane of fliks-engine (`/v1/*`, bearer auth).
 pub mod hw;
+pub mod probe;
 pub mod supervise;
 
 use axum::{
@@ -38,7 +39,7 @@ pub fn random_hex(bytes: usize) -> String {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "fliks-engine", version = "1"),
-    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes),
+    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes, probe::probe),
     components(schemas(MediaInfo, DeviceProfile, SourceScan)),
     modifiers(&Bearer)
 )]
@@ -76,6 +77,7 @@ pub fn app(token: String, hw: Arc<hw::Hw>) -> Router {
         .route("/v1/config", get(get_config).put(put_config))
         .route("/v1/decide", post(decide))
         .route("/v1/estimate-sizes", post(estimate_sizes))
+        .route("/v1/probe", post(probe::probe))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state)
 }
@@ -113,6 +115,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             "decide".into(),
             "estimate-sizes".into(),
             "capabilities".into(),
+            "probe".into(),
         ],
         instance_id: s.instance_id.clone(),
     })

@@ -1,0 +1,96 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"data\",\"codec_name\":\"ac3\",\"width\":1280,\"height\":270,\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"1/0\",\"time_base\":\"0/1\",\"start_time\":\"7261.4\",\"duration\":\"0.000000\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"smpte2084\",\"color_primaries\":\"bt709\",\"sample_rate\":\"abc\",\"tags\":{},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"audio\",\"codec_name\":\"webvtt\",\"profile\":\"LC\",\"width\":3840,\"height\":2160,\"r_frame_rate\":\"0/0\",\"avg_frame_rate\":\"15/2\",\"time_base\":\"x\",\"bits_per_raw_sample\":\"0\",\"color_transfer\":\"arib-std-b67\",\"color_primaries\":\"bt709\",\"channel_layout\":\"\",\"sample_rate\":\"44100\"}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"7261.4\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"0.041\",\"end_time\":\"0.000000\",\"tags\":{\"title\":\"Descriptions\"}},{\"start_time\":\"2.04\",\"end_time\":\"1.5\"}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,167.604\n2,103.234\n0,18.977\n0,102.769\n2,138.843\n1,181.273\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "993286568",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":1,\"channels\":2,\"channel_layout\":\"stereo\"},{\"index\":0,\"channels\":2,\"channel_layout\":\"\",\"sample_rate\":\"-1\"}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"type\":\"data\",\"properties\":{\"language_ietf\":\"UND-419\"}},{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"zh-Hant\"}},{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"pt-BR\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "webvtt",
+          "isDefault": false,
+          "language": "und",
+          "languageTag": "pt-BR",
+          "profile": "LC",
+          "sampleRate": 44100,
+          "startTimeSeconds": 181.273,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [],
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 7261.4,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 993286568,
+  "name": "fuzz-1-145",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

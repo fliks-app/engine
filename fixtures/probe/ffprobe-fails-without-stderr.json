@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1,
+        "killed": true
+      },
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "error": "Command failed: ffprobe -v error -print_format json -show_streams -show_format -show_chapters {path}\n",
+    "info": {
+      "audio": [],
+      "error": "Command failed: ffprobe -v error -print_format json -show_streams -show_format -show_chapters {path}\n",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": false
+  },
+  "fileSize": 123456789,
+  "name": "ffprobe-fails-without-stderr",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

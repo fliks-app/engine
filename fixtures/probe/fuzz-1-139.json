@@ -1,0 +1,48 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[],\"format\":{\"format_name\":\"mpegts\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"1.5\",\"end_time\":\"123.456789\"},{\"start_time\":\"7261.4\",\"end_time\":\"0\"},{\"start_time\":\"2.04\",\"tags\":{\"TITLE\":\"French AC3 5.1\"}},{\"start_time\":\"-0.5\",\"end_time\":\"0\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [
+        {
+          "endSeconds": 123.456789,
+          "startSeconds": 1.5
+        },
+        {
+          "endSeconds": 0,
+          "startSeconds": -0.5
+        }
+      ],
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "mpegts",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 228937356,
+  "name": "fuzz-1-139",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

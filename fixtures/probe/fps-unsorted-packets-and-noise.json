@@ -1,0 +1,303 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"h264\",\"codec_type\":\"video\",\"profile\":\"High\",\"level\":41,\"width\":1920,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"25/1\",\"avg_frame_rate\":\"24000/1001\",\"has_b_frames\":2,\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bits_per_raw_sample\":\"8\"},{\"index\":1,\"codec_name\":\"aac\",\"codec_type\":\"audio\",\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\",\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"bit_rate\":\"128000\",\"disposition\":{\"default\":1},\"tags\":{\"language\":\"eng\"}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"0.000000\",\"duration\":\"3600.000000\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "packet=pts_time",
+        "-read_intervals",
+        "1770%+60",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "\n6.208338\n6.166672\n6.125005\n6.083338\n6.041672\n6.000005\n5.958338\n5.916671\n5.875005\n5.833338\n5.791671\n5.750005\n5.708338\n5.666671\n5.625005\n5.583338\n5.541671\n5.500004\n5.458338\n5.416671\n5.375004\n5.333338\n5.291671\n5.250004\n5.208337\n5.166671\n5.125004\n5.083337\n5.041671\n5.000004\n4.958337\n4.916671\n4.875004\n4.833337\n4.791671\n4.750004\n4.708337\n4.666670\n4.625004\n4.583337\n4.541670\n4.500004\n4.458337\n4.416670\n4.375004\n4.333337\n4.291670\n4.250003\n4.208337\n4.166670\n4.125003\n4.083337\n4.041670\n4.000003\n3.958337\n3.916670\n3.875003\n3.833336\n3.791670\n3.750003\n3.708336\n3.666670\n3.625003\n3.583336\n3.541670\n3.500003\n3.458336\n3.416669\n3.375003\n3.333336\n3.291669\n3.250003\n3.208336\n3.166669\n3.125002\n3.083336\n3.041669\n3.000002\n2.958336\n2.916669\n2.875002\n2.833336\n2.791669\n2.750002\n2.708336\n2.666669\n2.625002\n2.583335\n2.541669\n2.500002\n2.458335\n2.416669\n2.375002\n2.333335\n2.291669\n2.250002\n2.208335\n2.166668\n2.125002\n2.083335\n2.041668\n2.000002\n1.958335\n1.916668\n1.875001\n1.833335\n1.791668\n1.750001\n1.708335\n1.666668\n1.625001\n1.583335\n1.541668\n1.500001\n1.458335\n1.416668\n1.375001\n1.333334\n1.291668\n1.250001\n1.208334\n1.166668\n1.125001\n1.083334\n1.041667\n1.000001\n0.958334\n0.916667\n0.875001\n0.833334\n0.791667\n0.750001\n0.708334\n0.666667\n0.625001\n0.583334\n0.541667\n0.500000\n0.458334\n0.416667\n0.375000\n0.333334\n0.291667\n0.250000\n0.208334\n0.166667\n0.125000\n0.083333\n0.041667\n0.000000N/A\n,\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 0,\n            \"best_effort_timestamp\": 0,\n            \"side_data_list\": []\n        }\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,0.000000\n1,0.000000\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "180",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "180",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "540",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "1080",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "1620",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "2160",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "2880",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "no canned answer",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 3600,
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 8,
+          "codec": "h264",
+          "displayAspectRatio": "16:9",
+          "dvBlPresent": false,
+          "dvElPresent": false,
+          "dvRpuPresent": false,
+          "firstFrameSeconds": 0,
+          "frameRate": "24",
+          "hdr10Plus": false,
+          "height": 1080,
+          "level": 41,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 123456789,
+  "name": "fps-unsorted-packets-and-noise",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

@@ -1,0 +1,89 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"aac\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"width\":1280,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"0/1\",\"has_b_frames\":5,\"time_base\":\"0/1\",\"bit_rate\":\"1e3\",\"color_transfer\":\"bt709\",\"color_primaries\":\"bt2020\",\"channels\":1,\"channel_layout\":\"stereo\",\"tags\":{\"LANGUAGE\":\"jpn\",\"duration\":\"1:02:03\",\"rotate\":\"270\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}}],\"format\":{\"format_name\":\"flac\",\"duration\":\"90\",\"bit_rate\":\"1e6\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,N/A\n0,95.587\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "96587000",
+        "-probesize",
+        "950090728",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "bitRate": 1000,
+          "channelLayout": "stereo",
+          "channels": 1,
+          "codec": "aac",
+          "commentary": true,
+          "endSeconds": 3723,
+          "isDefault": false,
+          "language": "jpn",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "startTimeSeconds": 95.587,
+          "streamIndex": 0
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 90,
+      "formatBitRate": 1000000,
+      "formatName": "flac",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 950090728,
+  "name": "fuzz-1-6",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

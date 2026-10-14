@@ -1,0 +1,108 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"h264\",\"level\":41,\"width\":3840,\"height\":2160,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"0/1\",\"has_b_frames\":0,\"time_base\":\"1001/24000\",\"color_transfer\":\"bt709\",\"color_primaries\":\"bt2020\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":0},{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":5,\"dv_level\":13,\"rpu_present_flag\":1,\"el_present_flag\":0,\"bl_present_flag\":1,\"dv_bl_signal_compatibility_id\":4}],\"sample_rate\":\"44100\",\"tags\":{},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":1,\"visual_impaired\":1,\"descriptions\":1}},{\"index\":1,\"codec_type\":\"subtitle\",\"codec_name\":\"hevc\",\"profile\":\"DTS-HD MA\",\"height\":0,\"r_frame_rate\":\"30/1\",\"avg_frame_rate\":\"60000/1001\",\"has_b_frames\":3,\"time_base\":\"1001/24000\",\"start_time\":\"123.456789\",\"bits_per_raw_sample\":\"8\",\"color_primaries\":\"bt2020\",\"channels\":6,\"tags\":{\"LANGUAGE\":\"eng\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"png\",\"profile\":\"Main 10\",\"level\":41,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"r_frame_rate\":\"25/1\",\"avg_frame_rate\":\"15/2\",\"time_base\":\"1/1000\",\"duration\":\"-0.5\",\"bits_per_raw_sample\":\"\",\"color_transfer\":\"smpte2084\",\"color_primaries\":\"bt709\",\"channels\":1,\"sample_rate\":\"0\",\"tags\":{\"language\":\"UND\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":0}}],\"format\":{\"format_name\":\"avi\",\"start_time\":\"-0.5\",\"duration\":\"7261.4\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,67.888\n2,10.568\n3,185.192\n1,44.547\n0,133.060\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "134560000",
+        "-probesize",
+        "1044252131",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":3,\"channels\":2,\"channel_layout\":\"stereo\"},{\"index\":1,\"sample_rate\":\"-1\"},{\"index\":0,\"channels\":6,\"sample_rate\":\"48000\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "channels": 6,
+          "codec": "h264",
+          "commentary": true,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 133.06,
+          "streamIndex": 0
+        },
+        {
+          "channels": 1,
+          "codec": "png",
+          "commentary": true,
+          "endSeconds": -0.5,
+          "isDefault": false,
+          "language": "und",
+          "profile": "Main 10",
+          "sampleRate": 0,
+          "startTimeSeconds": 10.568,
+          "streamIndex": 2
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 7261.4,
+      "formatBitRate": 5000000,
+      "formatName": "avi",
+      "formatStartSeconds": -0.5,
+      "subtitles": [
+        {
+          "codec": "hevc",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 1
+        }
+      ],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 1044252131,
+  "name": "fuzz-1-84",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

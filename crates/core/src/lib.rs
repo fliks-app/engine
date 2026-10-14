@@ -3,3 +3,4 @@ pub mod api;
 pub mod decide;
 pub mod hw;
 pub mod ladder;
+pub mod probe;

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 mod decide;
+mod probe;
 pub use decide::*;
+pub use probe::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 1;
@@ -184,7 +186,7 @@ pub struct HdrMetadata {
     pub max_fall: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoStreamInfo {
     pub stream_index: u32,
@@ -247,7 +249,7 @@ pub struct VideoStreamInfo {
     pub crop: Option<CropInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioStreamInfo {
     pub stream_index: u32,
@@ -279,7 +281,7 @@ pub struct AudioStreamInfo {
     pub audio_description: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleStreamInfo {
     pub stream_index: u32,
@@ -304,7 +306,7 @@ pub struct Chapter {
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaInfo {
     pub video: Vec<VideoStreamInfo>,

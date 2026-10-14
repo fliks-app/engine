@@ -1,0 +1,245 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"h264\",\"codec_long_name\":\"H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10\",\"profile\":\"High\",\"codec_type\":\"video\",\"codec_tag_string\":\"[0][0][0][0]\",\"codec_tag\":\"0x0000\",\"mime_codec_string\":\"avc1.64000a\",\"width\":160,\"height\":90,\"coded_width\":160,\"coded_height\":90,\"has_b_frames\":2,\"sample_aspect_ratio\":\"1:1\",\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"level\":10,\"color_range\":\"tv\",\"chroma_location\":\"left\",\"field_order\":\"progressive\",\"is_avc\":\"true\",\"nal_length_size\":\"4\",\"r_frame_rate\":\"24/1\",\"avg_frame_rate\":\"24/1\",\"time_base\":\"1/1000\",\"start_pts\":0,\"start_time\":\"0.000000\",\"bits_per_raw_sample\":\"8\",\"extradata_size\":44,\"disposition\":{\"default\":0,\"dub\":0,\"original\":0,\"comment\":0,\"lyrics\":0,\"karaoke\":0,\"forced\":0,\"hearing_impaired\":0,\"visual_impaired\":0,\"clean_effects\":0,\"attached_pic\":0,\"timed_thumbnails\":0,\"non_diegetic\":0,\"captions\":0,\"descriptions\":0,\"metadata\":0,\"dependent\":0,\"still_image\":0,\"multilayer\":0},\"tags\":{\"ENCODER\":\"Lavc62.28.102 libx264\",\"DURATION\":\"00:00:03.000000000\"}},{\"index\":1,\"codec_name\":\"aac\",\"codec_long_name\":\"AAC (Advanced Audio Coding)\",\"profile\":\"LC\",\"codec_type\":\"audio\",\"codec_tag_string\":\"[0][0][0][0]\",\"codec_tag\":\"0x0000\",\"mime_codec_string\":\"mp4a.40.2\",\"sample_fmt\":\"fltp\",\"sample_rate\":\"48000\",\"channels\":1,\"channel_layout\":\"mono\",\"bits_per_sample\":0,\"initial_padding\":1024,\"r_frame_rate\":\"0/0\",\"avg_frame_rate\":\"0/0\",\"time_base\":\"1/1000\",\"start_pts\":2500,\"start_time\":\"2.500000\",\"extradata_size\":5,\"disposition\":{\"default\":0,\"dub\":0,\"original\":0,\"comment\":0,\"lyrics\":0,\"karaoke\":0,\"forced\":0,\"hearing_impaired\":0,\"visual_impaired\":0,\"clean_effects\":0,\"attached_pic\":0,\"timed_thumbnails\":0,\"non_diegetic\":0,\"captions\":0,\"descriptions\":0,\"metadata\":0,\"dependent\":0,\"still_image\":0,\"multilayer\":0},\"tags\":{\"ENCODER\":\"Lavc62.28.102 aac\",\"DURATION\":\"00:00:05.521000000\"}}],\"chapters\":[],\"format\":{\"filename\":\"{path}\",\"nb_streams\":2,\"nb_programs\":0,\"nb_stream_groups\":0,\"format_name\":\"matroska,webm\",\"format_long_name\":\"Matroska / WebM\",\"start_time\":\"0.000000\",\"duration\":\"5.521000\",\"size\":\"75179\",\"bit_rate\":\"108935\",\"probe_score\":100,\"tags\":{\"ENCODER\":\"Lavf62.12.102\"}}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-select_streams",
+        "0",
+        "-show_entries",
+        "frame=pts,best_effort_timestamp,side_data_list:frame_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"frames\": [\n        {\n            \"pts\": 0,\n            \"best_effort_timestamp\": 0,\n            \"side_data_list\": [\n                {\n                    \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n                }\n            ]\n        },\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,0.000000\n0,0.167000\n0,0.083000\n0,0.042000\n0,0.125000\n0,0.333000\n0,0.250000\n0,0.208000\n0,0.292000\n0,0.500000\n0,0.417000\n0,0.375000\n0,0.458000\n0,0.667000\n0,0.583000\n0,0.542000\n0,0.625000\n0,0.833000\n0,0.750000\n0,0.708000\n0,0.792000\n0,1.000000\n0,0.917000\n0,0.875000\n0,0.958000\n0,1.042000\n0,1.167000\n0,1.083000\n0,1.125000\n0,1.250000\n0,1.208000\n0,1.417000\n0,1.333000\n0,1.292000\n0,1.375000\n0,1.583000\n0,1.500000\n0,1.458000\n0,1.542000\n0,1.750000\n0,1.667000\n0,1.625000\n0,1.708000\n0,1.792000\n0,1.958000\n0,1.875000\n0,1.833000\n0,1.917000\n0,2.042000\n0,2.000000\n0,2.208000\n0,2.125000\n0,2.083000\n0,2.167000\n0,2.333000\n0,2.250000\n0,2.292000\n0,2.500000\n0,2.417000\n0,2.375000\n0,2.458000\n0,2.542000\n1,2.479000,\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"type\":\"video\",\"properties\":{\"language\":\"und\"}},{\"id\":1,\"type\":\"audio\",\"properties\":{\"language\":\"und\"}}]}"
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] x1:0 x2:159 y1:0 y2:89 w:160 h:80 x:0 y:6 pts:2958 t:2.958000 limit:24.000000 crop=160:80:0:6",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "0",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] x1:0 x2:159 y1:0 y2:89 w:160 h:80 x:0 y:6 pts:2958 t:2.958000 limit:24.000000 crop=160:80:0:6",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "1",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "[Parsed_cropdetect_1 @ 0x0] x1:0 x2:159 y1:0 y2:89 w:160 h:80 x:0 y:6 pts:1958 t:1.958000 limit:24.000000 crop=160:80:0:6",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "2",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "3",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "-threads",
+        "2",
+        "-ss",
+        "4",
+        "-i",
+        "{path}",
+        "-t",
+        "5",
+        "-vf",
+        "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24",
+        "-an",
+        "-f",
+        "null",
+        "-"
+      ],
+      "cmd": "ffmpeg",
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "aac",
+          "endSeconds": 5.521,
+          "isDefault": false,
+          "language": "und",
+          "profile": "LC",
+          "sampleRate": 48000,
+          "startTimeSeconds": 2.5,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 5.521,
+      "formatBitRate": 108935,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "avgFrameRate": "24/1",
+          "bitDepth": 8,
+          "codec": "h264",
+          "colorRange": "tv",
+          "displayAspectRatio": "16:9",
+          "dvBlPresent": false,
+          "dvElPresent": false,
+          "dvRpuPresent": false,
+          "endSeconds": 3,
+          "firstFrameSeconds": 0,
+          "frameRate": "24",
+          "hdr10Plus": false,
+          "height": 90,
+          "level": 10,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 160
+        }
+      ]
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "start-offset-mkv-audio-late.mkv",
+  "fileSize": 75179,
+  "moviehash": null,
+  "name": "start-offset-mkv-audio-late-mkv",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}

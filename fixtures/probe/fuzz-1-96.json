@@ -1,0 +1,49 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_name\":\"ass\",\"profile\":\"DTS-HD MA\",\"width\":3840,\"height\":90,\"display_aspect_ratio\":\"16:9\",\"avg_frame_rate\":\"50/1\",\"has_b_frames\":4,\"time_base\":\"0/1\",\"duration\":\"0\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"\",\"color_space\":\"bt2020nc\",\"side_data_list\":[],\"channels\":8,\"tags\":{\"language\":\"UND\",\"Title\":\"Descriptions\"}}],\"format\":{\"format_name\":\"matroska,webm\",\"start_time\":\"3600\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"1.5\",\"end_time\":\"0.000000\"},{\"start_time\":\"0\",\"end_time\":\"0\"},{\"start_time\":\"0.000000\",\"end_time\":\"0.000000\",\"tags\":{\"title\":\"Español\"}},{\"start_time\":\"10.5\",\"end_time\":\"10.5\",\"tags\":{\"title\":\"\"}}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":0,\"properties\":{\"language_ietf\":\"UND-419\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "error": "No streams detected",
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 3600,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 343449111,
+  "name": "fuzz-1-96",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

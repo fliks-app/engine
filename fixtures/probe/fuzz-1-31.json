@@ -1,0 +1,102 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"aac\",\"profile\":\"LC\",\"level\":41,\"width\":3840,\"height\":1080,\"r_frame_rate\":\"15/2\",\"avg_frame_rate\":\"abc\",\"has_b_frames\":1,\"time_base\":\"0/1\",\"duration\":\"-0.5\",\"bit_rate\":\"0\",\"bits_per_raw_sample\":\"10\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt709\",\"side_data_list\":[{\"side_data_type\":\"Display Matrix\",\"rotation\":90},{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":10,\"dv_level\":9,\"rpu_present_flag\":0,\"el_present_flag\":1,\"bl_present_flag\":0,\"dv_bl_signal_compatibility_id\":6}],\"channels\":0,\"channel_layout\":\"5.1(side)\",\"sample_rate\":\"0\"},{\"index\":1,\"codec_type\":\"subtitle\",\"profile\":\"High\",\"level\":41,\"width\":1920,\"height\":720,\"r_frame_rate\":\"-25/1\",\"avg_frame_rate\":\"50/1\",\"has_b_frames\":2,\"duration\":\"10.5\",\"bit_rate\":\"1e3\",\"bits_per_raw_sample\":\"8\",\"color_transfer\":\"arib-std-b67\",\"color_primaries\":\"bt709\",\"color_range\":\"tv\",\"channel_layout\":\"stereo\",\"sample_rate\":\"44100\",\"tags\":{\"DURATION\":\"00:01:02.500000000\"},\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}}],\"format\":{\"format_name\":\"ogg\",\"start_time\":\"123.456789\",\"duration\":\"90\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"123.456789\",\"end_time\":\"0.000000\"},{\"start_time\":\"7261.4\",\"end_time\":\"3600\",\"tags\":{\"TITLE\":\"Foreign Parts\"}},{\"end_time\":\"0.041\",\"tags\":{\"title\":\"Español\"}}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "614959210",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\"},{\"index\":2,\"sample_rate\":\"48000\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 0,
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": -0.5,
+          "isDefault": false,
+          "language": "und",
+          "profile": "LC",
+          "sampleRate": 48000,
+          "streamIndex": 0
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 0.041,
+          "startSeconds": 0,
+          "title": "Español"
+        }
+      ],
+      "durationSeconds": 90,
+      "formatBitRate": 5000000,
+      "formatName": "ogg",
+      "formatStartSeconds": 123.456789,
+      "subtitles": [
+        {
+          "codec": "unknown",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 614959210,
+  "name": "fuzz-1-31",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

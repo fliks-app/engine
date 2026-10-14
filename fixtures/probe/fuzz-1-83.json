@@ -1,0 +1,100 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"flac\",\"level\":51,\"width\":3840,\"height\":720,\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"0/1\",\"has_b_frames\":3,\"time_base\":\"1001/24000\",\"start_time\":\"1.5\",\"duration\":\"3600\",\"bit_rate\":\"5000000\",\"color_space\":\"bt2020nc\",\"color_range\":\"tv\",\"side_data_list\":[],\"channels\":6,\"channel_layout\":\"5.1(side)\",\"sample_rate\":\"\",\"tags\":{\"LANGUAGE\":\"jpn\",\"TITLE\":\"non-forced\",\"DURATION\":\"12\"}},{\"index\":1,\"codec_type\":\"subtitle\",\"codec_name\":\"subrip\",\"profile\":\"Main 10\",\"width\":0,\"height\":1080,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"50/1\",\"duration\":\"0.041\",\"channels\":1,\"sample_rate\":\"44100\",\"tags\":{\"Language\":\"por\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":1}}],\"format\":{\"format_name\":\"avi\",\"start_time\":\"-0.5\",\"duration\":\"7261.4\",\"bit_rate\":\"5000000\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "2,170.655\n1,84.753\n1,175.244\n1,117.759\n2,136.944\n0,157.848\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "159348000",
+        "-probesize",
+        "2763214065",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "fail": {
+        "code": 1
+      },
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 5000000,
+          "channelLayout": "5.1(side)",
+          "channels": 6,
+          "codec": "flac",
+          "endSeconds": 3601.5,
+          "isDefault": false,
+          "language": "jpn",
+          "startTimeSeconds": 157.848,
+          "streamIndex": 0,
+          "title": "non-forced"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 7261.4,
+      "formatBitRate": 5000000,
+      "formatName": "avi",
+      "formatStartSeconds": -0.5,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "por",
+          "streamIndex": 1
+        }
+      ],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2763214065,
+  "name": "fuzz-1-83",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

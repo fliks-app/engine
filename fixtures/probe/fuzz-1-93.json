@@ -1,0 +1,39 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"subtitle\",\"codec_name\":\"truehd\",\"level\":30,\"width\":0,\"height\":1080,\"r_frame_rate\":\"1/0\",\"avg_frame_rate\":\"0/1\",\"has_b_frames\":2,\"time_base\":\"1/1000\",\"start_time\":\"0.000000\",\"duration\":\"2.04\",\"bit_rate\":\"128000\",\"bits_per_raw_sample\":\"8\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt2020\",\"channels\":0,\"sample_rate\":\"0\",\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"attachment\",\"codec_name\":\"mjpeg\",\"profile\":\"Main 10\",\"level\":51,\"width\":3840,\"height\":90,\"r_frame_rate\":\"25\",\"avg_frame_rate\":\"30/1\",\"has_b_frames\":2,\"start_time\":\"3600\",\"duration\":\"0.041\",\"color_transfer\":\"smpte2084\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channels\":8,\"sample_rate\":\"abc\",\"tags\":{\"language\":\"fre\",\"Title\":\"non-forced\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"attachment\",\"codec_name\":\"mov_text\",\"profile\":\"LC\",\"level\":41,\"width\":0,\"height\":270,\"pix_fmt\":\"yuv420p\",\"avg_frame_rate\":\"abc\",\"time_base\":\"0/1\",\"start_time\":\"2.04\",\"color_transfer\":\"arib-std-b67\",\"color_primaries\":\"bt709\",\"tags\":{\"LANGUAGE\":\"\"}}],\"format\":{\"format_name\":\"mov,mp4,m4a,3gp,3g2,mj2\",\"duration\":\"3\"}}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [],
+      "chapters": [],
+      "durationSeconds": 3,
+      "error": "No streams detected",
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2404425610,
+  "name": "fuzz-1-93",
+  "opts": {
+    "crop": false,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

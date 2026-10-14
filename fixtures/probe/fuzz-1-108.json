@@ -1,0 +1,126 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"mov_text\",\"height\":1080,\"r_frame_rate\":\"0/0\",\"avg_frame_rate\":\"abc\",\"time_base\":\"1/0\",\"start_time\":\"0\",\"bits_per_raw_sample\":\"8\",\"color_transfer\":\"bt709\",\"color_range\":\"tv\",\"channel_layout\":\"stereo\",\"sample_rate\":\"0\",\"tags\":{\"language\":\"fre\",\"Title\":\"Deutsch\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":1,\"codec_type\":\"audio\",\"codec_name\":\"mov_text\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"level\":30,\"width\":1920,\"height\":1080,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"avg_frame_rate\":\"500/21\",\"has_b_frames\":0,\"time_base\":\"1/24\",\"start_time\":\"7261.4\",\"bit_rate\":\"128000\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channels\":8,\"channel_layout\":\"7.1\",\"sample_rate\":\"\",\"tags\":{\"language\":\"ENG\",\"duration\":\"00:00:03\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"subtitle\",\"codec_name\":\"eac3\",\"width\":1920,\"height\":90,\"display_aspect_ratio\":\"16:9\",\"pix_fmt\":\"yuv420p\",\"avg_frame_rate\":\"25\",\"time_base\":\"1/0\",\"start_time\":\"0.000000\",\"bit_rate\":\"5000000\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"unknown\",\"channel_layout\":\"mono\",\"sample_rate\":\"44100\",\"tags\":{\"Language\":\"xx\",\"title\":\"Deutsch\",\"DURATION\":\"00:00:3.0\"},\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}}],\"format\":{\"format_name\":\"matroska\",\"duration\":\"60.5\",\"bit_rate\":\"5000000\"},\"chapters\":[{\"start_time\":\"1.5\",\"end_time\":\"7261.4\"}]}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,66.634\n2,41.987\n2,127.880\n1,186.031\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "7262400000",
+        "-probesize",
+        "2933348485",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":3,\"channels\":6,\"channel_layout\":\"5.1\",\"sample_rate\":\"48000\"},{\"index\":0,\"channels\":2,\"channel_layout\":\"stereo\",\"sample_rate\":\"48000\"},{\"index\":2,\"channel_layout\":\"5.1\"}]}"
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\"tracks\":[{\"id\":1,\"type\":\"audio\",\"properties\":{\"language_ietf\":\"de-DE-1996\"}},{\"id\":0,\"type\":\"audio\",\"properties\":{}},{\"id\":3,\"type\":\"video\",\"properties\":{\"language_ietf\":\"zh-Hant\"}}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "channelLayout": "stereo",
+          "channels": 2,
+          "codec": "mov_text",
+          "isDefault": false,
+          "language": "fre",
+          "sampleRate": 48000,
+          "startTimeSeconds": 66.634,
+          "streamIndex": 0,
+          "title": "Deutsch"
+        },
+        {
+          "audioDescription": true,
+          "bitRate": 128000,
+          "channelLayout": "7.1",
+          "channels": 8,
+          "codec": "mov_text",
+          "commentary": true,
+          "endSeconds": 3,
+          "isDefault": true,
+          "language": "ENG",
+          "languageTag": "de-DE-1996",
+          "profile": "Dolby Digital Plus + Dolby Atmos",
+          "startTimeSeconds": 7261.4,
+          "streamIndex": 1
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 7261.4,
+          "startSeconds": 1.5
+        }
+      ],
+      "durationSeconds": 60.5,
+      "formatBitRate": 5000000,
+      "formatName": "matroska",
+      "subtitles": [
+        {
+          "codec": "eac3",
+          "forced": true,
+          "hearingImpaired": true,
+          "isImageBased": false,
+          "language": "xx",
+          "streamIndex": 2,
+          "title": "Deutsch"
+        }
+      ],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "fileSize": 2933348485,
+  "name": "fuzz-1-108",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

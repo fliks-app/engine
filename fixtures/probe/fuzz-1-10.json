@@ -1,0 +1,112 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":0,\"codec_type\":\"audio\",\"codec_name\":\"opus\",\"level\":153,\"height\":270,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"25/1\",\"start_time\":\"3600\",\"bit_rate\":\"0\",\"bits_per_raw_sample\":\"\",\"color_primaries\":\"bt2020\",\"color_range\":\"tv\",\"channels\":6,\"sample_rate\":\"48000\",\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":1,\"comment\":0,\"visual_impaired\":1,\"descriptions\":0}},{\"index\":1,\"codec_name\":\"mov_text\",\"width\":160,\"height\":90,\"pix_fmt\":\"yuv420p10le\",\"r_frame_rate\":\"24000/1001\",\"avg_frame_rate\":\"30/1\",\"time_base\":\"0/1\",\"start_time\":\"2.04\",\"channels\":0,\"sample_rate\":\"abc\",\"tags\":{\"Language\":\"zh-Hant\",\"DURATION\":\"00:01:02.500000000\"},\"disposition\":{\"default\":0,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":2,\"codec_type\":\"audio\",\"codec_name\":\"ac3\",\"profile\":\"LC\",\"level\":30,\"width\":160,\"height\":1080,\"pix_fmt\":\"yuv420p\",\"r_frame_rate\":\"-25/1\",\"avg_frame_rate\":\"1/0\",\"has_b_frames\":3,\"time_base\":\"1/1000\",\"start_time\":\"2.04\",\"duration\":\"0\",\"bit_rate\":\"0\",\"color_space\":\"bt2020nc\",\"color_transfer\":\"unknown\",\"sample_rate\":\"abc\",\"disposition\":{\"default\":0,\"forced\":1,\"hearing_impaired\":0,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":3,\"codec_type\":\"audio\",\"codec_name\":\"opus\",\"width\":160,\"height\":270,\"avg_frame_rate\":\"50/1\",\"has_b_frames\":2,\"time_base\":\"1001/24000\",\"bit_rate\":\"5000000\",\"color_space\":\"bt2020nc\",\"color_primaries\":\"bt2020\",\"side_data_list\":[{\"side_data_type\":\"x\",\"dv_profile\":\"eight\"}],\"channels\":8,\"channel_layout\":\"5.1(side)\",\"tags\":{\"LANGUAGE\":\"por\",\"title\":\"French AC3 5.1\"},\"disposition\":{\"default\":1,\"forced\":1,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":1,\"visual_impaired\":0,\"descriptions\":1}},{\"index\":4,\"codec_type\":\"attachment\",\"codec_name\":\"mpeg2video\",\"profile\":\"Dolby Digital Plus + Dolby Atmos\",\"level\":-99,\"width\":480,\"height\":1080,\"r_frame_rate\":\"1000/1\",\"avg_frame_rate\":\"25\",\"time_base\":\"1/90000\",\"start_time\":\"1.5\",\"bits_per_raw_sample\":\"8\",\"side_data_list\":[{\"side_data_type\":\"DOVI configuration record\",\"dv_profile\":7,\"dv_level\":7,\"rpu_present_flag\":0,\"el_present_flag\":1,\"bl_present_flag\":0,\"dv_bl_signal_compatibility_id\":4}],\"sample_rate\":\"\",\"disposition\":{\"default\":1,\"forced\":0,\"hearing_impaired\":1,\"attached_pic\":0,\"comment\":0,\"visual_impaired\":0,\"descriptions\":1}}],\"format\":{\"format_name\":\"ogg\",\"start_time\":\"123.456789\",\"duration\":\"7261.4\",\"bit_rate\":\"1e6\"}}"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,163.435\n4,114.213\n2,107.169\n1,N/A\n2,28.372\n4,168.639\n2,44.659\n0,N/A\n2,13.511\n5,1.468\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "293255004",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index,channels,channel_layout,sample_rate",
+        "-of",
+        "json",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\"streams\":[{\"index\":1,\"channels\":0,\"sample_rate\":\"0\"}]}"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "audioDescription": true,
+          "bitRate": 0,
+          "channels": 6,
+          "codec": "opus",
+          "isDefault": true,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 3600,
+          "streamIndex": 0
+        },
+        {
+          "audioDescription": true,
+          "bitRate": 0,
+          "codec": "ac3",
+          "commentary": true,
+          "endSeconds": 2.04,
+          "isDefault": false,
+          "language": "und",
+          "profile": "LC",
+          "startTimeSeconds": 107.169,
+          "streamIndex": 2
+        },
+        {
+          "audioDescription": true,
+          "bitRate": 5000000,
+          "channelLayout": "5.1(side)",
+          "channels": 8,
+          "codec": "opus",
+          "commentary": true,
+          "isDefault": true,
+          "language": "por",
+          "streamIndex": 3,
+          "title": "French AC3 5.1"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 7261.4,
+      "formatBitRate": 1000000,
+      "formatName": "ogg",
+      "formatStartSeconds": 123.456789,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [
+      ".audio[1].sampleRate"
+    ],
+    "ok": true
+  },
+  "fileSize": 293255004,
+  "name": "fuzz-1-10",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "synthetic"
+}

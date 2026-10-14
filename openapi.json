@@ -160,6 +160,39 @@
           }
         }
       }
+    },
+    "/v1/probe": {
+      "post": {
+        "tags": [
+          "probe"
+        ],
+        "operationId": "probe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "path is not absolute"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1326,6 +1359,42 @@
           }
         }
       },
+      "MediaRef": {
+        "type": "object",
+        "required": [
+          "mediaFileId",
+          "path"
+        ],
+        "properties": {
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute path, already authorised by the host."
+          }
+        }
+      },
+      "MovieHash": {
+        "type": "object",
+        "required": [
+          "hash",
+          "bytesize"
+        ],
+        "properties": {
+          "bytesize": {
+            "type": "number",
+            "format": "double",
+            "description": "File size in bytes."
+          },
+          "hash": {
+            "type": "string",
+            "description": "16 lowercase hex digits."
+          }
+        }
+      },
       "MuxFlavour": {
         "type": "string",
         "description": "Segment container of the HLS output.",
@@ -1629,6 +1698,69 @@
             ],
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ProbeRequest": {
+        "type": "object",
+        "required": [
+          "media"
+        ],
+        "properties": {
+          "crop": {
+            "type": "boolean",
+            "description": "Run `cropdetect` and set `video[0].crop` when bars are significant."
+          },
+          "media": {
+            "$ref": "#/components/schemas/MediaRef"
+          },
+          "mkvTags": {
+            "type": "boolean",
+            "description": "Read BCP-47 language tags of a Matroska file with `mkvmerge -J`."
+          },
+          "moviehash": {
+            "type": "boolean",
+            "description": "Compute the OpenSubtitles moviehash."
+          }
+        }
+      },
+      "ProbeResult": {
+        "type": "object",
+        "description": "`ok: false` means ffprobe could not tell (unreadable file, timeout): leave stored rows alone.\n`ok: true` with `info.error` is a readable file without streams.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "info": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MediaInfo",
+                "description": "Present when ok; on failure the empty error blob the host persists today."
+              }
+            ]
+          },
+          "moviehash": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MovieHash",
+                "description": "Absent when the file is under 128 KiB or unreadable."
+              }
+            ]
+          },
+          "ok": {
+            "type": "boolean"
           }
         }
       },
