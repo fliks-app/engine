@@ -1,0 +1,90 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "av1_amf",
+      "-usage",
+      "transcoding",
+      "-quality",
+      "balanced",
+      "-rc",
+      "cbr",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "scale=1920:ceil(ih*1920/iw/2)*2:flags=lanczos,format=nv12",
+      "-forced_idr",
+      "1",
+      "-bf",
+      "0",
+      "-g",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "av1_amf",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "",
+        "cropStr": "",
+        "hwCropPrefix": "",
+        "tonemapCpu": "",
+        "tonemapCuda": "",
+        "tonemapOpencl": "",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": false,
+      "inputSurface": "cpu",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": false,
+      "tonemapCurve": "hable",
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "amf: AMF encoders av1_amf (SDR) emits the AMF encoder with a CBR cap",
+  "source": "amf"
+}

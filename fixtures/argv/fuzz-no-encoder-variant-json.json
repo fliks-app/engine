@@ -1,0 +1,38 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "error": "No encoder for variant {\"bitDepth\":10,\"codec\":\"h264\",\"hdr\":null} on qsv"
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "hwAccel": "qsv",
+    "inputPath": "/media/in.mkv",
+    "outputDir": "/cache/out",
+    "profile": {
+      "audioBitrate": "192k",
+      "maxHeight": 1080,
+      "maxWidth": 1920,
+      "name": "1080p",
+      "videoBitrate": "8M"
+    },
+    "videoVariant": {
+      "bitDepth": 10,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "kind": "vod",
+  "name": "fuzz: no encoder for an inconsistent variant names it in stored key order",
+  "source": "fuzz"
+}

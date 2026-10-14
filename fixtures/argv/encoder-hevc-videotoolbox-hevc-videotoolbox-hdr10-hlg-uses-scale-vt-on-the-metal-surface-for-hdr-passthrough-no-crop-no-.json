@@ -1,0 +1,91 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "hevc_videotoolbox",
+      "-profile:v",
+      "main10",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "scale_vt=w=1920:h=-2",
+      "-g",
+      "72",
+      "-keyint_min",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)",
+      "-color_primaries",
+      "bt2020",
+      "-color_trc",
+      "smpte2084",
+      "-colorspace",
+      "bt2020nc",
+      "-tag:v",
+      "hvc1"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "hevc_videotoolbox_main10",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "",
+        "cropStr": "",
+        "hwCropPrefix": "",
+        "tonemapCpu": "",
+        "tonemapCuda": "",
+        "tonemapOpencl": "",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": false,
+      "inputSurface": "videotoolbox",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": false,
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "hevc-videotoolbox: hevc_videotoolbox HDR10/HLG uses scale_vt on the Metal surface for HDR passthrough (no crop, no burn-in)",
+  "source": "hevc-videotoolbox"
+}

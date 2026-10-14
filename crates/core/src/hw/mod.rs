@@ -1,6 +1,6 @@
 //! Host capability detection: the ffmpeg commands to run, how to read their results, and the
 //! `HostCaps`/`Capabilities` they add up to. IO is injected through [`Runner`]; see `docs/spec/hw.md`.
-mod decoders;
+pub(crate) mod decoders;
 mod detect;
 mod device;
 mod encoders;

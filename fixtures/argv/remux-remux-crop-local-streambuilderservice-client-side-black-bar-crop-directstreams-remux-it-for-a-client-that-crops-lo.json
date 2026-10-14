@@ -1,0 +1,106 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "0",
+      "-probesize",
+      "5000000",
+      "-i",
+      "/m/in.mkv",
+      "-copyts",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "-map",
+      "0:0",
+      "-map",
+      "0:1",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "copy",
+      "-bsf:a",
+      "aac_adtstoasc",
+      "-tag:v",
+      "hvc1",
+      "-bsf:v",
+      "hevc_mp4toannexb",
+      "-max_muxing_queue_size",
+      "2048",
+      "-movflags",
+      "+cmaf",
+      "-avoid_negative_ts",
+      "disabled",
+      "-hls_segment_options",
+      "movflags=+frag_discont",
+      "-f",
+      "hls",
+      "-hls_time",
+      "3",
+      "-hls_list_size",
+      "1",
+      "-start_number",
+      "0",
+      "-hls_segment_type",
+      "fmp4",
+      "-hls_fmp4_init_filename",
+      "init.mp4",
+      "-hls_flags",
+      "independent_segments+temp_file",
+      "-hls_segment_filename",
+      "/cache/remux/1/run-0/gop-%d.m4s",
+      "/cache/remux/1/run-0/index.m3u8"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "audioPlan": {
+      "bitrateBps": 128000,
+      "channels": 2,
+      "codec": "aac",
+      "mode": "copy"
+    },
+    "audioStreams": [
+      {
+        "channels": 2,
+        "language": "und",
+        "streamIndex": 1
+      }
+    ],
+    "dolbyVision": false,
+    "grid": null,
+    "hdr10Plus": false,
+    "inputPath": "/m/in.mkv",
+    "outputDir": "/cache/remux/1/run-0",
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "segmentDuration": 3,
+    "sourceEndSeconds": 100,
+    "sourceVideoCodec": "hevc",
+    "trustedStreamInfo": true,
+    "videoOnly": false,
+    "videoStreamIndex": 0
+  },
+  "kind": "remux",
+  "name": "remux crop-local-streambuilderservice-client-side-black-bar-crop-directstreams-remux-it-for-a-client-that-crops-locally-but-ha seg 0",
+  "source": "synthetic"
+}

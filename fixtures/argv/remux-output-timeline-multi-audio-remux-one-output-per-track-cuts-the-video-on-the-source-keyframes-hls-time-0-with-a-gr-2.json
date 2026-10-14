@@ -1,0 +1,130 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "0",
+      "-probesize",
+      "5000000",
+      "-i",
+      "/media/in.ts",
+      "-copyts",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "-map",
+      "0:v:0",
+      "-c:v",
+      "copy",
+      "-movflags",
+      "+cmaf",
+      "-avoid_negative_ts",
+      "disabled",
+      "-hls_segment_options",
+      "movflags=+frag_discont",
+      "-f",
+      "hls",
+      "-hls_time",
+      "4",
+      "-hls_list_size",
+      "1",
+      "-start_number",
+      "0",
+      "-hls_segment_type",
+      "fmp4",
+      "-hls_fmp4_init_filename",
+      "init.mp4",
+      "-hls_flags",
+      "independent_segments+temp_file",
+      "-hls_segment_filename",
+      "/cache/out/gop-%d.m4s",
+      "/cache/out/index.m3u8",
+      "-map",
+      "0:1",
+      "-c:a",
+      "copy",
+      "-bsf:a",
+      "aac_adtstoasc",
+      "-f",
+      "mp4",
+      "-movflags",
+      "+frag_every_frame+delay_moov+default_base_moof+frag_discont",
+      "-map_chapters",
+      "-1",
+      "/cache/out/a0.mp4",
+      "-map",
+      "0:2",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "576k",
+      "-ac",
+      "6",
+      "-ar",
+      "48000",
+      "-filter:a",
+      "asetpts=PTS-0/TB,aresample=async=1:first_pts=0,asetpts=PTS+0/TB",
+      "-f",
+      "mp4",
+      "-movflags",
+      "+frag_every_frame+delay_moov+default_base_moof+frag_discont",
+      "-map_chapters",
+      "-1",
+      "/cache/out/a1.mp4"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "audioStreams": [
+      {
+        "language": "eng",
+        "streamIndex": 1
+      },
+      {
+        "language": "fre",
+        "streamIndex": 2
+      }
+    ],
+    "audioTrackPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      },
+      {
+        "channels": 6,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "inputPath": "/media/in.ts",
+    "outputDir": "/cache/out",
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "segmentDuration": 4,
+    "sourceVideoCodec": "h264",
+    "trustedStreamInfo": true,
+    "videoOnly": true
+  },
+  "kind": "remux",
+  "name": "output-timeline: multi-audio remux (one output per track) cuts the video on the source keyframes (hls_time 0) with a grid, the uniform duration without one",
+  "source": "output-timeline"
+}

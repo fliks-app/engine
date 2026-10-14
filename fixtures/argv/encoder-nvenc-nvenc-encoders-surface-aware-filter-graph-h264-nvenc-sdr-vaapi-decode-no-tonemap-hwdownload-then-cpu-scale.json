@@ -1,0 +1,89 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "h264_nvenc",
+      "-preset",
+      "p4",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "hwdownload,format=nv12,scale=1920:ceil(ih*1920/iw/2)*2:flags=lanczos,format=yuv420p",
+      "-forced-idr",
+      "1",
+      "-no-scenecut",
+      "1",
+      "-bf",
+      "0",
+      "-g",
+      "72",
+      "-keyint_min",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "h264_nvenc",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "",
+        "cropStr": "",
+        "hwCropPrefix": "",
+        "tonemapCpu": "",
+        "tonemapCuda": "",
+        "tonemapOpencl": "",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": false,
+      "inputSurface": "vaapi",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": false,
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "nvenc: NVENC encoders — surface-aware filter graph h264_nvenc (SDR) vaapi decode, no tonemap: hwdownload then CPU scale, no scale_cuda",
+  "source": "nvenc"
+}

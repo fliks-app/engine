@@ -1,10 +1,21 @@
 //! Decoder descriptors and the argv slice each puts before `-i`.
 //! [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:30-125]
 use super::device::Device;
-use crate::api::{Platform, VideoCodec};
+use crate::api::{HwAccel, Platform, VideoCodec};
+
+/// Frame memory between decode and encode. [ts:backend/src/modules/streaming/transcoding/codec/decoders/types.ts:20]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Surface {
+    Cpu,
+    Vaapi,
+    Cuda,
+    D3d11,
+    Videotoolbox,
+}
 
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum Kind {
+pub(crate) enum Kind {
     Cpu,
     Vaapi,
     QsvVaapi,
@@ -15,7 +26,7 @@ pub(super) enum Kind {
     Vt,
 }
 
-pub(super) struct Decoder {
+pub(crate) struct Decoder {
     pub id: &'static str,
     /// `None` is the software path, which decodes any codec.
     pub codec: Option<VideoCodec>,
@@ -39,6 +50,36 @@ impl Decoder {
             self.kind,
             Kind::Vaapi | Kind::QsvVaapi | Kind::QsvD3d11 | Kind::Cuda | Kind::D3d11Native
         )
+    }
+
+    /// The backend the registry pairs it with. [ts:backend/src/modules/streaming/transcoding/codec/decoders/qsv.ts:8-70]
+    pub fn hw(&self) -> HwAccel {
+        match self.kind {
+            Kind::Cpu => HwAccel::None,
+            Kind::Vaapi => HwAccel::Vaapi,
+            Kind::QsvVaapi | Kind::QsvD3d11 => HwAccel::Qsv,
+            Kind::Cuda => HwAccel::Nvenc,
+            Kind::D3d11Cpu | Kind::D3d11Native => HwAccel::Amf,
+            Kind::Vt => HwAccel::Videotoolbox,
+        }
+    }
+
+    pub fn max_bit_depth(&self) -> u32 {
+        if self.codec == Some(VideoCodec::H264) {
+            8
+        } else {
+            10
+        }
+    }
+
+    /// Where decoded frames land; VideoToolbox reports CPU, the argv opts into its surface.
+    pub fn surface(&self) -> Surface {
+        match self.kind {
+            Kind::Cpu | Kind::D3d11Cpu | Kind::Vt => Surface::Cpu,
+            Kind::Vaapi | Kind::QsvVaapi => Surface::Vaapi,
+            Kind::QsvD3d11 | Kind::D3d11Native => Surface::D3d11,
+            Kind::Cuda => Surface::Cuda,
+        }
     }
 
     pub fn input_args(&self, d: &Device) -> Vec<String> {
@@ -133,7 +174,7 @@ const fn dec(id: &'static str, codec: Option<VideoCodec>, kind: Kind) -> Decoder
 }
 
 /// Registry order, then the Windows QSV/AMF D3D11 variants the registry only looks up.
-pub(super) const DECODERS: &[Decoder] = &[
+pub(crate) const DECODERS: &[Decoder] = &[
     dec("h264_qsv_decode", Some(H264), K::QsvVaapi),
     dec("hevc_qsv_decode", Some(Hevc), K::QsvVaapi),
     dec("av1_qsv_decode", Some(Av1), K::QsvVaapi),
@@ -169,6 +210,6 @@ pub(super) fn qsv_native_hevc(p: Platform) -> &'static Decoder {
     DECODERS.iter().find(|d| d.id == id).unwrap()
 }
 
-pub(super) fn find(id: &str) -> &'static Decoder {
+pub(crate) fn find(id: &str) -> &'static Decoder {
     DECODERS.iter().find(|d| d.id == id).unwrap()
 }

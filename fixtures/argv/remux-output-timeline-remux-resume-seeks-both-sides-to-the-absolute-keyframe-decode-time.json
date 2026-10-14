@@ -1,0 +1,142 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "0",
+      "-probesize",
+      "5000000",
+      "-noaccurate_seek",
+      "-seek_timestamp",
+      "1",
+      "-ss",
+      "11.72",
+      "-i",
+      "/media/in.ts",
+      "-copyts",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "-ss",
+      "11.72",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-ac",
+      "2",
+      "-ar",
+      "48000",
+      "-filter:a",
+      "asetpts=PTS-11.76/TB,aresample=async=1:first_pts=0,asetpts=PTS+11.76/TB",
+      "-movflags",
+      "+cmaf",
+      "-avoid_negative_ts",
+      "disabled",
+      "-hls_segment_options",
+      "movflags=+frag_discont",
+      "-f",
+      "hls",
+      "-hls_time",
+      "0",
+      "-hls_list_size",
+      "1",
+      "-start_number",
+      "3",
+      "-hls_segment_type",
+      "fmp4",
+      "-hls_fmp4_init_filename",
+      "init.mp4",
+      "-hls_flags",
+      "independent_segments+temp_file",
+      "-hls_segment_filename",
+      "/cache/out/gop-%d.m4s",
+      "/cache/out/index.m3u8"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "grid": {
+      "boundaries": [
+        2.8,
+        5.8,
+        8.8,
+        11.8,
+        14.8,
+        17.8
+      ],
+      "durations": [
+        3,
+        3.000000000000001,
+        3,
+        3,
+        3
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "keyframes": [
+        {
+          "dts": 2.7199999999999998,
+          "pts": 2.8
+        },
+        {
+          "dts": 5.72,
+          "pts": 5.8
+        },
+        {
+          "dts": 8.72,
+          "pts": 8.8
+        },
+        {
+          "dts": 11.72,
+          "pts": 11.8
+        },
+        {
+          "dts": 14.72,
+          "pts": 14.8
+        }
+      ]
+    },
+    "inputPath": "/media/in.ts",
+    "outputDir": "/cache/out",
+    "run": {
+      "audioStartSeconds": 11.759999999999998,
+      "seekSeconds": 11.72,
+      "startNumber": 3
+    },
+    "sourceStartPts": 2.8,
+    "sourceVideoCodec": "h264",
+    "startSegment": 3,
+    "trustedStreamInfo": true
+  },
+  "kind": "remux",
+  "name": "output-timeline: remux resume seeks both sides to the absolute keyframe decode time",
+  "source": "output-timeline"
+}

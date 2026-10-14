@@ -1,0 +1,92 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "h264_amf",
+      "-usage",
+      "transcoding",
+      "-profile:v",
+      "high",
+      "-quality",
+      "balanced",
+      "-rc",
+      "cbr",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "hwmap=derive_device=opencl:mode=read,scale_opencl=w=1920:h=1080:format=nv12,hwmap=derive_device=d3d11va:mode=write:reverse=1,format=d3d11",
+      "-forced_idr",
+      "1",
+      "-bf",
+      "0",
+      "-g",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "h264_amf",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "",
+        "cropStr": "",
+        "hwCropPrefix": "",
+        "tonemapCpu": "",
+        "tonemapCuda": "",
+        "tonemapOpencl": "",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": false,
+      "inputSurface": "d3d11",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": false,
+      "tonemapCurve": "hable",
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "amf: AMF encoders h264_amf (SDR) scales zero-copy via OpenCL on d3d11 input, no scale_d3d11",
+  "source": "amf"
+}
