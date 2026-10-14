@@ -1,6 +1,7 @@
 //! Control plane of fliks-engine (`/v1/*`, bearer auth).
 pub mod hw;
 pub mod probe;
+pub mod proc;
 pub mod supervise;
 
 use axum::{

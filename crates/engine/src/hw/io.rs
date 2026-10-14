@@ -18,13 +18,15 @@ pub struct ProcRunner {
 
 impl Runner for ProcRunner {
     async fn run(&self, cmd: &Cmd) -> Outcome {
-        let child = Command::new(&self.ffmpeg)
-            .args(&cmd.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn();
+        let child = crate::proc::spawn(
+            Command::new(&self.ffmpeg)
+                .args(&cmd.args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true),
+        )
+        .await;
         let Ok(child) = child else {
             return Outcome::default();
         };
@@ -91,13 +93,15 @@ pub async fn probe_stdin_pause(ffmpeg: &str) -> bool {
 }
 
 async fn pause_run(ffmpeg: &str) -> bool {
-    let Ok(mut child) = Command::new(ffmpeg)
-        .args(PROBE_ARGS)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
+    let Ok(mut child) = crate::proc::spawn(
+        Command::new(ffmpeg)
+            .args(PROBE_ARGS)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true),
+    )
+    .await
     else {
         return false;
     };
