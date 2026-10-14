@@ -40,7 +40,7 @@ pub fn run(kind: &str, i: &Value) -> Value {
             json!({
                 "sessionKey": session_key(
                     i["mediaFileId"].as_u64().unwrap() as u32,
-                    i["ownerId"].as_u64().map(|o| o as u32),
+                    i["ownerId"].as_u64().map(|o| o.to_string()).as_deref(),
                     &hash,
                 ),
                 "suffix": variant_suffix(&v),

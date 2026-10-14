@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 /// `<media>-u<owner>-<cacheKey>`, `anon` without an owner.
-pub fn session_key(media_file_id: u32, owner_id: Option<u32>, cache_key: &str) -> String {
+pub fn session_key(media_file_id: u32, owner_id: Option<&str>, cache_key: &str) -> String {
     match owner_id {
         Some(o) => format!("{media_file_id}-u{o}-{cache_key}"),
         None => format!("{media_file_id}-anon-{cache_key}"),
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn keys() {
-        assert_eq!(session_key(7, Some(3), "abc"), "7-u3-abc");
+        assert_eq!(session_key(7, Some("3"), "abc"), "7-u3-abc");
         assert_eq!(session_key(7, None, "abc"), "7-anon-abc");
     }
 
