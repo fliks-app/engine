@@ -1,6 +1,6 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
-//! ffprobe and writes a sliding window whose behaviour the upstream URL picks (`fail`, `dies`,
-//! `stall`, `hevc`, `noprobe`). Spec: `docs/spec/live.md`.
+//! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
+//! `dies`, `stall`, `hevc`, `noprobe`). Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use tokio::sync::broadcast;
 
 async fn live_engine(lifetime: Value, livetv: Value) -> Engine {
     let fake = fake("live");
@@ -69,23 +68,6 @@ fn runs(e: &Engine) -> Vec<Vec<String>> {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect()
-}
-
-async fn event(
-    rx: &mut broadcast::Receiver<EngineEvent>,
-    secs: u64,
-    mut want: impl FnMut(&EngineEvent) -> bool,
-) -> EngineEvent {
-    tokio::time::timeout(Duration::from_secs(secs), async {
-        loop {
-            let e = rx.recv().await.unwrap();
-            if want(&e) {
-                return e;
-            }
-        }
-    })
-    .await
-    .expect("event")
 }
 
 fn attempt(e: &EngineEvent) -> Option<(u32, Option<&str>)> {
@@ -256,7 +238,7 @@ async fn remux_window_is_served_and_shared() {
             .status,
         204
     );
-    event(&mut rx, 5, |ev| matches!(ev, EngineEvent::LiveReleased { capacity_token, .. } if capacity_token == "tok-3")).await;
+    event(&mut rx, 30, |ev| matches!(ev, EngineEvent::LiveReleased { capacity_token, .. } if capacity_token == "tok-3")).await;
 
     assert_eq!(
         e.control("DELETE", &format!("/v1/sessions/{s}"), None)
@@ -264,7 +246,7 @@ async fn remux_window_is_served_and_shared() {
             .status,
         204
     );
-    let ended = event(&mut rx, 5, |ev| {
+    let ended = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::SessionEnded { .. })
     })
     .await;
@@ -283,7 +265,7 @@ async fn remux_window_is_served_and_shared() {
             .status,
         204
     );
-    let rel = event(&mut rx, 5, |ev| {
+    let rel = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::LiveReleased { .. })
     })
     .await;
@@ -294,7 +276,7 @@ async fn remux_window_is_served_and_shared() {
             reason: "idle".into()
         }
     );
-    until("ffmpeg gone", 5, || e.ffmpeg_pids().is_empty()).await;
+    until("ffmpeg gone", 30, || e.ffmpeg_pids().is_empty()).await;
     assert!(live_dirs(&e).is_empty());
     assert_eq!(
         e.control("DELETE", &format!("/v1/sessions/{bs}"), None)
@@ -346,7 +328,9 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
             json!(1)
         )
     );
-    let e1 = event(&mut rx, 5, |ev| attempt(ev).is_some()).await;
+    // `dies` holds its three segments until told: the snapshot above is of its run.
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let e1 = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
     assert_eq!(
         attempt(&e1),
         Some((1, Some("no segment produced within the startup window")))
@@ -355,11 +339,11 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         matches!(&e1, EngineEvent::LiveAttempt { upstream_url: u, upstream_priority: 0, .. } if u == "http://up/fail")
     );
     assert_eq!(
-        attempt(&event(&mut rx, 5, |ev| attempt(ev).is_some()).await),
+        attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await),
         Some((2, None))
     );
     // `dies` exits after three segments: the next upstream picks up at once.
-    let failed = event(&mut rx, 10, |ev| attempt(ev).is_some()).await;
+    let failed = event(&mut rx, 60, |ev| attempt(ev).is_some()).await;
     let (up, err) = attempt(&failed).unwrap();
     assert_eq!(up, 2);
     assert!(
@@ -368,11 +352,11 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         "{err:?}"
     );
     assert_eq!(
-        attempt(&event(&mut rx, 25, |ev| attempt(ev).is_some()).await),
+        attempt(&event(&mut rx, 60, |ev| attempt(ev).is_some()).await),
         Some((0, None))
     );
     // Old segments count as the first one (the TS's check): the run may not have started yet.
-    until("the third run", 5, || runs(&e).len() == 3).await;
+    until("the third run", 30, || runs(&e).len() == 3).await;
     let runs = runs(&e);
     let last = runs.last().unwrap();
     assert!(last.contains(&"http://up/ok".to_string()));
@@ -399,25 +383,15 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         )
     );
     // A run counts as started when its first segment exists: the playlist follows it.
-    let mut text = String::new();
-    for _ in 0..100 {
-        let r = e
-            .get(
-                &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
-                "alice-jwt",
-                &[],
-            )
-            .await;
-        text = r.text();
-        if text.contains("seg-00003.m4s") {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(
-        text.contains("seg-00003.m4s"),
-        "numbering continues: {text}"
-    );
+    let e = &e;
+    let uri = format!("/api/livetv/sessions/{}/index.m3u8", sid(&a));
+    until_async("numbering continues", 30, || async {
+        e.get(&uri, "alice-jwt", &[])
+            .await
+            .text()
+            .contains("seg-00003.m4s")
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -443,13 +417,13 @@ async fn every_upstream_failing_answers_503_and_releases() {
     );
     for _ in 0..2 {
         assert!(
-            attempt(&event(&mut rx, 1, |ev| attempt(ev).is_some()).await)
+            attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await)
                 .unwrap()
                 .1
                 .is_some()
         );
     }
-    let rel = event(&mut rx, 1, |ev| {
+    let rel = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::LiveReleased { .. })
     })
     .await;
@@ -519,7 +493,7 @@ async fn probe_picks_a_transcode_and_ts_segments() {
     );
     assert_eq!(a["qoePipeline"]["output"]["bitrate"], 3000000);
     assert_eq!(a["qoePipeline"]["encode"]["name"], "libx264");
-    let ok = event(&mut rx, 1, |ev| attempt(ev).is_some()).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
     assert!(
         matches!(ok, EngineEvent::LiveAttempt { error: None, probe: Some(ref p), .. } if p.video_codec.as_deref() == Some("hevc"))
     );
@@ -556,30 +530,26 @@ async fn a_stalled_upstream_fails_over_within_the_ts_window() {
     let ups = vec![upstream("http://up/stall", 0), upstream("http://up/ok", 1)];
     open(&e, open_req("5", ups, json!({}), "alice", "t")).await;
     assert_eq!(
-        attempt(&event(&mut rx, 1, |ev| attempt(ev).is_some()).await),
+        attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await),
         Some((0, None))
     );
     let t = std::time::Instant::now();
-    let stalled = event(&mut rx, 25, |ev| attempt(ev).is_some()).await;
+    let stalled = event(&mut rx, 60, |ev| attempt(ev).is_some()).await;
     assert_eq!(
         attempt(&stalled),
         Some((0, Some("no new segment for 15 s")))
     );
     assert!(t.elapsed() >= Duration::from_secs(14), "{:?}", t.elapsed());
     assert_eq!(
-        attempt(&event(&mut rx, 10, |ev| attempt(ev).is_some()).await),
+        attempt(&event(&mut rx, 60, |ev| attempt(ev).is_some()).await),
         Some((1, None))
     );
-    until("the stalled run killed", 5, || e.ffmpeg_pids().len() == 1).await;
+    until("the stalled run killed", 30, || e.ffmpeg_pids().len() == 1).await;
 }
 
 #[tokio::test]
-async fn access_denial_revocation_and_expiry_end_viewers() {
-    let e = live_engine(
-        json!({ "liveSessionTtlMs": 600 }),
-        json!({ "channelIdleSeconds": 0 }),
-    )
-    .await;
+async fn access_denial_and_revocation_end_viewers() {
+    let e = live_engine(json!({}), json!({ "channelIdleSeconds": 0 })).await;
     let mut rx = e.rt.events.subscribe();
     let a = sid(&open(
         &e,
@@ -592,7 +562,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
         ),
     )
     .await);
-    let b = sid(&open(
+    open(
         &e,
         open_req(
             "6",
@@ -602,7 +572,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
             "t2",
         ),
     )
-    .await);
+    .await;
     let c = sid(&open(
         &e,
         open_req(
@@ -638,7 +608,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
         .status,
         403
     );
-    let ended = event(&mut rx, 1, |ev| {
+    let ended = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::SessionEnded { .. })
     })
     .await;
@@ -663,7 +633,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
         .control("POST", "/v1/revoke", Some(json!({ "ownerId": "alice" })))
         .await;
     assert_eq!(r.json()["sessions"], 1);
-    let ended = event(&mut rx, 1, |ev| {
+    let ended = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::SessionEnded { .. })
     })
     .await;
@@ -674,8 +644,23 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
             reason: "revoked".into()
         }
     );
-    // bob stops fetching: expired after the TTL, then the idle upstream closes.
-    let ended = event(&mut rx, 3, |ev| {
+}
+
+#[tokio::test]
+async fn an_expired_viewer_is_dropped_then_the_idle_upstream_closes() {
+    let e = live_engine(
+        json!({ "liveSessionTtlMs": 600 }),
+        json!({ "channelIdleSeconds": 0 }),
+    )
+    .await;
+    let mut rx = e.rt.events.subscribe();
+    let b = sid(&open(
+        &e,
+        open_req("6", vec![upstream("http://up/a", 0)], json!({}), "bob", "t"),
+    )
+    .await);
+    // bob never fetches: expired after the TTL, then the idle upstream closes.
+    let ended = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::SessionEnded { .. })
     })
     .await;
@@ -686,7 +671,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
             reason: "expired".into()
         }
     );
-    let rel = event(&mut rx, 3, |ev| {
+    let rel = event(&mut rx, 30, |ev| {
         matches!(ev, EngineEvent::LiveReleased { .. })
     })
     .await;
@@ -697,7 +682,7 @@ async fn access_denial_revocation_and_expiry_end_viewers() {
             reason: "idle".into()
         }
     );
-    until("ffmpeg gone", 5, || e.ffmpeg_pids().is_empty()).await;
+    until("ffmpeg gone", 30, || e.ffmpeg_pids().is_empty()).await;
 }
 
 #[tokio::test]

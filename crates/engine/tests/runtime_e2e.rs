@@ -125,7 +125,10 @@ async fn master_variant_segments_with_tfdt_continuity() {
     assert_eq!(job["quality"], "720p");
     assert_eq!(job["actualHw"], "none");
     // A segment past the end of a finished run is a 404.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    until_async("the run ends", 60, || async {
+        p.job(&sid).await["state"] == "done"
+    })
+    .await;
     assert_eq!(
         p.seg(&sid, "alice-jwt", "720p", &seg_name(9)).await.status,
         404
@@ -240,7 +243,11 @@ async fn a_killed_run_answers_503_then_the_retry_200() {
             .await
         })
     };
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // The first request waits on its run: the run is registered.
+    until_async("the 720p run", 60, || async {
+        !p.job(&sid).await.is_null()
+    })
+    .await;
     let second = p.seg(&sid, "alice-jwt", "480p", &seg_name(0)).await;
     assert_eq!(second.status, 200, "{}", p.job(&sid).await);
     let r = first.await.unwrap();
@@ -281,10 +288,11 @@ async fn idle_gc_kills_the_job_and_leaves_no_ffmpeg() {
         .await;
     p.e.rt.gc_tick().await;
     // No heartbeat since: the session expires, then the job loses its last viewer and is reaped.
-    for _ in 0..6 {
-        tokio::time::sleep(Duration::from_millis(250)).await;
+    until_async("session expired, job reaped", 60, || async {
         p.e.rt.gc_tick().await;
-    }
+        p.e.ffmpeg_pids().is_empty()
+    })
+    .await;
     assert!(
         p.e.control("GET", "/v1/sessions", None)
             .await
@@ -293,14 +301,15 @@ async fn idle_gc_kills_the_job_and_leaves_no_ffmpeg() {
             .unwrap()
             .is_empty()
     );
-    let left = p.e.ffmpeg_pids();
-    assert!(
-        left.is_empty(),
-        "ffmpeg left: {left:?} {:?}",
-        p.e.control("GET", "/v1/sessions", None).await.json()
-    );
     let mut reasons = vec![];
-    while let Ok(e) = ev.try_recv() {
+    for _ in 0..2 {
+        let e = event(&mut ev, 60, |e| {
+            matches!(
+                e,
+                EngineEvent::SessionEnded { .. } | EngineEvent::JobEnded { .. }
+            )
+        })
+        .await;
         match e {
             EngineEvent::SessionEnded { reason, .. } => reasons.push(reason),
             EngineEvent::JobEnded { state, .. } => reasons.push(format!("{state:?}")),
@@ -626,11 +635,14 @@ async fn direct_play_byte_ranges_of_a_real_file() {
 
 // ---- the six streaming-lifecycle scenarios, against real runs ----
 
+/// GC passes until every session is gone and no run is left.
 async fn reap(p: &Play) {
-    for _ in 0..6 {
-        tokio::time::sleep(Duration::from_millis(150)).await;
+    until_async("sessions expired, runs reaped", 60, || async {
         p.e.rt.gc_tick().await;
-    }
+        let live = p.e.control("GET", "/v1/sessions", None).await.json();
+        live.as_array().unwrap().is_empty() && p.e.ffmpeg_pids().is_empty()
+    })
+    .await;
 }
 
 fn short_life() -> Value {
@@ -864,8 +876,10 @@ async fn lifecycle_ffmpeg_crash_keeps_the_session_and_respawns() {
     let pids = p.e.ffmpeg_pids();
     assert_eq!(pids.len(), 1);
     unsafe { libc::kill(pids[0] as i32, libc::SIGKILL) };
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(p.job(&sid).await["state"], "failed");
+    until_async("the crash is seen", 60, || async {
+        p.job(&sid).await["state"] == "failed"
+    })
+    .await;
     let s = p.seg(&sid, "alice-jwt", "720p", &seg_name(1)).await;
     assert_eq!(s.status, 200);
     let job = p.job(&sid).await;
@@ -946,12 +960,10 @@ async fn throttle_pauses_a_run_far_ahead_and_resumes_it() {
         200
     );
     // Let the run get more than 9 s ahead of the playhead (segment 0).
-    for _ in 0..50 {
-        if p.job(&sid).await["frontierSegment"].as_u64().unwrap_or(0) >= 6 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    until_async("the frontier is 6 segments ahead", 60, || async {
+        p.job(&sid).await["frontierSegment"].as_u64().unwrap_or(0) >= 6
+    })
+    .await;
     p.e.rt.throttle_tick().await;
     let job = p.job(&sid).await;
     assert_eq!(

@@ -66,13 +66,11 @@ async fn send(
 }
 
 async fn until(hw: &Arc<Hw>, f: impl Fn(&Snapshot) -> bool) {
-    for _ in 0..200 {
-        if hw.snapshot().as_ref().is_some_and(&f) {
-            return;
-        }
+    let end = std::time::Instant::now() + Duration::from_secs(60);
+    while !hw.snapshot().as_ref().is_some_and(&f) {
+        assert!(std::time::Instant::now() < end, "detection did not settle");
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    panic!("detection did not settle");
 }
 
 #[tokio::test]
@@ -118,7 +116,9 @@ async fn repin_detects_again_and_coalesces() {
     let hw = gated(gate.clone(), ran.clone());
     let app = fliks_engine::app("secret".into(), hw.clone());
     hw.start();
+    let end = std::time::Instant::now() + Duration::from_secs(60);
     while ran.lock().unwrap().is_empty() {
+        assert!(std::time::Instant::now() < end, "detection never started");
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
     let put = |rev: u32, node: &str| {

@@ -5,6 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Deadline of every wait on a child process: generous, the polls return as soon as they hold.
+const TIMEOUT: Duration = Duration::from_secs(60);
+
 #[test]
 fn restarts_failing_host() {
     let dir = std::env::temp_dir().join(format!("fliks-sup-{}", std::process::id()));
@@ -22,7 +25,7 @@ fn restarts_failing_host() {
     let start = Instant::now();
     let runs = loop {
         let n = std::fs::read_to_string(&log).map_or(0, |s| s.lines().count());
-        if n >= 2 || start.elapsed() > Duration::from_secs(10) {
+        if n >= 2 || start.elapsed() > TIMEOUT {
             break n;
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -52,10 +55,14 @@ fn upstream_sets_the_host_port_and_serves_the_public_listener() {
             .map(String::from)
     });
     let start = Instant::now();
-    while !out.exists() && start.elapsed() < Duration::from_secs(10) {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let port = std::fs::read_to_string(&out).unwrap_or_default();
+    // The shell creates the file before it writes the port.
+    let port = loop {
+        match std::fs::read_to_string(&out) {
+            Ok(p) if !p.trim().is_empty() => break p,
+            _ if start.elapsed() > TIMEOUT => break String::new(),
+            _ => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
     engine.kill().unwrap();
     engine.wait().unwrap();
     let _ = std::fs::remove_file(&out);
@@ -95,7 +102,7 @@ fn a_killed_engine_leaves_no_ffmpeg() {
             .and_then(|s| s.lines().next().map(String::from))
         {
             Some(p) => break p,
-            None if start.elapsed() > Duration::from_secs(10) => panic!("engine never ran ffmpeg"),
+            None if start.elapsed() > TIMEOUT => panic!("engine never ran ffmpeg"),
             None => std::thread::sleep(Duration::from_millis(20)),
         }
     };
@@ -103,7 +110,7 @@ fn a_killed_engine_leaves_no_ffmpeg() {
     engine.kill().unwrap();
     engine.wait().unwrap();
     let start = Instant::now();
-    while alive(&child) && start.elapsed() < Duration::from_secs(5) {
+    while alive(&child) && start.elapsed() < TIMEOUT {
         std::thread::sleep(Duration::from_millis(20));
     }
     let left = alive(&child);

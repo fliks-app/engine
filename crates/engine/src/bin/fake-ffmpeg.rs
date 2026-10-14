@@ -1,7 +1,16 @@
 //! Test stand-in for ffmpeg, ffprobe and fpcalc (never shipped: the release builds `--bin fliks-engine` only).
 //! The mode is the first dash-separated word of the exe name (see `main`); job modes tell their tool by argv.
 use std::io::Write;
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Duration;
+
+/// A file other processes read while it is written: complete or absent, never partial.
+fn put(path: &Path, bytes: impl AsRef<[u8]>) {
+    let name = path.file_name().unwrap().to_string_lossy();
+    let tmp = path.with_file_name(format!(".tmp-{name}"));
+    std::fs::write(&tmp, bytes).unwrap();
+    std::fs::rename(tmp, path).unwrap();
+}
 
 fn hang() -> ! {
     // A hung ffmpeg ignores the polite stop; stdin is never read either.
@@ -9,6 +18,8 @@ fn hang() -> ! {
     unsafe {
         libc::signal(libc::SIGTERM, libc::SIG_IGN);
     }
+    // Tells a test the handler is in place.
+    eprintln!("ready");
     loop {
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -56,7 +67,6 @@ fn sprite(mode: &str, args: &[String]) {
     match (mode, rows) {
         ("hangsprite", None) => hang(),
         ("failsprite", None) => std::process::exit(1),
-        ("slowsprite", None) => std::thread::sleep(Duration::from_millis(1000)),
         _ => std::thread::sleep(Duration::from_millis(50)),
     }
     let (w, h) = rows.map_or((240u16, 135u16), |r| (2400, 135 * r));
@@ -65,7 +75,7 @@ fn sprite(mode: &str, args: &[String]) {
     jpg.extend(w.to_be_bytes());
     jpg.extend([0x03; 10]);
     jpg.extend([0xFF, 0xD9]);
-    std::fs::write(args.last().unwrap(), jpg).unwrap();
+    put(Path::new(args.last().unwrap()), jpg);
 }
 
 const ASS: &str = include_str!("../../../../fixtures/jobs/subtitles/served.ass");
@@ -144,7 +154,7 @@ fn subs(mode: &str, args: &[String]) {
         if w[1] == "pipe:1" {
             let _ = std::io::stdout().write_all(body.as_bytes());
         } else {
-            std::fs::write(&w[1], body).unwrap();
+            put(Path::new(&w[1]), body);
         }
     }
 }
@@ -164,8 +174,9 @@ fn job(mode: &str, args: &[String]) {
     }
 }
 
-/// Live TV: the probe answers by URL, a run writes a sliding window of segments by URL (`fail`
-/// exits at once, `stall` writes one segment then goes silent, `dies` exits after three).
+/// Live TV: the probe answers by URL, a run writes segments by URL (`fail` exits at once, `stall`
+/// writes one segment then goes silent, `dies` writes three then exits once `die` exists in the
+/// run's directory).
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -218,40 +229,32 @@ fn live(args: &[String]) {
         0
     };
     if fmp4 {
-        std::fs::write(dir.join("init.mp4"), b"init").unwrap();
+        put(&dir.join("init.mp4"), b"init");
     }
-    let mut window: Vec<u32> = vec![];
+    let mut m3u8 = format!(
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{first}\n"
+    );
+    if fmp4 {
+        m3u8.push_str("#EXT-X-MAP:URI=\"init.mp4\"\n");
+    }
     for n in first.. {
         let written = n - first;
-        if input.contains("stall") && written == 1 || input.contains("dies") && written == 3 {
-            if input.contains("dies") {
-                eprintln!("fake ffmpeg: {input}: end of file");
-                std::process::exit(1)
-            }
+        if input.contains("stall") && written == 1 {
             hang()
         }
-        std::fs::write(
-            dir.join(format!("seg-{n:05}.{ext}")),
+        if input.contains("dies") && written == 3 {
+            while !dir.join("die").exists() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            eprintln!("fake ffmpeg: {input}: end of file");
+            std::process::exit(1)
+        }
+        put(
+            &dir.join(format!("seg-{n:05}.{ext}")),
             format!("segment {n}"),
-        )
-        .unwrap();
-        window.push(n);
-        if window.len() > 5 {
-            let _ = std::fs::remove_file(dir.join(format!("seg-{:05}.{ext}", window.remove(0))));
-        }
-        let mut m3u8 = format!(
-            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{}\n",
-            window[0]
         );
-        if fmp4 {
-            m3u8.push_str("#EXT-X-MAP:URI=\"init.mp4\"\n");
-        }
-        for w in &window {
-            m3u8.push_str(&format!("#EXTINF:2.000000,\nseg-{w:05}.{ext}\n"));
-        }
-        // Atomic like ffmpeg's playlist: a reader never sees it half-written.
-        std::fs::write(dir.join("index.m3u8.tmp"), m3u8).unwrap();
-        std::fs::rename(dir.join("index.m3u8.tmp"), dir.join("index.m3u8")).unwrap();
+        m3u8.push_str(&format!("#EXTINF:2.000000,\nseg-{n:05}.{ext}\n"));
+        put(&dir.join("index.m3u8"), &m3u8);
         std::thread::sleep(Duration::from_millis(300));
     }
 }
@@ -261,11 +264,13 @@ fn main() {
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match stem.split('-').next().unwrap() {
-        // CPU for 4 s with no file and no stderr, then hangs like the real bug.
+        // CPU with no file and no stderr until `<exe>.rest` exists, then hangs like the real bug.
         "busy" => {
-            let t = Instant::now();
-            while t.elapsed() < Duration::from_secs(4) {
-                std::hint::black_box(0);
+            let rest = exe.with_extension("rest");
+            while !rest.exists() {
+                (0..100_000).for_each(|i| {
+                    std::hint::black_box(i);
+                });
             }
             hang()
         }
@@ -273,9 +278,7 @@ fn main() {
         "live" => live(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
-        m @ ("sprite" | "slowsprite" | "hangsprite" | "failsprite" | "flakysprite") => {
-            sprite(m, &args)
-        }
+        m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
         m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
         | "failsub" | "hangsub") => job(m, &args),
         _ => hang(),

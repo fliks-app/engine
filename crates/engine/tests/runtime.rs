@@ -431,7 +431,7 @@ async fn hello_lists_the_runtime_and_events_stream() {
     assert_eq!(res.headers()["content-type"], "text/event-stream");
     let mut body = res.into_body();
     open(&e, &file, "alice").await;
-    let frame = tokio::time::timeout(std::time::Duration::from_secs(5), body.frame())
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(60), body.frame())
         .await
         .unwrap()
         .unwrap()

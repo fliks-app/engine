@@ -433,13 +433,17 @@ impl Ctx {
             m.runs -= 1;
             m.paused_runs -= u32::from(paused.load(Relaxed));
         }
+        // Nothing outlives the unit: a finished one may leave a producer behind (a pipe's writer).
+        for p in &procs {
+            match verdict {
+                Ok(_) => p.kill().await,
+                Err(_) => p.stop().await,
+            };
+        }
         let reason = match verdict {
             Ok(out) => return Ok(out),
             Err(r) => r,
         };
-        for p in &procs {
-            p.stop().await;
-        }
         Err(if reason == CANCELLED {
             reason.into()
         } else {

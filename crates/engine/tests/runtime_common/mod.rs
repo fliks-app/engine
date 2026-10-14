@@ -173,14 +173,18 @@ pub fn ffmpeg() -> String {
     std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into())
 }
 
-pub fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!(
+fn unique_dir(base: &Path, tag: &str) -> PathBuf {
+    let d = base.join(format!(
         "fliks-rt-{tag}-{}-{}",
         std::process::id(),
         fliks_engine::random_hex(4)
     ));
     std::fs::create_dir_all(&d).unwrap();
     d
+}
+
+pub fn temp_dir(tag: &str) -> PathBuf {
+    unique_dir(&std::env::temp_dir(), tag)
 }
 
 /// An engine on its own cache root, configured with the stub as host and `lifetime`.
@@ -372,9 +376,10 @@ impl Engine {
         r.json()
     }
 
-    /// `ffmpeg` processes whose argv names this engine's cache root, or its fake's own path.
+    /// Live `ffmpeg` processes (pid, `ps` state, command line) whose argv names this engine's cache
+    /// root, or its fake's own path.
     #[cfg(unix)]
-    pub fn ffmpeg_pids(&self) -> Vec<u32> {
+    pub fn ffmpeg_procs(&self) -> Vec<(u32, String, String)> {
         let root = self.root.to_string_lossy().into_owned();
         let fake = Some(&self.ffmpeg).filter(|f| f.contains("fliks-rt-fake"));
         // `ps` instead of /proc so the same check runs on macOS.
@@ -384,14 +389,20 @@ impl Engine {
             .expect("ps");
         String::from_utf8_lossy(&out.stdout)
             .lines()
-            .filter(|l| l.contains(&root) || fake.is_some_and(|f| l.contains(f.as_str())))
             .filter_map(|l| {
                 let mut f = l.split_whitespace();
-                let pid = f.next()?.parse().ok()?;
+                let (pid, stat) = (f.next()?.parse().ok()?, f.next()?);
+                let cmd = f.collect::<Vec<_>>().join(" ");
                 // A zombie waiting for its reaper is gone already.
-                (!f.next()?.starts_with('Z')).then_some(pid)
+                let ours = cmd.contains(&root) || fake.is_some_and(|x| cmd.contains(x.as_str()));
+                (ours && !stat.starts_with('Z')).then(|| (pid, stat.to_string(), cmd))
             })
             .collect()
+    }
+
+    #[cfg(unix)]
+    pub fn ffmpeg_pids(&self) -> Vec<u32> {
+        self.ffmpeg_procs().into_iter().map(|p| p.0).collect()
     }
 
     /// Live processes running this engine's ffmpeg exe (the tests give each engine its own name).
@@ -523,7 +534,7 @@ pub fn ts_two_aac_clip(change: bool) -> PathBuf {
         return a;
     }
     let b = part("two-aac-b.ts", 32000, 1);
-    let list = a.with_file_name("two-aac.txt");
+    let list = temp_dir("concat").join("two-aac.txt");
     std::fs::write(
         &list,
         format!("file '{}'\nfile '{}'\n", a.display(), b.display()),
@@ -563,8 +574,7 @@ pub fn adts_changes(file: &Path, index: u32) -> bool {
 
 /// 10 s H.264 mkv with two embedded text tracks: SRT (stream 2) and ASS (stream 3, `served.ass`).
 pub fn subs_clip() -> PathBuf {
-    let dir = std::env::temp_dir().join("fliks-engine-e2e-media");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("subs");
     std::fs::write(
         dir.join("subs.srt"),
         "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i>\nworld\n",
@@ -643,24 +653,52 @@ pub fn e2e() -> bool {
     std::env::var_os("ENGINE_E2E").is_some()
 }
 
-/// A copy of the `fake-ffmpeg` test binary under a name of its own: the mode is in it, and each
-/// engine's processes can be told apart.
+/// The `fake-ffmpeg` test binary under a name of its own: the mode is in it, and each engine's
+/// processes can be told apart. A hard link, never a write: executing a file another thread just
+/// wrote races a concurrent fork holding its descriptor (ETXTBSY), and a fresh copy gets scanned.
 pub fn fake(mode: &str) -> String {
-    let p = temp_dir("fake").join(format!(
+    let dir = unique_dir(Path::new(env!("CARGO_TARGET_TMPDIR")), "fake");
+    let p = dir.join(format!(
         "{mode}-{}{}",
         fliks_engine::random_hex(4),
         std::env::consts::EXE_SUFFIX
     ));
-    std::fs::copy(env!("CARGO_BIN_EXE_fake-ffmpeg"), &p).unwrap();
+    std::fs::hard_link(env!("CARGO_BIN_EXE_fake-ffmpeg"), &p).unwrap();
     p.to_string_lossy().into_owned()
 }
 
-pub async fn until(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
-    for _ in 0..secs * 20 {
-        if ok() {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+/// Polls `ok` until it holds, panicking after `secs`: a deadline, not a delay.
+pub async fn until_async<F, Fut>(what: &str, secs: u64, mut ok: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    while !ok().await {
+        assert!(std::time::Instant::now() < end, "timeout: {what}");
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("timeout: {what}");
+}
+
+pub async fn until(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
+    until_async(what, secs, || std::future::ready(ok())).await
+}
+
+/// The next event satisfying `want`, within `secs`.
+pub async fn event(
+    rx: &mut tokio::sync::broadcast::Receiver<fliks_engine_core::api::EngineEvent>,
+    secs: u64,
+    mut want: impl FnMut(&fliks_engine_core::api::EngineEvent) -> bool,
+) -> fliks_engine_core::api::EngineEvent {
+    tokio::time::timeout(std::time::Duration::from_secs(secs), async {
+        loop {
+            match rx.recv().await {
+                Ok(e) if want(&e) => return e,
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(e) => panic!("events closed: {e}"),
+            }
+        }
+    })
+    .await
+    .expect("event")
 }
