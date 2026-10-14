@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
 
+# The container toolkit mounts libnvidia-opencl.so on NVENC hosts but not its ICD entry (harmless elsewhere).
+RUN mkdir -p /etc/OpenCL/vendors && echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd
+
 # group=root + g=u: writable by an arbitrary uid with gid 0 (`--user <uid> --group-add 0`); mount a volume to keep it.
 ENV FLIKS_TRANSCODE_DIR=/transcode
 RUN mkdir -p /transcode && chgrp 0 /transcode && chmod g=u /transcode
