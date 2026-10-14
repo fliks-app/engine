@@ -2,8 +2,32 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use fliks_engine::hw::{Hw, Snapshot};
+use fliks_engine_core::api::{HwAccel, Platform};
+use fliks_engine_core::hw::Detected;
 use http_body_util::BodyExt;
+use std::sync::Arc;
 use tower::ServiceExt;
+
+/// A detected CPU-only host, the same caps as the golden `cpu` decision vectors.
+fn cpu_host() -> Arc<Hw> {
+    Hw::fixed(Snapshot {
+        detected: Detected {
+            hw_accel: HwAccel::None,
+            platform: Platform::Linux,
+            libfdk_aac: false,
+            vaapi_writes_hdr_metadata: false,
+            probes: vec![],
+            encoders: vec![],
+            decoders: vec![],
+            disabled_encoders: vec![],
+            disabled_decoders: vec![],
+        },
+        gpus: vec![],
+        pause_capability: "none".into(),
+        render_node: "/dev/dri/renderD128".into(),
+    })
+}
 
 async fn call(
     method: &str,
@@ -18,7 +42,7 @@ async fn call(
     if let Some(t) = token {
         req = req.header("authorization", format!("Bearer {t}"));
     }
-    let res = fliks_engine::app("secret".into())
+    let res = fliks_engine::app("secret".into(), cpu_host())
         .oneshot(req.body(Body::from(body.to_owned())).unwrap())
         .await
         .unwrap();
@@ -50,7 +74,7 @@ async fn hello_ok() {
 #[tokio::test]
 async fn config_revision_rule() {
     // One router per call is stateless, so drive a single router through several requests.
-    let app = fliks_engine::app("secret".into());
+    let app = fliks_engine::app("secret".into(), cpu_host());
     let put = |rev: u32| {
         Request::builder()
             .method("PUT")
@@ -94,7 +118,7 @@ async fn config_revision_rule() {
 
 #[tokio::test]
 async fn decide_needs_config_then_matches_the_golden_vector() {
-    let app = fliks_engine::app("secret".into());
+    let app = fliks_engine::app("secret".into(), cpu_host());
     let send = |method: &str, uri: &str, body: String| {
         let req = Request::builder()
             .method(method)
@@ -120,7 +144,7 @@ async fn decide_needs_config_then_matches_the_golden_vector() {
     );
     let fixture: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    // No hostCaps: the engine's own (stub) capabilities decide, the same as the cpu vector.
+    // No hostCaps: the engine's detected capabilities decide, the same as the cpu vector.
     let body = serde_json::json!({ "request": fixture["input"] }).to_string();
 
     assert_eq!(

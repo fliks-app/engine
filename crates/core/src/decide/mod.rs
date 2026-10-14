@@ -2,7 +2,7 @@
 //! host's `StreamBuilderService.evaluate()`. Spec: `docs/spec/decide.md`.
 mod audio;
 mod caps;
-mod codec;
+pub(crate) mod codec;
 mod direct_play;
 mod dolby_vision;
 mod estimate;

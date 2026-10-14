@@ -26,7 +26,11 @@ async fn main() -> std::process::ExitCode {
         .expect("bind");
     let addr = listener.local_addr().unwrap();
     println!("FLIKS_ENGINE_LISTENING {addr}");
-    let server = axum::serve(listener, fliks_engine::app(token.clone()));
+    let hw = fliks_engine::hw::Hw::new(fliks_engine::hw::ffmpeg_detector(
+        fliks_engine::hw::ffmpeg_path(),
+    ));
+    hw.start();
+    let server = axum::serve(listener, fliks_engine::app(token.clone(), hw));
     if cli.supervise {
         tokio::spawn(async move { server.await });
         let code = fliks_engine::supervise::run(&cli.cmd, &format!("http://{addr}"), &token).await;

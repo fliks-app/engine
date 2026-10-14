@@ -288,7 +288,7 @@ Context: `hwAccel = hostCaps.hwAccel`, `crop = needsCrop` (the raw `source.crop`
 
 ## 11. HostCaps (as in fixtures)
 
-`{ hwAccel: vaapi|nvenc|qsv|amf|videotoolbox|none, platform: linux|darwin|win32, libfdkAac, vaapiWritesHdrMetadata, probes: [names that passed], disabledEncoders: [ids], disabledDecoders: [ids] }`. Unlisted probes read false (fail-closed). Maps to `Capabilities` of the engine; `[assumed]` the engine derives `platform`/`probes` from its boot probes.
+`{ hwAccel: vaapi|nvenc|qsv|amf|videotoolbox|none, platform: linux|darwin|win32, libfdkAac, vaapiWritesHdrMetadata, probes: [names that passed], disabledEncoders: [ids], disabledDecoders: [ids] }`. Unlisted probes read false (fail-closed). The engine's detected snapshot supplies it (`hw.md`).
 
 | Probe name | TS function |
 |---|---|

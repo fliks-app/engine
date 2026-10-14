@@ -1,18 +1,23 @@
 //! Control plane of fliks-engine (`/v1/*`, bearer auth).
+pub mod hw;
 pub mod supervise;
 
 use axum::{
     Json, Router,
     extract::{Request, State},
-    http::{StatusCode, header::AUTHORIZATION},
+    http::{
+        HeaderValue, StatusCode,
+        header::{AUTHORIZATION, RETRY_AFTER},
+    },
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use fliks_engine_core::api::{
     Capabilities, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest, Hello,
-    HostCaps, MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
+    MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
 };
+use fliks_engine_core::hw::selected_render_node;
 use std::sync::{Arc, Mutex};
 use utoipa::OpenApi;
 
@@ -21,6 +26,7 @@ pub struct AppState {
     instance_id: String,
     /// `None` until the host's first `PUT /v1/config`.
     config: Mutex<Option<EngineConfig>>,
+    hw: Arc<hw::Hw>,
 }
 
 pub fn random_hex(bytes: usize) -> String {
@@ -57,11 +63,12 @@ impl utoipa::Modify for Bearer {
     }
 }
 
-pub fn app(token: String) -> Router {
+pub fn app(token: String, hw: Arc<hw::Hw>) -> Router {
     let state = Arc::new(AppState {
         token,
         instance_id: random_hex(8),
         config: Mutex::new(None),
+        hw,
     });
     Router::new()
         .route("/v1/hello", get(hello))
@@ -102,27 +109,30 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     Json(Hello {
         engine_version: env!("CARGO_PKG_VERSION").into(),
         protocol_version: PROTOCOL_VERSION,
-        features: vec!["decide".into(), "estimate-sizes".into()],
+        features: vec![
+            "decide".into(),
+            "estimate-sizes".into(),
+            "capabilities".into(),
+        ],
         instance_id: s.instance_id.clone(),
     })
 }
 
-#[utoipa::path(get, path = "/v1/capabilities", responses((status = 200, body = Capabilities)))]
-async fn capabilities() -> Json<Capabilities> {
-    Json(stub_capabilities())
+/// Detection runs in the background from boot: until the first run ends the host is told to retry.
+fn detecting() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(RETRY_AFTER, HeaderValue::from_static("1"))],
+    )
 }
 
-fn stub_capabilities() -> Capabilities {
-    // Real detection lands in M2.
-    Capabilities {
-        hw_accel: "none".into(),
-        encoders: vec![],
-        decoders: vec![],
-        tonemap_algos: vec![],
-        gpus: vec![],
-        default_gpu: None,
-        platform: std::env::consts::OS.into(),
-        pause_capability: "none".into(),
+#[utoipa::path(get, path = "/v1/capabilities", responses(
+    (status = 200, body = Capabilities),
+    (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
+async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
+    match s.hw.snapshot() {
+        Some(snap) => Json(snap.capabilities()).into_response(),
+        None => detecting().into_response(),
     }
 }
 
@@ -142,29 +152,28 @@ async fn put_config(
         return Err(StatusCode::CONFLICT);
     }
     *cur = Some(new.clone());
+    s.hw.set_render_node(selected_render_node(&new.streaming.gpu_render_node));
     Ok(Json(new))
 }
 
 #[utoipa::path(post, path = "/v1/decide", request_body = DecideBody,
-    responses((status = 200, body = Decision), (status = 400, description = "no config set yet")))]
-async fn decide(
-    State(s): State<Arc<AppState>>,
-    Json(body): Json<DecideBody>,
-) -> Result<Json<Decision>, StatusCode> {
-    let config = s
-        .config
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let caps = body
-        .host_caps
-        .unwrap_or_else(|| HostCaps::from(&stub_capabilities()));
-    Ok(Json(fliks_engine_core::decide::decide(
+    responses((status = 200, body = Decision), (status = 400, description = "no config set yet"),
+    (status = 503, description = "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
+async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) -> Response {
+    let Some(config) = s.config.lock().unwrap().clone() else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let caps = match (body.host_caps, s.hw.snapshot()) {
+        (Some(c), _) => c,
+        (None, Some(snap)) => snap.host_caps(),
+        (None, None) => return detecting().into_response(),
+    };
+    Json(fliks_engine_core::decide::decide(
         &body.request,
         &caps,
         &config.streaming,
-    )))
+    ))
+    .into_response()
 }
 
 #[utoipa::path(post, path = "/v1/estimate-sizes", request_body = EstimateSizesRequest,
