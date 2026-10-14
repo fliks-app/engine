@@ -1,0 +1,72 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 104800000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 53200000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 27400000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 14100000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 7850000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 3700000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 1500000000,
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "aac",
+          "language": "eng",
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        },
+        {
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": 15,
+          "language": "fre",
+          "startTimeSeconds": 0,
+          "streamIndex": 2
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService — picked audio track pads a multi-audio remux track that ends early, its own rendition carrying segments past it size 1500000000"
+}

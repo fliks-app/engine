@@ -1,0 +1,101 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 3191400000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 2786400000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1436400000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 761400000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 423900000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 221400000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "opus",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 5000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 4600000,
+          "codec": "av1",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 1080,
+          "level": 8,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "web-chrome av1-10bit-mkv cpu auto size 0"
+}

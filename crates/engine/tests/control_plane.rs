@@ -91,3 +91,68 @@ async fn config_revision_rule() {
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["revision"], 2);
 }
+
+#[tokio::test]
+async fn decide_needs_config_then_matches_the_golden_vector() {
+    let app = fliks_engine::app("secret".into());
+    let send = |method: &str, uri: &str, body: String| {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer secret")
+            .body(Body::from(body))
+            .unwrap();
+        let app = app.clone();
+        async move {
+            let res = app.oneshot(req).await.unwrap();
+            let status = res.status();
+            let bytes = res.into_body().collect().await.unwrap().to_bytes();
+            (
+                status,
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default(),
+            )
+        }
+    };
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/decide/android-tv-h264-sdr-mkv-cpu-720p.json"
+    );
+    let fixture: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    // No hostCaps: the engine's own (stub) capabilities decide, the same as the cpu vector.
+    let body = serde_json::json!({ "request": fixture["input"] }).to_string();
+
+    assert_eq!(
+        send("POST", "/v1/decide", body.clone()).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let put = serde_json::json!({ "revision": 1, "streaming": fixture["config"] }).to_string();
+    assert_eq!(send("PUT", "/v1/config", put).await.0, StatusCode::OK);
+    let (status, got) = send("POST", "/v1/decide", body).await;
+    assert_eq!(status, StatusCode::OK);
+    let want = &fixture["expected"];
+    assert_eq!(
+        got["response"]["playMethod"],
+        want["response"]["playMethod"]
+    );
+    assert_eq!(
+        got["response"]["transcodeReasons"],
+        want["response"]["transcodeReasons"]
+    );
+    assert_eq!(got["videoVariant"], want["videoVariant"]);
+}
+
+#[tokio::test]
+async fn estimate_sizes_lists_the_ladder() {
+    let body = r#"{"info":{"video":[{"streamIndex":0,"codec":"h264","width":1920,"height":1080}],
+        "audio":[],"subtitles":[],"durationSeconds":100},"fileSize":0}"#;
+    assert_eq!(
+        call("POST", "/v1/estimate-sizes", None, body).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (s, v) = call("POST", "/v1/estimate-sizes", Some("secret"), body).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v[0]["key"], "1080p");
+    assert_eq!(v[0]["estimatedSize"].as_f64(), Some(100_000_000.0));
+}

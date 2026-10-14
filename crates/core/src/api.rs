@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
+mod decide;
+pub use decide::*;
+
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 1;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;

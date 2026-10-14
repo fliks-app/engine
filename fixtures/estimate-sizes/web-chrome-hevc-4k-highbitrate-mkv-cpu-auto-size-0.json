@@ -1,0 +1,108 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 7138800000,
+      "key": "2160p",
+      "label": "2160p"
+    },
+    {
+      "estimatedSize": 5788800000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 2959200000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1544400000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 847800000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 510300000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 307800000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 1509000,
+          "channelLayout": "5.1(side)",
+          "channels": 6,
+          "codec": "dts",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "profile": "DTS-HD MA",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 82000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 10,
+          "bitRate": 78000000,
+          "codec": "hevc",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 2160,
+          "level": 153,
+          "pixelFormat": "yuv420p10le",
+          "profile": "Main 10",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 3840
+        }
+      ]
+    }
+  },
+  "name": "web-chrome hevc-4k-highbitrate-mkv cpu auto size 0"
+}

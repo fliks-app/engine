@@ -75,6 +75,68 @@
         }
       }
     },
+    "/v1/decide": {
+      "post": {
+        "tags": [],
+        "operationId": "decide",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no config set yet"
+          }
+        }
+      }
+    },
+    "/v1/estimate-sizes": {
+      "post": {
+        "tags": [],
+        "operationId": "estimate_sizes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateSizesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QualityEstimate"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/hello": {
       "get": {
         "tags": [],
@@ -96,6 +158,85 @@
   },
   "components": {
     "schemas": {
+      "AudioCodec": {
+        "type": "string",
+        "enum": [
+          "aac",
+          "ac3",
+          "eac3",
+          "opus"
+        ]
+      },
+      "AudioPlan": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "codec",
+              "mode"
+            ],
+            "properties": {
+              "bitrate_bps": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "channels": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "codec": {
+                "type": "string",
+                "description": "Source codec, lowercased, whatever it is."
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "copy"
+                ]
+              },
+              "profile": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "codec",
+              "channels",
+              "mode"
+            ],
+            "properties": {
+              "channels": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "codec": {
+                "$ref": "#/components/schemas/AudioCodec"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "transcode"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One audio output's decision: a verbatim copy of the source or the encode target."
+      },
       "AudioStreamInfo": {
         "type": "object",
         "required": [
@@ -197,12 +338,106 @@
           }
         }
       },
+      "AudioTrackPlan": {
+        "type": "object",
+        "required": [
+          "index",
+          "language",
+          "codec",
+          "copy",
+          "outputCodec",
+          "bitrateBps",
+          "reasonFlags"
+        ],
+        "properties": {
+          "bitrateBps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "channels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "codec": {
+            "type": "string",
+            "description": "Source codec, lowercased."
+          },
+          "copy": {
+            "type": "boolean"
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Position in `info.audio`.",
+            "minimum": 0
+          },
+          "language": {
+            "type": "string"
+          },
+          "outputChannels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "outputCodec": {
+            "type": "string"
+          },
+          "reasonFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Why the track is re-encoded (`Audio*` flags); empty when copied."
+          },
+          "sampleRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "AutoQualityMode": {
         "type": "string",
         "enum": [
           "directplay",
           "abr"
         ]
+      },
+      "BitrateHint": {
+        "type": "object",
+        "required": [
+          "videoBitrateBps",
+          "audioBitrateBps",
+          "totalBitrateBps"
+        ],
+        "properties": {
+          "audioBitrateBps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "totalBitrateBps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "videoBitrateBps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "Capabilities": {
         "type": "object",
@@ -330,6 +565,35 @@
           }
         }
       },
+      "CodecVariant": {
+        "type": "object",
+        "description": "Output video format: `hdr` is `null` for SDR.",
+        "required": [
+          "codec",
+          "bitDepth",
+          "hdr"
+        ],
+        "properties": {
+          "bitDepth": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "codec": {
+            "$ref": "#/components/schemas/VideoCodec"
+          },
+          "hdr": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HdrFormat"
+              }
+            ]
+          }
+        }
+      },
       "CropInfo": {
         "type": "object",
         "required": [
@@ -358,6 +622,170 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "DecideBody": {
+        "type": "object",
+        "description": "Body of `POST /v1/decide`. `hostCaps` is a debug/shadow override until the engine detects its own.",
+        "required": [
+          "request"
+        ],
+        "properties": {
+          "hostCaps": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HostCaps"
+              }
+            ]
+          },
+          "request": {
+            "$ref": "#/components/schemas/DecideRequest"
+          }
+        }
+      },
+      "DecideMedia": {
+        "type": "object",
+        "required": [
+          "mediaFileId",
+          "path",
+          "ext",
+          "contentType"
+        ],
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "description": "Host MIME type of the file, echoed for Direct Play."
+          },
+          "ext": {
+            "type": "string",
+            "description": "With the dot, e.g. `.mkv`."
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "DecideRequest": {
+        "type": "object",
+        "required": [
+          "media",
+          "info",
+          "device"
+        ],
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/DeviceProfile"
+          },
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          },
+          "media": {
+            "$ref": "#/components/schemas/DecideMedia"
+          },
+          "scan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceScan"
+              }
+            ]
+          },
+          "selection": {
+            "$ref": "#/components/schemas/DecideSelection"
+          }
+        }
+      },
+      "DecideSelection": {
+        "type": "object",
+        "properties": {
+          "audioStreamIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Position in `info.audio`, not a stream index.",
+            "default": null
+          },
+          "burnInIsText": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Text (not image) burn-in: only libass forces the pipeline off HW.",
+            "default": null
+          },
+          "burnInSubtitleId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Only tested for truthiness: id 0 means no burn-in.",
+            "default": null,
+            "minimum": 0
+          },
+          "requestedQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "tokenParam": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Host URL suffix (`?token=...`), copied verbatim into `playUrl`.",
+            "default": null
+          }
+        }
+      },
+      "Decision": {
+        "type": "object",
+        "required": [
+          "response",
+          "useHdrLadder",
+          "videoVariant",
+          "muxFlavour",
+          "audioPlans",
+          "transcodeTonemapping"
+        ],
+        "properties": {
+          "audioPlans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudioPlan"
+            },
+            "description": "Per-rendition audio output, in `info.audio` order."
+          },
+          "muxFlavour": {
+            "$ref": "#/components/schemas/MuxFlavour"
+          },
+          "response": {
+            "$ref": "#/components/schemas/PlaybackInfo"
+          },
+          "transcodeTonemapping": {
+            "type": "boolean",
+            "description": "Whether a transcoded rung runs a tone-map, whatever the play method."
+          },
+          "useHdrLadder": {
+            "type": "boolean"
+          },
+          "videoVariant": {
+            "$ref": "#/components/schemas/CodecVariant"
           }
         }
       },
@@ -632,6 +1060,22 @@
           }
         }
       },
+      "EstimateSizesRequest": {
+        "type": "object",
+        "description": "Body of `POST /v1/estimate-sizes`. `fileSize` is the source size in bytes, 0 when unknown.",
+        "required": [
+          "info"
+        ],
+        "properties": {
+          "fileSize": {
+            "type": "number",
+            "format": "double"
+          },
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          }
+        }
+      },
       "Gpu": {
         "type": "object",
         "required": [
@@ -704,6 +1148,72 @@
             "minimum": 0
           }
         }
+      },
+      "HostCaps": {
+        "type": "object",
+        "description": "What the decision reads of the host: detected backend and boot probe results.",
+        "properties": {
+          "disabledDecoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Decoder descriptor ids the boot probe blacklisted (`hevc_qsv_decode`, ...).",
+            "default": []
+          },
+          "disabledEncoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Encoder descriptor ids the boot probe blacklisted (`hevc_qsv_main10`, `libx265`, ...).",
+            "default": []
+          },
+          "hwAccel": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HwAccel"
+              }
+            ],
+            "default": "none"
+          },
+          "libfdkAac": {
+            "type": "boolean",
+            "description": "Not read by `decide` (it picks the AAC encoder binary in the argv builder).",
+            "default": false
+          },
+          "platform": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Platform"
+              }
+            ],
+            "default": "linux"
+          },
+          "probes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the probes that passed; unlisted ones read false. Known names: `tonemapOpencl`,\n`tonemapOpenclCrop`, `tonemapOpenclHdr10`, `qsvOpencl`, `qsvOpenclHdr10`, `vppQsv`,\n`vulkan`, `cuda`, `cudaHdr10`, `opencl`, `openclHdr10`, `amfOpencl`.",
+            "default": []
+          },
+          "vaapiWritesHdrMetadata": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "HwAccel": {
+        "type": "string",
+        "enum": [
+          "vaapi",
+          "nvenc",
+          "qsv",
+          "amf",
+          "videotoolbox",
+          "none"
+        ]
       },
       "Keyframe": {
         "type": "object",
@@ -810,6 +1320,312 @@
           }
         }
       },
+      "MuxFlavour": {
+        "type": "string",
+        "description": "Segment container of the HLS output.",
+        "enum": [
+          "ts",
+          "fmp4"
+        ]
+      },
+      "Platform": {
+        "type": "string",
+        "enum": [
+          "linux",
+          "darwin",
+          "win32"
+        ]
+      },
+      "PlayMethod": {
+        "type": "string",
+        "enum": [
+          "DirectPlay",
+          "DirectStream",
+          "Transcode"
+        ]
+      },
+      "PlaybackInfo": {
+        "type": "object",
+        "description": "The public playback-info answer (`PlaybackInfoResponse`).",
+        "required": [
+          "mediaFileId",
+          "playMethod",
+          "playUrl",
+          "contentType",
+          "transcodeReasons",
+          "videoCopyStream",
+          "audioCopyStream",
+          "outputVideoCodec",
+          "outputAudioCodec",
+          "audioPlan",
+          "outputContainer",
+          "quality",
+          "hwAccel",
+          "tonemapping",
+          "clientTonemap",
+          "dolbyVision",
+          "qualities",
+          "audioTracks",
+          "source"
+        ],
+        "properties": {
+          "audioCopyStream": {
+            "type": "boolean"
+          },
+          "audioPlan": {
+            "$ref": "#/components/schemas/AudioPlan"
+          },
+          "audioTracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudioTrackPlan"
+            }
+          },
+          "clientTonemap": {
+            "type": "boolean",
+            "description": "HDR copied to an SDR client that tone-maps it itself."
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "dolbyVision": {
+            "type": "boolean"
+          },
+          "hwAccel": {
+            "$ref": "#/components/schemas/HwAccel"
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "outputAudioCodec": {
+            "type": "string"
+          },
+          "outputContainer": {
+            "type": "string",
+            "description": "`hls` or the source container on Direct Play."
+          },
+          "outputVideoCodec": {
+            "type": "string"
+          },
+          "playMethod": {
+            "$ref": "#/components/schemas/PlayMethod"
+          },
+          "playUrl": {
+            "type": "string"
+          },
+          "qualities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityOption"
+            }
+          },
+          "quality": {
+            "type": "string",
+            "description": "`original`, or the pinned rung id, or `auto`."
+          },
+          "remuxMasterBandwidthBps": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "BANDWIDTH of the remux variant (DirectStream only).",
+            "minimum": 0
+          },
+          "source": {
+            "$ref": "#/components/schemas/PlaybackSource"
+          },
+          "tonemapping": {
+            "type": "boolean"
+          },
+          "transcodeBitrateByQuality": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "By rung id; absent on Direct Play.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BitrateHint"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "transcodeReasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TranscodeReason"
+            },
+            "description": "Empty on Direct Play."
+          },
+          "videoCopyStream": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlaybackSource": {
+        "type": "object",
+        "description": "The facts of the source the decision was made on.",
+        "required": [
+          "container",
+          "videoCodec",
+          "audioCodec"
+        ],
+        "properties": {
+          "audioBitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "audioChannelLayout": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audioChannels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "audioCodec": {
+            "type": "string"
+          },
+          "audioLanguage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audioSampleRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "colorPrimaries": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorSpace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorTransfer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "container": {
+            "type": "string"
+          },
+          "crop": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CropInfo",
+                "description": "Only when auto-crop is enabled."
+              }
+            ]
+          },
+          "durationSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "formatBitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "frameRate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hdrFormat": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HdrFormat"
+              }
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "videoBitDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "videoBitRate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "videoCodec": {
+            "type": "string"
+          },
+          "videoLevel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "videoProfile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "QsvPreset": {
         "type": "string",
         "enum": [
@@ -821,6 +1637,70 @@
           "slower",
           "veryslow"
         ]
+      },
+      "QualityEstimate": {
+        "type": "object",
+        "description": "One download quality; `estimatedSize` is in bytes.",
+        "required": [
+          "key",
+          "label",
+          "estimatedSize"
+        ],
+        "properties": {
+          "estimatedSize": {
+            "type": "number",
+            "format": "double"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "QualityOption": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "height",
+          "width",
+          "totalBitrateBps",
+          "isRemux"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "isRemux": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lowBandwidth": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "totalBitrateBps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "SourceScan": {
         "type": "object",
@@ -1035,6 +1915,29 @@
           "hable",
           "mobius",
           "reinhard"
+        ]
+      },
+      "TranscodeReason": {
+        "type": "object",
+        "required": [
+          "flag",
+          "message"
+        ],
+        "properties": {
+          "flag": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "VideoCodec": {
+        "type": "string",
+        "enum": [
+          "h264",
+          "hevc",
+          "av1"
         ]
       },
       "VideoStreamInfo": {

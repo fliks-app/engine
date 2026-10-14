@@ -7,10 +7,11 @@ use axum::{
     http::{StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
     response::Response,
-    routing::get,
+    routing::{get, post},
 };
 use fliks_engine_core::api::{
-    Capabilities, DeviceProfile, EngineConfig, Hello, MediaInfo, PROTOCOL_VERSION, SourceScan,
+    Capabilities, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest, Hello,
+    HostCaps, MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
 };
 use std::sync::{Arc, Mutex};
 use utoipa::OpenApi;
@@ -18,7 +19,8 @@ use utoipa::OpenApi;
 pub struct AppState {
     token: String,
     instance_id: String,
-    config: Mutex<EngineConfig>,
+    /// `None` until the host's first `PUT /v1/config`.
+    config: Mutex<Option<EngineConfig>>,
 }
 
 pub fn random_hex(bytes: usize) -> String {
@@ -30,7 +32,7 @@ pub fn random_hex(bytes: usize) -> String {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "fliks-engine", version = "1"),
-    paths(hello, capabilities, get_config, put_config),
+    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes),
     components(schemas(MediaInfo, DeviceProfile, SourceScan)),
     modifiers(&Bearer)
 )]
@@ -59,12 +61,14 @@ pub fn app(token: String) -> Router {
     let state = Arc::new(AppState {
         token,
         instance_id: random_hex(8),
-        config: Mutex::new(EngineConfig::default()),
+        config: Mutex::new(None),
     });
     Router::new()
         .route("/v1/hello", get(hello))
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/config", get(get_config).put(put_config))
+        .route("/v1/decide", post(decide))
+        .route("/v1/estimate-sizes", post(estimate_sizes))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state)
 }
@@ -98,15 +102,19 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     Json(Hello {
         engine_version: env!("CARGO_PKG_VERSION").into(),
         protocol_version: PROTOCOL_VERSION,
-        features: vec![],
+        features: vec!["decide".into(), "estimate-sizes".into()],
         instance_id: s.instance_id.clone(),
     })
 }
 
 #[utoipa::path(get, path = "/v1/capabilities", responses((status = 200, body = Capabilities)))]
 async fn capabilities() -> Json<Capabilities> {
+    Json(stub_capabilities())
+}
+
+fn stub_capabilities() -> Capabilities {
     // Real detection lands in M2.
-    Json(Capabilities {
+    Capabilities {
         hw_accel: "none".into(),
         encoders: vec![],
         decoders: vec![],
@@ -115,12 +123,12 @@ async fn capabilities() -> Json<Capabilities> {
         default_gpu: None,
         platform: std::env::consts::OS.into(),
         pause_capability: "none".into(),
-    })
+    }
 }
 
 #[utoipa::path(get, path = "/v1/config", responses((status = 200, body = EngineConfig)))]
 async fn get_config(State(s): State<Arc<AppState>>) -> Json<EngineConfig> {
-    Json(s.config.lock().unwrap().clone())
+    Json(s.config.lock().unwrap().clone().unwrap_or_default())
 }
 
 #[utoipa::path(put, path = "/v1/config", request_body = EngineConfig,
@@ -130,11 +138,39 @@ async fn put_config(
     Json(new): Json<EngineConfig>,
 ) -> Result<Json<EngineConfig>, StatusCode> {
     let mut cur = s.config.lock().unwrap();
-    if new.revision < cur.revision {
+    if new.revision < cur.as_ref().map_or(0, |c| c.revision) {
         return Err(StatusCode::CONFLICT);
     }
-    *cur = new.clone();
+    *cur = Some(new.clone());
     Ok(Json(new))
+}
+
+#[utoipa::path(post, path = "/v1/decide", request_body = DecideBody,
+    responses((status = 200, body = Decision), (status = 400, description = "no config set yet")))]
+async fn decide(
+    State(s): State<Arc<AppState>>,
+    Json(body): Json<DecideBody>,
+) -> Result<Json<Decision>, StatusCode> {
+    let config = s
+        .config
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let caps = body
+        .host_caps
+        .unwrap_or_else(|| HostCaps::from(&stub_capabilities()));
+    Ok(Json(fliks_engine_core::decide::decide(
+        &body.request,
+        &caps,
+        &config.streaming,
+    )))
+}
+
+#[utoipa::path(post, path = "/v1/estimate-sizes", request_body = EstimateSizesRequest,
+    responses((status = 200, body = Vec<QualityEstimate>)))]
+async fn estimate_sizes(Json(req): Json<EstimateSizesRequest>) -> Json<Vec<QualityEstimate>> {
+    Json(fliks_engine_core::decide::estimate_sizes(&req))
 }
 
 #[cfg(test)]

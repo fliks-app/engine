@@ -1,0 +1,71 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 114400000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 59600000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 33400000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 20500000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 14250000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 10500000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "channels": 8,
+          "codec": "truehd",
+          "language": "und",
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        },
+        {
+          "channels": 6,
+          "codec": "ac3",
+          "language": "und",
+          "startTimeSeconds": 0,
+          "streamIndex": 2
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService — one audio decision per track groups on a surround codec a track already carries, to copy it size 0"
+}

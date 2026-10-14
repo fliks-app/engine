@@ -1,0 +1,56 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 100000000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 50000000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 25000000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 12500000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 6250000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 2500000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "audio-decision: StreamBuilderService: no audio stream direct plays a no-audio source the client can otherwise direct play size 0"
+}

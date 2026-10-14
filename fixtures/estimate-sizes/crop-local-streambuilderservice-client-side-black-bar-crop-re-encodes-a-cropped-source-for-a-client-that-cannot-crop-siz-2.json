@@ -1,0 +1,76 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 251600000,
+      "key": "2160p",
+      "label": "2160p"
+    },
+    {
+      "estimatedSize": 101600000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 51600000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 26600000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 14100000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 7850000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 4100000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 1500000000,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "language": "und",
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitDepth": 8,
+          "bitRate": 20000000,
+          "codec": "hevc",
+          "crop": {
+            "height": 1648,
+            "width": 3840,
+            "x": 0,
+            "y": 256
+          },
+          "frameRate": "24",
+          "height": 2160,
+          "level": 150,
+          "profile": "Main",
+          "streamIndex": 0,
+          "width": 3840
+        }
+      ]
+    }
+  },
+  "name": "crop-local: StreamBuilderService — client-side black-bar crop re-encodes a cropped source for a client that cannot crop size 1500000000"
+}

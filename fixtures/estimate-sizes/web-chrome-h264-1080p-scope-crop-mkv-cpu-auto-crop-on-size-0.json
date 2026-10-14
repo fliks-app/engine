@@ -1,0 +1,107 @@
+{
+  "expected": [
+    {
+      "estimatedSize": 5529600000,
+      "key": "1080p",
+      "label": "1080p"
+    },
+    {
+      "estimatedSize": 2829600000,
+      "key": "720p",
+      "label": "720p"
+    },
+    {
+      "estimatedSize": 1479600000,
+      "key": "480p",
+      "label": "480p"
+    },
+    {
+      "estimatedSize": 804600000,
+      "key": "360p",
+      "label": "360p"
+    },
+    {
+      "estimatedSize": 467100000,
+      "key": "240p",
+      "label": "240p"
+    },
+    {
+      "estimatedSize": 264600000,
+      "key": "144p",
+      "label": "144p"
+    }
+  ],
+  "input": {
+    "fileSize": 0,
+    "info": {
+      "audio": [
+        {
+          "bitRate": 192000,
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 12000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 8,
+          "bitRate": 11000000,
+          "codec": "h264",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "crop": {
+            "height": 800,
+            "width": 1920,
+            "x": 0,
+            "y": 140
+          },
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 1080,
+          "level": 41,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    }
+  },
+  "name": "web-chrome h264-1080p-scope-crop-mkv cpu auto crop on size 0"
+}
