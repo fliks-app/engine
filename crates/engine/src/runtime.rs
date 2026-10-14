@@ -185,6 +185,7 @@ struct JobMut {
     last_progress_ms: i64,
     seen_lines: u64,
     tmp_bytes: u64,
+    cpu_ms: u64,
     reason: Option<&'static str>,
 }
 
@@ -1160,6 +1161,7 @@ impl Runtime {
                 last_progress_ms: now_ms(),
                 seen_lines: 0,
                 tmp_bytes: 0,
+                cpu_ms: 0,
                 reason: None,
             }),
             remux: r.remux,
@@ -1197,10 +1199,16 @@ impl Runtime {
     /// Kills a hung run or one past its natural end; it ends failed and the next request restarts it.
     async fn watchdog(&self, job: &Arc<Job>) {
         let (now, lines) = (now_ms(), job.proc.stderr_lines());
+        let cpu = job.proc.cpu_time_ms();
         let verdict = {
             let mut m = job.m.lock().unwrap();
             if m.seen_lines != lines {
                 m.seen_lines = lines;
+                m.last_progress_ms = now;
+            }
+            let cpu_delta_ms = cpu.map_or(0, |c| c.saturating_sub(m.cpu_ms));
+            m.cpu_ms = cpu.unwrap_or(m.cpu_ms);
+            if cpu_delta_ms > 0 {
                 m.last_progress_ms = now;
             }
             job_watch(
@@ -1209,6 +1217,7 @@ impl Runtime {
                     started_ms: m.started_ms,
                     last_progress_ms: m.last_progress_ms,
                     paused: m.paused,
+                    cpu_delta_ms,
                     natural_end_ms: job.natural_end_ms,
                 },
                 &self.lifetime(),

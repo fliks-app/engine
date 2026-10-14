@@ -199,6 +199,31 @@ async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_r
     assert!(e.ffmpeg_pids().is_empty());
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_run_burning_cpu_without_output_is_not_killed_until_it_goes_idle() {
+    // Busy for ~4 s (past the 1 s timeout) with no file and no stderr, then hangs like the real bug.
+    let busy = "end=$(( $(date +%s) + 4 ))\nwhile [ $(date +%s) -lt $end ]; do :; done\n";
+    let (e, file) = engine_of(
+        &fake(&format!("{busy}{HANG}")),
+        json!({ "jobStallTimeoutMs": 1000 }),
+    )
+    .await;
+    let sid = open(&e, &file, json!({})).await;
+    let s = e.rt.peek(&sid).unwrap();
+    e.rt.prewarm_remux(&s, 0.0);
+    until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
+    let job = e.rt.job(&s.key(JobKind::Remux)).unwrap();
+    tokio::time::sleep(Duration::from_millis(3000)).await;
+    assert!(
+        job.producing(),
+        "a working encode must survive the stall timeout"
+    );
+    // Once the CPU goes flat the usual stall kill applies.
+    until("the stall kill", 10, || !job.producing()).await;
+    gone(&e, "no process left").await;
+}
+
 #[tokio::test]
 async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
     let chatty = "while :; do echo tick >&2; sleep 0.2; done\n";
