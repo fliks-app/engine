@@ -188,7 +188,7 @@ struct Access {
     session: Option<Arc<Session>>,
 }
 
-/// Resolver check, then the sid rules: unknown 410, another owner's or file's 403.
+/// Unknown sid 410 before any resolver call, then another owner's or file's 403.
 async fn access(
     rt: &Arc<Runtime>,
     id: u32,
@@ -212,6 +212,9 @@ async fn access(
         stream_index,
     };
     let session = sid.map(|s| rt.session(s));
+    if let Some(None) = session {
+        return Err(expired(sid.map(String::as_str)));
+    }
     let resolved = match rt.resolver.resolve(host.as_ref(), ask).await {
         Ok(r) => r,
         Err(ResolveError::Denied) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
@@ -226,8 +229,7 @@ async fn access(
         },
     };
     let session = match session {
-        None => None,
-        Some(None) => return Err(expired(sid.map(String::as_str))),
+        None | Some(None) => None,
         Some(Some(s)) if s.owner != resolved.owner || s.media_file_id != id => {
             return Err(text(StatusCode::FORBIDDEN, "Forbidden"));
         }
