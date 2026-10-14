@@ -25,8 +25,8 @@ use axum::{
 };
 use fliks_engine_core::api::{
     CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
-    Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest, ResolveResponse,
-    SessionExpired, SourceScan,
+    Fingerprint, Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest,
+    ResolveResponse, SessionExpired, SourceScan,
 };
 use fliks_engine_core::hw::selected_render_node;
 use std::sync::Arc;
@@ -53,8 +53,8 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events),
-    components(schemas(MediaInfo, DeviceProfile, SourceScan, ResolveRequest, ResolveResponse,
-        SessionExpired)),
+    components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, ResolveRequest,
+        ResolveResponse, SessionExpired)),
     modifiers(&Bearer)
 )]
 pub struct ApiDoc;
