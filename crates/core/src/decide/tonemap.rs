@@ -1,8 +1,9 @@
 //! Tone-map path resolution and the effective encoder backend of a transcode.
-use super::codec::{codec_name, normalise_source_codec, resolve_encoder};
-use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo};
+use super::codec::{Encoder, codec_name, normalise_source_codec, resolve_descriptor};
+use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo, VideoCodec};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TonemapPath {
     Vaapi,
     Opencl,
@@ -86,12 +87,27 @@ pub struct EncodeContext<'a> {
     pub source_video_codec: &'a str,
     pub dv_no_base: bool,
     pub dv_apply_rpu: bool,
+    /// Gates the AMF zero-copy decoder (H.264 Hi10P exceeds its 8-bit max).
+    pub source_bit_depth: u32,
 }
 
-/// The backend the encoder will really run on, as ffmpeg-args would resolve it: QSV crop splice to
-/// VAAPI, CPU for a no-base DV tone-map without a bridge, and the registry's CPU fallback.
-pub fn effective_hw_accel(variant: &CodecVariant, c: &EncodeContext, caps: &HostCaps) -> HwAccel {
+/// The encode pipeline a frozen variant runs on this host, shared by the decision and the argv.
+/// [ts:backend/src/modules/streaming/transcoding/encode-pipeline.ts:147-259]
+pub struct Pipeline {
+    pub requested: HwAccel,
+    pub encoder: Option<&'static Encoder>,
+    /// The backend the encoder really runs on, after the registry's CPU fallback.
+    pub effective: HwAccel,
+    pub path: TonemapPath,
+    pub qsv_native: bool,
+    pub use_vaapi_tonemap: bool,
+    pub amf_opencl_available: bool,
+}
+
+/// QSV crop splice to VAAPI, CPU for a no-base DV tone-map without a bridge, registry CPU fallback.
+pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCaps) -> Pipeline {
     let hw = caps.hw_accel;
+    let codec = normalise_source_codec(c.source_video_codec);
     let path = resolve_tonemap_path(
         caps,
         c.algo,
@@ -101,18 +117,29 @@ pub fn effective_hw_accel(variant: &CodecVariant, c: &EncodeContext, caps: &Host
             dv_apply_rpu: c.tonemap && c.dv_apply_rpu,
         },
     );
-    let qsv_decoder_usable = hw == HwAccel::Qsv
-        && !c.burn_in
-        && normalise_source_codec(c.source_video_codec).is_some_and(|codec| {
-            let infix = if caps.platform == Platform::Win32 {
-                "_qsv_d3d11_decode"
-            } else {
-                "_qsv_decode"
-            };
+    let decoder_on = |suffix: &str| {
+        codec.is_some_and(|k| {
             !caps
                 .disabled_decoders
-                .contains(&format!("{}{infix}", codec_name(codec)))
+                .contains(&format!("{}{suffix}", codec_name(k)))
+        })
+    };
+    let qsv_decoder_usable = hw == HwAccel::Qsv
+        && !c.burn_in
+        && decoder_on(if caps.platform == Platform::Win32 {
+            "_qsv_d3d11_decode"
+        } else {
+            "_qsv_decode"
         });
+    let amf_max_depth = if codec == Some(VideoCodec::H264) {
+        8
+    } else {
+        10
+    };
+    let amf_opencl_available = hw == HwAccel::Amf
+        && caps.probe("amfOpencl")
+        && c.source_bit_depth <= amf_max_depth
+        && decoder_on("_d3d11va_native_decode");
     let vulkan_usable =
         path == TonemapPath::Vulkan && c.tonemap && !c.burn_in && hw == HwAccel::Vaapi;
     let dv_no_base_needs_cpu =
@@ -138,5 +165,20 @@ pub fn effective_hw_accel(variant: &CodecVariant, c: &EncodeContext, caps: &Host
     {
         requested = HwAccel::None;
     }
-    resolve_encoder(variant, requested, caps).unwrap_or(HwAccel::None)
+    let encoder = resolve_descriptor(variant, requested, caps);
+    let effective = encoder.map_or(HwAccel::None, |e| e.hw);
+    let falls_back_to_vaapi =
+        c.tonemap && path == TonemapPath::Qsv && !qsv_native_available && caps.has_vaapi();
+    Pipeline {
+        requested,
+        encoder,
+        effective,
+        path,
+        qsv_native: qsv_native_available && effective == HwAccel::Qsv,
+        use_vaapi_tonemap: !dv_no_base_needs_cpu
+            && c.tonemap
+            && effective != HwAccel::Amf
+            && (path == TonemapPath::Vaapi || falls_back_to_vaapi),
+        amf_opencl_available,
+    }
 }

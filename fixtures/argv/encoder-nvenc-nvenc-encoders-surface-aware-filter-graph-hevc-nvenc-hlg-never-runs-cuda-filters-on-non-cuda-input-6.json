@@ -1,0 +1,101 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "hevc_nvenc",
+      "-preset",
+      "p4",
+      "-profile:v",
+      "main10",
+      "-pix_fmt",
+      "p010le",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "hwdownload,format=p010le,crop=3840:1632:0:264,zscale=w=1920:h=-2:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,scale=1920:ceil(ih*1920/iw/2)*2",
+      "-forced-idr",
+      "1",
+      "-no-scenecut",
+      "1",
+      "-bf",
+      "0",
+      "-g",
+      "72",
+      "-keyint_min",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)",
+      "-color_primaries",
+      "bt2020",
+      "-color_trc",
+      "arib-std-b67",
+      "-colorspace",
+      "bt2020nc",
+      "-tag:v",
+      "hvc1"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "hevc_nvenc_hlg",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "crop=3840:1632:0:264,",
+        "cropStr": "crop=3840:1632:0:264",
+        "hwCropPrefix": "hwdownload,format=p010le,crop=3840:1632:0:264,hwupload=derive_device=vaapi,",
+        "tonemapCpu": "zscale=w=1920:h=-2:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,",
+        "tonemapCuda": "",
+        "tonemapOpencl": ",hwmap=derive_device=opencl:mode=read,tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=mobius:desat=0:apply_dovi=0",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": true,
+      "inputSurface": "vaapi",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": true,
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "nvenc: NVENC encoders — surface-aware filter graph hevc_nvenc_hlg never runs CUDA filters on non-cuda input",
+  "source": "nvenc"
+}

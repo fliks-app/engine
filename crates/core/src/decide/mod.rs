@@ -1,6 +1,6 @@
 //! The playback decision: DirectPlay, DirectStream (remux) or Transcode, a pure port of the
 //! host's `StreamBuilderService.evaluate()`. Spec: `docs/spec/decide.md`.
-mod audio;
+pub(crate) mod audio;
 mod caps;
 pub(crate) mod codec;
 mod direct_play;
@@ -9,7 +9,7 @@ mod estimate;
 mod qualities;
 mod source;
 pub(crate) mod timeline;
-mod tonemap;
+pub(crate) mod tonemap;
 
 use crate::api::{
     AudioPlan, AudioTrackPlan, AutoQualityMode, DecideRequest, Decision, HdrFormat, HostCaps,
@@ -27,7 +27,7 @@ use qualities::{build_quality_list, transcode_bitrate_by_quality};
 use timeline::{
     VideoCut, frame_seconds_of, last_video_segment_start, parse_source_fps, remux_grid_boundaries,
 };
-use tonemap::{EncodeContext, dv_no_base_hdr10_path_supported, effective_hw_accel};
+use tonemap::{EncodeContext, dv_no_base_hdr10_path_supported, resolve_pipeline};
 
 fn reason(flag: &str, message: impl Into<String>) -> TranscodeReason {
     TranscodeReason {
@@ -507,7 +507,7 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
 
     push_tonemap_reason(&mut reasons);
     let hints = transcode_bitrate_by_quality(&source, target_codec, quality_ladder, rung_audio_bps);
-    let effective_hw_accel = effective_hw_accel(
+    let effective_hw_accel = resolve_pipeline(
         &selected_variant,
         &EncodeContext {
             crop: needs_crop,
@@ -517,9 +517,11 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
             source_video_codec: &source.video_codec,
             dv_no_base: no_base,
             dv_apply_rpu: dolby_vision::applies_rpu(dv.profile, dv.compat_id),
+            source_bit_depth: 8,
         },
         caps,
-    );
+    )
+    .effective;
     wrap(
         PlaybackInfo {
             media_file_id: id,

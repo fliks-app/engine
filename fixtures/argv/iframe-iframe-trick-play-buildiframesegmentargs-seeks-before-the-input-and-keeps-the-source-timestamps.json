@@ -1,0 +1,56 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-ss",
+      "24.000",
+      "-copyts",
+      "-i",
+      "/media/file.mkv",
+      "-frames:v",
+      "1",
+      "-an",
+      "-sn",
+      "-dn",
+      "-vf",
+      "scale=1280:720",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-pix_fmt",
+      "yuv420p",
+      "-f",
+      "mpegts",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "pipe:1"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "height": 720,
+    "inputPath": "/media/file.mkv",
+    "seekSeconds": 24,
+    "width": 1280
+  },
+  "kind": "iframe",
+  "name": "iframe-trick-play: buildIFrameSegmentArgs seeks before the input and keeps the source timestamps",
+  "source": "iframe-trick-play"
+}

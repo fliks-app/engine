@@ -14,10 +14,10 @@ pub fn normalise_source_codec(name: &str) -> Option<VideoCodec> {
 }
 
 /// One compiled-in encoder. The bit depth follows `hdr` (10 with HDR, else 8).
-struct Encoder {
-    hw: HwAccel,
-    codec: VideoCodec,
-    hdr: Option<HdrFormat>,
+pub(crate) struct Encoder {
+    pub hw: HwAccel,
+    pub codec: VideoCodec,
+    pub hdr: Option<HdrFormat>,
 }
 
 const fn enc(hw: HwAccel, codec: VideoCodec, hdr: Option<HdrFormat>) -> Encoder {
@@ -73,7 +73,7 @@ const ENCODERS: &[Encoder] = &[
 
 impl Encoder {
     /// Descriptor id as the boot probe names it: `hevc_qsv_main10`, `av1_nvenc_hlg`, `libx265`.
-    fn id(&self) -> String {
+    pub fn id(&self) -> String {
         let hdr = match (self.codec, self.hdr) {
             (_, None) => "",
             (Hevc, Some(HdrFormat::Hdr10)) => "_main10",
@@ -132,14 +132,30 @@ fn hw_name(h: HwAccel) -> &'static str {
 
 /// First usable encoder for `variant` on `hw`, else the CPU one of the same variant.
 pub fn resolve_encoder(variant: &CodecVariant, hw: HwAccel, caps: &HostCaps) -> Option<HwAccel> {
+    resolve_descriptor(variant, hw, caps).map(|e| e.hw)
+}
+
+pub(crate) fn resolve_descriptor(
+    variant: &CodecVariant,
+    hw: HwAccel,
+    caps: &HostCaps,
+) -> Option<&'static Encoder> {
+    let depth = if variant.hdr.is_some() { 10 } else { 8 };
     let find = |on: HwAccel| {
         ENCODERS.iter().find(|e| {
-            e.hw == on && e.codec == variant.codec && e.hdr == variant.hdr && e.usable(caps)
+            e.hw == on
+                && e.codec == variant.codec
+                && e.hdr == variant.hdr
+                && variant.bit_depth == depth
+                && e.usable(caps)
         })
     };
-    find(hw)
-        .or_else(|| (hw != HwAccel::None).then(|| find(HwAccel::None)).flatten())
-        .map(|e| e.hw)
+    find(hw).or_else(|| (hw != HwAccel::None).then(|| find(HwAccel::None)).flatten())
+}
+
+/// Descriptor by probe id (`hevc_qsv_main10`, `libx264`).
+pub(crate) fn encoder_by_id(id: &str) -> Option<&'static Encoder> {
+    ENCODERS.iter().find(|e| e.id() == id)
 }
 
 /// Like `resolve_encoder` but a CPU fallback does not count on a HW host.

@@ -1,0 +1,87 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-c:v",
+      "av1_nvenc",
+      "-preset",
+      "p4",
+      "-b:v",
+      "8000000",
+      "-maxrate",
+      "8000000",
+      "-vf",
+      "hwdownload,format=nv12,crop=3840:1632:0:264,hwupload_cuda,scale_cuda=w=1920:h=-2:format=nv12",
+      "-forced-idr",
+      "1",
+      "-bf",
+      "0",
+      "-g",
+      "72",
+      "-keyint_min",
+      "72",
+      "-force_key_frames",
+      "expr:gte(t,0)"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "id": "av1_nvenc",
+    "input": {
+      "dvApplyRpu": false,
+      "early": false,
+      "filters": {
+        "burnInFilter": "",
+        "cpuCropPrefix": "crop=3840:1632:0:264,",
+        "cropStr": "crop=3840:1632:0:264",
+        "hwCropPrefix": "hwdownload,format=nv12,crop=3840:1632:0:264,hwupload=derive_device=vaapi,",
+        "tonemapCpu": "",
+        "tonemapCuda": "",
+        "tonemapOpencl": "",
+        "tonemapVaapi": "",
+        "tonemapVulkan": ""
+      },
+      "forceKeyframesExpr": "expr:gte(t,0)",
+      "hasBurnIn": false,
+      "hasCrop": true,
+      "inputSurface": "cuda",
+      "libx264BufsizeMb": "16M",
+      "nvencPreset": "p4",
+      "preset": "fast",
+      "qsv": {
+        "bufsize": 0,
+        "extra": [],
+        "rcInitOccupancy": 0
+      },
+      "seekSeconds": 0,
+      "target": {
+        "frameRate": 24,
+        "gopSize": 72,
+        "height": 1080,
+        "videoBitrateBps": 8000000,
+        "width": 1920
+      },
+      "tonemap": false,
+      "tonemapPath": "opencl",
+      "variant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    }
+  },
+  "kind": "encoder",
+  "name": "nvenc: NVENC encoders — surface-aware filter graph av1_nvenc (SDR) cuda decode + crop: crop round-trips through hwupload_cuda",
+  "source": "nvenc"
+}

@@ -1,0 +1,74 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "error": "hevc_videotoolbox_main10: tonemap requested but not supported"
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "videotoolbox",
+    "libfdkAac": false,
+    "platform": "darwin",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "audioPlan": {
+      "bitrateBps": 640000,
+      "channels": 6,
+      "codec": "eac3",
+      "mode": "copy"
+    },
+    "audioStreams": [
+      {
+        "channels": 6,
+        "language": "eng",
+        "streamIndex": 1
+      }
+    ],
+    "early": true,
+    "encoderPreset": "faster",
+    "hwAccel": "videotoolbox",
+    "inputPath": "/media/dv-p5-mp4.mp4",
+    "outputDir": "/cache/transcode/1/480p-hdr",
+    "profile": {
+      "audioBitrate": "96k",
+      "maxHeight": 480,
+      "maxWidth": 854,
+      "name": "480p-hdr",
+      "videoBitrate": "1400k"
+    },
+    "segmentDuration": 3,
+    "sourceBitDepth": 10,
+    "sourceColorRange": "tv",
+    "sourceDvBlSignalCompatId": 0,
+    "sourceDvProfile": 5,
+    "sourceEndSeconds": 5400,
+    "sourceFormatStart": 0,
+    "sourceFps": 23.976023976023978,
+    "sourceHeight": 2160,
+    "sourceStartPts": 0,
+    "sourceVideoBitrateBps": 24000000,
+    "sourceVideoCodec": "hevc",
+    "sourceWidth": 3840,
+    "startSegment": 7,
+    "tonemap": true,
+    "tonemapAlgo": "auto",
+    "tonemapCurve": "mobius",
+    "trustedStreamInfo": true,
+    "useTs": false,
+    "videoOnly": false,
+    "videoStreamIndex": 0,
+    "videoVariant": {
+      "bitDepth": 10,
+      "codec": "hevc",
+      "hdr": "HDR10"
+    }
+  },
+  "kind": "vod",
+  "name": "vod android-tv-dv-p5-mp4-vaapi-auto on videotoolbox seg 7 early",
+  "source": "synthetic"
+}

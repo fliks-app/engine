@@ -6,6 +6,7 @@
   - [spec/hw.md](spec/hw.md): host capability detection (backend choice, test encodes, probes, GPUs, pause), the source of `Capabilities` and `HostCaps`.
   - [spec/probe.md](spec/probe.md): media probing (`POST /v1/probe`): ffprobe/mkvmerge/cropdetect to `MediaInfo`, moviehash.
   - [spec/session.md](spec/session.md): `core::session`, the pure session runtime: keys, `cache/v1` profile hash, seek/quality-switch matrix, throttle, segment responses, lifetimes, cache eviction.
+  - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
 
 ## Tags
 
@@ -30,6 +31,10 @@
 - session: segment names accept `seg-<n>` with any number of digits (the host's regex allows 3 to 4); the production frontier is the in-memory `SegmentSet`, not `existsSync`.
 - session: `EngineConfig.lifetime` (`LifetimeConfig`) carries the durations of the host's `lifetime-constants.ts` (env vars are not read by the engine); zero keeps the default. `MAX_TOMBSTONES` trimming is not ported.
 - session fuzz (3 seeds, 168 000 inputs: 30 000 seek-matrix, 30 000 throttle ticks, 30 000 throttle decisions): 0 mismatches, no class promoted to a `fuzz-*` fixture.
+- args: inputs are typed (`VodArgs`, `RemuxArgs`, `LiveArgs`, `EncoderInput` with the wire enums); a value the TS would print as `undefined` (an audio transcode to `dts`, a fractional stream index) is rejected when the input is read. `null` reads as absent, where a TS destructuring default only replaces `undefined`; the harness never writes such a `null`.
+- args: the TS reads probes, platform, render node and `FLIKS_OPENCL_DEVICE` from process globals; the port takes them from `HostCaps` and `hw::Device`. The run's `hwAccel` wins over `HostCaps.hwAccel`, as in the TS where the option and the detected backend are separate values.
+- args: not ported: the builders' log lines, `remuxRunStart`/`remuxAudioGrid` (the session layer's, from the keyframe grid), and the stats labels of `resolveTonemapReport` (`path`, `curve`); `decide` and `args` share one `resolve_pipeline`.
+- args fuzz: the host harness first computed `expected` from the generated object, whose key order differs from the stored one, so `No encoder for variant {...}` messages differed in key order only; the harness now runs from the stored input (`fixtures/argv/fuzz-no-encoder-variant-json.json`).
 
 ## Open divergences
 
@@ -46,3 +51,5 @@
 - probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.
 - session: the 503/404/410 segment rule and the `Retry-After` value are inline in the host's controller (no function to call): hand-written tests, no golden vectors. The job-idle vectors run with the default durations (the host reads them from env at import).
 - session: pure `core::session` is not wired yet: the sessions, cache and serve layers of `crates/engine` (M3) call it.
+- args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.
+- args: argv parity is against the TS only; like hw, nvenc, amf/win32, qsv/win32 and videotoolbox argv were never run on those hosts here.

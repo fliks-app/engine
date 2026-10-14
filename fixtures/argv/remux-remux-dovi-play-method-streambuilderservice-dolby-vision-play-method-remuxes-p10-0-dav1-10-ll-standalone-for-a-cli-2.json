@@ -1,0 +1,111 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "0",
+      "-probesize",
+      "5000000",
+      "-noaccurate_seek",
+      "-seek_timestamp",
+      "1",
+      "-ss",
+      "21",
+      "-i",
+      "/m/in.mkv",
+      "-copyts",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "-ss",
+      "21",
+      "-map",
+      "0:0",
+      "-map",
+      "0:1",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "copy",
+      "-bsf:a",
+      "aac_adtstoasc",
+      "-tag:v",
+      "dav1",
+      "-movflags",
+      "+cmaf",
+      "-avoid_negative_ts",
+      "disabled",
+      "-hls_segment_options",
+      "movflags=+frag_discont:strict=unofficial",
+      "-f",
+      "hls",
+      "-hls_time",
+      "3",
+      "-hls_list_size",
+      "1",
+      "-start_number",
+      "7",
+      "-hls_segment_type",
+      "fmp4",
+      "-hls_fmp4_init_filename",
+      "init.mp4",
+      "-hls_flags",
+      "independent_segments+temp_file",
+      "-hls_segment_filename",
+      "/cache/remux/1/run-7/gop-%d.m4s",
+      "/cache/remux/1/run-7/index.m3u8"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "audioPlan": {
+      "bitrateBps": 128000,
+      "channels": 2,
+      "codec": "aac",
+      "mode": "copy"
+    },
+    "audioStreams": [
+      {
+        "channels": 2,
+        "language": "und",
+        "streamIndex": 1
+      }
+    ],
+    "dolbyVision": true,
+    "grid": null,
+    "hdr10Plus": false,
+    "inputPath": "/m/in.mkv",
+    "outputDir": "/cache/remux/1/run-7",
+    "run": {
+      "audioStartSeconds": 21,
+      "seekSeconds": 21,
+      "startNumber": 7
+    },
+    "segmentDuration": 3,
+    "sourceDvBlSignalCompatId": 0,
+    "sourceDvProfile": 10,
+    "sourceEndSeconds": 100,
+    "sourceVideoCodec": "av1",
+    "trustedStreamInfo": true,
+    "videoOnly": false,
+    "videoStreamIndex": 0
+  },
+  "kind": "remux",
+  "name": "remux dovi-play-method-streambuilderservice-dolby-vision-play-method-remuxes-p10-0-dav1-10-ll-standalone-for-a-client-that-lis seg 7",
+  "source": "synthetic"
+}

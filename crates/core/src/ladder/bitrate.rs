@@ -1,7 +1,7 @@
 use super::{Rung, resolution::profile_resolution};
 
 /// Relative bits to reach a given quality, H.264 = 1.
-fn codec_factor(codec: &str) -> f64 {
+pub(crate) fn codec_factor(codec: &str) -> f64 {
     match codec.to_lowercase().as_str() {
         "hevc" | "h265" | "hvc1" | "hev1" => 0.6,
         "vp9" => 0.7,
@@ -39,7 +39,7 @@ pub struct RungBitrateContext<'a> {
 }
 
 /// HEVC level table from the luma rate: Main-tier `MaxBR`. NaN falls to the top level.
-fn hevc_main_tier_cap_bps(luma_per_sec: f64) -> f64 {
+pub(crate) fn hevc_main_tier_cap_bps(luma_per_sec: f64) -> f64 {
     match luma_per_sec {
         x if x <= 33_177_600.0 => 10e6,
         x if x <= 66_846_720.0 => 12e6,
