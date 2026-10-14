@@ -14,15 +14,18 @@ use crate::hls::{
     AudioStreamMeta, HdrPassThrough, MasterOptions, SubtitleKind, SubtitleRendition,
     copy_source_codec_string,
 };
-use crate::ladder::{HDR_LADDER, SDR_LADDER, resolve_source_video_bitrate_bps};
+use crate::ladder::{
+    HDR_LADDER, SDR_LADDER, profile_fits_source, resolve_source_video_bitrate_bps,
+};
 use crate::mp4::{SourceTimeline, source_timeline};
 
 /// What every request of a session reads back, decided once at open.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionPlan {
     pub kind: SessionKind,
-    /// Cache profile hash, absent on Direct Play (the instance suffix is the caller's).
-    pub profile_hash: Option<String>,
+    /// Cache profile hash (the instance suffix is the caller's); a Direct Play session keeps one
+    /// for a client that falls back to HLS, but does not report it.
+    pub profile_hash: String,
     pub use_ts: bool,
     /// More than one audio track: var_stream_map, one EXT-X-MEDIA rendition per track.
     pub multi_audio: bool,
@@ -84,7 +87,12 @@ pub fn plan(
         use_ts,
         audio_stream_count: info.audio.len() as u32,
         audio_plan: layout_audio(&d.response.audio_plan, caps),
-        audio_track_plans: Some(d.audio_plans.iter().map(|p| layout_audio(p, caps)).collect()),
+        audio_track_plans: Some(
+            d.audio_plans
+                .iter()
+                .map(|p| layout_audio(p, caps))
+                .collect(),
+        ),
         video_variant: Some(d.video_variant),
         timeline_origin: timeline.origin,
         timeline_format_start: Some(timeline.format_start),
@@ -99,8 +107,7 @@ pub fn plan(
     let ms = (streaming.segment_duration * 1000.0).round() as u32;
     SessionPlan {
         kind,
-        profile_hash: (kind != SessionKind::Directplay)
-            .then(|| profile_hash(&profile_from_layout(&layout, ms))),
+        profile_hash: profile_hash(&profile_from_layout(&layout, ms)),
         use_ts,
         multi_audio: info.audio.len() > 1,
         source_fps: parse_source_fps(v.and_then(|v| v.frame_rate.as_deref())),
@@ -129,6 +136,16 @@ pub fn rung_profile(quality: &str) -> Profile {
         video_bitrate: format!("{}", r.video_bps),
         audio_bitrate: format!("{}", r.audio_bps),
     }
+}
+
+/// The top rung of the ladder that fits the source (its last rung when none does).
+pub fn top_rung(w: u32, h: u32, hdr: bool) -> &'static str {
+    let ladder = if hdr { HDR_LADDER } else { SDR_LADDER };
+    ladder
+        .iter()
+        .find(|r| profile_fits_source(r, Some(w), Some(h)))
+        .unwrap_or(&ladder[ladder.len() - 1])
+        .name
 }
 
 pub fn is_valid_quality(q: &str) -> bool {
@@ -224,9 +241,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
                 .collect(),
         ),
         video_variant: Some(d.video_variant),
-        source_video_codec: v
-            .map(|v| v.codec.to_lowercase())
-            .filter(|c| !c.is_empty()),
+        source_video_codec: v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty()),
         source_bit_depth: Some(if hdr || dv_no_base { 10 } else { 8 }),
         source_width: v.and_then(|v| v.width),
         source_height: v.and_then(|v| v.height),
@@ -315,8 +330,8 @@ pub fn master_options(
         }),
         _ => None,
     };
-    let subtitles = (device.supports_hls_subtitles == Some(true)).then(|| {
-        match &req.subtitle_renditions {
+    let subtitles =
+        (device.supports_hls_subtitles == Some(true)).then(|| match &req.subtitle_renditions {
             Some(list) => list
                 .iter()
                 .map(|s| SubtitleRendition {
@@ -348,8 +363,7 @@ pub fn master_options(
                     forced: s.forced,
                 })
                 .collect(),
-        }
-    });
+        });
     let positive = |x: Option<u32>| x.filter(|b| *b > 0).map(f64::from);
     MasterOptions {
         prefix: q.prefix.into(),
@@ -383,9 +397,7 @@ pub fn master_options(
         source_frame_rate: plan.source_fps,
         subtitle_renditions: subtitles,
         source_video_bitrate_bps: source_video_bps(info),
-        source_video_codec: v
-            .map(|v| v.codec.to_lowercase())
-            .filter(|c| !c.is_empty()),
+        source_video_codec: v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty()),
         dedupes_audio_by_language: device.dedupes_audio_by_language == Some(true),
         supports_abr: device.supports_abr,
         remux_codecs: if q.include_remux {
@@ -419,6 +431,9 @@ mod tests {
         assert_eq!(rung_profile("nope").name, "2160p");
         assert!(is_valid_quality("remux") && is_valid_quality("eco-720p"));
         assert!(!is_valid_quality("iframe") && !is_valid_quality("audio"));
+        assert_eq!(top_rung(1920, 1080, false), "1080p");
+        assert_eq!(top_rung(1920, 1080, true), "1080p-hdr");
+        assert_eq!(top_rung(320, 180, false), "240p");
     }
 
     #[test]
@@ -426,8 +441,14 @@ mod tests {
         assert_eq!(seconds_to_segment(0.0, 3.0, Some(24.0)), 0);
         assert_eq!(seconds_to_segment(7.0, 3.0, Some(24.0)), 2);
         assert_eq!(seconds_to_segment(-1.0, 3.0, None), 0);
-        assert_eq!(play_path("/api/stream/1/master.m3u8", "s"), "/api/stream/1/master.m3u8?sid=s");
-        assert_eq!(play_path("/api/stream/1?token=t", "s"), "/api/stream/1?token=t&sid=s");
+        assert_eq!(
+            play_path("/api/stream/1/master.m3u8", "s"),
+            "/api/stream/1/master.m3u8?sid=s"
+        );
+        assert_eq!(
+            play_path("/api/stream/1?token=t", "s"),
+            "/api/stream/1?token=t&sid=s"
+        );
     }
 
     #[test]

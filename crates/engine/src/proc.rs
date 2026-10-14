@@ -240,9 +240,12 @@ mod tests {
 
     #[tokio::test]
     async fn stderr_ring_keeps_the_tail_and_exit_code() {
-        let p = Ffmpeg::spawn("sh", &sh("for i in $(seq 1 60); do echo line$i >&2; done; exit 3"))
-            .await
-            .unwrap();
+        let p = Ffmpeg::spawn(
+            "sh",
+            &sh("for i in $(seq 1 60); do echo line$i >&2; done; exit 3"),
+        )
+        .await
+        .unwrap();
         let e = p.wait().await;
         assert_eq!(e.code, Some(3));
         tokio::time::sleep(Duration::from_millis(50)).await;
