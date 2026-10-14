@@ -42,9 +42,11 @@ A job is one ffmpeg run of one session key: `<file>-u<owner>|anon-<profileHash>`
 ## 4. Seek and quality switch
 
 A video segment request runs the TS order [ts:ctl:2245-2545]:
-1. Job of the session key on this quality and the segment in its set (or on disk): serve.
-2. Another quality's rung directory holding a non-empty file: serve it (ABR switch back). [ts:ctl:2380-2395]
-3. Otherwise, with a job: `core::session::resolve_existing` (`exitCode`, `signal`, start segment, `qualityMatch`, set). `Serve`/`Wait` attach; `Respawn { kill, startSegment, purgeCache }` kills (awaited), purges the rung directory when asked, and starts at `startSegment ?? requested`. Without a job: start at the request's anchor. [ts:ts:498-588,743-860]
+0. A segment past the uniform grid's last one: 404 before anything runs [new] (the TS only guards the remux grid [ts:ctl:551-565]).
+1. Job of the session key on this quality and the segment in its set: serve.
+2. No job on this quality, but its rung directory holds a non-empty file: serve it without spawning (ABR switch back [ts:ctl:2380-2395]; also a resume after the job was reaped [new]: the TS respawns there).
+3. Otherwise, with a job on another rung: kill it (awaited) and start at the request's anchor (the TS inherits the killed run's start for a `seg-0` request too [ts:ts:757-772]; here an init already asks for its resume floor). With a job on this rung: `core::session::resolve_existing` (`exitCode`, `signal`, start segment, set). `Serve`/`Wait` attach; `Respawn { kill, startSegment, purgeCache }` kills (awaited), purges the rung directory when asked (a crashed run), and starts at `startSegment ?? job start`. Without a job: start at the anchor. [ts:ts:498-588,743-860]
+4. The wait follows a replacement on the same rung (a CPU fallback registers before the failed run's waiters wake).
 - Anchor: a segment anchors at itself; an init at the resume floor `max(job start, segment_of(position))`. [ts:ctl:428-512]
 - Early companion runs are not ported: seg-0 probes on a resume go through the matrix like any request.
 
@@ -59,7 +61,7 @@ A video segment request runs the TS order [ts:ctl:2245-2545]:
 
 Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET` and `HEAD`. Prefix in playlists: `/api/stream/<id>`; token suffix `?token=..&sid=..` from the request (`encodeURIComponent`). [ts:ctl:161-199]
 
-- Auth: the credential is the raw `Cookie` header, the `Authorization: Bearer` value and `?token=` (all present ones). `POST {hostUrl}/engine/resolve` (`Authorization: Bearer {hostToken}`) `{ mediaId, credential, purpose, subtitleId? }` -> `{ allow, path?, ownerId?, format?, ttlS? }`, cached per (SipHash of the credential, mediaId, purpose, subtitleId) for `ttlS` (60 s default). `allow: false` = 403. Host unreachable or no `hostUrl`: a cached entry still serves, else 503 + `Retry-After: 2`. [new] (plan section 7)
+- Auth: `credential` is one string as received: `?token=`, else the `Authorization` value (`Bearer <jwt>`), else the `Cookie` header [ts:../auth/strategies/jwt.strategy.ts:43-47] (the host parses all three; it reads the cookie first, the engine sends the explicit token first since it cannot tell an access cookie from others). `POST {hostUrl}/engine/resolve` (`Authorization: Bearer {hostToken}`) `{ mediaId, credential, purpose, subtitleId?, streamIndex? }` -> `{ allow, path?, ownerId?, format?, ttlS? }`, cached per (SipHash of the credential, mediaId, purpose, subtitleId, streamIndex) for `ttlS` (60 s default), denials too. `allow: false` = 403. A transport error, timeout (5 s) or non-2xx is never cached: an expired grant keeps serving, a live session of that file (by `sid`) keeps serving, else 503 + `Retry-After: 2`. [new] (plan section 7)
 - sid: unknown and not revivable = 410 `{ code: "session_expired", sid, message }` [ts:session-expired.exception.ts]; a session of another owner or file = 403. No sid: the owner's most recent session of the file. HLS routes without any session: 410 (sid `null`). [ts:router:30-120] [ts:ctl:500-508]
 - master `[ts:ctl:1402-1585]`: `core::hls::master_playlist` from the session (source size with crop, `remux=1`, audio layout and plans, `startQuality`, picked audio, HDR pass-through and `canEmitHdrLadder` = `resolve_encoder`, SDR variant, frame rate, I-frame grid when `supportsIFrameTrickPlay`); then the prewarm of section 3 for `startQuality`.
 - variant / audio / iframe playlists: `hls::variant_playlist`, `audio_playlist`, `iframe_index`; duration = `?duration=` else `info.durationSeconds`, 404 without one. Invalid quality = 400. [ts:ctl:2126-2242,1855-1906,1586-1622]
@@ -67,8 +69,8 @@ Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET`
 - Headers: playlists `application/vnd.apple.mpegurl`; segments `video/mp4` or `video/MP2T`; all of them `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`. [ts:ctl:238-246]
 - iframe segment: `core::args::iframe` at `input_seek_seconds(n * real_segment_seconds)`, stdout as `video/mp2t`, `Cache-Control: public, max-age=3600`; failure 503. [ts:ctl:1625-1680]
 - Direct play `:id` (`purpose: stream`, `download` with `?download=1` + `Content-Disposition: attachment`): RFC 7233 single range (`bytes=S-E`, `S-`, `-N`), 206/416, `Accept-Ranges: bytes`, `X-Content-Duration` from the session's info. Content type: the resolver's `format` when it is a MIME type, else by extension. [ts:ctl:2555-2641] [ts:byte-range.util.ts:16-50]
-- Sprites (`purpose: sprite`, `path` = the sprite directory): `sprite.json`/`sprite.jpg`, 404 when missing, `Cache-Control: public, max-age=86400`. [ts:ctl:1363-1395]
-- Subtitles (`purpose: subtitle`): external `:subId` (resolver `path` + `format`), embedded `embedded/:idx` (resolver `path` = the media file). WebVTT: `.vtt` verbatim (BOM, CRLF normalised), anything else through ffmpeg `-f webvtt`; embedded extracts are cached under `<root>/subtitles/v1/<file>/<idx>.vtt`. `X-TIMESTAMP-MAP=MPEGTS:<round(max(0,o)*90000)>,LOCAL:<hh:mm:ss.mmm of max(0,-o)>` after the `WEBVTT` line, `o` = `cue_offset_seconds` of the latest session of (file, owner), else 0. `/download` serves the original file (external) or the VTT (embedded) as an attachment; `/index.m3u8` is `hls::subtitle_playlist`. [ts:ctl:119-130,1682-1849]
+- Sprites (`purpose: sprite`, `path` = `sprite.jpg`, `sprite.json` its sibling, neither checked by the host): 404 when missing, `Cache-Control: public, max-age=86400`. [ts:ctl:1363-1395]
+- Subtitles (`purpose: subtitle`): external `:subId` (`subtitleId`; `path` = the file, `format` its extension), embedded `embedded/:idx` (`streamIndex`; `format: embedded`, `path` = the media file). WebVTT: `.vtt` verbatim (BOM, CRLF normalised), anything else through ffmpeg `-f webvtt`; embedded extracts are cached under `<root>/subtitles/v1/<file>/<idx>.vtt`. `X-TIMESTAMP-MAP=MPEGTS:<round(max(0,o)*90000)>,LOCAL:<hh:mm:ss.mmm of max(0,-o)>` after the `WEBVTT` line, `o` = `cue_offset_seconds` of the latest session of (file, owner), else 0. `/download` serves the original file (external) or the VTT (embedded) as an attachment; `/index.m3u8` is `hls::subtitle_playlist`. [ts:ctl:119-130,1682-1849]
 - CORS: `Access-Control-Allow-Origin: *` on every data-plane answer, as the host does for HLS.
 - Media paths go through `map_media_path` (identity until M9's `pathMappings`). Nothing assumes localhost: `hostUrl` is whatever the host registered.
 
@@ -78,6 +80,7 @@ Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET`
 
 ## 8. Deviations
 
-- No early companion (`-early` runs), no remux runs (DirectStream `remux/*` segments answer 501 until the remux assembler is ported), no live TV.
+- No early companion (`-early` runs), no remux runs (DirectStream `remux/*` video and audio segments answer 501 until the remux assembler is ported), no live TV.
+- A crashed run's rung directory is purged by the matrix (`purgeCache`); the session and the cache entry survive and the next request respawns.
 - Stop is SIGTERM then SIGKILL (TS: SIGKILL); subtitles other than WebVTT are converted by ffmpeg, not by the host's SRT/ASS converters.
 - The production frontier comes from a 200 ms directory poll, not inotify.

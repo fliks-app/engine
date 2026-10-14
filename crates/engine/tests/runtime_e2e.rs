@@ -873,3 +873,42 @@ async fn lifecycle_two_owners_are_isolated() {
     );
     p.e.rt.shutdown().await;
 }
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn throttle_pauses_a_run_far_ahead_and_resumes_it() {
+    let p = play(h264_clip(120)).await;
+    let cfg = json!({ "revision": 2, "hostUrl": p.e.rt.current_config().host_url, "hostToken": HOST_TOKEN,
+        "streaming": { "throttleThresholdSeconds": 9.0 } });
+    assert_eq!(
+        p.e.control("PUT", "/v1/config", Some(cfg)).await.status,
+        200
+    );
+    let sid = p.open("alice", json!({})).await;
+    assert_eq!(
+        p.seg(&sid, "alice-jwt", "720p", &seg_name(0)).await.status,
+        200
+    );
+    // Let the run get more than 9 s ahead of the playhead (segment 0).
+    for _ in 0..50 {
+        if p.job(&sid).await["frontierSegment"].as_u64().unwrap_or(0) >= 6 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    p.e.rt.throttle_tick().await;
+    let job = p.job(&sid).await;
+    assert_eq!(
+        (job["state"].as_str(), job["throttled"].as_bool()),
+        (Some("paused"), Some(true)),
+        "{job}"
+    );
+    let frontier = job["frontierSegment"].as_u64().unwrap();
+    // The viewer catches up: under half the threshold ahead resumes the run.
+    let hb = json!({ "positionS": frontier as f64 * SEG, "state": "playing" });
+    p.e.control("POST", &format!("/v1/sessions/{sid}/heartbeat"), Some(hb))
+        .await;
+    p.e.rt.throttle_tick().await;
+    assert_eq!(p.job(&sid).await["state"], "running");
+    p.e.rt.shutdown().await;
+}
