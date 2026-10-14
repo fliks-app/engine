@@ -9,10 +9,10 @@ pub fn moviehash(size: u64, head: &[u8], tail: &[u8]) -> Option<String> {
         return None;
     }
     let sum = head
-        .chunks_exact(8)
-        .chain(tail.chunks_exact(8))
-        .fold(size, |acc, w| {
-            acc.wrapping_add(u64::from_le_bytes(w.try_into().unwrap_or_default()))
-        });
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .chain(tail.as_chunks::<8>().0)
+        .fold(size, |acc, w| acc.wrapping_add(u64::from_le_bytes(*w)));
     Some(format!("{sum:016x}"))
 }
