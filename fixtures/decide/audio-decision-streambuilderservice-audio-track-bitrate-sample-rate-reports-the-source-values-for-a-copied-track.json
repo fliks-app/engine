@@ -1,0 +1,272 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "bitrateBps": 128000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": true,
+      "audioPlan": {
+        "bitrateBps": 128000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "copy": true,
+          "index": 0,
+          "language": "und",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [],
+          "sampleRate": 44100
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 1,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "h264",
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/1/master.m3u8?remux=1",
+      "qualities": [
+        {
+          "height": 1080,
+          "id": "original",
+          "isRemux": true,
+          "label": "1080p",
+          "totalBitrateBps": 8128000,
+          "width": 1920
+        },
+        {
+          "height": 1080,
+          "id": "eco-1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 3192000,
+          "width": 1920
+        },
+        {
+          "height": 720,
+          "id": "720p",
+          "isRemux": false,
+          "label": "720p",
+          "totalBitrateBps": 4128000,
+          "width": 1280
+        },
+        {
+          "height": 720,
+          "id": "eco-720p",
+          "isRemux": false,
+          "label": "720p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 1628000,
+          "width": 1280
+        },
+        {
+          "height": 480,
+          "id": "480p",
+          "isRemux": false,
+          "label": "480p",
+          "totalBitrateBps": 2096000,
+          "width": 854
+        },
+        {
+          "height": 360,
+          "id": "360p",
+          "isRemux": false,
+          "label": "360p",
+          "totalBitrateBps": 1064000,
+          "width": 640
+        },
+        {
+          "height": 240,
+          "id": "240p",
+          "isRemux": false,
+          "label": "240p",
+          "totalBitrateBps": 564000,
+          "width": 426
+        },
+        {
+          "height": 144,
+          "id": "144p",
+          "isRemux": false,
+          "label": "144p",
+          "totalBitrateBps": 248000,
+          "width": 256
+        }
+      ],
+      "quality": "original",
+      "remuxMasterBandwidthBps": 8128000,
+      "source": {
+        "audioBitRate": 128000,
+        "audioChannels": 2,
+        "audioCodec": "aac",
+        "audioLanguage": "und",
+        "audioSampleRate": 44100,
+        "container": "mkv",
+        "durationSeconds": 100,
+        "frameRate": "24",
+        "height": 1080,
+        "videoBitRate": 8000000,
+        "videoCodec": "h264",
+        "width": 1920
+      },
+      "tonemapping": false,
+      "transcodeBitrateByQuality": {
+        "1080p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 8128000,
+          "videoBitrateBps": 8000000
+        },
+        "144p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 328000,
+          "videoBitrateBps": 200000
+        },
+        "2160p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 8128000,
+          "videoBitrateBps": 8000000
+        },
+        "240p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 628000,
+          "videoBitrateBps": 500000
+        },
+        "360p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 1128000,
+          "videoBitrateBps": 1000000
+        },
+        "480p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 2128000,
+          "videoBitrateBps": 2000000
+        },
+        "720p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 4128000,
+          "videoBitrateBps": 4000000
+        },
+        "eco-1080p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 3128000,
+          "videoBitrateBps": 3000000
+        },
+        "eco-2160p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 8128000,
+          "videoBitrateBps": 8000000
+        },
+        "eco-720p": {
+          "audioBitrateBps": 128000,
+          "totalBitrateBps": 1628000,
+          "videoBitrateBps": 1500000
+        }
+      },
+      "transcodeReasons": [
+        {
+          "flag": "ContainerNotSupported",
+          "message": "Container \"mkv\" not supported"
+        }
+      ],
+      "videoCopyStream": true
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "aac",
+            "ac3",
+            "eac3"
+          ],
+          "containers": [
+            "mp4"
+          ],
+          "videoCodecs": [
+            "h264"
+          ]
+        }
+      ],
+      "maxAudioChannels": 6
+    },
+    "info": {
+      "audio": [
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "language": "und",
+          "sampleRate": 44100,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        }
+      ],
+      "durationSeconds": 100,
+      "schemaVersion": 1,
+      "subtitles": [],
+      "video": [
+        {
+          "bitRate": 8000000,
+          "codec": "h264",
+          "endSeconds": 100,
+          "frameRate": "24",
+          "height": 1080,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    },
+    "media": {
+      "contentType": "video/x-matroska",
+      "ext": ".mkv",
+      "mediaFileId": 1,
+      "path": "/media/file.mkv"
+    },
+    "scan": null,
+    "selection": {
+      "tokenParam": ""
+    }
+  },
+  "name": "audio-decision: StreamBuilderService - audio track bitrate/sample rate reports the source values for a copied track",
+  "source": "audio-decision"
+}

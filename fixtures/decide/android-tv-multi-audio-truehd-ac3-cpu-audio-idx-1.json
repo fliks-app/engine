@@ -1,0 +1,386 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 8,
+        "codec": "truehd",
+        "mode": "copy"
+      },
+      {
+        "bitrateBps": 640000,
+        "channels": 6,
+        "codec": "ac3",
+        "mode": "copy"
+      },
+      {
+        "bitrateBps": 192000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      },
+      {
+        "bitrateBps": 128000,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": true,
+      "audioPlan": {
+        "bitrateBps": 640000,
+        "channels": 6,
+        "codec": "ac3",
+        "mode": "copy"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 768000,
+          "channels": 8,
+          "codec": "truehd",
+          "copy": true,
+          "index": 0,
+          "language": "eng",
+          "outputChannels": 8,
+          "outputCodec": "truehd",
+          "reasonFlags": [],
+          "sampleRate": 48000
+        },
+        {
+          "bitrateBps": 640000,
+          "channels": 6,
+          "codec": "ac3",
+          "copy": true,
+          "index": 1,
+          "language": "eng",
+          "outputChannels": 6,
+          "outputCodec": "ac3",
+          "reasonFlags": [],
+          "sampleRate": 48000
+        },
+        {
+          "bitrateBps": 192000,
+          "channels": 2,
+          "codec": "aac",
+          "copy": true,
+          "index": 2,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [],
+          "sampleRate": 48000
+        },
+        {
+          "bitrateBps": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "copy": true,
+          "index": 3,
+          "language": "eng",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "video/x-matroska",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 1,
+      "outputAudioCodec": "ac3",
+      "outputContainer": "mkv",
+      "outputVideoCodec": "h264",
+      "playMethod": "DirectPlay",
+      "playUrl": "/api/stream/1?token=t",
+      "qualities": [
+        {
+          "height": 1080,
+          "id": "original",
+          "isRemux": false,
+          "label": "1080p",
+          "totalBitrateBps": 30000000,
+          "width": 1920
+        },
+        {
+          "height": 1080,
+          "id": "eco-1080p",
+          "isRemux": false,
+          "label": "1080p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 3192000,
+          "width": 1920
+        },
+        {
+          "height": 720,
+          "id": "720p",
+          "isRemux": false,
+          "label": "720p",
+          "totalBitrateBps": 4128000,
+          "width": 1280
+        },
+        {
+          "height": 720,
+          "id": "eco-720p",
+          "isRemux": false,
+          "label": "720p",
+          "lowBandwidth": true,
+          "totalBitrateBps": 1628000,
+          "width": 1280
+        },
+        {
+          "height": 480,
+          "id": "480p",
+          "isRemux": false,
+          "label": "480p",
+          "totalBitrateBps": 2096000,
+          "width": 854
+        },
+        {
+          "height": 360,
+          "id": "360p",
+          "isRemux": false,
+          "label": "360p",
+          "totalBitrateBps": 1064000,
+          "width": 640
+        },
+        {
+          "height": 240,
+          "id": "240p",
+          "isRemux": false,
+          "label": "240p",
+          "totalBitrateBps": 564000,
+          "width": 426
+        },
+        {
+          "height": 144,
+          "id": "144p",
+          "isRemux": false,
+          "label": "144p",
+          "totalBitrateBps": 248000,
+          "width": 256
+        }
+      ],
+      "quality": "original",
+      "source": {
+        "audioBitRate": 640000,
+        "audioChannelLayout": "5.1(side)",
+        "audioChannels": 6,
+        "audioCodec": "ac3",
+        "audioLanguage": "eng",
+        "audioSampleRate": 48000,
+        "colorPrimaries": "bt709",
+        "colorSpace": "bt709",
+        "colorTransfer": "bt709",
+        "container": "mkv",
+        "durationSeconds": 5400,
+        "formatBitRate": 30000000,
+        "frameRate": "24000/1001",
+        "height": 1080,
+        "videoBitDepth": 8,
+        "videoBitRate": 20000000,
+        "videoCodec": "h264",
+        "videoLevel": 41,
+        "videoProfile": "high",
+        "width": 1920
+      },
+      "tonemapping": false,
+      "transcodeReasons": [],
+      "videoCopyStream": true
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "codecConditions": [
+        {
+          "codec": "hevc",
+          "maxBitDepth": 10,
+          "maxHeight": 2160,
+          "maxLevel": 153,
+          "maxWidth": 3840
+        },
+        {
+          "codec": "h264",
+          "maxBitDepth": 8,
+          "maxHeight": 2160,
+          "maxLevel": 52,
+          "maxWidth": 3840
+        },
+        {
+          "codec": "av1",
+          "maxBitDepth": 10,
+          "maxHeight": 2160,
+          "maxWidth": 3840
+        }
+      ],
+      "deviceName": "Shield TV",
+      "deviceType": "desktop",
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "aac",
+            "ac3",
+            "eac3",
+            "mp3",
+            "opus",
+            "flac",
+            "dts"
+          ],
+          "containers": [
+            "mp4",
+            "mkv",
+            "webm"
+          ],
+          "videoCodecs": [
+            "h264",
+            "hevc",
+            "vp9",
+            "av1"
+          ]
+        }
+      ],
+      "dolbyVisionProfiles": [
+        8
+      ],
+      "maxAudioChannels": 6,
+      "maxStreamingBitrate": 100000000,
+      "supportsAbr": true,
+      "supportsDirectPlay": true,
+      "supportsDolbyVision": true,
+      "supportsHdr": true,
+      "systemName": "Android"
+    },
+    "info": {
+      "audio": [
+        {
+          "channelLayout": "7.1",
+          "channels": 8,
+          "codec": "truehd",
+          "endSeconds": 5400,
+          "isDefault": true,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 1
+        },
+        {
+          "bitRate": 640000,
+          "channelLayout": "5.1(side)",
+          "channels": 6,
+          "codec": "ac3",
+          "endSeconds": 5400,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 2
+        },
+        {
+          "bitRate": 192000,
+          "channels": 2,
+          "codec": "aac",
+          "endSeconds": 5400,
+          "language": "fra",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 3
+        },
+        {
+          "bitRate": 128000,
+          "channels": 2,
+          "codec": "aac",
+          "commentary": true,
+          "endSeconds": 5400,
+          "language": "eng",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 4,
+          "title": "Commentary"
+        }
+      ],
+      "durationSeconds": 5400,
+      "formatBitRate": 30000000,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "schemaVersion": 1,
+      "subtitles": [
+        {
+          "codec": "subrip",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": false,
+          "language": "eng",
+          "streamIndex": 20
+        },
+        {
+          "codec": "hdmv_pgs_subtitle",
+          "forced": false,
+          "hearingImpaired": false,
+          "isImageBased": true,
+          "language": "eng",
+          "streamIndex": 21
+        }
+      ],
+      "timestampBreakSeconds": null,
+      "video": [
+        {
+          "avgFrameRate": "24000/1001",
+          "bitDepth": 8,
+          "bitRate": 20000000,
+          "codec": "h264",
+          "colorPrimaries": "bt709",
+          "colorRange": "tv",
+          "colorSpace": "bt709",
+          "colorTransfer": "bt709",
+          "displayAspectRatio": "16:9",
+          "endSeconds": 5400,
+          "firstFrameSeconds": 0,
+          "frameRate": "24000/1001",
+          "height": 1080,
+          "level": 41,
+          "pixelFormat": "yuv420p",
+          "profile": "High",
+          "reorderFrames": 2,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "width": 1920
+        }
+      ]
+    },
+    "media": {
+      "contentType": "video/x-matroska",
+      "ext": ".mkv",
+      "mediaFileId": 1,
+      "path": "/media/multi-audio-truehd-ac3.mkv"
+    },
+    "scan": null,
+    "selection": {
+      "audioStreamIndex": 1,
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "android-tv multi-audio-truehd-ac3 cpu audio idx 1",
+  "source": "synthetic"
+}
