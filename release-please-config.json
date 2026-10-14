@@ -6,9 +6,19 @@
       "include-component-in-tag": false,
       "package-name": "fliks-engine",
       "extra-files": [
-        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
-        { "type": "json", "path": "clients/ts/package.json", "jsonpath": "$.version" }
-      ]
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        },
+        {
+          "type": "json",
+          "path": "clients/ts/package.json",
+          "jsonpath": "$.version"
+        }
+      ],
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true
     }
   }
 }
