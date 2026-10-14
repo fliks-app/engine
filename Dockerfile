@@ -24,10 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
 
-# group=root + g=u: writable by an arbitrary uid with gid 0 (`--user <uid> --group-add 0`).
+# group=root + g=u: writable by an arbitrary uid with gid 0 (`--user <uid> --group-add 0`); mount a volume to keep it.
 ENV FLIKS_TRANSCODE_DIR=/transcode
 RUN mkdir -p /transcode && chgrp 0 /transcode && chmod g=u /transcode
-VOLUME /transcode
 
 EXPOSE 7400 4848
 ENTRYPOINT ["fliks-engine"]
