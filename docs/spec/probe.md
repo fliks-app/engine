@@ -20,7 +20,7 @@
 | audio starts | `-show_entries packet=stream_index,pts_time -of csv=p=0`, killed once every audio stream showed or a packet is 120 s past the first | 60 s `[ts:backend/src/modules/media-probe/ffprobe.service.ts:886-912]` |
 | late audio | `-analyzeduration ceil(reach*1e6) -probesize FILESIZE -select_streams a -show_entries stream=index,channels,channel_layout,sample_rate -of json`, only for audio missing channels or sample rate | 120 s `[ts:backend/src/modules/media-probe/ffprobe.service.ts:825-880]` |
 | tags | `mkvmerge -J PATH`, 16 MiB output, missing binary remembered per process; exit 1 with output still counts `[ts:backend/src/modules/media-probe/mkv-language-tags.ts:74-110]` | 15 s |
-| crop | `ffmpeg -threads 2 -ss S -i PATH -t 5 -vf format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24 -an -f null -`, `ionice -c3 nice -n19` in front on Linux `[ts:backend/src/modules/media-probe/ffprobe.service.ts:1108-1150]` | 30 s |
+| crop | `ffmpeg [-threads 2 \| hw decode args] -ss S -i PATH -t 5 -vf format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24 -an -f null -`, `ionice -c3 nice -n19` in front on Linux `[ts:backend/src/modules/media-probe/ffprobe.service.ts:1108-1150]` | 30 s |
 
 ## Algorithm
 
@@ -33,12 +33,13 @@
 7. Subtitles: `forced` / `hearingImpaired` = disposition or title regex (`forced`, `foreign parts` not preceded by `non-`/`not `; `sdh`, `cc`, `hearing impaired`, `closed captions`); image based = `hdmv_pgs_subtitle dvd_subtitle dvb_subtitle xsub`. `[ts:backend/src/common/constants/subtitle-flags.ts:34-50]`
 8. Chapters: `start_time`/`end_time` default 0, kept when `end > start`, title from the `title` tag. Container fields: `formatBitRate` only when positive, `formatName`, `formatStartSeconds`, `durationSeconds`. `[ts:backend/src/modules/media-probe/ffprobe.service.ts:719-722]`
 9. Tags: Matroska/WebM (`/matroska/` on `format_name`): `mkvmerge -J` track `id` = stream index; `language_ietf` becomes `languageTag` when it has a subtag (`^[a-z]{2,3}(-[a-z0-9]{2,8})+$`, not `und-*`) and the track type matches. `[ts:backend/src/modules/media-probe/mkv-language-tags.ts:19-72]`
-10. Crop: 6 samples at `floor(duration * {.05,.15,.3,.45,.6,.8})` (600 s when unknown); the last `crop=W:H:X:Y` of each log; a refused first sample is retried once; the largest area wins (first on a tie); kept when `height - h >= 40` or `width - w >= 40` (the stream's displayed size, `y*2`/`x*2` when unknown). `[ts:backend/src/modules/media-probe/ffprobe.service.ts:1024-1106]`
+10. Crop: 6 samples at `floor(duration * {.05,.15,.3,.45,.6,.8})` (600 s when unknown); the last `crop=W:H:X:Y` of each log; a refused first sample is retried once, in software; the largest area wins (first on a tie); kept when `height - h >= 40` or `width - w >= 40` (the stream's displayed size, `y*2`/`x*2` when unknown). `[ts:backend/src/modules/media-probe/ffprobe.service.ts:1024-1106]`
+    Decode: hardware first, `core::probe::args::crop_hw_decode(platform, render node, node exists, /dev/nvidiactl exists)` from the hw snapshot (host platform and default node before the first detection): linux `-hwaccel vaapi -hwaccel_device NODE -hwaccel_output_format vaapi` (+ `hwdownload,` before the filter) when the node exists, else `-hwaccel cuda` when `/dev/nvidiactl` exists, else software; win32 `-hwaccel d3d11va`; darwin `-hwaccel videotoolbox`. The first sample decides: if it fails, all samples (and its retry) run in software, which gives the same nv12 pixels. The decoder used is logged (`decode=vaapi|cuda|...|sw`). `[ts:backend/src/modules/media-probe/ffprobe.service.ts:37-60,1030-1130]`
 11. Moviehash: size + sum of the little-endian u64 words of the first and last 64 KiB, modulo 2^64, 16 hex digits; `null` under 128 KiB. `[ts:backend/src/modules/subtitles/moviehash.ts:13-60]`
 
 ## Deviations
 
-See `docs/README.md` "Deviations" (probe): NaN as absent, moviehash for sizes with bit 31 set, software-only crop, JSON error text, untyped fields. `[new]`
+See `docs/README.md` "Deviations" (probe): NaN as absent, moviehash for sizes with bit 31 set, JSON error text, untyped fields. `[new]`
 
 ## Notes
 
