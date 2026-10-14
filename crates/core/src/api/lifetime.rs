@@ -17,18 +17,26 @@ pub const DEFAULT_CACHE_GC_INTERVAL_MS: u32 = 5 * 60 * 1000;
 #[serde(rename_all = "camelCase", default)]
 pub struct LifetimeConfig {
     /// A session without a heartbeat for this long is dropped (kept revivable).
+    #[serde(default)]
     pub live_session_ttl_ms: u32,
+    #[serde(default)]
     pub live_session_gc_interval_ms: u32,
     /// How long a dropped session's id can still revive.
+    #[serde(default)]
     pub session_revive_ttl_ms: u32,
     /// Beyond it the owner's oldest session is evicted, never the new one.
+    #[serde(default)]
     pub max_sessions_per_owner: u32,
     /// Delay between the last viewer leaving and the ffmpeg job being killed.
+    #[serde(default)]
     pub job_grace_ms: u32,
     /// Idle window of a job that never had a viewer.
+    #[serde(default)]
     pub job_fallback_timeout_ms: u32,
     /// Heartbeat TTL of pinned (download, offline) sessions.
+    #[serde(default)]
     pub pinned_session_ttl_ms: u32,
+    #[serde(default)]
     pub cache_gc_interval_ms: u32,
 }
 

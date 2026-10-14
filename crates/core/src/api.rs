@@ -168,6 +168,7 @@ pub struct EngineConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_token: Option<String>,
     pub streaming: StreamingConfig,
+    #[serde(default)]
     pub lifetime: LifetimeConfig,
 }
 
