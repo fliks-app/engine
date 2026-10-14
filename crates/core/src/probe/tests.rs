@@ -90,3 +90,76 @@ fn moviehash_follows_the_specification() {
         }
     }
 }
+
+/// Only `ffmpeg_samples` works: hardware runs (`-hwaccel` first) fail when `hw_fails`.
+struct Ffmpeg {
+    hw_fails: bool,
+    runs: std::sync::Mutex<Vec<bool>>,
+}
+
+impl super::Tools for Ffmpeg {
+    async fn ffprobe(&self, _: Vec<String>, _: u64) -> Result<String, super::ToolError> {
+        unimplemented!()
+    }
+    async fn ffprobe_lines(
+        &self,
+        _: Vec<String>,
+        _: u64,
+        _: &mut (dyn FnMut(&str) -> bool + Send),
+    ) -> Result<(), super::ToolError> {
+        unimplemented!()
+    }
+    async fn mkvmerge(&self, _: Vec<String>) -> Result<String, super::ToolError> {
+        unimplemented!()
+    }
+    async fn ffmpeg_samples(&self, a: Vec<Vec<String>>) -> Vec<Result<String, super::ToolError>> {
+        a.iter()
+            .map(|a| {
+                let hw = a[0] == "-hwaccel";
+                self.runs.lock().unwrap().push(hw);
+                if hw && self.hw_fails {
+                    Err(super::ToolError::default())
+                } else {
+                    Ok("crop=480:190:0:40".into())
+                }
+            })
+            .collect()
+    }
+    async fn file_size(&self) -> Option<u64> {
+        None
+    }
+}
+
+#[test]
+fn crop_falls_back_to_software_when_the_first_sample_fails() {
+    let hw: Vec<String> = ["-hwaccel", "cuda"].map(String::from).into();
+    for (fails, name, hw_runs) in [(false, "cuda", 6), (true, "sw", 1)] {
+        let t = Ffmpeg {
+            hw_fails: fails,
+            runs: Default::default(),
+        };
+        let (crop, decode) = futures_lite_block(super::detect_crop(
+            &t,
+            "/f",
+            Some(100.0),
+            Some(480),
+            Some(270),
+            Some(&hw),
+        ));
+        assert_eq!(decode, name);
+        assert_eq!(crop.unwrap().height, 190);
+        let runs = t.runs.lock().unwrap();
+        assert_eq!(runs.iter().filter(|h| **h).count(), hw_runs);
+        assert_eq!(runs.len(), if fails { 7 } else { 6 });
+    }
+}
+
+fn futures_lite_block<F: std::future::Future>(f: F) -> F::Output {
+    let mut f = std::pin::pin!(f);
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    loop {
+        if let std::task::Poll::Ready(v) = f.as_mut().poll(&mut cx) {
+            return v;
+        }
+    }
+}

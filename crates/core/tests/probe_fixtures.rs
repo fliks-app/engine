@@ -240,6 +240,8 @@ fn probe_reproduces_the_host() {
         let opts = ProbeOpts {
             crop: f["opts"]["crop"].as_bool().unwrap(),
             mkv_tags: f["opts"]["mkvTags"].as_bool().unwrap(),
+            // The fixtures were recorded with crop forced to software.
+            crop_decode: None,
         };
         let outcome = block_on(probe(&tools, "{path}", &opts));
         let mut expected = f["expected"].clone();
@@ -279,7 +281,7 @@ fn probe_reproduces_the_host() {
                 "{path}",
                 &ProbeOpts {
                     mkv_tags: false,
-                    ..opts
+                    ..opts.clone()
                 },
             ));
             let unused = tools

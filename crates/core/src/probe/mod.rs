@@ -57,10 +57,12 @@ pub trait Tools: Sync {
     fn file_size(&self) -> impl Future<Output = Option<u64>> + Send;
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ProbeOpts {
     pub crop: bool,
     pub mkv_tags: bool,
+    /// Hardware decode args for the crop samples (`args::crop_hw_decode`); `None` = software.
+    pub crop_decode: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +71,8 @@ pub struct Outcome {
     pub ok: bool,
     pub info: MediaInfo,
     pub error: Option<String>,
+    /// Decoder of the crop samples: the `-hwaccel` name, or `sw`. `None` when no crop ran.
+    pub crop_decode: Option<String>,
 }
 
 fn failed(message: String) -> Outcome {
@@ -76,6 +80,7 @@ fn failed(message: String) -> Outcome {
         ok: false,
         info: build::failure(&message),
         error: Some(message),
+        crop_decode: None,
     }
 }
 
@@ -236,11 +241,14 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
             Err(_) => {}
         }
     }
+    let mut crop_decode = None;
     if opts.crop
         && let Some(v) = info.video.first()
     {
         let (duration, w, h) = (info.duration_seconds, v.width, v.height);
-        let crop = detect_crop(t, path, duration, w, h).await;
+        let (crop, decode) =
+            detect_crop(t, path, duration, w, h, opts.crop_decode.as_deref()).await;
+        crop_decode = Some(decode);
         if let (Some(crop), Some(v)) = (crop, info.video.first_mut()) {
             v.crop = Some(crop);
         }
@@ -249,30 +257,38 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
         ok: true,
         error: None,
         info,
+        crop_decode,
     }
 }
 
-/// `detectCrop`: software-decoded samples spread over the file, loosest box wins.
+/// `detectCrop`: samples spread over the file, loosest box wins. Whether the GPU decodes a file
+/// depends on its codec, so the first sample decides: on failure every sample runs in software
+/// (same nv12 pixels). Also returns the decoder used.
 async fn detect_crop<T: Tools>(
     t: &T,
     path: &str,
     duration: Option<f64>,
     width: Option<u32>,
     height: Option<u32>,
-) -> Option<CropInfo> {
+    hw: Option<&[String]>,
+) -> (Option<CropInfo>, String) {
     let ss = crop::timestamps(duration);
-    let sample = |ss: u32| args::crop_sample(path, ss);
-    let mut first = t.ffmpeg_samples(vec![sample(ss[0])]).await.pop()?;
-    if first.is_err() {
-        // The host retries a refused first sample once.
-        first = t.ffmpeg_samples(vec![sample(ss[0])]).await.pop()?;
+    let run = |hw: Option<&[String]>, ss: &[u32]| {
+        t.ffmpeg_samples(ss.iter().map(|s| args::crop_sample(path, *s, hw)).collect())
+    };
+    let mut hw = hw;
+    let mut first = run(hw, &ss[..1]).await.pop();
+    if first.as_ref().is_none_or(Result::is_err) {
+        // A refused first sample is retried once, in software.
+        hw = None;
+        first = run(None, &ss[..1]).await.pop();
     }
-    let rest = t
-        .ffmpeg_samples(ss[1..].iter().map(|s| sample(*s)).collect())
-        .await;
-    let samples: Vec<_> = std::iter::once(first)
+    let rest = run(hw, &ss[1..]).await;
+    let samples: Vec<_> = first
+        .into_iter()
         .chain(rest)
         .map(|r| r.ok().and_then(|log| crop::parse_sample(&log)))
         .collect();
-    crop::aggregate(&samples, width, height)
+    let name = hw.map_or("sw", |h| h.get(1).map_or("sw", String::as_str));
+    (crop::aggregate(&samples, width, height), name.into())
 }
