@@ -1,4 +1,5 @@
 use clap::Parser;
+use fliks_engine::gateway::{self, RouteTable, Upstream};
 use std::net::SocketAddr;
 
 #[derive(Parser)]
@@ -9,6 +10,15 @@ struct Cli {
     /// Run the command after `--` as the host, restarting it when it exits.
     #[arg(long, requires = "cmd")]
     supervise: bool,
+    /// Host to forward non-engine routes to (http://host[:port]); serves them on --public-listen.
+    #[arg(long, value_parser = Upstream::parse)]
+    upstream: Option<Upstream>,
+    /// Public listener of the gateway (default 0.0.0.0:4848).
+    #[arg(long, requires = "upstream")]
+    public_listen: Option<SocketAddr>,
+    /// JSON route table replacing the default (docs/spec/gateway.md).
+    #[arg(long, requires = "upstream")]
+    gateway_routes: Option<std::path::PathBuf>,
     #[arg(last = true)]
     cmd: Vec<String>,
 }
@@ -31,9 +41,39 @@ async fn main() -> std::process::ExitCode {
     ));
     hw.start();
     let server = axum::serve(listener, fliks_engine::app(token.clone(), hw));
+    let mut host_env = vec![];
+    if let Some(up) = &cli.upstream {
+        let table = match &cli.gateway_routes {
+            Some(f) => std::fs::read_to_string(f)
+                .map_err(|e| e.to_string())
+                .and_then(|j| RouteTable::from_json(&j)),
+            None => Ok(RouteTable::fliks()),
+        }
+        .unwrap_or_else(|e| panic!("gateway routes: {e}"));
+        let public = cli.public_listen.unwrap_or(([0, 0, 0, 0], 4848).into());
+        let public = tokio::net::TcpListener::bind(public)
+            .await
+            .expect("bind public");
+        println!(
+            "FLIKS_ENGINE_PUBLIC_LISTENING {}",
+            public.local_addr().unwrap()
+        );
+        // ponytail: engine routes are forwarded until the M3 data plane is passed here
+        let app = gateway::router(table, up.clone(), None);
+        tokio::spawn(async move {
+            axum::serve(
+                public,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+        });
+        host_env.push(("PORT", up.port().to_string()));
+    }
     if cli.supervise {
         tokio::spawn(async move { server.await });
-        let code = fliks_engine::supervise::run(&cli.cmd, &format!("http://{addr}"), &token).await;
+        let code =
+            fliks_engine::supervise::run(&cli.cmd, &format!("http://{addr}"), &token, &host_env)
+                .await;
         return std::process::ExitCode::from(code);
     }
     server

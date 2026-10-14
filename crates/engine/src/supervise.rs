@@ -89,7 +89,7 @@ fn backoff_base() -> Duration {
 }
 
 /// Returns the exit code of the engine process.
-pub async fn run(cmd: &[String], url: &str, token: &str) -> u8 {
+pub async fn run(cmd: &[String], url: &str, token: &str, extra_env: &[(&str, String)]) -> u8 {
     #[cfg(unix)]
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     #[cfg(unix)]
@@ -109,6 +109,7 @@ pub async fn run(cmd: &[String], url: &str, token: &str) -> u8 {
             .args(&cmd[1..])
             .env("FLIKS_ENGINE_URL", url)
             .env("FLIKS_ENGINE_TOKEN", token)
+            .envs(extra_env.iter().map(|(k, v)| (k, v)))
             .spawn()
         {
             Ok(c) => c,

@@ -1,4 +1,5 @@
 //! Control plane of fliks-engine (`/v1/*`, bearer auth).
+pub mod gateway;
 pub mod hw;
 pub mod probe;
 pub mod proc;
