@@ -44,7 +44,7 @@ pub const CACHE_NAMESPACE: &str = "cache/v1";
 
 /// `cache/v1/<u<owner>|anon>/<mediaFileId>/<cacheKey>[/<quality>]`, relative to the data root.
 pub fn cache_path(
-    owner_id: Option<u32>,
+    owner_id: Option<&str>,
     media_file_id: u32,
     cache_key: &str,
     quality: Option<&str>,
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn layout() {
         assert_eq!(
-            cache_path(Some(3), 9, "abc-early", Some("720p")),
+            cache_path(Some("3"), 9, "abc-early", Some("720p")),
             "cache/v1/u3/9/abc-early/720p"
         );
         assert_eq!(cache_path(None, 9, "abc", None), "cache/v1/anon/9/abc");

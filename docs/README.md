@@ -9,6 +9,7 @@
   - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
+  - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, idle reaping, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
 
@@ -42,6 +43,13 @@
 - mp4: `trun_samples` refuses a `sample_count` above 2^24 (`OutOfRange`) where the TS would allocate one object per declared sample of a corrupt box.
 - mp4: ticks are `i128` and a non-integral tick count fails with the JS `BigInt` message; a value past 2^127 saturates (the TS keeps a bigint), only changing the number in an error message the write then raises anyway.
 
+- runtime: ffmpeg stops with SIGTERM then SIGKILL after 2 s (the TS sends SIGKILL); the run is awaited before its directory is touched again.
+- runtime: a segment past the uniform grid's end is a 404 before anything spawns; a rung switch starts at the request's segment (the TS inherits the killed run's start for a `seg-0` request); a rung or resume whose file is already on disk is served without a new run (the TS respawns when no run is registered).
+- runtime: a CPU fallback registers its run before the failed run's waiters wake, and a waiter follows it; the TS answers that wait from the dead run.
+- runtime: the production frontier is a 200 ms directory listing (the TS uses `fs.watch`); stderr is a bounded ring (40 lines).
+- runtime: subtitles other than WebVTT are converted by ffmpeg (`-f webvtt`), not by the host's SRT/ASS converters (alignment tags and the b/i/u filter differ); embedded extracts are cached under `<root>/subtitles/v1`.
+- runtime: the resolver credential is the `?token=` value first, then `Authorization`, then `Cookie` (the host's own order is cookie first): the engine cannot tell an access cookie from other cookies.
+
 ## Open divergences
 
 - decide `Decision` keeps fields the host never reads, for round-trip exactness: `videoVariant.bitDepth` (implied by `hdr`), `audioPlans` (index-aligned with `response.audioTracks`), `response.audioPlan` (= `audioPlans[picked]`). Candidates to drop in v2.
@@ -51,12 +59,13 @@
 - decide ports read the vectors' host caps only for linux/darwin and `none`/`vaapi`/`nvenc`/`qsv`/`videotoolbox`: the win32, AMF and blacklisted-id branches (encoder ids, `{codec}_qsv[_d3d11]_decode`) follow the TS; no golden vector exercises them `[assumed]`, but the fuzz does (win32, AMF, QSV, blacklisted ids; 35 000 inputs, 0 mismatches).
 - decide `maxAudioChannels` and `audioChannelsByCodec` are `f64` on the wire; a fractional cap (`5.1`) makes the TS report fractional `channels`, which `Decision` (`u32`) truncates. The fuzz only samples integer caps.
 - decide bitrates, sample rates and ids are `u32` on the wire (`MediaInfo` already is); a host sending a fractional or negative `audioStreamIndex`/`burnInSubtitleId` gets a 422 where the TS coerces.
-- hls: the master route's assembly of options from the session (`hlsMaster`: crop size, `hdrPassThrough`, audio layout, DV `remuxCodecs`) stays in the host until the session state moves (M3); `copy_source_codec_string` is ported, `dvSupplementalCodecs`/`dvStandaloneCodecs` are not.
+- hls: the master's options come from the session (`core::session::master_options`); `dvSupplementalCodecs`/`dvStandaloneCodecs` are not ported, so a Dolby Vision remux variant has no `SUPPLEMENTAL-CODECS` and keeps the probed CODECS.
 - mp4: the stateful `RemuxSegmentAssembler` (watching GOP files, completion, run landing, audio grouping, `canServe`) and its file readers are not ported: the serve runtime will drive `core::mp4` with them. `output-timeline.spec.ts` asserts ffmpeg argv: only its `remuxRunStart` calls are replayed; the args port should reuse `mp4::remux_run_start`.
 - probe: `detectEmbeddedSubtitles` and `detectStreams` (embedded-subtitle, subtitle-sync and the media controller) are not ported: they read the same ffprobe JSON but are not part of `MediaInfo`.
 - probe crop samples share one process-wide budget of `cores - 1` runs in the engine; the host's cgroup-aware pool (and its admin override) stays in Node until the engine owns every ffmpeg slot (M3).
 - probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.
 - session: the 503/404/410 segment rule and the `Retry-After` value are inline in the host's controller (no function to call): hand-written tests, no golden vectors. The job-idle vectors run with the default durations (the host reads them from env at import).
-- session: pure `core::session` is not wired yet: the sessions, cache and serve layers of `crates/engine` (M3) call it.
 - args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.
 - args: argv parity is against the TS only; like hw, nvenc, amf/win32, qsv/win32 and videotoolbox argv were never run on those hosts here.
+- runtime: no remux runs (DirectStream `remux/*` segments and remux audio renditions answer 501) and no early companion (`-early`): the stateful `RemuxSegmentAssembler` is not ported, and a seg-0 probe on a resume goes through the seek matrix (it can restart the run at 0, then at the resume point).
+- runtime: e2e runs used the CPU only (jellyfin-ffmpeg 8.1.2 on Linux); the CPU fallback is exercised with a VAAPI host on a missing render node, no real GPU run went through the runtime yet. Throttle runs with the `signal` capability only; Windows Job Objects, the `stdin` pause and the `q` stop have no live run.

@@ -1,14 +1,14 @@
 //! The playback decision: DirectPlay, DirectStream (remux) or Transcode, a pure port of the
 //! host's `StreamBuilderService.evaluate()`. Spec: `docs/spec/decide.md`.
-pub(crate) mod audio;
+pub mod audio;
 mod caps;
-pub(crate) mod codec;
+pub mod codec;
 mod direct_play;
-pub(crate) mod dolby_vision;
+pub mod dolby_vision;
 mod estimate;
 mod qualities;
-mod source;
-pub(crate) mod timeline;
+pub mod source;
+pub mod timeline;
 pub(crate) mod tonemap;
 
 use crate::api::{

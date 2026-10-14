@@ -10,6 +10,70 @@
     "version": "1"
   },
   "paths": {
+    "/v1/cache": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "cache",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheSummary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "cache_delete",
+        "parameters": [
+          {
+            "name": "mediaFileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "live entries are kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheDeleteResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/capabilities": {
       "get": {
         "tags": [],
@@ -143,6 +207,26 @@
         }
       }
     },
+    "/v1/events": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "events",
+        "responses": {
+          "200": {
+            "description": "one EngineEvent per `data:` line, event name = `type`",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/hello": {
       "get": {
         "tags": [],
@@ -154,6 +238,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Hello"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/invalidate": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "invalidate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvalidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidateResult"
                 }
               }
             }
@@ -190,6 +304,232 @@
           },
           "400": {
             "description": "path is not absolute"
+          }
+        }
+      }
+    },
+    "/v1/revoke": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "revoke",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "neither ownerId nor mediaFileIds"
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "ownerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "mediaFileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSnapshot"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no config set yet, or an invalid ownerId/path"
+          },
+          "503": {
+            "description": "hardware detection has not finished (Retry-After: 1)"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "get_one",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown or ended session"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "reason",
+            "in": "path",
+            "description": "Default `stopped`.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "gone (idempotent)"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/command": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "command",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "done"
+          },
+          "404": {
+            "description": "unknown session"
+          },
+          "409": {
+            "description": "no running job, or the host cannot pause ffmpeg"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/heartbeat": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "operationId": "heartbeat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not the session's owner"
           }
         }
       }
@@ -478,6 +818,112 @@
           }
         }
       },
+      "BurnInKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "image"
+        ]
+      },
+      "BurnInSpec": {
+        "type": "object",
+        "description": "A subtitle burnt into the video, already resolved by the host.",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "filter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The libass `-vf` step (`subtitles='...'`) of a text track."
+          },
+          "streamIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Stream index of an image track, overlaid.",
+            "minimum": 0
+          },
+          "type": {
+            "$ref": "#/components/schemas/BurnInKind"
+          }
+        }
+      },
+      "CacheDeleteResult": {
+        "type": "object",
+        "required": [
+          "removed"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "CacheEntry": {
+        "type": "object",
+        "description": "One `<owner>/<file>/<profileHash>` directory of the cache.",
+        "required": [
+          "mediaFileId",
+          "profileHash",
+          "bytes",
+          "lastAccessMs",
+          "live"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastAccessMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "live": {
+            "type": "boolean",
+            "description": "A session or job uses it: never evicted."
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profileHash": {
+            "type": "string"
+          }
+        }
+      },
+      "CacheSummary": {
+        "type": "object",
+        "required": [
+          "usedBytes",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CacheEntry"
+            }
+          },
+          "usedBytes": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "Capabilities": {
         "type": "object",
         "required": [
@@ -572,6 +1018,40 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ClientInfo": {
+        "type": "object",
+        "description": "Display facts of the client a session plays on; opaque to the engine.",
+        "properties": {
+          "appVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "deviceName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "systemName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "userAgent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         }
       },
@@ -1135,6 +1615,229 @@
           }
         }
       },
+      "EngineEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "session",
+              "type"
+            ],
+            "properties": {
+              "session": {
+                "$ref": "#/components/schemas/SessionSnapshot"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SessionOpened"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`stopped`, `expired`, `evicted`, `revoked`.",
+            "required": [
+              "session_id",
+              "reason",
+              "type"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SessionEnded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The rung or hardware a session is served from changed.",
+            "required": [
+              "session_id",
+              "quality",
+              "hw_accel",
+              "type"
+            ],
+            "properties": {
+              "hw_accel": {
+                "$ref": "#/components/schemas/HwAccel"
+              },
+              "quality": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PipelineChanged"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "session_id",
+              "track",
+              "rung",
+              "index",
+              "waited_ms",
+              "cache_hit",
+              "type"
+            ],
+            "properties": {
+              "cache_hit": {
+                "type": "boolean",
+                "description": "Already on disk when requested."
+              },
+              "cmcd_raw": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The request's CMCD data, raw."
+              },
+              "index": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "rung": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "track": {
+                "$ref": "#/components/schemas/Track"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SegmentServed"
+                ]
+              },
+              "waited_ms": {
+                "type": "number",
+                "format": "double",
+                "description": "How long the request waited for the segment to be produced."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "job_key",
+              "media_file_id",
+              "quality",
+              "start_segment",
+              "hw_accel",
+              "type"
+            ],
+            "properties": {
+              "hw_accel": {
+                "$ref": "#/components/schemas/HwAccel"
+              },
+              "job_key": {
+                "type": "string"
+              },
+              "media_file_id": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "quality": {
+                "type": "string"
+              },
+              "start_segment": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "JobStarted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "job_key",
+              "state",
+              "type"
+            ],
+            "properties": {
+              "exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32"
+              },
+              "job_key": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/JobState"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "JobEnded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "job_key",
+              "from",
+              "to",
+              "stderr_tail",
+              "type"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/components/schemas/HwAccel"
+              },
+              "job_key": {
+                "type": "string"
+              },
+              "stderr_tail": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "to": {
+                "$ref": "#/components/schemas/HwAccel"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "HwFallback"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "`GET /v1/events` (SSE): the SSE event name is `type`."
+      },
       "EstimateSizesRequest": {
         "type": "object",
         "description": "Body of `POST /v1/estimate-sizes`. `fileSize` is the source size in bytes, 0 when unknown.",
@@ -1196,6 +1899,54 @@
           }
         }
       },
+      "HeartbeatRequest": {
+        "type": "object",
+        "properties": {
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When given, must be the session's owner (403 otherwise).",
+            "default": null
+          },
+          "positionS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Player state, opaque (`playing`, `paused`, ...).",
+            "default": null
+          }
+        }
+      },
+      "HeartbeatResponse": {
+        "type": "object",
+        "required": [
+          "sessionLost"
+        ],
+        "properties": {
+          "sessionLost": {
+            "type": "boolean",
+            "description": "The sid is unknown: the client re-opens a session."
+          }
+        }
+      },
       "Hello": {
         "type": "object",
         "required": [
@@ -1221,6 +1972,23 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "Hints": {
+        "type": "object",
+        "required": [
+          "probeStale",
+          "scanMissing"
+        ],
+        "properties": {
+          "probeStale": {
+            "type": "boolean",
+            "description": "The probe blob predates the engine's schema version."
+          },
+          "scanMissing": {
+            "type": "boolean",
+            "description": "No source scan: the remux keyframe grid and audio checks were skipped."
           }
         }
       },
@@ -1289,6 +2057,119 @@
           "videotoolbox",
           "none"
         ]
+      },
+      "InvalidateRequest": {
+        "type": "object",
+        "required": [
+          "mediaFileId"
+        ],
+        "properties": {
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "InvalidateResult": {
+        "type": "object",
+        "required": [
+          "jobs",
+          "cacheEntries"
+        ],
+        "properties": {
+          "cacheEntries": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "jobs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "JobState": {
+        "type": "string",
+        "enum": [
+          "running",
+          "paused",
+          "done",
+          "failed",
+          "killed"
+        ]
+      },
+      "JobStats": {
+        "type": "object",
+        "description": "The ffmpeg run behind a session (\"stats for nerds\").",
+        "required": [
+          "state",
+          "quality",
+          "requestedHw",
+          "actualHw",
+          "startSegment",
+          "transcodePercent",
+          "throttled",
+          "restarts",
+          "stderrTail"
+        ],
+        "properties": {
+          "actualHw": {
+            "$ref": "#/components/schemas/HwAccel",
+            "description": "`none` after a hardware failure fell back to the CPU."
+          },
+          "exitCode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "frontierSegment": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Latest segment written, absent before the first one.",
+            "minimum": 0
+          },
+          "quality": {
+            "type": "string"
+          },
+          "requestedHw": {
+            "$ref": "#/components/schemas/HwAccel"
+          },
+          "restarts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Spawns of this job key after the first (seeks, rung switches, fallbacks).",
+            "minimum": 0
+          },
+          "startSegment": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "stderrTail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Last stderr lines, bounded."
+          },
+          "throttled": {
+            "type": "boolean"
+          },
+          "transcodePercent": {
+            "type": "number",
+            "format": "double"
+          }
+        }
       },
       "Keyframe": {
         "type": "object",
@@ -1498,6 +2379,108 @@
           "ts",
           "fmp4"
         ]
+      },
+      "OpenSessionRequest": {
+        "type": "object",
+        "description": "`POST /v1/sessions`: decide, open the session and prewarm its job, atomically.",
+        "required": [
+          "decide"
+        ],
+        "properties": {
+          "burnIn": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BurnInSpec"
+              }
+            ]
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientInfo"
+          },
+          "decide": {
+            "$ref": "#/components/schemas/DecideRequest"
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque owner id (`[A-Za-z0-9_.-]`, 1 to 64 chars); absent = anonymous."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "Offline download: the session lives on the pinned TTL and is never throttled."
+          },
+          "sourceVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Version of the source file (rescan counter, mtime): part of the cache key."
+          },
+          "startAtS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Resume position, seconds on the content timeline."
+          },
+          "subtitleRenditions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SubtitleTrack"
+            },
+            "description": "Master `SUBTITLES` group for clients with `supportsHlsSubtitles`; absent: the embedded\ntext tracks of `info`."
+          },
+          "tags": {
+            "type": "object",
+            "description": "Opaque to the engine, echoed in snapshots (e.g. the host's connection ids).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OpenSessionResponse": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "playPath",
+          "decision",
+          "hints"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "hints": {
+            "$ref": "#/components/schemas/Hints"
+          },
+          "playPath": {
+            "type": "string",
+            "description": "`decision.response.playUrl` with `sid=` appended."
+          },
+          "profileHash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cache profile hash; absent on Direct Play."
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
       },
       "Platform": {
         "type": "string",
@@ -1936,6 +2919,300 @@
           }
         }
       },
+      "ResolveMediaId": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "`mediaId` of a resolve: a media file id, or a live session id (`purpose: live`, M6)."
+      },
+      "ResolvePurpose": {
+        "type": "string",
+        "enum": [
+          "stream",
+          "download",
+          "sprite",
+          "subtitle",
+          "live"
+        ]
+      },
+      "ResolveRequest": {
+        "type": "object",
+        "description": "`POST {hostUrl}/engine/resolve`, implemented by the host.",
+        "required": [
+          "mediaId",
+          "credential",
+          "purpose"
+        ],
+        "properties": {
+          "credential": {
+            "type": "string",
+            "description": "The client credential exactly as received, one of: the `Cookie` header value, the\n`Authorization` header value (`Bearer <jwt>`), the bare `?token=` value."
+          },
+          "mediaId": {
+            "$ref": "#/components/schemas/ResolveMediaId"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/ResolvePurpose"
+          },
+          "streamIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Embedded subtitle stream (`purpose: subtitle`).",
+            "minimum": 0
+          },
+          "subtitleId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "External subtitle (`purpose: subtitle`).",
+            "minimum": 0
+          }
+        }
+      },
+      "ResolveResponse": {
+        "type": "object",
+        "required": [
+          "allow"
+        ],
+        "properties": {
+          "allow": {
+            "type": "boolean"
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME type of a media file; a subtitle's extension (`srt`, `ass`, `vtt`) or `embedded`."
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Media file; `sprite.jpg` (`sprite`, may not exist); the subtitle file (external\nsubtitle) or the media file (embedded subtitle)."
+          },
+          "ttlS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Cache lifetime of this answer; 60 when absent."
+          }
+        }
+      },
+      "RevokeRequest": {
+        "type": "object",
+        "description": "`POST /v1/revoke`: at least one field.",
+        "properties": {
+          "mediaFileIds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "default": null
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      },
+      "RevokeResult": {
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionAction": {
+        "type": "string",
+        "enum": [
+          "stop",
+          "pauseJob",
+          "resumeJob"
+        ]
+      },
+      "SessionCommand": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/SessionAction"
+          }
+        }
+      },
+      "SessionExpired": {
+        "type": "object",
+        "description": "410 body of a data-plane request whose `sid` the engine no longer knows.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Always `session_expired`."
+          },
+          "message": {
+            "type": "string"
+          },
+          "sid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SessionKind": {
+        "type": "string",
+        "enum": [
+          "directplay",
+          "remux",
+          "transcode"
+        ]
+      },
+      "SessionSnapshot": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "mediaFileId",
+          "kind",
+          "client",
+          "tags",
+          "openedAtMs",
+          "lastBeatMs",
+          "positionS",
+          "state",
+          "pinned",
+          "configRevision",
+          "decision"
+        ],
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/ClientInfo"
+          },
+          "configRevision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`EngineConfig.revision` the session froze.",
+            "minimum": 0
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "job": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JobStats"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SessionKind"
+          },
+          "lastBeatMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastSegmentAtMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "openedAtMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "ownerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "positionS": {
+            "type": "number",
+            "format": "double"
+          },
+          "profileHash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last rung served or reported by a heartbeat."
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SourceScan": {
         "type": "object",
         "description": "Mirrors `SourceScan` (source-scan.ts); `audioConfigChanges` is keyed by audio stream index.",
@@ -2134,6 +3411,51 @@
           }
         }
       },
+      "SubtitleTrack": {
+        "type": "object",
+        "description": "One text subtitle rendition of the master.",
+        "required": [
+          "kind",
+          "key",
+          "name"
+        ],
+        "properties": {
+          "forced": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Stream index (embedded) or subtitle id (external).",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SubtitleTrackKind"
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "languageTag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SubtitleTrackKind": {
+        "type": "string",
+        "enum": [
+          "embedded",
+          "external"
+        ]
+      },
       "TonemapAlgo": {
         "type": "string",
         "enum": [
@@ -2149,6 +3471,13 @@
           "hable",
           "mobius",
           "reinhard"
+        ]
+      },
+      "Track": {
+        "type": "string",
+        "enum": [
+          "video",
+          "audio"
         ]
       },
       "TranscodeReason": {

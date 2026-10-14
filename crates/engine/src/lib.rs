@@ -1,8 +1,14 @@
 //! Control plane of fliks-engine (`/v1/*`, bearer auth).
+pub mod cache;
+pub mod events;
 pub mod gateway;
 pub mod hw;
 pub mod probe;
 pub mod proc;
+pub mod resolve;
+pub mod runtime;
+pub mod serve;
+pub mod sessions;
 pub mod supervise;
 
 use axum::{
@@ -18,18 +24,19 @@ use axum::{
 };
 use fliks_engine_core::api::{
     CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
-    Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
+    Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest, ResolveResponse,
+    SessionExpired, SourceScan,
 };
 use fliks_engine_core::hw::selected_render_node;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use utoipa::OpenApi;
 
 pub struct AppState {
     token: String,
     instance_id: String,
-    /// `None` until the host's first `PUT /v1/config`.
-    config: Mutex<Option<EngineConfig>>,
     hw: Arc<hw::Hw>,
+    /// Sessions, jobs, cache and the config (`None` until the host's first `PUT /v1/config`).
+    pub rt: Arc<runtime::Runtime>,
 }
 
 pub fn random_hex(bytes: usize) -> String {
@@ -41,8 +48,12 @@ pub fn random_hex(bytes: usize) -> String {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "fliks-engine", version = "1"),
-    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes, probe::probe),
-    components(schemas(MediaInfo, DeviceProfile, SourceScan)),
+    paths(hello, capabilities, get_config, put_config, decide, estimate_sizes, probe::probe,
+        sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
+        sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
+        sessions::cache_delete, sessions::events),
+    components(schemas(MediaInfo, DeviceProfile, SourceScan, ResolveRequest, ResolveResponse,
+        SessionExpired)),
     modifiers(&Bearer)
 )]
 pub struct ApiDoc;
@@ -66,22 +77,44 @@ impl utoipa::Modify for Bearer {
     }
 }
 
+/// Control plane and data plane over a runtime whose cache and ffmpeg come from the environment.
 pub fn app(token: String, hw: Arc<hw::Hw>) -> Router {
+    let rt = runtime::Runtime::new(hw, cache::Cache::from_env(), hw::ffmpeg_path());
+    router(token, rt)
+}
+
+/// `/v1/*` behind the bearer, and the data plane (`serve::router`) beside it, resolver-gated.
+pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
     let state = Arc::new(AppState {
         token,
         instance_id: random_hex(8),
-        config: Mutex::new(None),
-        hw,
+        hw: rt.hw.clone(),
+        rt: rt.clone(),
     });
-    Router::new()
+    let control = Router::new()
         .route("/v1/hello", get(hello))
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/config", get(get_config).put(put_config))
         .route("/v1/decide", post(decide))
         .route("/v1/estimate-sizes", post(estimate_sizes))
         .route("/v1/probe", post(probe::probe))
+        .route("/v1/sessions", get(sessions::list).post(sessions::open))
+        .route(
+            "/v1/sessions/{sid}",
+            get(sessions::get_one).delete(sessions::delete),
+        )
+        .route("/v1/sessions/{sid}/heartbeat", post(sessions::heartbeat))
+        .route("/v1/sessions/{sid}/command", post(sessions::command))
+        .route("/v1/revoke", post(sessions::revoke))
+        .route("/v1/invalidate", post(sessions::invalidate))
+        .route(
+            "/v1/cache",
+            get(sessions::cache).delete(sessions::cache_delete),
+        )
+        .route("/v1/events", get(sessions::events))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
-        .with_state(state)
+        .with_state(state);
+    control.merge(serve::router(rt))
 }
 
 async fn auth(
@@ -118,6 +151,10 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             "estimate-sizes".into(),
             "capabilities".into(),
             "probe".into(),
+            "sessions".into(),
+            "serve".into(),
+            "events".into(),
+            "revoke".into(),
         ],
         instance_id: s.instance_id.clone(),
     })
@@ -147,7 +184,7 @@ async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
 
 #[utoipa::path(get, path = "/v1/config", responses((status = 200, body = EngineConfig)))]
 async fn get_config(State(s): State<Arc<AppState>>) -> Json<EngineConfig> {
-    Json(s.config.lock().unwrap().clone().unwrap_or_default())
+    Json(s.rt.config.lock().unwrap().clone().unwrap_or_default())
 }
 
 #[utoipa::path(put, path = "/v1/config", request_body = EngineConfig,
@@ -156,7 +193,7 @@ async fn put_config(
     State(s): State<Arc<AppState>>,
     Json(new): Json<EngineConfig>,
 ) -> Result<Json<EngineConfig>, StatusCode> {
-    let mut cur = s.config.lock().unwrap();
+    let mut cur = s.rt.config.lock().unwrap();
     if new.revision < cur.as_ref().map_or(0, |c| c.revision) {
         return Err(StatusCode::CONFLICT);
     }
@@ -169,7 +206,7 @@ async fn put_config(
     responses((status = 200, body = Decision), (status = 400, description = "no config set yet"),
     (status = 503, description = "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
 async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) -> Response {
-    let Some(config) = s.config.lock().unwrap().clone() else {
+    let Some(config) = s.rt.config.lock().unwrap().clone() else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     let caps = match (body.host_caps, s.hw.snapshot()) {

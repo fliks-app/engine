@@ -4,12 +4,12 @@ Version: `protocolVersion = 1` (`GET /v1/hello`, with `features[]`). Schema: [op
 
 ## Transport
 
-JSON over HTTP, SSE for events (planned). Two planes:
+JSON over HTTP, SSE for events. Two planes:
 
 1. Control (`/v1/*`): host to engine, `Authorization: Bearer $FLIKS_ENGINE_TOKEN`, loopback only.
-2. Data (player to engine): `GET`/`HEAD` with Range, credential delegated to the host resolver (M3).
+2. Data (player to engine): `GET`/`HEAD` with Range, credential delegated to the host resolver.
 
-The control plane is only on `--listen`. With `--upstream` the engine also runs a public gateway (below).
+The control plane is only on `--listen`. The data plane is served on `--listen` too (for a host behind its own proxy) and, with `--upstream`, on the public gateway (below).
 
 ## Rules
 
@@ -29,21 +29,37 @@ The control plane is only on `--listen`. With `--upstream` the engine also runs 
 | `POST /v1/probe` (`{ media: { mediaFileId, path }, crop, mkvTags, moviehash }` -> `{ ok, info?, moviehash?, error? }`: `ok: false` means ffprobe could not tell, never "no subtitles"; see `docs/spec/probe.md`) | M2 implemented |
 | Detection re-runs when `PUT /v1/config` changes `streaming.gpuRenderNode`; the previous snapshot is served meanwhile | M2 implemented |
 | `POST /v1/decide` (`{ request, hostCaps? }`, 400 before the first `PUT /v1/config`; without `hostCaps` the detected host decides, 503 + `Retry-After: 1` until detection ends; `hostCaps` is a debug/shadow override) | M1 implemented |
-| `POST /v1/sessions`, heartbeat, command, `DELETE`, `GET /v1/sessions[/{sid}]`, `POST /v1/revoke`, `GET`/`DELETE /v1/cache`, `POST /v1/invalidate`, `GET /v1/events` | M3 |
+| `POST /v1/sessions` (`OpenSessionRequest` = `{ decide, ownerId?, client, tags, startAtS?, pinned, burnIn?, sourceVersion?, subtitleRenditions? }` -> `{ sessionId, profileHash?, playPath, decision, hints }`; decide + session + prewarm of a pinned rung; 400 before the first config or on a bad `ownerId`/relative path, 503 + `Retry-After: 1` before detection ends) | M3 implemented |
+| `POST /v1/sessions/{sid}/heartbeat` (`{ ownerId?, positionS?, state?, quality? }` -> `{ sessionLost }`, 403 for another owner; revives a session within `sessionReviveTtlMs`) | M3 implemented |
+| `POST /v1/sessions/{sid}/command` (`{ action: stop\|pauseJob\|resumeJob }`: 204, 404 unknown sid, 409 no running job or no pause capability), `DELETE /v1/sessions/{sid}[?reason=]` (204, idempotent) | M3 implemented |
+| `GET /v1/sessions[?ownerId&mediaFileId]`, `GET /v1/sessions/{sid}` (`SessionSnapshot` with `job: JobStats`: `state`, `requestedHw`, `actualHw`, `startSegment`, `frontierSegment`, `transcodePercent`, `throttled`, `restarts`, `stderrTail`; times are epoch ms as f64) | M3 implemented |
+| `POST /v1/revoke` (`{ ownerId?, mediaFileIds? }`, every given filter must match: sessions removed so their `sid` answers 410, jobs killed, resolver answers purged -> `{ sessions }`; 400 with neither) | M3 implemented |
+| `POST /v1/invalidate` (`{ mediaFileId }`: jobs killed, cache entries and subtitle extracts deleted, resolver answers purged; sessions stay -> `{ jobs, cacheEntries }`) | M3 implemented |
+| `GET /v1/cache` (`{ usedBytes, entries: [{ ownerId?, mediaFileId, profileHash, bytes, lastAccessMs, live }] }`), `DELETE /v1/cache[?mediaFileId&ownerId]` (non-live entries -> `{ removed }`) | M3 implemented |
+| `GET /v1/events` (SSE, event name = `type`, data = `EngineEvent`: `SessionOpened`, `SessionEnded{reason}`, `PipelineChanged`, `SegmentServed`, `JobStarted`, `JobEnded`, `HwFallback`; resync with `GET /v1/sessions`) | M3 implemented |
+| Cache root `FLIKS_TRANSCODE_DIR` (else `FLIKS_CACHE_DIR`, else the OS temp dir), layout `cache/v1/`; the old layout is purged once at boot. See `docs/spec/runtime.md` | M3 implemented |
 | `POST /v1/jobs`, `DELETE /v1/jobs/{id}` | M5 |
 | `POST /v1/live` | M6 |
 
 ## Resolver (implemented by the host)
 
 ```
-POST {hostUrl}/engine/resolve   Authorization: Bearer {hostToken}
-  <- { mediaId, credential /* raw cookie, Bearer or ?token= */, purpose: stream|download|sprite|subtitle|live, subtitleId? }
-  -> { allow: bool, path?, ownerId?, format?, ttlS }
+POST {hostUrl}/engine/resolve   Authorization: Bearer {hostToken}   (401 on a wrong token)
+  <- { mediaId, credential, purpose: stream|download|sprite|subtitle|live, subtitleId?, streamIndex? }
+  -> { allow: bool, path?, ownerId?, format?, ttlS? }
 ```
 
-The engine knows neither JWT nor ACL. Answers are cached per `(hash(credential), mediaId, purpose)` for `ttlS` (60 s default). Host down: cached entries and existing sessions keep being served, new requests get 503. `POST /v1/revoke` kills sessions and purges the cache immediately.
+- `hostUrl`/`hostToken` come from `PUT /v1/config`. Types: `ResolveRequest`/`ResolveResponse` in `openapi.json`.
+- `credential`: the client credential exactly as received, one string: the `?token=` value, else the `Authorization` header value (`Bearer <jwt>`), else the `Cookie` header value. The host parses all three.
+- `mediaId`: the media file id (number); for `live` (M6) the live session id (string).
+- `stream`/`download`: `path` = the media file, `format` = its MIME type (optional, else the engine guesses from the extension).
+- `sprite`: `path` = `sprite.jpg` (its `sprite.json` is the sibling), not checked by the host: the engine answers 404 when missing.
+- `subtitle`: `subtitleId` (external file: `path` = the file, `format` = its extension `srt`/`ass`/`vtt`) or `streamIndex` (embedded: `format: "embedded"`, `path` = the media file, the engine extracts the stream).
+- Denials are `{ allow: false, ttlS: 60 }` without a path. A host error is an HTTP 5xx and is never cached as a denial.
 
-## Data plane routing (host prefix `/api/stream`, M3)
+The engine knows neither JWT nor ACL. Answers (denials included) are cached per `(hash(credential), mediaId, purpose, subtitleId, streamIndex)` for `ttlS` (60 s default). Host unreachable, timing out (5 s) or failing: an expired grant and the sessions of the requested file keep being served, other requests get 503 + `Retry-After: 2`. Data-plane answers: 403 on a denial; on a `?sid=` the engine no longer knows, 410 `{ code: "session_expired", sid, message }`; on a session of another owner or file, 403. `POST /v1/revoke` kills sessions and purges the cache immediately.
+
+## Data plane routing (host prefix `/api/stream`, M3 implemented)
 
 Engine serves `GET`/`HEAD` of `/api/stream/:mediaFileId/**` except `edl`; everything else is forwarded to the host.
 
@@ -56,6 +72,8 @@ Engine serves `GET`/`HEAD` of `/api/stream/:mediaFileId/**` except `edl`; everyt
 | `:id/thumbnails/sprite.{json,jpg}` | |
 | `:id/subtitles/embedded/:idx[/download\|/index.m3u8]`, `:id/subtitles/:subId[/download\|/index.m3u8]` | |
 | M6: `livetv/sessions/:sid/{index.m3u8,:segment}` | |
+
+Not served yet: DirectStream `:id/remux/*` and the audio renditions of a remux session answer 501 (the remux assembler is not ported).
 
 ## Gateway (`--upstream`, spec: `docs/spec/gateway.md`)
 

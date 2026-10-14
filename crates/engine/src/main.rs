@@ -40,7 +40,13 @@ async fn main() -> std::process::ExitCode {
         fliks_engine::hw::ffmpeg_path(),
     ));
     hw.start();
-    let server = axum::serve(listener, fliks_engine::app(token.clone(), hw));
+    let rt = fliks_engine::runtime::Runtime::new(
+        hw,
+        fliks_engine::cache::Cache::from_env(),
+        fliks_engine::hw::ffmpeg_path(),
+    );
+    rt.start();
+    let server = axum::serve(listener, fliks_engine::router(token.clone(), rt.clone()));
     let mut host_env = vec![];
     if let Some(up) = &cli.upstream {
         let table = match &cli.gateway_routes {
@@ -58,8 +64,11 @@ async fn main() -> std::process::ExitCode {
             "FLIKS_ENGINE_PUBLIC_LISTENING {}",
             public.local_addr().unwrap()
         );
-        // ponytail: engine routes are forwarded until the M3 data plane is passed here
-        let app = gateway::router(table, up.clone(), None);
+        let app = gateway::router(
+            table,
+            up.clone(),
+            Some(fliks_engine::serve::router(rt.clone())),
+        );
         tokio::spawn(async move {
             axum::serve(
                 public,
@@ -74,11 +83,13 @@ async fn main() -> std::process::ExitCode {
         let code =
             fliks_engine::supervise::run(&cli.cmd, &format!("http://{addr}"), &token, &host_env)
                 .await;
+        rt.shutdown().await;
         return std::process::ExitCode::from(code);
     }
     server
         .with_graceful_shutdown(fliks_engine::supervise::shutdown_signal())
         .await
         .unwrap();
+    rt.shutdown().await;
     std::process::ExitCode::SUCCESS
 }
