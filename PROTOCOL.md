@@ -1,6 +1,6 @@
 # Protocol
 
-Version: `protocolVersion = 1` (`GET /v1/hello`, with `features[]`). Schema: [openapi.json](openapi.json), generated from `crates/core/src/api.rs`.
+Version: `protocolVersion = 1` (`GET /v1/hello`, with `features[]`). Schema: [openapi.json](openapi.json), generated from `crates/core/src/api.rs`; `crates/engine/tests/openapi_wire.rs` keeps every wire key in it.
 
 ## Transport
 
@@ -29,7 +29,7 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 | `POST /v1/probe` (`{ media: { mediaFileId, path }, crop, mkvTags, moviehash }` -> `{ ok, info?, moviehash?, error? }`: `ok: false` means ffprobe could not tell, never "no subtitles"; see `docs/spec/probe.md`) | M2 implemented |
 | Detection re-runs when `PUT /v1/config` changes `streaming.gpuRenderNode`; the previous snapshot is served meanwhile | M2 implemented |
 | `POST /v1/decide` (`{ request, hostCaps? }`, 400 before the first `PUT /v1/config`; without `hostCaps` the detected host decides, 503 + `Retry-After: 1` until detection ends; `hostCaps` is a debug/shadow override) | M1 implemented |
-| `POST /v1/sessions` (`OpenSessionRequest` = `{ decide, ownerId?, client, tags, startAtS?, pinned, burnIn?, sourceVersion?, subtitleRenditions? }` -> `{ sessionId, profileHash?, playPath, decision, hints }`; decide + session + prewarm of a pinned rung; 400 before the first config or on a bad `ownerId`/relative path, 503 + `Retry-After: 1` before detection ends) | M3 implemented |
+| `POST /v1/sessions` (`OpenSessionRequest` = `{ decide, ownerId?, client, tags, startAtS?, pinned, burnIn?, sourceVersion?, subtitleRenditions? }` -> `{ sessionId, profileHash?, playPath, decision, hints, playbackClockOffsetS?, tonemapAlgo?, tonemapCurve?, qoePipeline? }`, the last four what the host's playback-info adds beside the decision, `docs/spec/runtime.md` section 10; decide + session + prewarm of a pinned rung; 400 before the first config or on a bad `ownerId`/relative path, 503 + `Retry-After: 1` before detection ends) | M3 implemented |
 | `POST /v1/sessions/{sid}/heartbeat` (`{ ownerId?, positionS?, state?, quality? }` -> `{ sessionLost }`, 403 for another owner; revives a session within `sessionReviveTtlMs`) | M3 implemented |
 | `POST /v1/sessions/{sid}/command` (`{ action: stop\|pauseJob\|resumeJob }`: 204, 404 unknown sid, 409 no running job or no pause capability), `DELETE /v1/sessions/{sid}[?reason=]` (204, idempotent) | M3 implemented |
 | `GET /v1/sessions[?ownerId&mediaFileId]`, `GET /v1/sessions/{sid}` (`SessionSnapshot` with `job: JobStats`: `state`, `requestedHw`, `actualHw`, `startSegment`, `frontierSegment`, `transcodePercent`, `throttled`, `restarts`, `stderrTail`; times are epoch ms as f64) | M3 implemented |
@@ -50,7 +50,7 @@ POST {hostUrl}/engine/resolve   Authorization: Bearer {hostToken}   (401 on a wr
 ```
 
 - `hostUrl`/`hostToken` come from `PUT /v1/config`. Types: `ResolveRequest`/`ResolveResponse` in `openapi.json`.
-- `credential`: the client credential exactly as received, one string: the `?token=` value, else the `Authorization` header value (`Bearer <jwt>`), else the `Cookie` header value. The host parses all three.
+- `credential`: the client credential exactly as received, one string, in the host's own extractor order: the `Cookie` header value, else a `Bearer` `Authorization` value (`Bearer <jwt>`), else the `?token=` value. The host parses all three; a request with any cookie sends the cookie header.
 - `mediaId`: the media file id (number); for `live` (M6) the live session id (string).
 - `stream`/`download`: `path` = the media file, `format` = its MIME type (optional, else the engine guesses from the extension).
 - `sprite`: `path` = `sprite.jpg` (its `sprite.json` is the sibling), not checked by the host: the engine answers 404 when missing.
@@ -73,7 +73,7 @@ Engine serves `GET`/`HEAD` of `/api/stream/:mediaFileId/**` except `edl`; everyt
 | `:id/subtitles/embedded/:idx[/download\|/index.m3u8]`, `:id/subtitles/:subId[/download\|/index.m3u8]` | |
 | M6: `livetv/sessions/:sid/{index.m3u8,:segment}` | |
 
-Not served yet: DirectStream `:id/remux/*` and the audio renditions of a remux session answer 501 (the remux assembler is not ported).
+DirectStream: `:id/remux/*` and a remux session's audio renditions come from copy-video runs on the keyframe grid frozen at open (`docs/spec/runtime.md` section 9).
 
 ## Gateway (`--upstream`, spec: `docs/spec/gateway.md`)
 

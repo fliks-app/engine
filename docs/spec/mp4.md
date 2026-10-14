@@ -45,8 +45,18 @@ Where the TS throws, the port returns `Err(Mp4Error)`: `OutOfRange` for a Node b
 - `parse_frame(moof, mdat)`: one-sample audio fragment (traf after the moof header, tfdt, trun), mdat payload after its header; errors `audio fragment missing traf/tfhd/tfdt/trun`, `expected 1 sample per audio fragment (frag_every_frame), got N`.
 - `build_fragment(track, seq, tfdt, samples, data)`: `moof(mfhd, traf(tfhd base-is-moof, tfdt v1, trun))` + `mdat`; trun flags data offset, duration, size, flags (+ cts when any sample has one; version 1 when one is negative), data offset = moof size + 8.
 
+- `remux_audio_grid(plan, libfdk)`: the packet grid of an encoded track at 48 kHz (`aac` 1024/1024, `libfdk_aac` up to 6 channels 1024/2048, `opus` 960/312, `ac3`/`eac3` 1536/256 samples), `None` for a copy; no plan is AAC stereo. `[ts:fa:1465-1470]` `[ts:audio-encode.ts:48-93]`
+
+## Assembler `[ts:ra:192-745]`
+
+The decisions of `RemuxSegmentAssembler` are pure (`assemble.rs`); `engine::remux` owns the files (`docs/spec/runtime.md` section 9).
+- `open_run(plan, init, firstGopMoofs)`: with a grid, the first GOP's video tfdt plus the plan's `-ss` must hit a keyframe pts within 2 ms (`first GOP starts at Xs, on no source keyframe`; no video fragment: `first GOP has no video fragment`); landing on another keyframe sets `gop_offset` and moves `next` to the first segment whose first GOP is not before it. `correction`/`dts_correction` = that keyframe's pts/dts less the tfdt time (the plan's `-ss` without a grid). Edits: `remux_edits(start, firstDecode ?? start - runVideoEdit)`; audio edits are the run's own encoder delay (`max(0, edit) / ts`). Per track delta `round((edit + shift + correction) * ts) - runEdit`, clamped so the first fragment never starts before 0. The served init is `with_init_edits` of those edits.
+- `gop_complete`: without a grid or video, a renamed file is whole; else the video decode extent plus half its last sample reaches the next keyframe's dts (the last GOP: the grid end), both through the run's corrections.
+- `check_gop`: the GOP's first video fragment must sit nearer its planned keyframe than either neighbour (`GOP file N starts at Xs, on keyframe K ...`); a file without a video fragment fails the append (`GOP g has no video fragment`).
+- `tail_boxes(buf, from)`: complete top-level boxes of a growing file; a size-0 box or one past the end stops.
+- `AudioGroup` (`open_audio` from the growing file's ftyp+moov): the first frame clamps the delta so it never starts before 0; frames group by `tfdt + round(correction * ts)` against the planned boundaries in ticks; a seeked run drops frames before its first segment; `flush` coalesces the pending frames into one `build_fragment` (sequence = segment + 1); past the grid's last segment nothing is grouped.
+
 ## Deviations
 
 - `trun_samples` refuses a `sample_count` above 2^24 (`OutOfRange`): the TS would allocate one object per declared sample of a corrupt box.
-- The stateful `RemuxSegmentAssembler` (fs watch, GOP completion, run landing, audio grouping, `canServe`) and `readMoofs`/`tailBoxes` are not ported: they belong with the engine's serve runtime, which will call these functions.
 - `output-timeline.spec.ts` asserts ffmpeg argv (args domain): only its `remuxRunStart` calls are replayed here.
