@@ -108,11 +108,13 @@ impl Cache {
     }
 
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
-        self.root.join("subtitles/v1").join(file.to_string())
+        self.root.join("subtitles/v2").join(file.to_string())
     }
 
-    /// Deletes every entry of `<root>/cache/` but the current namespace (the old layout).
+    /// Deletes every entry of `<root>/cache/` but the current namespace (the old layout), and the
+    /// `-f webvtt` extracts of `subtitles/v1`.
     pub fn purge_old_layout(&self) {
+        remove_dir(&self.root.join("subtitles/v1"));
         let parent = self.root.join(CACHE_NAMESPACE);
         let (Some(base), Some(keep)) = (parent.parent(), parent.file_name()) else {
             return;
@@ -189,7 +191,9 @@ mod tests {
         std::fs::write(rung.join("seg-0000.m4s"), [0u8; 10]).unwrap();
         std::fs::create_dir_all(c.entry_dir(None, 9, "def")).unwrap();
         std::fs::create_dir_all(root.join("cache/u7/42/old")).unwrap();
+        std::fs::create_dir_all(root.join("subtitles/v1/42")).unwrap();
         c.purge_old_layout();
+        assert!(!root.join("subtitles/v1").exists());
         assert!(!root.join("cache/u7").exists());
         let mut s = c.scan();
         s.sort_by_key(|e| e.media_file_id);

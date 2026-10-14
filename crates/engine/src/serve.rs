@@ -1016,37 +1016,18 @@ fn vtt_response(body: String, download: Option<String>) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// Embedded text track as WebVTT, extracted once per (file, stream).
+/// Embedded text track as WebVTT, extracted once per (file, stream) the way the job does.
 async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<String> {
+    use crate::jobs::subtitles::{raw_to_vtt, store, vtt_path};
     let dir = rt.cache.subtitles_dir(id);
-    let file = dir.join(format!("{idx}.vtt"));
-    if let Ok(t) = tokio::fs::read_to_string(&file).await {
+    if let Ok(t) = tokio::fs::read_to_string(vtt_path(&dir, idx)).await {
         return Some(t);
     }
-    let args: Vec<String> = [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        media,
-        "-map",
-        &format!("0:{idx}"),
-        "-f",
-        "webvtt",
-        "pipe:1",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let args = fliks_engine_core::jobs::subtitles::extract_args(media, &[(idx, "pipe:1")]);
     let out = run_capture(rt, &args, Duration::from_secs(300)).await?;
-    let text = String::from_utf8_lossy(&out).into_owned();
-    if tokio::fs::create_dir_all(&dir).await.is_ok() {
-        let tmp = dir.join(format!("{idx}.vtt.{}", crate::random_hex(4)));
-        if tokio::fs::write(&tmp, &text).await.is_ok() {
-            let _ = tokio::fs::rename(&tmp, &file).await;
-        }
-    }
-    Some(text)
+    let vtt = raw_to_vtt(&out, "pipe:1").ok()?;
+    let _ = store(&dir, idx, &vtt).await;
+    Some(vtt)
 }
 
 async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option<String> {

@@ -162,6 +162,9 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             "events".into(),
             "revoke".into(),
             "jobs".into(),
+            "scan".into(),
+            "fingerprint".into(),
+            "subtitle-extract".into(),
         ],
         instance_id: s.instance_id.clone(),
     })

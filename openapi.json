@@ -2055,6 +2055,46 @@
           }
         }
       },
+      "FingerprintWindow": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The first lookup seconds, read by fpcalc itself (`baseOffsetSec` 0).",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "head"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The last lookup seconds of a file of known duration.",
+            "required": [
+              "durationSeconds",
+              "type"
+            ],
+            "properties": {
+              "durationSeconds": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "outro"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Which audio the fingerprint reads."
+      },
       "Gpu": {
         "type": "object",
         "required": [
@@ -2323,6 +2363,71 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Keyframe scan of the whole file; needs a video stream in `info`.",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Scan"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Chromaprint of the head of the file (an intro) or of its tail (an outro).",
+            "required": [
+              "window",
+              "type"
+            ],
+            "properties": {
+              "maxLookupMinutes": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double",
+                "description": "`introMaxLookupMinutes`: minutes of audio read; absent or 0: 10."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Fingerprint"
+                ]
+              },
+              "window": {
+                "$ref": "#/components/schemas/FingerprintWindow"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Every embedded text track of the file as WebVTT, stored in the engine cache and served by\nthe subtitle routes (`info.subtitles` names the tracks; image-based ones are skipped).",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleExtract"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -2382,6 +2487,67 @@
                 "type": "string",
                 "enum": [
                   "Sprite"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`schemaVersion` stamped; the decide input's `scan`.",
+            "required": [
+              "scan",
+              "type"
+            ],
+            "properties": {
+              "scan": {
+                "$ref": "#/components/schemas/SourceScan"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Scan"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "fingerprint",
+              "type"
+            ],
+            "properties": {
+              "fingerprint": {
+                "$ref": "#/components/schemas/Fingerprint"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Fingerprint"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Stream indices whose VTT is now cached, served at `/api/stream/{id}/subtitles/embedded/{idx}`.",
+            "required": [
+              "streams",
+              "type"
+            ],
+            "properties": {
+              "streams": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleExtract"
                 ]
               }
             }

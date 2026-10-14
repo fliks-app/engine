@@ -7,7 +7,7 @@ use fliks_engine_core::hw::platform_from_os;
 use fliks_engine_core::jobs::sprite::*;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::SeqCst};
+use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 use tokio::task::JoinSet;
 
 pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
@@ -39,14 +39,10 @@ async fn generate(
     if ctx.cancelled() {
         return Err(CANCELLED.into());
     }
-    if failed >= MAX_FAILS {
+    if done == 0 {
         return Err(format!(
-            "Sprite aborted: {failed} failures out of {} attempts",
-            done + failed
+            "Sprite failed: no frame could be extracted ({failed} attempts)"
         ));
-    }
-    if let Some(e) = too_many_failures(failed, l.count) {
-        return Err(e);
     }
     if failed > 0 {
         let present: Vec<bool> = (0..l.count)
@@ -97,12 +93,10 @@ async fn extract(ctx: &Ctx, info: &MediaInfo, l: Layout, frames: &Path) -> (u32,
     );
     let next = Arc::new(AtomicU32::new(0));
     let counts = Arc::new((AtomicU32::new(0), AtomicU32::new(0)));
-    let aborted = Arc::new(AtomicBool::new(false));
     let workers = ctx.rt.slots.size().min(l.count as usize).max(1);
     let mut set = JoinSet::new();
     for _ in 0..workers {
-        let (ctx, next, counts, aborted) =
-            (ctx.clone(), next.clone(), counts.clone(), aborted.clone());
+        let (ctx, next, counts) = (ctx.clone(), next.clone(), counts.clone());
         let (crop, input, node, frames) = (
             crop.clone(),
             input.clone(),
@@ -112,7 +106,7 @@ async fn extract(ctx: &Ctx, info: &MediaInfo, l: Layout, frames: &Path) -> (u32,
         set.spawn(async move {
             loop {
                 let i = next.fetch_add(1, SeqCst);
-                if i >= l.count || aborted.load(SeqCst) || ctx.cancelled() {
+                if i >= l.count || ctx.cancelled() {
                     return;
                 }
                 // The GPU belongs to playback while it runs. [ts:modules/streaming/thumbnail.service.ts:103-113]
@@ -144,10 +138,6 @@ async fn extract(ctx: &Ctx, info: &MediaInfo, l: Layout, frames: &Path) -> (u32,
                                 frame = i + 1,
                                 "sprite frame failed: {e}"
                             );
-                        }
-                        if f >= MAX_FAILS {
-                            aborted.store(true, SeqCst);
-                            return;
                         }
                     }
                 }

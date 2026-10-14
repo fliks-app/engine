@@ -213,6 +213,7 @@ fn every_wire_key_is_in_its_schema() {
         EngineEvent,
         EstimateSizesRequest,
         Fingerprint,
+        FingerprintWindow,
         Gpu,
         HdrFormat,
         HdrMetadata,
