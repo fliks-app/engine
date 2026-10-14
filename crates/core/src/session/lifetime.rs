@@ -119,6 +119,8 @@ pub struct JobWatchInput {
     pub started_ms: i64,
     pub last_progress_ms: i64,
     pub paused: bool,
+    /// CPU time the process burnt since the previous tick (0 where it cannot be read).
+    pub cpu_delta_ms: u64,
     /// Media time of a run with a natural end (the early companion's `-to`), in ms.
     pub natural_end_ms: Option<i64>,
 }
@@ -142,7 +144,7 @@ pub fn job_watch(i: &JobWatchInput, cfg: &LifetimeConfig) -> JobWatch {
     {
         return JobWatch::Overran;
     }
-    if i.now_ms - i.last_progress_ms > stall {
+    if i.cpu_delta_ms == 0 && i.now_ms - i.last_progress_ms > stall {
         JobWatch::Stalled
     } else {
         JobWatch::Ok
@@ -240,8 +242,22 @@ mod tests {
             started_ms: 0,
             last_progress_ms: progress,
             paused: false,
+            cpu_delta_ms: 0,
             natural_end_ms: None,
         }
+    }
+
+    #[test]
+    fn a_job_burning_cpu_is_not_stalled_but_a_flat_one_is() {
+        let busy = JobWatchInput {
+            cpu_delta_ms: 10,
+            ..watch_input(999_999, 0)
+        };
+        assert_eq!(job_watch(&busy, &cfg()), JobWatch::Ok);
+        assert_eq!(
+            job_watch(&watch_input(999_999, 0), &cfg()),
+            JobWatch::Stalled
+        );
     }
 
     #[test]
@@ -283,6 +299,7 @@ mod tests {
     fn a_run_with_a_natural_end_is_killed_past_it_even_with_progress() {
         let early = |now| JobWatchInput {
             natural_end_ms: Some(7_000),
+            cpu_delta_ms: 50,
             ..watch_input(now, now)
         };
         assert_eq!(job_watch(&early(37_000), &cfg()), JobWatch::Ok);

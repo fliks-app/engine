@@ -62,3 +62,57 @@ fn upstream_sets_the_host_port_and_serves_the_public_listener() {
     assert_eq!(port.trim(), "4321");
     assert!(public.is_some_and(|a| a.starts_with("127.0.0.1:")));
 }
+
+/// A SIGKILLed engine runs no shutdown path: its ffmpeg children must die with it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_killed_engine_leaves_no_ffmpeg() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("fliks-pdeath-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (fake, pids) = (dir.join("ffmpeg"), dir.join("pids"));
+    std::fs::write(
+        &fake,
+        format!("#!/bin/sh\necho $$ >> {}\nexec sleep 600\n", pids.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .env("FFMPEG_PATH", &fake)
+        .args(["--supervise", "--", "sleep", "5"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let alive = |pid: &str| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|s| s.rsplit(") ").next().is_some_and(|r| !r.starts_with('Z')))
+    };
+    let child = loop {
+        match std::fs::read_to_string(&pids)
+            .ok()
+            .and_then(|s| s.lines().next().map(String::from))
+        {
+            Some(p) => break p,
+            None if start.elapsed() > Duration::from_secs(10) => panic!("engine never ran ffmpeg"),
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
+    assert!(alive(&child));
+    engine.kill().unwrap();
+    engine.wait().unwrap();
+    let start = Instant::now();
+    while alive(&child) && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left = alive(&child);
+    // Whatever the probes started is gone too.
+    for p in std::fs::read_to_string(&pids).unwrap_or_default().lines() {
+        if alive(p) {
+            let _ = Command::new("kill").args(["-9", p]).status();
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(!left, "ffmpeg {child} outlived the engine");
+}

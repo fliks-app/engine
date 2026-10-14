@@ -186,6 +186,20 @@ impl Ffmpeg {
         self.stderr_lines.load(Ordering::Relaxed)
     }
 
+    /// CPU time (user + system, threads and reaped children) burnt so far.
+    #[cfg(target_os = "linux")]
+    pub fn cpu_time_ms(&self) -> Option<u64> {
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", self.pid?)).ok()?;
+        let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
+        Some(stat_cpu_ticks(&stat)? * 1000 / ticks)
+    }
+
+    /// No CPU reading here: the watchdog goes by output and stderr only.
+    #[cfg(not(target_os = "linux"))]
+    pub fn cpu_time_ms(&self) -> Option<u64> {
+        None
+    }
+
     pub fn stderr_tail(&self) -> Vec<String> {
         self.stderr.lock().unwrap().iter().cloned().collect()
     }
@@ -246,6 +260,17 @@ impl Ffmpeg {
     }
 }
 
+/// utime + stime + cutime + cstime of a `/proc/<pid>/stat` line (the name may hold spaces).
+#[cfg(target_os = "linux")]
+fn stat_cpu_ticks(stat: &str) -> Option<u64> {
+    let rest = &stat[stat.rfind(')')? + 1..];
+    rest.split_whitespace()
+        .skip(11)
+        .take(4)
+        .map(|f| f.parse::<u64>().ok())
+        .sum()
+}
+
 #[cfg(unix)]
 fn group_signal(pid: u32, sig: i32) {
     unsafe { libc::kill(-(pid as i32), sig) };
@@ -287,6 +312,27 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(deaf.stop().await.signal);
         assert!(t.elapsed() >= STOP_GRACE);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cpu_ticks_come_from_fields_14_to_17() {
+        let line = "42 (ff mpeg) ) S 1 42 42 0 -1 4194560 100 0 0 0 7 5 3 1 20 0 4 0 99 0";
+        assert_eq!(stat_cpu_ticks(line), Some(16));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn cpu_time_grows_for_a_busy_process_and_stays_flat_for_a_sleeping_one() {
+        let busy = Ffmpeg::spawn("sh", &sh("while :; do :; done"))
+            .await
+            .unwrap();
+        let idle = Ffmpeg::spawn("sh", &sh("sleep 30")).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(busy.cpu_time_ms().unwrap() >= 100);
+        assert!(idle.cpu_time_ms().unwrap() < 100);
+        busy.stop().await;
+        idle.stop().await;
     }
 
     #[tokio::test]
