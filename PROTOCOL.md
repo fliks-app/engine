@@ -9,6 +9,8 @@ JSON over HTTP, SSE for events (planned). Two planes:
 1. Control (`/v1/*`): host to engine, `Authorization: Bearer $FLIKS_ENGINE_TOKEN`, loopback only.
 2. Data (player to engine): `GET`/`HEAD` with Range, credential delegated to the host resolver (M3).
 
+The control plane is only on `--listen`. With `--upstream` the engine also runs a public gateway (below).
+
 ## Rules
 
 - Additive only within v1: never remove or rename a field, endpoint or enum value.
@@ -54,3 +56,11 @@ Engine serves `GET`/`HEAD` of `/api/stream/:mediaFileId/**` except `edl`; everyt
 | `:id/thumbnails/sprite.{json,jpg}` | |
 | `:id/subtitles/embedded/:idx[/download\|/index.m3u8]`, `:id/subtitles/:subId[/download\|/index.m3u8]` | |
 | M6: `livetv/sessions/:sid/{index.m3u8,:segment}` | |
+
+## Gateway (`--upstream`, spec: `docs/spec/gateway.md`)
+
+`fliks-engine --upstream http://host:port [--public-listen 0.0.0.0:4848] [--gateway-routes routes.json] [--supervise -- cmd]`
+
+- The public listener serves the engine routes of a configurable route table (ordered `{ target: engine|forward, methods?, path }` rules, `:name`/`*` one segment, trailing `**`; default = the table above) and forwards everything else to the upstream verbatim: method, path+query, headers (plus `X-Forwarded-For/Proto/Host`, minus hop-by-hop), streamed bodies, SSE, WebSocket/`Upgrade`. Upstream unreachable: `502` on forwarded routes, engine routes unaffected.
+- `/v1/*` of the engine is never on the public listener; it stays on `--listen`. A `/v1/*` path there is just another forwarded path.
+- `--supervise --upstream`: the host is started with `PORT=<upstream port>` (plus `FLIKS_ENGINE_URL`/`FLIKS_ENGINE_TOKEN`) so it listens on the internal address. Without `--supervise` the host is any process reachable at the URL (remote host, gateway-only role); without `--upstream` nothing changes.
