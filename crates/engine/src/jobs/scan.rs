@@ -1,10 +1,11 @@
 //! The `Scan` job: ffprobe over every video packet (keyframes, end, clock break) and, on MPEG-TS
-//! with AAC, the ADTS headers read from the same bytes. Spec: `docs/spec/jobs.md` section 6.
+//! with AAC, the ADTS headers a `TsDemuxer` reads from the same bytes. Spec: `docs/spec/jobs.md` section 6.
 use super::{Cmd, Ctx};
 use crate::proc::{Ffmpeg, Pipes};
 use fliks_engine_core::api::{JobResult, MediaInfo, SOURCE_SCAN_SCHEMA_VERSION};
 use fliks_engine_core::jobs::scan::*;
-use std::sync::Arc;
+use fliks_engine_core::jobs::ts::TsDemuxer;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 const CHUNK: usize = 1 << 20;
@@ -24,7 +25,7 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
     let timeout = scan_timeout_ms(size as f64);
     let duration = info.duration_seconds.filter(|d| *d > 0.0);
     let (reader, changes) = if plan.piped() {
-        piped(ctx, &plan, &path, size, reader, duration, timeout).await?
+        piped(ctx, &plan, &path, reader, duration, timeout).await?
     } else {
         let cmd = ffprobe(ctx, &packet_args(&plan, &path));
         let c = ctx.clone();
@@ -33,7 +34,7 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
                 packets(&c, &p[0], reader, duration).await.map(|(r, _)| r)
             })
             .await??;
-        (reader, audio_config_changes(&[], &[], true))
+        (reader, Default::default())
     };
     let mut scan = reader.finish(changes)?;
     scan.schema_version = Some(SOURCE_SCAN_SCHEMA_VERSION);
@@ -41,11 +42,7 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
 }
 
 fn ffprobe(ctx: &Ctx, argv: &[String]) -> Cmd {
-    let pipes = Pipes {
-        stdout: true,
-        fds: 0,
-    };
-    Cmd::new("ffprobe", &ctx.rt.ffprobe, argv, pipes)
+    Cmd::new("ffprobe", &ctx.rt.ffprobe, argv, Pipes { stdout: true })
 }
 
 /// ffprobe's stdout by line until `on_line` says stop (true, the run is stopped); an exit not asked for fails.
@@ -105,35 +102,40 @@ async fn reorder_lead(ctx: &Ctx, plan: &ScanPlan, path: &str) -> Result<f64, Str
     .await?
 }
 
-/// The file's bytes into ffprobe and (unix) the ADTS ffmpeg; a sink whose tool ended is dropped.
+/// The PID of each AAC track from ffprobe; a track it names none for is read as possibly changing.
+async fn aac_pids_of(ctx: &Ctx, plan: &ScanPlan, path: &str) -> Result<Vec<Option<u16>>, String> {
+    let cmd = ffprobe(ctx, &pid_args(path));
+    let c = ctx.clone();
+    let out = ctx
+        .pipeline(REORDER_TIMEOUT_MS, vec![cmd], |p| async move {
+            let mut out = vec![];
+            let r = lines(&c, &p[0], |l| {
+                out.push(l.to_string());
+                true
+            })
+            .await;
+            r.map(|_| out)
+        })
+        .await?;
+    Ok(aac_pids(plan, out.iter().flatten().map(String::as_str)))
+}
+
+/// The file's bytes into ffprobe and the demuxer; ffprobe stopping (clock break) stops the read.
 async fn piped(
     ctx: &Ctx,
     plan: &ScanPlan,
     path: &str,
-    size: u64,
     reader: PacketReader,
     duration: Option<f64>,
     timeout: u64,
 ) -> Result<(PacketReader, std::collections::BTreeMap<u32, bool>), String> {
-    let mut cmds = vec![ffprobe(ctx, &packet_args(plan, "pipe:0"))];
-    if cfg!(unix) {
-        let argv = adts_args(plan, size);
-        let pipes = Pipes {
-            stdout: false,
-            fds: plan.aac.len(),
-        };
-        cmds.push(Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, pipes));
-    }
-    let (c, file, tracks) = (ctx.clone(), path.to_string(), plan.aac.len());
-    let (reader, walkers, ok) = ctx
+    let pids = aac_pids_of(ctx, plan, path).await?;
+    let demux = Arc::new(Mutex::new(TsDemuxer::new(&pids)));
+    let cmds = vec![ffprobe(ctx, &packet_args(plan, "pipe:0"))];
+    let (c, file, d) = (ctx.clone(), path.to_string(), demux.clone());
+    let (reader, walkers) = ctx
         .pipeline(timeout, cmds, |p| async move {
-            let adts = p.get(1).cloned();
-            let mut walks = vec![];
-            for i in 0..tracks {
-                let fd = adts.as_ref().and_then(|a| a.take_fd(i));
-                walks.push(tokio::spawn(walk(fd)));
-            }
-            let feeder = tokio::spawn(feed(c.clone(), file, p.clone()));
+            let feeder = tokio::spawn(feed(c.clone(), file, p[0].clone(), d.clone()));
             let out = packets(&c, &p[0], reader, duration).await;
             match &out {
                 Ok((_, true)) | Err(_) => feeder.abort(),
@@ -141,51 +143,25 @@ async fn piped(
                     let _ = feeder.await;
                 }
             }
-            let ok = match &adts {
-                Some(a) => a.wait().await.code == Some(0),
-                None => false,
-            };
-            let mut walkers = vec![];
-            for w in walks {
-                walkers.push(w.await.unwrap_or_default());
-            }
-            out.map(|(r, _)| (r, walkers, ok))
+            out.map(|(r, _)| (r, d.lock().unwrap().finish()))
         })
         .await??;
-    Ok((reader, audio_config_changes(&plan.aac, &walkers, ok)))
+    Ok((reader, audio_config_changes(&plan.aac, &walkers)))
 }
 
-async fn feed(ctx: Ctx, file: String, procs: Vec<Arc<Ffmpeg>>) {
-    let Ok(mut f) = tokio::fs::File::open(&file).await else {
+async fn feed(ctx: Ctx, file: String, ffprobe: Arc<Ffmpeg>, demux: Arc<Mutex<TsDemuxer>>) {
+    let (Ok(mut f), Some(mut sink)) = (
+        tokio::fs::File::open(&file).await,
+        ffprobe.take_stdin().await,
+    ) else {
         return;
     };
-    let mut sinks = vec![];
-    for p in &procs {
-        sinks.extend(p.take_stdin().await);
-    }
     let mut buf = vec![0u8; CHUNK];
-    while !sinks.is_empty() {
-        let Ok(n @ 1..) = f.read(&mut buf).await else {
+    while let Ok(n @ 1..) = f.read(&mut buf).await {
+        demux.lock().unwrap().push(&buf[..n]);
+        if sink.write_all(&buf[..n]).await.is_err() {
             return;
-        };
-        let mut alive = vec![];
-        for mut s in sinks {
-            if s.write_all(&buf[..n]).await.is_ok() {
-                alive.push(s);
-            }
         }
-        sinks = alive;
         ctx.pulse();
     }
-}
-
-async fn walk(fd: Option<crate::proc::FdReader>) -> AdtsConfigWalker {
-    let mut w = AdtsConfigWalker::default();
-    if let Some(mut fd) = fd {
-        let mut buf = vec![0u8; 64 * 1024];
-        while let Ok(n @ 1..) = fd.read(&mut buf).await {
-            w.push(&buf[..n]);
-        }
-    }
-    w
 }

@@ -30,10 +30,7 @@ fn strs(v: &Value) -> Vec<&str> {
 fn scan_run(v: &Value) -> Value {
     let input = &v["input"];
     let info: MediaInfo = serde_json::from_value(input["info"].clone()).unwrap();
-    let (file, size) = (
-        input["filePath"].as_str().unwrap(),
-        input["size"].as_u64().unwrap(),
-    );
+    let file = input["filePath"].as_str().unwrap();
     let plan = match scan::ScanPlan::new(&info, file) {
         Ok(p) => p,
         Err(e) => return json!({ "error": e }),
@@ -58,17 +55,18 @@ fn scan_run(v: &Value) -> Value {
     }
     let mut changes = Default::default();
     if plan.piped() {
-        argv.insert("adts".into(), json!(scan::adts_args(&plan, size)));
+        // The host's ffmpeg argv of the ADTS read (no longer ours: the walkers take the bytes of a TS demux).
+        argv.insert("adts".into(), v["expected"]["argv"]["adts"].clone());
         let walkers: Vec<_> = (0..plan.aac.len())
             .map(|i| {
                 let mut w = scan::AdtsConfigWalker::default();
                 strs(&tools["adts"][i])
                     .iter()
                     .for_each(|c| w.push(&unb64(c)));
-                w
+                (tools["adtsExit"] == 0).then_some(w)
             })
             .collect();
-        changes = scan::audio_config_changes(&plan.aac, &walkers, tools["adtsExit"] == 0);
+        changes = scan::audio_config_changes(&plan.aac, &walkers);
     }
     match reader.finish(changes) {
         Ok(s) => json!({ "argv": argv, "scan": s }),

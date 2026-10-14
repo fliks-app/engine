@@ -74,8 +74,12 @@ fn drain_stdin() {
     let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
 }
 
-/// ffprobe: the reorder lead, or the packets of a 120 s file (keyframes at 0 and 0.125 s).
+/// ffprobe: the PIDs, the reorder lead, or the packets of a 120 s file (keyframes at 0 and 0.125 s).
 fn probe(mode: &str, args: &[String]) {
+    if args.iter().any(|a| a == "stream=index,id") {
+        println!("index=0|id=0x100\nindex=1|id=0x101");
+        return;
+    }
     if args.iter().any(|a| a.starts_with("stream=")) {
         println!("has_b_frames=2|avg_frame_rate=24/1");
         return;
@@ -104,26 +108,6 @@ fn probe(mode: &str, args: &[String]) {
     for l in lines {
         println!("{l}");
     }
-}
-
-/// The ADTS ffmpeg of a scan: reads the file on stdin, writes two frames to each `pipe:N`.
-#[cfg_attr(not(unix), allow(unused_variables))]
-fn adts(mode: &str, args: &[String]) {
-    #[cfg(unix)]
-    {
-        use std::os::fd::FromRawFd;
-        let outs = args
-            .iter()
-            .filter_map(|a| a.strip_prefix("pipe:")?.parse::<i32>().ok());
-        let frame = |sf: u8| [0xFF, 0xF1, 0x40 | sf << 2, 0x80, 0x01, 0x1F, 0xFC, 0x00];
-        let second = if mode == "scanchange" { 3 } else { 4 };
-        for fd in outs.filter(|fd| *fd >= 3) {
-            // SAFETY: the engine handed this process the fd.
-            let mut f = unsafe { std::fs::File::from_raw_fd(fd) };
-            let _ = f.write_all(&[frame(4), frame(second)].concat());
-        }
-    }
-    drain_stdin();
 }
 
 fn fpcalc(mode: &str, args: &[String]) {
@@ -173,8 +157,6 @@ fn job(mode: &str, args: &[String]) {
         fpcalc(mode, args)
     } else if has("wav") {
         wav(mode)
-    } else if has("data") {
-        adts(mode, args)
     } else if has("ass") {
         subs(mode, args)
     } else {
@@ -201,8 +183,8 @@ fn main() {
         m @ ("sprite" | "slowsprite" | "hangsprite" | "failsprite" | "flakysprite") => {
             sprite(m, &args)
         }
-        m @ ("scan" | "scanchange" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp"
-        | "sub" | "emptysub" | "failsub" | "hangsub") => job(m, &args),
+        m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
+        | "failsub" | "hangsub") => job(m, &args),
         _ => hang(),
     }
 }

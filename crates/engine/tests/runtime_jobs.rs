@@ -361,19 +361,53 @@ async fn scan_job_reads_packets_and_reports_progress() {
     assert!(e.ffmpeg_pids().is_empty());
 }
 
+/// A MPEG-TS of 188-byte packets: PAT, a PMT with H.264 on 0x100 and ADTS on 0x101, and one PES
+/// of 0x101 holding two frames (sampling index 4, then `second`).
+fn ts_bytes(second: u8) -> Vec<u8> {
+    let packet = |pid: u16, pusi: bool, cc: u8, payload: &[u8]| {
+        let mut p = vec![0x47, u8::from(pusi) << 6 | (pid >> 8) as u8, pid as u8];
+        let stuff = 183 - payload.len();
+        p.extend([0x30 | cc, stuff as u8]);
+        if stuff > 0 {
+            p.extend([0]);
+            p.extend(vec![0xff; stuff - 1]);
+        }
+        p.extend_from_slice(payload);
+        p
+    };
+    let pat = [0, 0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0, 0, 0, 0, 0];
+    let pmt = [
+        0, 2, 0xb0, 23, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, 0x1b, 0xe1, 0, 0xf0, 0, 0x0f, 0xe1, 1,
+        0xf0, 0, 0, 0, 0, 0,
+    ];
+    let frame = |sf: u8| [0xff, 0xf1, 0x40 | sf << 2, 0x80, 0x01, 0x1f, 0xfc, 0];
+    let mut pes = vec![0, 0, 1, 0xc0, 0, 0, 0x80, 0, 0];
+    pes.extend([frame(4), frame(second)].concat());
+    [
+        packet(0, true, 0, &pat),
+        packet(0x1000, true, 0, &pmt),
+        packet(0x101, true, 0, &pes),
+    ]
+    .concat()
+}
+
 #[tokio::test]
 async fn scan_job_of_mpeg_ts_reads_the_adts_headers_from_the_same_bytes() {
     let ts = json!({ "formatName": "mpegts" });
-    for (mode, changed) in [("scan", false), ("scanchange", true)] {
-        let (e, file) = engine_of(mode, json!({})).await;
-        let kind = json!({ "type": "Scan", "info": tool_info(ts.clone()) });
+    let (e, file) = engine_of("scan", json!({})).await;
+    // Stream 2 has no PID in ffprobe's answer: it may change, whatever the bytes say.
+    let mut info = tool_info(ts);
+    let fra = json!({ "streamIndex": 2, "codec": "aac", "language": "fra" });
+    info["audio"].as_array_mut().unwrap().push(fra);
+    for (second, changed) in [(4, false), (3, true)] {
+        std::fs::write(&file, ts_bytes(second)).unwrap();
+        let kind = json!({ "type": "Scan", "info": info });
         let v = run_kind(&e, 7, &file, kind).await;
-        assert_eq!(v["state"], "done", "{mode}: {v}");
-        let want = if cfg!(unix) { changed } else { true };
+        assert_eq!(v["state"], "done", "{second}: {v}");
         assert_eq!(
             v["result"]["scan"]["audioConfigChanges"],
-            json!({ "1": want }),
-            "{mode}"
+            json!({ "1": changed, "2": true }),
+            "{second}"
         );
         assert!(e.ffmpeg_pids().is_empty());
     }
