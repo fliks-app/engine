@@ -143,6 +143,7 @@ pub struct Engine {
     pub rt: Arc<Runtime>,
     pub stub: Arc<Stub>,
     pub root: PathBuf,
+    pub ffmpeg: String,
 }
 
 pub fn ffmpeg() -> String {
@@ -180,6 +181,7 @@ pub async fn engine_with(hw: Arc<Hw>, ffmpeg: &str, lifetime: Value) -> Engine {
         rt,
         stub,
         root,
+        ffmpeg: ffmpeg.into(),
     };
     let r = e
         .control(
@@ -330,6 +332,7 @@ impl Engine {
     }
 
     /// `ffmpeg` processes whose argv names this engine's cache root.
+    #[cfg(unix)]
     pub fn ffmpeg_pids(&self) -> Vec<u32> {
         let root = self.root.to_string_lossy().into_owned();
         // `ps` instead of /proc so the same check runs on macOS.
@@ -347,6 +350,43 @@ impl Engine {
                 (!f.next()?.starts_with('Z')).then_some(pid)
             })
             .collect()
+    }
+
+    /// Live processes running this engine's ffmpeg exe (the tests give each engine its own name).
+    #[cfg(windows)]
+    pub fn ffmpeg_pids(&self) -> Vec<u32> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+        use windows_sys::Win32::System::Threading::*;
+        let name = Path::new(&self.ffmpeg)
+            .file_name()
+            .unwrap()
+            .to_string_lossy();
+        let mut pids = vec![];
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            let mut e: PROCESSENTRY32W = std::mem::zeroed();
+            e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut more = Process32FirstW(snap, &mut e);
+            while more != 0 {
+                let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(0);
+                let exe = String::from_utf16_lossy(&e.szExeFile[..len]);
+                if exe.eq_ignore_ascii_case(&name) {
+                    // An exited process stays listed while a handle on it is open.
+                    let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, e.th32ProcessID);
+                    let mut code = 0;
+                    if !h.is_null() && GetExitCodeProcess(h, &mut code) != 0 && code == 259 {
+                        pids.push(e.th32ProcessID);
+                    }
+                    if !h.is_null() {
+                        CloseHandle(h);
+                    }
+                }
+                more = Process32NextW(snap, &mut e);
+            }
+            CloseHandle(snap);
+        }
+        pids
     }
 }
 

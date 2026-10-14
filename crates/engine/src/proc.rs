@@ -76,8 +76,7 @@ pub struct Exit {
 /// One running ffmpeg: its own process group (unix) or the kill-on-close job (windows).
 /// Dropping the handle kills it.
 pub struct Ffmpeg {
-    // Only signalled on unix; windows stops through the job object and stdin.
-    #[cfg_attr(not(unix), allow(dead_code))]
+    // Signalled on unix; windows only reads its CPU time and stops through the job and stdin.
     pid: Option<u32>,
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
@@ -194,8 +193,43 @@ impl Ffmpeg {
         Some(stat_cpu_ticks(&stat)? * 1000 / ticks)
     }
 
-    /// No CPU reading here: the watchdog goes by output and stderr only.
-    #[cfg(not(target_os = "linux"))]
+    /// `proc_pid_rusage` counts in mach ticks, hence the timebase.
+    #[cfg(target_os = "macos")]
+    #[allow(deprecated)]
+    pub fn cpu_time_ms(&self) -> Option<u64> {
+        let (mut ri, mut tb): (libc::rusage_info_v2, libc::mach_timebase_info_data_t) =
+            unsafe { std::mem::zeroed() };
+        let buf = &mut ri as *mut _ as *mut libc::rusage_info_t;
+        let ok = unsafe {
+            libc::mach_timebase_info(&mut tb) == 0
+                && tb.denom != 0
+                && libc::proc_pid_rusage(self.pid? as i32, libc::RUSAGE_INFO_V2, buf) == 0
+        };
+        let ticks = ri.ri_user_time + ri.ri_system_time;
+        let ticks = ticks + ri.ri_child_user_time + ri.ri_child_system_time;
+        ok.then(|| (ticks as u128 * tb.numer as u128 / tb.denom as u128 / 1_000_000) as u64)
+    }
+
+    /// CPU time (user + kernel) burnt so far, from `GetProcessTimes`.
+    #[cfg(windows)]
+    pub fn cpu_time_ms(&self) -> Option<u64> {
+        use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+        use windows_sys::Win32::System::Threading::*;
+        let ticks = |t: FILETIME| (t.dwHighDateTime as u64) << 32 | t.dwLowDateTime as u64;
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, self.pid?);
+            if h.is_null() {
+                return None;
+            }
+            let mut t: [FILETIME; 4] = std::mem::zeroed();
+            let ok = GetProcessTimes(h, &mut t[0], &mut t[1], &mut t[2], &mut t[3]);
+            CloseHandle(h);
+            // FILETIME counts 100 ns.
+            (ok != 0).then(|| (ticks(t[2]) + ticks(t[3])) / 10_000)
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     pub fn cpu_time_ms(&self) -> Option<u64> {
         None
     }
@@ -319,20 +353,6 @@ mod tests {
     fn cpu_ticks_come_from_fields_14_to_17() {
         let line = "42 (ff mpeg) ) S 1 42 42 0 -1 4194560 100 0 0 0 7 5 3 1 20 0 4 0 99 0";
         assert_eq!(stat_cpu_ticks(line), Some(16));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn cpu_time_grows_for_a_busy_process_and_stays_flat_for_a_sleeping_one() {
-        let busy = Ffmpeg::spawn("sh", &sh("while :; do :; done"))
-            .await
-            .unwrap();
-        let idle = Ffmpeg::spawn("sh", &sh("sleep 30")).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        assert!(busy.cpu_time_ms().unwrap() >= 100);
-        assert!(idle.cpu_time_ms().unwrap() < 100);
-        busy.stop().await;
-        idle.stop().await;
     }
 
     #[tokio::test]

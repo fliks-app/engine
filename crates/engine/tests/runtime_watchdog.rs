@@ -1,19 +1,21 @@
-//! Job ownership and the stall watchdog, against fake ffmpeg scripts (no real ffmpeg).
-#![cfg(unix)]
+//! Job ownership and the stall watchdog, against the `fake-ffmpeg` test binary (no real ffmpeg).
 mod runtime_common;
+use fliks_engine::proc::{Ffmpeg, STOP_GRACE};
 use fliks_engine::runtime::JobKind;
 use fliks_engine_core::api::{EngineEvent, HwAccel};
 use runtime_common::*;
 use serde_json::{Value, json};
 use std::time::Duration;
 
-/// Ignores SIGTERM and writes nothing, like the hung ffmpeg: only SIGKILL ends it.
-const HANG: &str = "trap '' TERM\nwhile :; do sleep 1; done\n";
-
-fn fake(body: &str) -> String {
-    let p = temp_dir("fake").join("ffmpeg");
-    std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
-    std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+/// A copy of the fake under a name of its own: the mode is in it, and each engine's processes
+/// can be told apart.
+fn fake(mode: &str) -> String {
+    let p = temp_dir("fake").join(format!(
+        "{mode}-{}{}",
+        fliks_engine::random_hex(4),
+        std::env::consts::EXE_SUFFIX
+    ));
+    std::fs::copy(env!("CARGO_BIN_EXE_fake-ffmpeg"), &p).unwrap();
     p.to_string_lossy().into_owned()
 }
 
@@ -30,7 +32,12 @@ fn info() -> Value {
 
 async fn engine_of(ffmpeg: &str, lifetime: Value) -> (Engine, std::path::PathBuf) {
     let e = engine_with(
-        host(HwAccel::None, "/dev/dri/renderD128", "signal"),
+        // Windows has no SIGSTOP: a pause goes through stdin there.
+        host(
+            HwAccel::None,
+            "/dev/dri/renderD128",
+            if cfg!(unix) { "signal" } else { "stdin" },
+        ),
         ffmpeg,
         lifetime,
     )
@@ -65,7 +72,7 @@ async fn until(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
 
 /// A session with a running main, early and remux job.
 async fn with_all_jobs(lifetime: Value) -> (Engine, String) {
-    let (e, file) = engine_of(&fake(HANG), lifetime).await;
+    let (e, file) = engine_of(&fake("hang"), lifetime).await;
     let sid = open(&e, &file, resume()).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
@@ -155,7 +162,7 @@ async fn every_job_kind_stops_on_engine_shutdown() {
 
 #[tokio::test]
 async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
-    let (e, file) = engine_of(&fake(HANG), json!({})).await;
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.stop(&sid, "stopped").await;
@@ -169,14 +176,14 @@ async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
 
 #[tokio::test]
 async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_request() {
-    let (e, file) = engine_of(&fake(HANG), json!({ "jobStallTimeoutMs": 1000 })).await;
+    let (e, file) = engine_of(&fake("hang"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let mut ev = e.rt.events.subscribe();
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
     until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
     let first = e.rt.job(&s.key(JobKind::Remux)).unwrap();
-    // 1 s of silence, then SIGTERM is ignored and the 2 s grace ends in SIGKILL.
+    // 1 s of silence, then the polite stop is ignored and the 2 s grace ends in a kill.
     until("the stall kill", 10, || !first.producing()).await;
     gone(&e, "no process left").await;
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -191,7 +198,9 @@ async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_r
             _ => None,
         })
         .collect();
-    assert_eq!(ended, [("Failed".into(), None, Some("stalled".into()))]);
+    // A kill is a signal on unix and exit code 1 on windows.
+    let code = if cfg!(unix) { None } else { Some(1) };
+    assert_eq!(ended, [("Failed".into(), code, Some("stalled".into()))]);
     // The next request goes through the normal path and starts a new run.
     e.rt.prewarm_remux(&s, 0.0);
     until("the restart", 10, || e.ffmpeg_pids().len() == 1).await;
@@ -199,16 +208,10 @@ async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_r
     assert!(e.ffmpeg_pids().is_empty());
 }
 
-#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn a_run_burning_cpu_without_output_is_not_killed_until_it_goes_idle() {
     // Busy for ~4 s (past the 1 s timeout) with no file and no stderr, then hangs like the real bug.
-    let busy = "end=$(( $(date +%s) + 4 ))\nwhile [ $(date +%s) -lt $end ]; do :; done\n";
-    let (e, file) = engine_of(
-        &fake(&format!("{busy}{HANG}")),
-        json!({ "jobStallTimeoutMs": 1000 }),
-    )
-    .await;
+    let (e, file) = engine_of(&fake("busy"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
@@ -226,8 +229,7 @@ async fn a_run_burning_cpu_without_output_is_not_killed_until_it_goes_idle() {
 
 #[tokio::test]
 async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
-    let chatty = "while :; do echo tick >&2; sleep 0.2; done\n";
-    let (e, file) = engine_of(&fake(chatty), json!({ "jobStallTimeoutMs": 1000 })).await;
+    let (e, file) = engine_of(&fake("talk"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.prewarm_remux(&s, 0.0);
@@ -236,7 +238,7 @@ async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
     assert_eq!(e.ffmpeg_pids().len(), 1);
     e.rt.shutdown().await;
 
-    let (e, file) = engine_of(&fake(HANG), json!({ "jobStallTimeoutMs": 1000 })).await;
+    let (e, file) = engine_of(&fake("hang"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let pinned = json!({ "selection": { "requestedQuality": "720p" } });
     let sid = open(&e, &file, pinned).await;
     until("the run", 10, || e.ffmpeg_pids().len() == 1).await;
@@ -260,12 +262,7 @@ async fn a_run_that_keeps_talking_is_not_stalled_and_a_paused_one_is_exempt() {
 
 #[tokio::test]
 async fn an_early_companion_that_outlives_its_media_time_is_killed() {
-    // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
-    let body = format!(
-        "case \"$*\" in *\" -to \"*) while :; do echo tick >&2; sleep 0.2; done;; *) {} ;; esac\n",
-        HANG.replace('\n', "; ")
-    );
-    let (e, file) = engine_of(&fake(&body), json!({ "jobStallTimeoutMs": 1000 })).await;
+    let (e, file) = engine_of(&fake("early"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let mut ev = e.rt.events.subscribe();
     let sid = open(&e, &file, resume()).await;
     let s = e.rt.peek(&sid).unwrap();
@@ -292,4 +289,31 @@ async fn an_early_companion_that_outlives_its_media_time_is_killed() {
         ]
     );
     gone(&e, "no process left").await;
+}
+
+#[tokio::test]
+async fn cpu_time_grows_for_a_busy_process_and_stays_flat_for_a_hung_one() {
+    let busy = Ffmpeg::spawn(&fake("busy"), &[]).await.unwrap();
+    let idle = Ffmpeg::spawn(&fake("hang"), &[]).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(busy.cpu_time_ms().unwrap() >= 300);
+    assert!(idle.cpu_time_ms().unwrap() < 150);
+    busy.stop().await;
+    idle.stop().await;
+}
+
+#[tokio::test]
+async fn a_process_deaf_to_stop_is_killed_after_the_grace() {
+    let p = Ffmpeg::spawn(&fake("hang"), &[]).await.unwrap();
+    // Let it install its signal handling first.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let t = std::time::Instant::now();
+    p.stop().await;
+    assert!(t.elapsed() >= STOP_GRACE);
+    assert!(p.exited().is_some());
+    // Dropping a running handle kills it too.
+    let p = Ffmpeg::spawn(&fake("hang"), &[]).await.unwrap();
+    let cpu = p.cpu_time_ms();
+    assert!(cpu.is_some());
+    drop(p);
 }
