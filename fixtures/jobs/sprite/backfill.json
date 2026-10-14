@@ -9,5 +9,8 @@
 {"input":{"present":[false,false,true,false,false]},"expected":{"source":[3,3,3,3,3]}},
 {"input":{"present":[true,false,false,true,false,false,false,true]},"expected":{"source":[1,1,1,4,4,4,4,8]}},
 {"input":{"present":[false,true]},"expected":{"source":[2,2]}},
-{"input":{"present":[true]},"expected":{"source":[1]}}
+{"input":{"present":[true]},"expected":{"source":[1]}},
+{"expected":{"source":[5,5,5,5,5,5,5,5]},"input":{"present":[false,false,false,false,true,false,false,false]}},
+{"expected":{"source":[1,2,3,3,3,3,3,3,3,3]},"input":{"present":[true,true,true,false,false,false,false,false,false,false]}},
+{"expected":{"source":[10,10,10,10,10,10,10,10,10,10]},"input":{"present":[false,false,false,false,false,false,false,false,false,true]}}
 ]}

@@ -172,6 +172,22 @@ pub fn temp_dir(tag: &str) -> PathBuf {
 
 /// An engine on its own cache root, configured with the stub as host and `lifetime`.
 pub async fn engine_with(hw: Arc<Hw>, ffmpeg: &str, lifetime: Value) -> Engine {
+    let tool = fliks_engine::hw::tool_path;
+    let (probe, fpcalc) = (
+        tool("FFPROBE_PATH", "ffprobe"),
+        tool("FPCALC_PATH", "fpcalc"),
+    );
+    engine_with_tools(hw, ffmpeg, &probe, &fpcalc, lifetime).await
+}
+
+/// `engine_with` with the job tools (`ffprobe`, `fpcalc`) named too.
+pub async fn engine_with_tools(
+    hw: Arc<Hw>,
+    ffmpeg: &str,
+    ffprobe: &str,
+    fpcalc: &str,
+    lifetime: Value,
+) -> Engine {
     let stub = Arc::new(Stub::default());
     let host_url = listen(
         Router::new()
@@ -180,10 +196,12 @@ pub async fn engine_with(hw: Arc<Hw>, ffmpeg: &str, lifetime: Value) -> Engine {
     )
     .await;
     let root = temp_dir("cache");
-    let rt = Runtime::new(
+    let rt = Runtime::with_tools(
         hw,
         fliks_engine::cache::Cache { root: root.clone() },
         ffmpeg.into(),
+        ffprobe.into(),
+        fpcalc.into(),
     );
     let base = listen(fliks_engine::router(TOKEN.into(), rt.clone())).await;
     let e = Engine {
@@ -341,10 +359,11 @@ impl Engine {
         r.json()
     }
 
-    /// `ffmpeg` processes whose argv names this engine's cache root.
+    /// `ffmpeg` processes whose argv names this engine's cache root, or its fake's own path.
     #[cfg(unix)]
     pub fn ffmpeg_pids(&self) -> Vec<u32> {
         let root = self.root.to_string_lossy().into_owned();
+        let fake = Some(&self.ffmpeg).filter(|f| f.contains("fliks-rt-fake"));
         // `ps` instead of /proc so the same check runs on macOS.
         let out = std::process::Command::new("ps")
             .args(["-axo", "pid=,stat=,command="])
@@ -352,7 +371,7 @@ impl Engine {
             .expect("ps");
         String::from_utf8_lossy(&out.stdout)
             .lines()
-            .filter(|l| l.contains(&root))
+            .filter(|l| l.contains(&root) || fake.is_some_and(|f| l.contains(f.as_str())))
             .filter_map(|l| {
                 let mut f = l.split_whitespace();
                 let pid = f.next()?.parse().ok()?;
@@ -457,6 +476,42 @@ pub fn multi_audio_clip() -> PathBuf {
              -f lavfi -i sine=frequency=880:sample_rate=48000:duration=10 \
              -map 0:v -map 1:a -map 2:a {X264} -c:a aac -ac 2 \
              -metadata:s:a:0 language=eng -metadata:s:a:1 language=fra -shortest"
+        ),
+    )
+}
+
+/// 10 s H.264 + AAC in MPEG-TS (a scan reads its ADTS headers).
+pub fn ts_clip() -> PathBuf {
+    clip(
+        "h264-aac-10s.ts",
+        &format!(
+            "-f lavfi -i testsrc2=size=1280x720:rate=24:duration=10 \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration=10 {X264} -c:a aac -ac 2 -shortest"
+        ),
+    )
+}
+
+/// 10 s H.264 mkv with two embedded text tracks: SRT (stream 2) and ASS (stream 3, `served.ass`).
+pub fn subs_clip() -> PathBuf {
+    let dir = std::env::temp_dir().join("fliks-engine-e2e-media");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("subs.srt"),
+        "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i>\nworld\n",
+    )
+    .unwrap();
+    let ass = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/jobs/subtitles/served.ass"
+    );
+    std::fs::copy(ass, dir.join("subs.ass")).unwrap();
+    let d = dir.display();
+    clip(
+        "h264-two-subs.mkv",
+        &format!(
+            "-f lavfi -i testsrc2=size=640x360:rate=24:duration=10 \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration=10 -i {d}/subs.srt -i {d}/subs.ass \
+             -map 0:v -map 1:a -map 2 -map 3 {X264} -c:a aac -ac 2 -c:s copy"
         ),
     )
 }

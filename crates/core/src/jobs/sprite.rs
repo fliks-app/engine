@@ -6,8 +6,6 @@ use crate::mp4::{input_seek_seconds, source_timeline};
 
 pub const COLUMNS: u32 = 10;
 pub const THUMB_WIDTH: u32 = 240;
-/// Frame failures that stop the extraction. [ts:modules/streaming/thumbnail.service.ts:509]
-pub const MAX_FAILS: u32 = 5;
 /// Unpaused wall time of one frame or tile run. [ts:modules/streaming/thumbnail.service.ts:682,744]
 pub const RUN_TIMEOUT_MS: u32 = 30_000;
 pub const FRAME_PATTERN: &str = "frame-%04d.jpg";
@@ -262,15 +260,6 @@ pub fn tile_args(frames_pattern: &str, sprite_path: &str, rows: u32) -> Vec<Stri
     .to_vec()
 }
 
-/// The extraction failed too often to tile. [ts:modules/streaming/thumbnail.service.ts:610-615]
-pub fn too_many_failures(failed: u32, count: u32) -> Option<String> {
-    (f64::from(failed) > f64::from(count) * 0.1).then(|| {
-        format!(
-            "Too many frame extractions failed ({failed}/{count}) — sprite would be mostly empty"
-        )
-    })
-}
-
 /// `(missing, source)` copies (0-based) that leave no gap, applied in order: the nearest present
 /// frame, the lower one first; a filled slot serves later ones. Empty when nothing was extracted.
 /// [ts:modules/streaming/thumbnail.service.ts:624-660]
@@ -396,7 +385,5 @@ mod tests {
         assert_eq!(jpeg_size(b"\x89PNG"), None);
         assert_eq!(thumb_height(Some(1350), 10), 135);
         assert_eq!(thumb_height(None, 10), 90);
-        assert_eq!(too_many_failures(1, 10), None);
-        assert!(too_many_failures(2, 10).is_some());
     }
 }

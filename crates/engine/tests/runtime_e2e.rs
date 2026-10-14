@@ -1177,3 +1177,148 @@ async fn resume_seg_zero_probe_is_served_by_the_early_companion() {
     p.e.rt.shutdown().await;
     assert!(p.e.ffmpeg_pids().is_empty());
 }
+
+/// The `BgJobDone` of a job on the engine of `p`, as JSON.
+async fn run_job(p: &Play, kind: Value) -> Value {
+    let mut rx = p.e.rt.events.subscribe();
+    let body = json!({ "kind": kind, "media": { "mediaFileId": 1, "path": p.file } });
+    let r = p.e.control("POST", "/v1/jobs", Some(body)).await;
+    assert_eq!(r.status, 200, "{}", r.text());
+    let id = r.json()["jobId"].as_str().unwrap().to_string();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(120), rx.recv()).await {
+            Ok(Ok(ev @ EngineEvent::BgJobDone { .. })) => {
+                let v = serde_json::to_value(&ev).unwrap();
+                if v["jobId"] == id {
+                    return v;
+                }
+            }
+            Ok(_) => {}
+            Err(_) => panic!("no BgJobDone"),
+        }
+    }
+}
+
+fn close(a: &Value, b: &Value, what: &str) {
+    let (x, y) = (a.as_f64().unwrap(), b.as_f64().unwrap());
+    assert!((x - y).abs() < 1e-3, "{what}: {x} vs {y}");
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn scan_job_matches_ffprobe_on_real_files() {
+    // The mkv is scanned by ffprobe on the file, the MPEG-TS from stdin with its ADTS headers read.
+    for (file, adts) in [(h264_clip(10), false), (ts_clip(), true)] {
+        let p = play(file.clone()).await;
+        let v = run_job(&p, json!({ "type": "Scan", "info": p.info })).await;
+        assert_eq!(v["state"], "done", "{file:?}: {v}");
+        let (got, want) = (&v["result"]["scan"], scan(&file));
+        assert_eq!(got["schemaVersion"], 1);
+        close(&got["end"], &want["end"], "end");
+        let (g, w) = (
+            got["keyframes"].as_array().unwrap(),
+            want["keyframes"].as_array().unwrap(),
+        );
+        assert_eq!(g.len(), w.len(), "{file:?}");
+        assert!(g.len() >= 2);
+        for (a, b) in g.iter().zip(w) {
+            close(&a["pts"], &b["pts"], "pts");
+            close(&a["dts"], &b["dts"], "dts");
+        }
+        let audio = p.info.audio[0].stream_index.to_string();
+        let changes = if adts {
+            json!({ audio: false })
+        } else {
+            json!({})
+        };
+        assert_eq!(got["audioConfigChanges"], changes, "{file:?}");
+        assert!(p.e.ffmpeg_pids().is_empty());
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn fingerprint_job_matches_fpcalc_on_a_real_file() {
+    use fliks_engine_core::jobs::fingerprint::parse_fpcalc;
+    let p = play(h264_clip(10)).await;
+    let head = run_job(
+        &p,
+        json!({ "type": "Fingerprint", "window": { "type": "head" } }),
+    )
+    .await;
+    assert_eq!(head["state"], "done", "{head}");
+    let fpcalc = fliks_engine::hw::tool_path("FPCALC_PATH", "fpcalc");
+    let out = std::process::Command::new(&fpcalc)
+        .args(["-raw", "-length", "600"])
+        .arg(&p.file)
+        .output()
+        .expect("fpcalc");
+    let want = parse_fpcalc(&String::from_utf8_lossy(&out.stdout), 600.0, 0.0).unwrap();
+    assert!(want.hashes.len() > 20);
+    assert_eq!(
+        head["result"]["fingerprint"],
+        serde_json::to_value(&want).unwrap()
+    );
+    // The last 6 s (0.1 min) of the 10 s file: ffmpeg's window piped into fpcalc.
+    let outro = json!({ "type": "Fingerprint", "maxLookupMinutes": 0.1,
+        "window": { "type": "outro", "durationSeconds": p.info.duration_seconds.unwrap() } });
+    let v = run_job(&p, outro).await;
+    assert_eq!(v["state"], "done", "{v}");
+    let fp = &v["result"]["fingerprint"];
+    close(
+        &fp["baseOffsetSec"],
+        &json!(p.info.duration_seconds.unwrap() - 6.0),
+        "offset",
+    );
+    let n = fp["hashes"].as_array().unwrap().len();
+    assert!((15..=60).contains(&n), "chromaprint hashes of 6 s: {n}");
+    assert!(p.e.ffmpeg_pids().is_empty());
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn subtitle_job_and_route_serve_the_same_vtt_from_a_real_mkv() {
+    let p = play(subs_clip()).await;
+    let streams: Vec<u32> = p.info.subtitles.iter().map(|s| s.stream_index).collect();
+    assert_eq!(streams.len(), 2, "{:?}", p.info.subtitles);
+    let v = run_job(&p, json!({ "type": "SubtitleExtract", "info": p.info })).await;
+    assert_eq!(
+        v["result"],
+        json!({ "type": "SubtitleExtract", "streams": streams }),
+        "{v}"
+    );
+    // A second engine on the same file serves them through the route's own extraction.
+    let q = play(subs_clip()).await;
+    for idx in &streams {
+        let path = format!("/api/stream/1/subtitles/embedded/{idx}");
+        let (job, route) = (
+            p.e.get(&path, "alice-jwt", &[]).await,
+            q.e.get(&path, "alice-jwt", &[]).await,
+        );
+        assert_eq!((job.status, route.status), (200, 200));
+        assert_eq!(job.text(), route.text(), "stream {idx}");
+        let cached =
+            std::fs::read_to_string(p.e.root.join(format!("subtitles/v2/1/{idx}.vtt"))).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(q.e.root.join(format!("subtitles/v2/1/{idx}.vtt"))).unwrap(),
+            cached
+        );
+        assert!(job.text().starts_with("WEBVTT\nX-TIMESTAMP-MAP="));
+    }
+    let srt = std::fs::read_to_string(p.e.root.join(format!("subtitles/v2/1/{}.vtt", streams[0])))
+        .unwrap();
+    assert!(
+        srt.contains("00:00:01.000 --> 00:00:02.500") && srt.contains("<i>Hello</i>\nworld"),
+        "{srt}"
+    );
+    let ass = std::fs::read_to_string(p.e.root.join(format!("subtitles/v2/1/{}.vtt", streams[1])))
+        .unwrap();
+    // `\an8` becomes a line position, `\i`/`\b` overrides tags, `\N` a line break.
+    assert!(
+        ass.contains("line:5%")
+            && ass.contains("<b>Bold</b> and plain")
+            && ass.contains("Hello\nworld"),
+        "{ass}"
+    );
+    assert!(p.e.ffmpeg_pids().is_empty() && q.e.ffmpeg_pids().is_empty());
+}

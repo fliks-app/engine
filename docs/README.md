@@ -10,7 +10,7 @@
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
   - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
-  - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite` job.
+  - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite`, `Scan`, `Fingerprint` and `SubtitleExtract` jobs.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
@@ -52,12 +52,13 @@
 - runtime: a segment past the uniform grid's end is a 404 before anything spawns; a rung switch starts at the request's segment (the TS inherits the killed run's start for a `seg-0` request); a rung or resume whose file is already on disk is served without a new run (the TS respawns when no run is registered).
 - runtime: a CPU fallback registers its run before the failed run's waiters wake, and a waiter follows it; the TS answers that wait from the dead run.
 - runtime: the production frontier is a 200 ms directory listing (the TS uses `fs.watch`); stderr is a bounded ring (40 lines).
-- runtime: subtitles other than WebVTT are converted by ffmpeg (`-f webvtt`), not by the host's SRT/ASS converters (alignment tags and the b/i/u filter differ); embedded extracts are cached under `<root>/subtitles/v1`.
+- runtime: external subtitles other than WebVTT are converted by ffmpeg (`-f webvtt`), not by the host's SRT/ASS converters (alignment tags and the b/i/u filter differ); embedded tracks go through ffmpeg's ASS encoder and `core::jobs::subtitles::ass_to_vtt`, like the host, and are cached under `<root>/subtitles/v2` (the `-f webvtt` extracts of `v1` are purged).
 - runtime: a remux file or a transcode rung already on disk is served without a run (the TS spawns one when no run is registered); the early companion's init gets the 10 s early wait before the main's (the TS waits 60 s on it).
 - jobs: playback counts against the ffmpeg budget and preempts background runs (paused through the pause capability); the host's pool held background work only, FIFO, without pause, and drained on a shrink where the engine pauses. Probe crop samples share that budget.
-- sprite: the extractor follows the detected backend and render node (the host: device files, `THUMB_HWACCEL_DEVICE`); `thumbHeight` is read from the JPEG header (the host runs ffprobe); per-run timeouts count unpaused time and the global 10-minute timeout is gone (the stall watchdog covers hung runs); an extraction stopped at 5 failures fails the job (the host tiled the frames it had and backfilled the rest from them); sprites live in the engine cache (`sprites/v1`).
+- sprite: the extractor follows the detected backend and render node (the host: device files, `THUMB_HWACCEL_DEVICE`); `thumbHeight` is read from the JPEG header (the host runs ffprobe); per-run timeouts count unpaused time and the global 10-minute timeout is gone (the stall watchdog covers hung runs); failed frames never stop the extraction (the host stops at 5 failures and fails above 10%); the missing ones are backfilled from the nearest and only a job with no frame at all fails; sprites live in the engine cache (`sprites/v1`).
 - remux assembler: a frame of a growing audio file that fails to parse stops the pass after the frames before it were grouped (the TS parses the whole tail first); only the failure path differs.
 - jobs scan: a stream with no packet carrying a time is an error (`no video packet with a time`); the host would store a scan whose `end` is `null`. The video stream index is always known (`MediaInfo`), so the host's `v:0` fallback is unreachable.
+- jobs scan: the engine reads an MPEG-TS file itself to feed ffprobe and the ADTS ffmpeg (the host runs `cat` under `ionice`); ADTS headers are read on unix only, elsewhere every AAC track reports a possible change.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
 
 ## Open divergences
@@ -77,4 +78,3 @@
 - args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.
 - args: argv parity is against the TS only; like hw, nvenc, amf/win32, qsv/win32 and videotoolbox argv were never run on those hosts here.
 - runtime: e2e runs used the CPU only (jellyfin-ffmpeg 8.1.2 on Linux); the CPU fallback is exercised with a VAAPI host on a missing render node, no real GPU run went through the runtime yet. Throttle runs with the `signal` capability only; Windows Job Objects, the `stdin` pause and the `q` stop have no live run.
-- subtitles: the job port converts embedded text through ffmpeg's ASS encoder and `jobs::subtitles::ass_to_vtt` (the host's job); `serve::embedded_text` still asks ffmpeg for `-f webvtt` (alignment and b/i/u handling differ). Unify when the extraction job is wired.

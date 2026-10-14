@@ -237,6 +237,11 @@ impl PacketReader {
         true
     }
 
+    /// Source time the packets read so far end at (`-inf` before the first).
+    pub fn end_seconds(&self) -> f64 {
+        self.end
+    }
+
     /// One compact packet line; false to stop reading.
     pub fn feed_line(&mut self, line: &str) -> bool {
         if line.is_empty() {

@@ -53,12 +53,17 @@ pub struct Hw {
     state: Mutex<State>,
 }
 
-/// `FFMPEG_PATH` or `ffmpeg` on PATH.
-pub fn ffmpeg_path() -> String {
-    std::env::var("FFMPEG_PATH")
+/// The binary named by env `var`, else `default` on PATH.
+pub fn tool_path(var: &str, default: &str) -> String {
+    std::env::var(var)
         .ok()
         .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "ffmpeg".into())
+        .unwrap_or_else(|| default.into())
+}
+
+/// `FFMPEG_PATH` or `ffmpeg` on PATH.
+pub fn ffmpeg_path() -> String {
+    tool_path("FFMPEG_PATH", "ffmpeg")
 }
 
 /// The real detection: ffmpeg runs, `/dev/dri` + sysfs, and the pause probe (node-independent, run once).

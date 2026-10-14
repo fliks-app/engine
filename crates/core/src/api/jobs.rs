@@ -1,5 +1,5 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
-use super::{MediaInfo, MediaRef};
+use super::{Fingerprint, MediaInfo, MediaRef, SourceScan};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -9,12 +9,44 @@ use utoipa::ToSchema;
 pub enum JobKind {
     /// Seek-bar thumbnails: `sprite.jpg` + `sprite.json`, served by the data plane.
     Sprite { info: MediaInfo },
+    /// Keyframe scan of the whole file; needs a video stream in `info`.
+    Scan { info: MediaInfo },
+    /// Chromaprint of the head of the file (an intro) or of its tail (an outro).
+    Fingerprint {
+        window: FingerprintWindow,
+        /// `introMaxLookupMinutes`: minutes of audio read; absent or 0: 10.
+        #[serde(
+            default,
+            rename = "maxLookupMinutes",
+            skip_serializing_if = "Option::is_none"
+        )]
+        max_lookup_minutes: Option<f64>,
+    },
+    /// Every embedded text track of the file as WebVTT, stored in the engine cache and served by
+    /// the subtitle routes (`info.subtitles` names the tracks; image-based ones are skipped).
+    SubtitleExtract { info: MediaInfo },
+}
+
+/// Which audio the fingerprint reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum FingerprintWindow {
+    /// The first lookup seconds, read by fpcalc itself (`baseOffsetSec` 0).
+    Head,
+    /// The last lookup seconds of a file of known duration.
+    Outro {
+        #[serde(rename = "durationSeconds")]
+        duration_seconds: f64,
+    },
 }
 
 impl JobKind {
     pub fn name(&self) -> &'static str {
         match self {
             JobKind::Sprite { .. } => "Sprite",
+            JobKind::Scan { .. } => "Scan",
+            JobKind::Fingerprint { .. } => "Fingerprint",
+            JobKind::SubtitleExtract { .. } => "SubtitleExtract",
         }
     }
 }
@@ -84,7 +116,20 @@ pub struct SpriteMeta {
 #[serde(tag = "type")]
 pub enum JobResult {
     /// Served at `/api/stream/{mediaFileId}/thumbnails/sprite.{jpg,json}`.
-    Sprite { sprite: SpriteMeta },
+    Sprite {
+        sprite: SpriteMeta,
+    },
+    /// `schemaVersion` stamped; the decide input's `scan`.
+    Scan {
+        scan: SourceScan,
+    },
+    Fingerprint {
+        fingerprint: Fingerprint,
+    },
+    /// Stream indices whose VTT is now cached, served at `/api/stream/{id}/subtitles/embedded/{idx}`.
+    SubtitleExtract {
+        streams: Vec<u32>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

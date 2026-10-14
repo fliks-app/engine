@@ -492,6 +492,9 @@ pub struct Runtime {
     pub events: Events,
     pub resolver: Resolver,
     pub ffmpeg: String,
+    /// Background jobs' own tools: `FFPROBE_PATH` and `FPCALC_PATH`.
+    pub ffprobe: String,
+    pub fpcalc: String,
     /// The one ffmpeg budget: session runs, extracts, background jobs and probe samples.
     pub slots: Arc<Slots>,
     pub jobs: crate::jobs::Jobs,
@@ -501,6 +504,21 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(hw: Arc<Hw>, cache: Cache, ffmpeg: String) -> Arc<Self> {
+        let tool = crate::hw::tool_path;
+        let (ffprobe, fpcalc) = (
+            tool("FFPROBE_PATH", "ffprobe"),
+            tool("FPCALC_PATH", "fpcalc"),
+        );
+        Self::with_tools(hw, cache, ffmpeg, ffprobe, fpcalc)
+    }
+
+    pub fn with_tools(
+        hw: Arc<Hw>,
+        cache: Cache,
+        ffmpeg: String,
+        ffprobe: String,
+        fpcalc: String,
+    ) -> Arc<Self> {
         Arc::new(Self {
             config: Mutex::new(None),
             hw,
@@ -508,6 +526,8 @@ impl Runtime {
             events: Events::default(),
             resolver: Resolver::default(),
             ffmpeg,
+            ffprobe,
+            fpcalc,
             slots: Slots::new(crate::slots::auto_size()),
             jobs: Default::default(),
             reg: Mutex::new(Reg::default()),

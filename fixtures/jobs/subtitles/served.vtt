@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00:01.000 --> 00:00:03.500
+Hello
+world
+
+00:00:04.000 --> 00:00:06.000 line:5%
+<i>Top italic</i> line
+
+00:00:07.000 --> 00:00:08.000
+<b>Bold</b> and plain
+
+00:00:09.000 --> 00:00:10.000 line:5% position:10% align:left
+Left &amp; <up>

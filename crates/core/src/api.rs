@@ -465,9 +465,18 @@ pub struct SourceScan {
     pub end: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_seconds: Option<f64>,
+    #[serde(deserialize_with = "u32_keys")]
     pub audio_config_changes: BTreeMap<u32, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_version: Option<u32>,
+}
+
+/// Map keys read as text: an internally tagged enum (`JobResult`) buffers them as strings.
+fn u32_keys<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<u32, bool>, D::Error> {
+    BTreeMap::<String, bool>::deserialize(d)?
+        .into_iter()
+        .map(|(k, v)| k.parse().map(|k| (k, v)).map_err(serde::de::Error::custom))
+        .collect()
 }
 
 #[cfg(test)]
