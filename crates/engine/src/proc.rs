@@ -66,6 +66,8 @@ pub struct Exit {
 /// One running ffmpeg: its own process group (unix) or the kill-on-close job (windows).
 /// Dropping the handle kills it.
 pub struct Ffmpeg {
+    // Only signalled on unix; windows stops through the job object and stdin.
+    #[cfg_attr(not(unix), allow(dead_code))]
     pid: Option<u32>,
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
