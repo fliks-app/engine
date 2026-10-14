@@ -391,6 +391,9 @@ pub enum EngineEvent {
         state: JobState,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exit_code: Option<i32>,
+        /// Set when the watchdog ended the run: `stalled` or `overran`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     HwFallback {

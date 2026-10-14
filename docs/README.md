@@ -9,7 +9,7 @@
   - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
-  - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, idle reaping, `cache/v1`, the data plane behind the host resolver, SSE events.
+  - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
 
@@ -44,6 +44,9 @@
 - mp4: ticks are `i128` and a non-integral tick count fails with the JS `BigInt` message; a value past 2^127 saturates (the TS keeps a bigint), only changing the number in an error message the write then raises anyway.
 
 - runtime: ffmpeg stops with SIGTERM then SIGKILL after 2 s (the TS sends SIGKILL); the run is awaited before its directory is touched again.
+- runtime: a session ending (delete, expiry, eviction, revoke) stops its jobs at once; the TS keeps them for `STREAM_JOB_GRACE_MS` and `jobGraceMs`/`jobFallbackTimeoutMs`/`core::session::job_idle` are no longer read. A job no session owns is stopped on the next GC tick.
+- runtime: new stall watchdog (`jobStallTimeoutMs`, default 30 s, 0 disables) and early-companion overrun kill, `JobEnded.reason`; the TS has neither. A hung run ends failed and restarts on the next request.
+- runtime: spawned processes die with the engine (`PR_SET_PDEATHSIG` on Linux).
 - runtime: a segment past the uniform grid's end is a 404 before anything spawns; a rung switch starts at the request's segment (the TS inherits the killed run's start for a `seg-0` request); a rung or resume whose file is already on disk is served without a new run (the TS respawns when no run is registered).
 - runtime: a CPU fallback registers its run before the failed run's waiters wake, and a waiter follows it; the TS answers that wait from the dead run.
 - runtime: the production frontier is a 200 ms directory listing (the TS uses `fs.watch`); stderr is a bounded ring (40 lines).

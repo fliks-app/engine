@@ -609,7 +609,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         .source_clock_break_seconds
         .map_or(f64::INFINITY, |b| b - format_start)
         .min(if early {
-            f64::from(crate::session::EARLY_PROBE_SEGMENTS) * seg + 1.0
+            crate::session::early_run_seconds(seg)
         } else {
             f64::INFINITY
         });

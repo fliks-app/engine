@@ -8,19 +8,19 @@ use crate::remux::Assembler;
 use crate::resolve::Resolver;
 use fliks_engine_core::api::{
     Decision, EngineConfig, EngineEvent, Hints, HostCaps, HwAccel, JobState, JobStats,
-    MEDIA_INFO_SCHEMA_VERSION, OpenSessionRequest, OpenSessionResponse, PlayMethod, SessionKind,
-    SessionSnapshot, StreamingConfig,
+    LifetimeConfig, MEDIA_INFO_SCHEMA_VERSION, OpenSessionRequest, OpenSessionResponse, PlayMethod,
+    SessionKind, SessionSnapshot, StreamingConfig,
 };
 use fliks_engine_core::mp4::{
     grid_segment_index, remux_assembly_plan, remux_audio_grid, remux_run_start,
 };
 use fliks_engine_core::session::{
     self as core_session, CacheEntryInfo, CachePolicy, EARLY_PROBE_SEGMENTS, EARLY_WAIT_MS,
-    ExistingRun, JobIdleAction, JobIdleInput, JobIdleState, PauseCapability, ResolveInput,
-    ResumeAction, RunProgress, SegmentName, SegmentSet, SessionPlan, SessionVariant,
-    ThrottleDecision, ThrottleInput, TranscodeRun, Viewer, job_idle, live_session_expired,
-    parse_segment_name, plan_gc, seconds_to_segment, segment_index_to_seconds, session_key,
-    session_to_evict, tombstone_revivable, variant_hash,
+    ExistingRun, JobWatch, JobWatchInput, PauseCapability, ResolveInput, ResumeAction, RunProgress,
+    SegmentName, SegmentSet, SessionPlan, SessionVariant, ThrottleDecision, ThrottleInput,
+    TranscodeRun, Viewer, early_run_seconds, job_watch, live_session_expired, parse_segment_name,
+    plan_gc, seconds_to_segment, segment_index_to_seconds, session_key, session_to_evict,
+    tombstone_revivable, variant_hash,
 };
 use std::collections::HashMap;
 use std::future::Future;
@@ -175,13 +175,17 @@ struct JobMut {
     inits: Vec<bool>,
     /// The watcher listed the directories after the process exited: the sets are final.
     settled: bool,
-    last_access_ms: i64,
-    idle: JobIdleState,
     paused: bool,
     frontier_hint: Option<u32>,
     killed: bool,
     /// A remux run's assembler still builds segments after the process exited.
     pending: bool,
+    /// Watchdog clocks; a resume restarts both.
+    started_ms: i64,
+    last_progress_ms: i64,
+    seen_lines: u64,
+    tmp_bytes: u64,
+    reason: Option<&'static str>,
 }
 
 /// One ffmpeg run of a session key (`docs/spec/runtime.md` section 2).
@@ -203,6 +207,8 @@ pub struct Job {
     pub fps: Option<f64>,
     pub duration: f64,
     pub restarts: u32,
+    /// Media time a run with a natural end produces (the early companion's `-to`), in ms.
+    natural_end_ms: Option<i64>,
     proc: Ffmpeg,
     remux: Option<Arc<Mutex<Assembler>>>,
     m: Mutex<JobMut>,
@@ -254,8 +260,8 @@ impl Job {
             .is_some_and(|s| s.contains(n))
     }
 
-    fn touch(&self) {
-        self.m.lock().unwrap().last_access_ms = now_ms();
+    fn serves(&self, s: &Session) -> bool {
+        s.media_file_id == self.media_file_id && s.owner == self.owner && s.hash == self.hash
     }
 
     /// Stops ffmpeg on purpose (seek, switch, idle, revoke) and waits for it.
@@ -267,7 +273,14 @@ impl Job {
     pub async fn pause(&self, cap: PauseCapability, pause: bool) -> bool {
         let sent = self.proc.pause(cap, pause).await;
         if sent {
-            self.m.lock().unwrap().paused = pause;
+            {
+                let mut m = self.m.lock().unwrap();
+                m.paused = pause;
+                if !pause {
+                    m.started_ms = now_ms();
+                    m.last_progress_ms = m.started_ms;
+                }
+            }
             if let Some(a) = &self.remux {
                 a.lock().unwrap().pause(pause);
             }
@@ -353,6 +366,7 @@ impl Job {
     async fn scan(&self) -> bool {
         let mut sets = vec![];
         let mut inits = vec![];
+        let mut tmp_bytes = 0;
         for t in 0..self.tracks {
             let mut set = SegmentSet::default();
             let mut init = false;
@@ -360,6 +374,9 @@ impl Job {
                 while let Ok(Some(e)) = rd.next_entry().await {
                     let name = e.file_name();
                     let name = name.to_string_lossy();
+                    if name.contains(".tmp") {
+                        tmp_bytes += e.metadata().await.map_or(0, |m| m.len());
+                    }
                     let ext_ok = name.ends_with(self.ext) || name.ends_with(".mp4");
                     match parse_segment_name(&name) {
                         Some(SegmentName::Segment(n)) if ext_ok => set.insert(n),
@@ -373,8 +390,12 @@ impl Job {
         }
         let mut m = self.m.lock().unwrap();
         let changed = m.sets != sets || m.inits != inits;
+        if changed || m.tmp_bytes != tmp_bytes {
+            m.last_progress_ms = now_ms();
+        }
         m.sets = sets;
         m.inits = inits;
+        m.tmp_bytes = tmp_bytes;
         changed
     }
 
@@ -486,6 +507,14 @@ impl Runtime {
         self.config.lock().unwrap().clone().unwrap_or_default()
     }
 
+    fn lifetime(&self) -> LifetimeConfig {
+        self.config
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map_or_else(Default::default, |c| c.lifetime.clone())
+    }
+
     fn lock_for(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.locks
             .lock()
@@ -534,7 +563,7 @@ impl Runtime {
         let owner = req.owner_id.clone();
         let file = req.decide.media.media_file_id;
         let mut evicted = None;
-        let session = {
+        let (session, orphans) = {
             let mut reg = self.reg.lock().unwrap();
             // [ts:modules/streaming/live-session.service.ts:409-432]
             let sibling = reg.sessions.values().any(|s| {
@@ -595,8 +624,11 @@ impl Runtime {
                 req,
             });
             reg.sessions.insert(sid.clone(), s.clone());
-            s
+            (s, take_orphans(&mut reg))
         };
+        if !orphans.is_empty() {
+            tokio::spawn(kill_all(orphans));
+        }
         if let Some(e) = evicted {
             self.events.emit(EngineEvent::SessionEnded {
                 session_id: e,
@@ -813,12 +845,13 @@ impl Runtime {
         out
     }
 
-    /// Idempotent; the job is left to the idle rule. [ts:modules/streaming/live-session.service.ts:553-558]
-    pub fn stop(&self, sid: &str, reason: &str) -> bool {
-        let known = {
+    /// Idempotent; jobs no other session owns stop before it returns. [ts:modules/streaming/live-session.service.ts:553-558]
+    pub async fn stop(&self, sid: &str, reason: &str) -> bool {
+        let (known, orphans) = {
             let mut reg = self.reg.lock().unwrap();
             let a = reg.sessions.remove(sid).is_some();
-            reg.tombstones.remove(sid).is_some() || a
+            let known = reg.tombstones.remove(sid).is_some() || a;
+            (known, take_orphans(&mut reg))
         };
         if known {
             self.events.emit(EngineEvent::SessionEnded {
@@ -826,6 +859,7 @@ impl Runtime {
                 reason: reason.into(),
             });
         }
+        kill_all(orphans).await;
         known
     }
 
@@ -835,7 +869,7 @@ impl Runtime {
             owner.is_none_or(|o| s.owner.as_deref() == Some(o))
                 && (files.is_empty() || files.contains(&s.media_file_id))
         };
-        let (gone, jobs) = {
+        let (gone, orphans) = {
             let mut reg = self.reg.lock().unwrap();
             let gone: Vec<Arc<Session>> = reg
                 .sessions
@@ -845,23 +879,10 @@ impl Runtime {
                 .collect();
             reg.sessions.retain(|_, s| !matches(s));
             reg.tombstones.retain(|_, s| !matches(s));
-            let keys: Vec<String> = reg
-                .jobs
-                .iter()
-                .filter(|(_, j)| {
-                    gone.iter().any(|s| {
-                        s.owner == j.owner && s.media_file_id == j.media_file_id && s.hash == j.hash
-                    })
-                })
-                .map(|(k, _)| k.clone())
-                .collect();
-            let jobs: Vec<Arc<Job>> = keys.iter().filter_map(|k| reg.jobs.remove(k)).collect();
-            (gone, jobs)
+            (gone, take_orphans(&mut reg))
         };
         self.resolver.purge(owner, files);
-        for j in jobs {
-            j.kill().await;
-        }
+        kill_all(orphans).await;
         for s in &gone {
             self.events.emit(EngineEvent::SessionEnded {
                 session_id: s.sid.clone(),
@@ -883,9 +904,7 @@ impl Runtime {
                 .collect();
             keys.iter().filter_map(|k| reg.jobs.remove(k)).collect()
         };
-        for j in &jobs {
-            j.kill().await;
-        }
+        kill_all(jobs.clone()).await;
         self.resolver.purge(None, &[file]);
         let entries = self.scan_cache().await;
         let mut removed = 0;
@@ -1126,27 +1145,36 @@ impl Runtime {
             fps: s.plan.source_fps,
             duration: s.plan.duration,
             restarts: r.restarts,
+            natural_end_ms: (r.kind == JobKind::Early)
+                .then(|| (early_run_seconds(s.plan.segment_duration) * 1000.0) as i64),
             proc,
             m: Mutex::new(JobMut {
                 sets: vec![SegmentSet::default(); r.tracks],
                 inits: vec![false; r.tracks],
                 settled: false,
-                last_access_ms: now_ms(),
-                idle: JobIdleState::default(),
                 paused: false,
                 frontier_hint: None,
                 killed: false,
                 pending: r.remux.is_some(),
+                started_ms: now_ms(),
+                last_progress_ms: now_ms(),
+                seen_lines: 0,
+                tmp_bytes: 0,
+                reason: None,
             }),
             remux: r.remux,
             changed: watch::channel(0).0,
         });
         job.scan().await;
-        self.reg
+        let replaced = self
+            .reg
             .lock()
             .unwrap()
             .jobs
             .insert(key.clone(), job.clone());
+        if let Some(old) = replaced.filter(|o| o.producing()) {
+            tokio::spawn(kill_all(vec![old]));
+        }
         self.events.emit(EngineEvent::JobStarted {
             job_key: key,
             media_file_id: s.media_file_id,
@@ -1164,6 +1192,36 @@ impl Runtime {
         if reg.jobs.get(&job.key).is_some_and(|j| Arc::ptr_eq(j, job)) {
             reg.jobs.remove(&job.key);
         }
+    }
+
+    /// Kills a hung run or one past its natural end; it ends failed and the next request restarts it.
+    async fn watchdog(&self, job: &Arc<Job>) {
+        let (now, lines) = (now_ms(), job.proc.stderr_lines());
+        let verdict = {
+            let mut m = job.m.lock().unwrap();
+            if m.seen_lines != lines {
+                m.seen_lines = lines;
+                m.last_progress_ms = now;
+            }
+            job_watch(
+                &JobWatchInput {
+                    now_ms: now,
+                    started_ms: m.started_ms,
+                    last_progress_ms: m.last_progress_ms,
+                    paused: m.paused,
+                    natural_end_ms: job.natural_end_ms,
+                },
+                &self.lifetime(),
+            )
+        };
+        let reason = match verdict {
+            JobWatch::Ok => return,
+            JobWatch::Stalled => "stalled",
+            JobWatch::Overran => "overran",
+        };
+        tracing::warn!(key = job.key, reason, "ffmpeg hung, killing it");
+        job.m.lock().unwrap().reason = Some(reason);
+        job.proc.stop().await;
     }
 
     /// One assembler pass off the async threads; true when it gave up.
@@ -1202,6 +1260,10 @@ impl Runtime {
                 if job.proc.exited().is_some() {
                     break;
                 }
+                self.watchdog(&job).await;
+                if job.proc.exited().is_some() {
+                    break;
+                }
                 tokio::select! {
                     _ = tokio::time::sleep(WATCH_EVERY) => {}
                     _ = job.proc.wait() => {}
@@ -1227,6 +1289,7 @@ impl Runtime {
                 job_key: job.key.clone(),
                 state,
                 exit_code: exit.code,
+                reason: job.m.lock().unwrap().reason.map(String::from),
             });
             // The replacement is registered before the waiters wake, so they move on to it.
             if state == JobState::Failed
@@ -1330,7 +1393,6 @@ impl Runtime {
                 };
                 match core_session::resolve_existing(&input) {
                     ResumeAction::Serve | ResumeAction::Wait => {
-                        e.touch();
                         return Some(e);
                     }
                     ResumeAction::Respawn(r) => {
@@ -1373,7 +1435,6 @@ impl Runtime {
             };
             match core_session::resolve_existing(&input) {
                 ResumeAction::Serve | ResumeAction::Wait => {
-                    e.touch();
                     return Some(e);
                 }
                 ResumeAction::Respawn(r) => {
@@ -1396,7 +1457,6 @@ impl Runtime {
         if let Some(e) = self.job(&key) {
             let clean = e.proc.exited().is_some_and(|x| x.code == Some(0));
             if e.quality == quality && (e.producing() || clean) {
-                e.touch();
                 return Some(e);
             }
             self.unregister(&e);
@@ -1452,7 +1512,6 @@ impl Runtime {
         if let (Some(j), SegmentName::Segment(n)) = (&same, name)
             && j.has(0, n)
         {
-            j.touch();
             return ready(j.segment_path(0, n), Some(j.clone()), 0.0, true);
         }
         if same.is_none() {
@@ -1605,9 +1664,6 @@ impl Runtime {
         };
         let existing = self.job(&s.key(JobKind::Remux));
         if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > 0) {
-            if let Some(j) = &existing {
-                j.touch();
-            }
             return ready(path, existing, 0.0, true);
         }
         let start = match name {
@@ -1647,11 +1703,11 @@ impl Runtime {
 
     // ---- periodic work ----
 
-    /// Session expiry and job reaping, every `liveSessionGcIntervalMs`.
+    /// Session expiry, then the jobs no session owns are stopped, every `liveSessionGcIntervalMs`.
     pub async fn gc_tick(&self) {
         let now = now_ms();
         let lifetime = self.current_config().lifetime;
-        let (expired, reaped) = {
+        let (expired, orphans) = {
             let mut reg = self.reg.lock().unwrap();
             let expired: Vec<String> = reg
                 .sessions
@@ -1674,41 +1730,7 @@ impl Runtime {
             reg.tombstones.retain(|_, s| {
                 tombstone_revivable(s.m.lock().unwrap().last_beat_ms, now, &lifetime)
             });
-            let mut reaped = vec![];
-            let keys: Vec<String> = reg.jobs.keys().cloned().collect();
-            for k in keys {
-                let job = reg.jobs[&k].clone();
-                let viewers = reg
-                    .sessions
-                    .values()
-                    .filter(|s| {
-                        s.media_file_id == job.media_file_id
-                            && s.owner == job.owner
-                            && s.hash == job.hash
-                    })
-                    .count() as u32;
-                let process_running = job.producing();
-                let input = {
-                    let m = job.m.lock().unwrap();
-                    JobIdleInput {
-                        now_ms: now,
-                        last_access_ms: m.last_access_ms,
-                        has_base_hash: true,
-                        viewers,
-                        process_running,
-                        state: m.idle,
-                    }
-                };
-                let (state, action) = job_idle(&input, &lifetime);
-                job.m.lock().unwrap().idle = state;
-                if let JobIdleAction::Reap { kill } = action {
-                    reg.jobs.remove(&k);
-                    if kill {
-                        reaped.push(job);
-                    }
-                }
-            }
-            (expired, reaped)
+            (expired, take_orphans(&mut reg))
         };
         for sid in expired {
             self.events.emit(EngineEvent::SessionEnded {
@@ -1716,10 +1738,7 @@ impl Runtime {
                 reason: "expired".into(),
             });
         }
-        for j in reaped {
-            tracing::info!(key = j.key, "no viewer left, killing ffmpeg (cache kept)");
-            j.kill().await;
-        }
+        kill_all(orphans).await;
     }
 
     /// One throttle pass over the running jobs. [ts:modules/streaming/transcoding/ffmpeg-throttle.service.ts:94-150]
@@ -1735,11 +1754,7 @@ impl Runtime {
                     let viewers = reg
                         .sessions
                         .values()
-                        .filter(|s| {
-                            s.media_file_id == j.media_file_id
-                                && s.owner == j.owner
-                                && s.hash == j.hash
-                        })
+                        .filter(|s| j.serves(s))
                         .map(|s| s.viewer())
                         .collect();
                     (j.clone(), viewers)
@@ -1928,9 +1943,35 @@ impl Runtime {
             .drain()
             .map(|(_, j)| j)
             .collect();
-        for j in jobs {
-            j.kill().await;
-        }
+        kill_all(jobs).await;
+    }
+}
+
+/// Removes and returns the jobs no live session serves (same owner, file and profile hash).
+fn take_orphans(reg: &mut Reg) -> Vec<Arc<Job>> {
+    let Reg { sessions, jobs, .. } = reg;
+    let keys: Vec<String> = jobs
+        .iter()
+        .filter(|(_, j)| !sessions.values().any(|s| j.serves(s)))
+        .map(|(k, _)| k.clone())
+        .collect();
+    keys.iter().filter_map(|k| jobs.remove(k)).collect()
+}
+
+/// Stops every running job at once and waits for them.
+async fn kill_all(jobs: Vec<Arc<Job>>) {
+    let tasks: Vec<_> = jobs
+        .into_iter()
+        .filter(|j| j.producing())
+        .map(|j| {
+            tokio::spawn(async move {
+                tracing::info!(key = j.key, "no session left, stopping ffmpeg (cache kept)");
+                j.kill().await
+            })
+        })
+        .collect();
+    for t in tasks {
+        let _ = t.await;
     }
 }
 
@@ -1954,7 +1995,6 @@ async fn finish(path: PathBuf, job: Arc<Job>, landed: bool, t0: Instant) -> Fetc
     };
     match core_session::segment_response(&probe) {
         core_session::SegmentResponse::Serve => {
-            job.touch();
             ready(path, Some(job), t0.elapsed().as_secs_f64() * 1000.0, false)
         }
         core_session::SegmentResponse::Unavailable { .. } => Fetch::Retry,

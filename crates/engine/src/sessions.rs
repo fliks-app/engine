@@ -68,7 +68,8 @@ pub async fn delete(
     Path(sid): Path<String>,
     Query(q): Query<DeleteQuery>,
 ) -> StatusCode {
-    s.rt.stop(&sid, q.reason.as_deref().unwrap_or("stopped"));
+    s.rt.stop(&sid, q.reason.as_deref().unwrap_or("stopped"))
+        .await;
     StatusCode::NO_CONTENT
 }
 
@@ -104,7 +105,7 @@ pub async fn command(
         return StatusCode::NOT_FOUND;
     };
     let done = match c.action {
-        SessionAction::Stop => s.rt.stop(&sid, "stopped"),
+        SessionAction::Stop => s.rt.stop(&sid, "stopped").await,
         SessionAction::PauseJob => s.rt.pause_job(&sess, true).await,
         SessionAction::ResumeJob => s.rt.pause_job(&sess, false).await,
     };
