@@ -10,7 +10,7 @@ pub use master::{
 
 pub use crate::decide::timeline::parse_source_fps;
 use crate::decide::timeline::{frame_seconds_of, real_segment_seconds, uniform_segment_count};
-use crate::jsnum::{js_string, max, min, to_fixed3};
+use crate::jsnum::{js_string, max, min, to_fixed};
 
 /// Segment `N` is at `{prefix}{N:04}{suffix}`.
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +56,7 @@ pub fn vod_playlist(
         if len <= 0.0 {
             break;
         }
-        lines.push(format!("#EXTINF:{},", to_fixed3(len)));
+        lines.push(format!("#EXTINF:{},", to_fixed(len, 3)));
         lines.push(seg.at(i));
         i += 1;
     }
@@ -83,7 +83,7 @@ pub fn variable_vod_playlist(durations: &[f64], seg: SegUrl, init: Option<&str>)
     let target = durations.iter().copied().fold(0.0, max).ceil();
     let mut lines = head(target, init);
     for (i, d) in durations.iter().enumerate() {
-        lines.push(format!("#EXTINF:{},", to_fixed3(*d)));
+        lines.push(format!("#EXTINF:{},", to_fixed(*d, 3)));
         lines.push(seg.at(i));
     }
     lines.push("#EXT-X-ENDLIST".into());
@@ -100,7 +100,7 @@ pub fn subtitle_playlist(duration: f64, url: &str) -> String {
         "#EXT-X-PLAYLIST-TYPE:VOD".into(),
         format!("#EXT-X-TARGETDURATION:{}", js_string(target)),
         "#EXT-X-MEDIA-SEQUENCE:0".into(),
-        format!("#EXTINF:{},", to_fixed3(or(duration, target))),
+        format!("#EXTINF:{},", to_fixed(or(duration, target), 3)),
         url.into(),
         "#EXT-X-ENDLIST".into(),
     ]

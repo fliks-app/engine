@@ -1,11 +1,11 @@
 //! ffprobe JSON to `MediaInfo`: `detectMediaFileInfo` minus the process spawning.
 use super::ffjson::{Frame, Main, Stream};
-use super::js::{number, parse_float, round, to_fixed3};
 use super::lang::{is_image_based, language_from_title, subtitle_flags_from_title};
 use crate::api::{
     AudioStreamInfo, Chapter, HdrFormat, HdrMetadata, MediaInfo, SubtitleStreamInfo,
     VideoStreamInfo,
 };
+use crate::jsnum::{number, parse_float, round, to_fixed};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -100,7 +100,7 @@ pub fn measure_fps(packets: &str) -> Option<f64> {
 }
 
 pub(super) fn format_fps(fps: f64) -> String {
-    let s = to_fixed3(fps);
+    let s = to_fixed(fps, 3);
     let s = s.trim_end_matches('0');
     s.strip_suffix('.').unwrap_or(s).to_string()
 }

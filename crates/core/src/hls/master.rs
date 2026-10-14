@@ -2,7 +2,7 @@
 use super::codecs::{self, plan_codec};
 use crate::api::{AudioCodec, AudioPlan, CodecVariant, HdrFormat, VideoCodec};
 use crate::decide::audio::{REMUX_STEREO_BPS, output_bitrate_bps};
-use crate::jsnum::{js_string, round, to_fixed3, truthy};
+use crate::jsnum::{js_string, round, to_fixed, truthy};
 use crate::ladder::{
     HDR_LADDER, Rung, RungBitrateContext, SDR_LADDER, capped_rung_video_bitrate_bps,
     profile_fits_source, profile_resolution, resolve_rung,
@@ -117,7 +117,7 @@ fn frame_rate_attr(fps: f64) -> String {
     let s = if fps.fract() == 0.0 {
         js_string(fps)
     } else {
-        to_fixed3(fps)
+        to_fixed(fps, 3)
     };
     format!(",FRAME-RATE={s}")
 }

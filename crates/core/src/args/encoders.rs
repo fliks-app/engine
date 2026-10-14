@@ -1,12 +1,12 @@
 //! Video encoder argv per descriptor and their `-vf` helpers.
 //! [ts:backend/src/modules/streaming/transcoding/codec/encoders/*.ts]
 use super::filters::{apply_dovi, curve_name, tonemap_opencl_opts};
-use super::num::{js, round, to_fixed};
 use super::{EncoderInput, Filters};
 use crate::api::{HdrFormat, HdrMetadata, HwAccel, VideoCodec};
 use crate::decide::codec::{Encoder, encoder_by_id};
 use crate::decide::tonemap::TonemapPath;
 use crate::hw::decoders::Surface;
+use crate::jsnum::{js_string as js, round, to_fixed};
 
 const GENERIC_MASTER_DISPLAY: &str =
     "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)";

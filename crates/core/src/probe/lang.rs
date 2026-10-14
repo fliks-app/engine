@@ -1,6 +1,11 @@
 //! Language and flag inference from stream titles. The host uses JS regexes whose `\b` is
 //! ASCII-only; they are matched here by a tiny word matcher instead of a regex dependency.
-use super::js::{is_space, is_word};
+use crate::jsnum::is_space;
+
+/// `\w` of a JS regex: `\b` is ASCII-only there.
+fn is_word(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
 
 enum Elem {
     Lit(char),

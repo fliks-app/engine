@@ -4,11 +4,11 @@ use super::encode::{
     encode, live_input, live_video, probe_args, s, video_map,
 };
 use super::filters::crop_filter;
-use super::num::{js, round, seconds, to_fixed};
 use super::{AudioStream, FileArgs, FileFormat, IframeArgs, LiveArgs, RemuxArgs, VodArgs};
 use crate::api::{AudioCodec, AudioPlan, HostCaps};
 use crate::decide::dolby_vision::has_no_base;
 use crate::hw::Device;
+use crate::jsnum::{js_string as js, round, seconds, to_fixed};
 
 /// Under `-hls_time` so the muxer cuts on every forced IDR.
 const HLS_TIME_MARGIN: f64 = 0.0001;
