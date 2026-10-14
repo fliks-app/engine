@@ -6,11 +6,13 @@ use utoipa::ToSchema;
 
 mod decide;
 mod fingerprint;
+mod jobs;
 mod lifetime;
 mod probe;
 mod runtime;
 pub use decide::*;
 pub use fingerprint::*;
+pub use jobs::*;
 pub use lifetime::*;
 pub use probe::*;
 pub use runtime::*;
@@ -133,6 +135,10 @@ pub struct StreamingConfig {
     /// Absent: derived from cgroup/CPU budget.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ffmpeg_slots: Option<u32>,
+    /// A job that writes files fails below this much free disk under the cache root; absent: 1 GiB, 0
+    /// disables.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_min_free_bytes: Option<f64>,
     pub auto_quality_mode: AutoQualityMode,
     pub auto_crop_enabled: bool,
     /// `auto` or a `/dev/dri/renderD*` path.
@@ -152,6 +158,7 @@ impl Default for StreamingConfig {
             cache_max_bytes: None,
             cache_ttl_ms: None,
             ffmpeg_slots: None,
+            job_min_free_bytes: None,
             auto_quality_mode: AutoQualityMode::Directplay,
             auto_crop_enabled: true,
             gpu_render_node: "auto".into(),

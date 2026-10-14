@@ -5,6 +5,7 @@ The engine's stateful half: ffmpeg jobs, playback sessions, the `cache/v1` direc
 ## 1. Processes (`engine::proc`)
 
 - Every ffmpeg runs through `proc::spawn` (ETXTBSY retry), stdin piped (pause keys), stdout null, stderr piped, `kill_on_drop`. Unix: its own process group (`process_group(0)`), signals go to the group. Windows: assigned to the engine's kill-on-close Job Object (shared with the supervisor). [new]
+- Every run holds a playback slot of the engine's one ffmpeg budget while its process lives (lent back while throttled), and so do I-frame and subtitle extracts; background jobs yield to them (`docs/spec/jobs.md` section 3). [new]
 - stderr feeds a bounded ring (last 40 lines, 300 bytes each): `JobStats.stderrTail` and the failure log. [ts:ts:1199-1250] keeps the whole text; bounded is [new].
 - Stop: unix SIGCONT (a stopped process ignores TERM) then SIGTERM, SIGKILL after 2 s; windows `q` on stdin, kill after 2 s. The caller awaits the exit before touching the directory again. The TS sends SIGKILL at once [ts:ts:1671-1702]; the plan asks for a trailer-writing stop [new].
 - Pause per `Capabilities.pauseCapability` (`core::session::pause_command`): `stdin` writes `p`/`u`, `signal` sends SIGSTOP/SIGCONT to the group, `none` does nothing. [ts:transcoding/ffmpeg-pause.ts:15-40]

@@ -10,6 +10,7 @@
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
   - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
+  - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite` job.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
@@ -53,6 +54,8 @@
 - runtime: the production frontier is a 200 ms directory listing (the TS uses `fs.watch`); stderr is a bounded ring (40 lines).
 - runtime: subtitles other than WebVTT are converted by ffmpeg (`-f webvtt`), not by the host's SRT/ASS converters (alignment tags and the b/i/u filter differ); embedded extracts are cached under `<root>/subtitles/v1`.
 - runtime: a remux file or a transcode rung already on disk is served without a run (the TS spawns one when no run is registered); the early companion's init gets the 10 s early wait before the main's (the TS waits 60 s on it).
+- jobs: playback counts against the ffmpeg budget and preempts background runs (paused through the pause capability); the host's pool held background work only, FIFO, without pause, and drained on a shrink where the engine pauses. Probe crop samples share that budget.
+- sprite: the extractor follows the detected backend and render node (the host: device files, `THUMB_HWACCEL_DEVICE`); `thumbHeight` is read from the JPEG header (the host runs ffprobe); per-run timeouts count unpaused time and the global 10-minute timeout is gone (the stall watchdog covers hung runs); an extraction stopped at 5 failures fails the job (the host tiled the frames it had and backfilled the rest from them); sprites live in the engine cache (`sprites/v1`).
 - remux assembler: a frame of a growing audio file that fails to parse stops the pass after the frames before it were grouped (the TS parses the whole tail first); only the failure path differs.
 - jobs scan: a stream with no packet carrying a time is an error (`no video packet with a time`); the host would store a scan whose `end` is `null`. The video stream index is always known (`MediaInfo`), so the host's `v:0` fallback is unreachable.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
@@ -68,7 +71,7 @@
 - decide bitrates, sample rates and ids are `u32` on the wire (`MediaInfo` already is); a host sending a fractional or negative `audioStreamIndex`/`burnInSubtitleId` gets a 422 where the TS coerces.
 - mp4: `output-timeline.spec.ts` asserts ffmpeg argv: only its `remuxRunStart` calls are replayed. The assembler's fixtures cover five runs of one jellyfin-ffmpeg build; a run whose first GOP lands on another keyframe (`gop_offset`) is covered by the TS's own spec only.
 - probe: `detectEmbeddedSubtitles` and `detectStreams` (embedded-subtitle, subtitle-sync and the media controller) are not ported: they read the same ffprobe JSON but are not part of `MediaInfo`.
-- probe crop samples share one process-wide budget of `cores - 1` runs in the engine; the host's cgroup-aware pool (and its admin override) stays in Node until the engine owns every ffmpeg slot (M3).
+- jobs: the sprite extractor's VAAPI, QSV, CUDA and VideoToolbox argv are the host's (golden vectors), but only the software one ran for real here (fake ffmpeg and the e2e clips).
 - probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.
 - session: the 503/404/410 segment rule and the `Retry-After` value are inline in the host's controller (no function to call): hand-written tests, no golden vectors. The job-idle vectors run with the default durations (the host reads them from env at import).
 - args: the file output (`args::file`, MP4/MKV) has no TS counterpart and no real ffmpeg run yet; only unit tests pin its argv. `Profile` keeps the host's bitrate strings (`8M`), the session port may switch it to `ladder::Rung`.

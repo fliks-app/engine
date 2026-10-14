@@ -474,7 +474,7 @@ async fn iframe_seg(
         crop,
         timeline_offset_seconds: Some((1.0 - t.origin).max(0.0)),
     });
-    match run_capture(&rt.ffmpeg, &args, Duration::from_secs(20)).await {
+    match run_capture(&rt, &args, Duration::from_secs(20)).await {
         Some(out) if !out.is_empty() => (
             [
                 (header::CONTENT_TYPE, "video/mp2t"),
@@ -488,9 +488,10 @@ async fn iframe_seg(
     }
 }
 
-/// stdout of a short ffmpeg run, `None` on failure or timeout.
-async fn run_capture(bin: &str, args: &[String], timeout: Duration) -> Option<Vec<u8>> {
-    let mut cmd = tokio::process::Command::new(bin);
+/// stdout of a short playback ffmpeg run, `None` on failure or timeout.
+async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option<Vec<u8>> {
+    let _slot = rt.slots.playback();
+    let mut cmd = tokio::process::Command::new(&rt.ffmpeg);
     cmd.args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -930,7 +931,7 @@ async fn direct(
     }
 }
 
-/// `sprite.json` / `sprite.jpg` next to the resolver's `sprite.jpg`. [ts:modules/streaming/streaming.controller.ts:1363-1395]
+/// The engine's `sprite.json` / `sprite.jpg`, else the ones next to the resolver's `sprite.jpg`. [ts:modules/streaming/streaming.controller.ts:1363-1395]
 async fn sprite(
     State(rt): S,
     UrlPath((id, file)): UrlPath<(String, String)>,
@@ -950,11 +951,11 @@ async fn sprite(
         Ok(a) => a,
         Err(r) => return r,
     };
-    let jpg = PathBuf::from(&a.resolved.path);
-    let path = if file == "sprite.jpg" {
-        jpg
+    let own = rt.cache.sprite_dir(id).join(&file);
+    let path = if tokio::fs::metadata(&own).await.is_ok() || a.resolved.path.is_empty() {
+        own
     } else {
-        jpg.with_file_name("sprite.json")
+        PathBuf::from(&a.resolved.path).with_file_name(&file)
     };
     match tokio::fs::read(&path).await {
         Ok(b) => (
@@ -1037,7 +1038,7 @@ async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<S
     .iter()
     .map(|s| s.to_string())
     .collect();
-    let out = run_capture(&rt.ffmpeg, &args, Duration::from_secs(300)).await?;
+    let out = run_capture(rt, &args, Duration::from_secs(300)).await?;
     let text = String::from_utf8_lossy(&out).into_owned();
     if tokio::fs::create_dir_all(&dir).await.is_ok() {
         let tmp = dir.join(format!("{idx}.vtt.{}", crate::random_hex(4)));
@@ -1073,7 +1074,7 @@ async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option
     .iter()
     .map(|s| s.to_string())
     .collect();
-    run_capture(&rt.ffmpeg, &args, Duration::from_secs(60))
+    run_capture(rt, &args, Duration::from_secs(60))
         .await
         .map(|o| String::from_utf8_lossy(&o).into_owned())
 }

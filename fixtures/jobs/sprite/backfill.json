@@ -1,0 +1,13 @@
+{"name":"sprite missing-frame backfill","source":"ts","cases":[
+{"input":{"present":[true,false,true]},"expected":{"source":[1,1,3]}},
+{"input":{"present":[false,false,true]},"expected":{"source":[3,3,3]}},
+{"input":{"present":[true,false,false]},"expected":{"source":[1,1,1]}},
+{"input":{"present":[false,true,false,true,false]},"expected":{"source":[2,2,2,4,4]}},
+{"input":{"present":[true,true,true,true]},"expected":{"source":[1,2,3,4]}},
+{"input":{"present":[false,false,false,false]},"expected":{"source":[null,null,null,null]}},
+{"input":{"present":[true,false,false,false,false,true]},"expected":{"source":[1,1,1,1,1,6]}},
+{"input":{"present":[false,false,true,false,false]},"expected":{"source":[3,3,3,3,3]}},
+{"input":{"present":[true,false,false,true,false,false,false,true]},"expected":{"source":[1,1,1,4,4,4,4,8]}},
+{"input":{"present":[false,true]},"expected":{"source":[2,2]}},
+{"input":{"present":[true]},"expected":{"source":[1]}}
+]}

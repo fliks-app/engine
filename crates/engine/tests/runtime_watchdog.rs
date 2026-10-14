@@ -7,18 +7,6 @@ use runtime_common::*;
 use serde_json::{Value, json};
 use std::time::Duration;
 
-/// A copy of the fake under a name of its own: the mode is in it, and each engine's processes
-/// can be told apart.
-fn fake(mode: &str) -> String {
-    let p = temp_dir("fake").join(format!(
-        "{mode}-{}{}",
-        fliks_engine::random_hex(4),
-        std::env::consts::EXE_SUFFIX
-    ));
-    std::fs::copy(env!("CARGO_BIN_EXE_fake-ffmpeg"), &p).unwrap();
-    p.to_string_lossy().into_owned()
-}
-
 fn info() -> Value {
     json!({
         "video": [{ "streamIndex": 0, "codec": "h264", "profile": "High", "level": 31, "width": 1280,
@@ -58,16 +46,6 @@ async fn open(e: &Engine, file: &std::path::Path, extra: Value) -> String {
 
 fn resume() -> Value {
     json!({ "startAtS": 60.0, "selection": { "requestedQuality": "720p" } })
-}
-
-async fn until(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
-    for _ in 0..secs * 20 {
-        if ok() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    panic!("timeout: {what}");
 }
 
 /// A session with a running main, early and remux job.

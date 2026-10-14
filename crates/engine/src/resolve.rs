@@ -75,16 +75,19 @@ impl Default for Resolver {
     }
 }
 
-fn granted(res: &ResolveResponse) -> Result<Resolved, ResolveError> {
-    match (&res.allow, &res.path) {
-        (true, Some(p)) => Ok(Resolved {
-            path: p.clone(),
-            owner: res.owner_id.clone(),
-            format: res.format.clone(),
-        }),
-        (true, None) => Err(ResolveError::Unavailable),
-        (false, _) => Err(ResolveError::Denied),
+/// A sprite grant may come without a path: the engine serves its own.
+fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, ResolveError> {
+    if !res.allow {
+        return Err(ResolveError::Denied);
     }
+    if res.path.is_none() && purpose != ResolvePurpose::Sprite {
+        return Err(ResolveError::Unavailable);
+    }
+    Ok(Resolved {
+        path: res.path.clone().unwrap_or_default(),
+        owner: res.owner_id.clone(),
+        format: res.format.clone(),
+    })
 }
 
 impl Resolver {
@@ -103,7 +106,7 @@ impl Resolver {
         let stale = {
             let cache = self.cache.lock().unwrap();
             match cache.get(&key) {
-                Some(e) if e.until > Instant::now() => return granted(&e.res),
+                Some(e) if e.until > Instant::now() => return granted(&e.res, ask.purpose),
                 Some(e) => Some(e.res.clone()),
                 None => None,
             }
@@ -114,7 +117,7 @@ impl Resolver {
                     .ttl_s
                     .filter(|t| *t >= 0.0 && t.is_finite())
                     .unwrap_or(DEFAULT_TTL_S);
-                let out = granted(&res);
+                let out = granted(&res, ask.purpose);
                 self.cache.lock().unwrap().insert(
                     key,
                     Entry {
@@ -126,7 +129,7 @@ impl Resolver {
             }
             // Host down: an expired grant keeps serving, a denial never turns into one.
             None => match stale {
-                Some(res) if res.allow => granted(&res),
+                Some(res) if res.allow => granted(&res, ask.purpose),
                 _ => Err(ResolveError::Unavailable),
             },
         }

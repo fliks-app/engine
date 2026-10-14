@@ -1,6 +1,6 @@
 //! Wire types of the session runtime (M3): sessions, jobs, cache, revocation, events and the
 //! host resolver contract. Times are f64 epoch milliseconds (no 64-bit integers on the wire).
-use super::{DecideRequest, Decision, HdrFormat, HwAccel, TonemapCurve};
+use super::{BgJobState, DecideRequest, Decision, HdrFormat, HwAccel, JobResult, TonemapCurve};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
@@ -401,6 +401,19 @@ pub enum EngineEvent {
         from: HwAccel,
         to: HwAccel,
         stderr_tail: Vec<String>,
+    },
+    /// A background job's progress, at most once per second per job.
+    #[serde(rename_all = "camelCase")]
+    BgJobProgress { job_id: String, pct: f64 },
+    /// Once per background job: `result` when done, `error` when failed or cancelled.
+    #[serde(rename_all = "camelCase")]
+    BgJobDone {
+        job_id: String,
+        state: BgJobState,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<JobResult>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
 }
 

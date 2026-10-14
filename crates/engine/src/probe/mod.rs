@@ -64,7 +64,7 @@ pub async fn probe(
             })
             .flatten(),
     };
-    let mut out = probe::probe(&ProcessTools::new(&path), &path, &opts).await;
+    let mut out = probe::probe(&ProcessTools::new(&path, s.rt.slots.clone()), &path, &opts).await;
     if let Some(used) = &out.crop_decode {
         let asked = opts.crop_decode.as_ref().and_then(|a| a.get(1));
         if asked.is_some_and(|a| a != used) {
