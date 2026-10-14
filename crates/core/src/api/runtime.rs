@@ -64,6 +64,33 @@ pub struct OpenSessionRequest {
     /// Version of the source file (rescan counter, mtime): part of the cache key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_version: Option<String>,
+    /// Master `SUBTITLES` group for clients with `supportsHlsSubtitles`; absent: the embedded
+    /// text tracks of `info`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle_renditions: Option<Vec<SubtitleTrack>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtitleTrackKind {
+    Embedded,
+    External,
+}
+
+/// One text subtitle rendition of the master.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleTrack {
+    pub kind: SubtitleTrackKind,
+    /// Stream index (embedded) or subtitle id (external).
+    pub key: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_tag: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub forced: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -321,43 +348,42 @@ pub enum ResolvePurpose {
     Live,
 }
 
-/// The client credential, forwarded verbatim: every form the request carried.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Credential {
-    /// Raw `Cookie` header.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cookie: Option<String>,
-    /// `Authorization: Bearer` value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bearer: Option<String>,
-    /// `?token=` query value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+/// `mediaId` of a resolve: a media file id, or a live session id (`purpose: live`, M6).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum ResolveMediaId {
+    File(u32),
+    Live(String),
 }
 
 /// `POST {hostUrl}/engine/resolve`, implemented by the host.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveRequest {
-    pub media_id: u32,
-    pub credential: Credential,
+    pub media_id: ResolveMediaId,
+    /// The client credential exactly as received, one of: the `Cookie` header value, the
+    /// `Authorization` header value (`Bearer <jwt>`), the bare `?token=` value.
+    pub credential: String,
     pub purpose: ResolvePurpose,
-    /// External subtitle id (`purpose: subtitle`); absent for an embedded track.
+    /// External subtitle (`purpose: subtitle`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtitle_id: Option<u32>,
+    /// Embedded subtitle stream (`purpose: subtitle`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveResponse {
     pub allow: bool,
-    /// Media file, sprite directory (`sprite`) or subtitle file (`subtitle` with an id).
+    /// Media file; `sprite.jpg` (`sprite`, may not exist); the subtitle file (external
+    /// subtitle) or the media file (embedded subtitle).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
-    /// MIME type of a media file, or the extension of a subtitle file (`srt`, `ass`, `vtt`).
+    /// MIME type of a media file; a subtitle's extension (`srt`, `ass`, `vtt`) or `embedded`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// Cache lifetime of this answer; 60 when absent.

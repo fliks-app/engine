@@ -4,6 +4,7 @@
 mod cache;
 mod key;
 mod lifetime;
+mod plan;
 mod profile;
 mod resume;
 mod segments;
@@ -12,6 +13,7 @@ mod throttle;
 pub use cache::*;
 pub use key::*;
 pub use lifetime::*;
+pub use plan::*;
 pub use profile::*;
 pub use resume::*;
 pub use segments::*;
