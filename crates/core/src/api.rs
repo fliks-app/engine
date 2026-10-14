@@ -5,8 +5,10 @@ use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 mod decide;
+mod lifetime;
 mod probe;
 pub use decide::*;
+pub use lifetime::*;
 pub use probe::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -166,6 +168,7 @@ pub struct EngineConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_token: Option<String>,
     pub streaming: StreamingConfig,
+    pub lifetime: LifetimeConfig,
 }
 
 // MediaInfo mirrors `MediaFileInfo` (ffprobe.service.ts). JSON integers stay u32/i32 so the

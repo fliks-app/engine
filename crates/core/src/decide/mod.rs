@@ -4,11 +4,11 @@ mod audio;
 mod caps;
 pub(crate) mod codec;
 mod direct_play;
-mod dolby_vision;
+pub(crate) mod dolby_vision;
 mod estimate;
 mod qualities;
 mod source;
-mod timeline;
+pub(crate) mod timeline;
 mod tonemap;
 
 use crate::api::{
