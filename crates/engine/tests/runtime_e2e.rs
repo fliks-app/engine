@@ -1,5 +1,6 @@
 //! Runtime against real ffmpeg (`FFMPEG_PATH`, `FFPROBE_PATH`: `tools/probe-tools.sh`). Ignored
 //! unless `ENGINE_E2E` is set when building: `ENGINE_E2E=1 cargo test -p fliks-engine --test runtime_e2e`.
+#![cfg(unix)]
 mod runtime_common;
 use fliks_engine_core::api::{EngineEvent, HwAccel, MediaInfo};
 use fliks_engine_core::mp4::{first_tfdt, parse_init_tracks};
