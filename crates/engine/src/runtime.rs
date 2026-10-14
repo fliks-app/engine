@@ -268,10 +268,12 @@ impl Job {
         s.media_file_id == self.media_file_id && s.owner == self.owner && s.hash == self.hash
     }
 
-    /// Stops ffmpeg on purpose (seek, switch, idle, revoke) and waits for it.
+    /// Stops ffmpeg on purpose (seek, switch, idle, revoke), waits for it and frees its slot.
     pub async fn kill(&self) -> Exit {
         self.m.lock().unwrap().killed = true;
-        self.proc.stop().await
+        let exit = self.proc.stop().await;
+        self.slot.lock().unwrap().take();
+        exit
     }
 
     pub async fn pause(&self, cap: PauseCapability, pause: bool) -> bool {

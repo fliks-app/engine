@@ -158,7 +158,7 @@ impl Ffmpeg {
         assign_to_job(&child);
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
         let stderr_lines = Arc::new(AtomicU64::new(0));
-        if let Some(err) = child.stderr.take() {
+        let drain = child.stderr.take().map(|err| {
             let (ring, count) = (stderr.clone(), stderr_lines.clone());
             tokio::spawn(async move {
                 let mut lines = BufReader::new(err).lines();
@@ -170,8 +170,8 @@ impl Ffmpeg {
                     }
                     r.push_back(clip(l));
                 }
-            });
-        }
+            })
+        });
         let pid = child.id();
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
@@ -188,6 +188,10 @@ impl Ffmpeg {
                     child.wait().await
                 }
             };
+            // The exit is published once stderr is fully read: its tail is part of the verdict.
+            if let Some(d) = drain {
+                let _ = d.await;
+            }
             let _ = exit_tx.send(Some(to_exit(status)));
         });
         Ok(Self {
@@ -292,6 +296,12 @@ impl Ffmpeg {
         }
     }
 
+    /// Kills the process (no polite stop) and returns once it is gone.
+    pub async fn kill(&self) -> Exit {
+        let _ = self.kill.try_send(());
+        self.wait().await
+    }
+
     /// Polite stop then kill after `STOP_GRACE`; returns once the process is gone.
     pub async fn stop(&self) -> Exit {
         if let Some(e) = self.exited() {
@@ -307,10 +317,7 @@ impl Ffmpeg {
         self.write_key(b'q').await;
         match tokio::time::timeout(STOP_GRACE, self.wait()).await {
             Ok(e) => e,
-            Err(_) => {
-                let _ = self.kill.try_send(());
-                self.wait().await
-            }
+            Err(_) => self.kill().await,
         }
     }
 
@@ -373,7 +380,6 @@ mod tests {
         .unwrap();
         let e = p.wait().await;
         assert_eq!(e.code, Some(3));
-        tokio::time::sleep(Duration::from_millis(50)).await;
         let tail = p.stderr_tail();
         assert_eq!(tail.len(), RING_LINES);
         assert_eq!(tail.last().unwrap(), "line60");
@@ -383,11 +389,20 @@ mod tests {
     async fn stop_terms_the_group_and_kills_a_deaf_process() {
         let p = Ffmpeg::spawn("sh", &sh("sleep 30")).await.unwrap();
         assert!(p.stop().await.signal);
-        let deaf = Ffmpeg::spawn("sh", &sh("trap '' TERM; while :; do sleep 0.1; done"))
-            .await
-            .unwrap();
-        // Let the shell install its trap first.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let deaf = Ffmpeg::spawn(
+            "sh",
+            &sh("trap '' TERM; echo ready >&2; while :; do sleep 0.1; done"),
+        )
+        .await
+        .unwrap();
+        // The trap is installed once the shell says so.
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while deaf.stderr_lines() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         let t = std::time::Instant::now();
         assert!(deaf.stop().await.signal);
         assert!(t.elapsed() >= STOP_GRACE);
