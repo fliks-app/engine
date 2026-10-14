@@ -69,6 +69,8 @@ async fn hello_ok() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(v["protocolVersion"], 1);
     assert!(v["instanceId"].is_string());
+    let features = v["features"].as_array().unwrap();
+    assert!(features.iter().any(|f| f == "probe"));
 }
 
 #[tokio::test]

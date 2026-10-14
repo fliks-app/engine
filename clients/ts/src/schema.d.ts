@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["probe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -427,6 +443,21 @@ export interface components {
             timestampBreakSeconds?: number | null;
             video: components["schemas"]["VideoStreamInfo"][];
         };
+        MediaRef: {
+            /** Format: int32 */
+            mediaFileId: number;
+            /** @description Absolute path, already authorised by the host. */
+            path: string;
+        };
+        MovieHash: {
+            /**
+             * Format: double
+             * @description File size in bytes.
+             */
+            bytesize: number;
+            /** @description 16 lowercase hex digits. */
+            hash: string;
+        };
         /**
          * @description Segment container of the HLS output.
          * @enum {string}
@@ -506,6 +537,25 @@ export interface components {
             videoProfile?: string | null;
             /** Format: int32 */
             width?: number | null;
+        };
+        ProbeRequest: {
+            /** @description Run `cropdetect` and set `video[0].crop` when bars are significant. */
+            crop?: boolean;
+            media: components["schemas"]["MediaRef"];
+            /** @description Read BCP-47 language tags of a Matroska file with `mkvmerge -J`. */
+            mkvTags?: boolean;
+            /** @description Compute the OpenSubtitles moviehash. */
+            moviehash?: boolean;
+        };
+        /**
+         * @description `ok: false` means ffprobe could not tell (unreadable file, timeout): leave stored rows alone.
+         *     `ok: true` with `info.error` is a readable file without streams.
+         */
+        ProbeResult: {
+            error?: string | null;
+            info?: null | components["schemas"]["MediaInfo"];
+            moviehash?: null | components["schemas"]["MovieHash"];
+            ok: boolean;
         };
         /** @enum {string} */
         QsvPreset: "veryfast" | "faster" | "fast" | "medium" | "slow" | "slower" | "veryslow";
@@ -820,6 +870,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Hello"];
                 };
+            };
+        };
+    };
+    probe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeResult"];
+                };
+            };
+            /** @description path is not absolute */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
