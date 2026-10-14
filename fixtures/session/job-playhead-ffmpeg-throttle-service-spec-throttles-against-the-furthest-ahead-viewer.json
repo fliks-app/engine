@@ -1,0 +1,27 @@
+{
+  "expected": {
+    "playhead": 100
+  },
+  "input": {
+    "grid": {
+      "fps": 24,
+      "kind": "uniform",
+      "segmentDuration": 3
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": null,
+        "pinned": false,
+        "position": 40
+      },
+      {
+        "lastRequestedSegment": null,
+        "pinned": false,
+        "position": 100
+      }
+    ]
+  },
+  "kind": "job-playhead",
+  "name": "ffmpeg-throttle.service.spec: throttles against the furthest-ahead viewer",
+  "source": "ffmpeg-throttle.service.spec"
+}

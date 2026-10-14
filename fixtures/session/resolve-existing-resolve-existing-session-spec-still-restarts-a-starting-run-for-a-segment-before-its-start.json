@@ -1,0 +1,24 @@
+{
+  "expected": {
+    "kill": true,
+    "purgeCache": false,
+    "result": "respawn",
+    "startSegment": 3
+  },
+  "input": {
+    "present": [],
+    "qualityMatch": true,
+    "requestedSegment": 3,
+    "run": {
+      "assembler": null,
+      "exitCode": null,
+      "outputPending": false,
+      "remux": false,
+      "signal": false,
+      "startSegment": 10
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: still restarts a starting run for a segment before its start",
+  "source": "resolve-existing-session.spec"
+}

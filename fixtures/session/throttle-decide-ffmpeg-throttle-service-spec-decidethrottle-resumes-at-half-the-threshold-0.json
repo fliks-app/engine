@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "decision": "resume"
+  },
+  "input": {
+    "aheadSeconds": 0,
+    "paused": true,
+    "thresholdSeconds": 90
+  },
+  "kind": "throttle-decide",
+  "name": "ffmpeg-throttle.service.spec: decideThrottle resumes at half the threshold (0)",
+  "source": "ffmpeg-throttle.service.spec"
+}

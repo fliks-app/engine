@@ -1,0 +1,41 @@
+{
+  "expected": {
+    "decision": "noop",
+    "frontierSegment": 281
+  },
+  "input": {
+    "capability": "signal",
+    "enabled": true,
+    "paused": false,
+    "processExited": false,
+    "run": {
+      "fps": null,
+      "frontierHint": null,
+      "kind": "transcode",
+      "present": [
+        275,
+        276,
+        277,
+        278,
+        279,
+        280
+      ],
+      "segmentDuration": 6,
+      "startSegment": 275
+    },
+    "thresholdSeconds": 90,
+    "variant": {
+      "kind": "main"
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": null,
+        "pinned": false,
+        "position": 1650
+      }
+    ]
+  },
+  "kind": "throttle-tick",
+  "name": "ffmpeg-throttle.service.spec: transcode run frontier: measures the run's own output (not yet ahead)",
+  "source": "ffmpeg-throttle.service.spec"
+}

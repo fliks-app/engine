@@ -1,0 +1,22 @@
+{
+  "expected": {
+    "playhead": 30
+  },
+  "input": {
+    "grid": {
+      "fps": null,
+      "kind": "uniform",
+      "segmentDuration": 3
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": 10,
+        "pinned": false,
+        "position": 5
+      }
+    ]
+  },
+  "kind": "job-playhead",
+  "name": "ffmpeg-throttle.service.spec: max of heartbeat position and last requested segment",
+  "source": "ffmpeg-throttle.service.spec"
+}

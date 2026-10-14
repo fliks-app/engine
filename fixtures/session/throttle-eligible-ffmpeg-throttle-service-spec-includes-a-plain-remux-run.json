@@ -1,0 +1,17 @@
+{
+  "expected": {
+    "eligible": true
+  },
+  "input": {
+    "variant": {
+      "audioIndex": 0,
+      "keyframeGrid": true,
+      "kind": "remux",
+      "multiAudio": false
+    },
+    "viewers": []
+  },
+  "kind": "throttle-eligible",
+  "name": "ffmpeg-throttle.service.spec: includes a plain remux run",
+  "source": "ffmpeg-throttle.service.spec"
+}

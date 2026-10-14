@@ -1,0 +1,24 @@
+{
+  "expected": {
+    "kill": false,
+    "purgeCache": true,
+    "result": "respawn",
+    "startSegment": 0
+  },
+  "input": {
+    "present": [],
+    "qualityMatch": true,
+    "requestedSegment": 5,
+    "run": {
+      "assembler": null,
+      "exitCode": null,
+      "outputPending": false,
+      "remux": false,
+      "signal": true,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: respawns a SIGKILLed session",
+  "source": "resolve-existing-session.spec"
+}

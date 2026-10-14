@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "decision": "noop"
+  },
+  "input": {
+    "aheadSeconds": 200,
+    "paused": true,
+    "thresholdSeconds": 90
+  },
+  "kind": "throttle-decide",
+  "name": "ffmpeg-throttle.service.spec: decideThrottle never re-pauses a paused run",
+  "source": "ffmpeg-throttle.service.spec"
+}

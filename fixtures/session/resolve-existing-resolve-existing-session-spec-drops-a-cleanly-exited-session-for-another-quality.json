@@ -1,0 +1,26 @@
+{
+  "expected": {
+    "kill": false,
+    "purgeCache": false,
+    "result": "respawn",
+    "startSegment": 0
+  },
+  "input": {
+    "present": [
+      0
+    ],
+    "qualityMatch": false,
+    "requestedSegment": 0,
+    "run": {
+      "assembler": null,
+      "exitCode": 0,
+      "outputPending": false,
+      "remux": false,
+      "signal": false,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: drops a cleanly-exited session for another quality",
+  "source": "resolve-existing-session.spec"
+}

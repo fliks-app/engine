@@ -1,0 +1,22 @@
+{
+  "expected": {
+    "playhead": 60
+  },
+  "input": {
+    "grid": {
+      "fps": null,
+      "kind": "uniform",
+      "segmentDuration": 3
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": 20,
+        "pinned": false,
+        "position": 0
+      }
+    ]
+  },
+  "kind": "job-playhead",
+  "name": "ffmpeg-throttle.service.spec: a buffering client with no heartbeat counts its requested segment",
+  "source": "ffmpeg-throttle.service.spec"
+}

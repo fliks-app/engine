@@ -1,0 +1,28 @@
+{
+  "expected": {
+    "eligible": false
+  },
+  "input": {
+    "variant": {
+      "audioIndex": 0,
+      "keyframeGrid": true,
+      "kind": "remux",
+      "multiAudio": false
+    },
+    "viewers": [
+      {
+        "lastRequestedSegment": null,
+        "pinned": false,
+        "position": 0
+      },
+      {
+        "lastRequestedSegment": null,
+        "pinned": true,
+        "position": 0
+      }
+    ]
+  },
+  "kind": "throttle-eligible",
+  "name": "ffmpeg-throttle.service.spec: excludes a run backing a pinned session (remux)",
+  "source": "ffmpeg-throttle.service.spec"
+}

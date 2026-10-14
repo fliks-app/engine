@@ -1,0 +1,6 @@
+{"name":"sid gate matrix","source":"synthetic","kind":"sid-gate","cases":[
+{"expected":{"expired":false},"input":{"known":true,"sidPresent":true},"name":"sid true known true"},
+{"expected":{"expired":true},"input":{"known":false,"sidPresent":true},"name":"sid true known false"},
+{"expected":{"expired":false},"input":{"known":true,"sidPresent":false},"name":"sid false known true"},
+{"expected":{"expired":false},"input":{"known":false,"sidPresent":false},"name":"sid false known false"}
+]}

@@ -1,0 +1,43 @@
+{
+  "expected": {
+    "evicted": [
+      "1::1::eee"
+    ]
+  },
+  "input": {
+    "entries": [
+      {
+        "lastAccessMs": 1699999997000,
+        "live": false,
+        "mediaFileId": 1,
+        "owner": 1,
+        "profile": "eee",
+        "totalBytes": 1000
+      },
+      {
+        "lastAccessMs": 1699999999000,
+        "live": false,
+        "mediaFileId": 2,
+        "owner": 1,
+        "profile": "eee",
+        "totalBytes": 1000
+      },
+      {
+        "lastAccessMs": 1699999998000,
+        "live": false,
+        "mediaFileId": 3,
+        "owner": 1,
+        "profile": "eee",
+        "totalBytes": 1000
+      }
+    ],
+    "nowMs": 1700000000000,
+    "policy": {
+      "maxBytes": 2000,
+      "ttlMs": 14400000
+    }
+  },
+  "kind": "cache-gc",
+  "name": "streaming-lifecycle.spec: LRU drops the least recent under size pressure",
+  "source": "streaming-lifecycle.spec"
+}

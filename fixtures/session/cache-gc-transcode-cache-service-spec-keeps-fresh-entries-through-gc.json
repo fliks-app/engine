@@ -1,0 +1,25 @@
+{
+  "expected": {
+    "evicted": []
+  },
+  "input": {
+    "entries": [
+      {
+        "lastAccessMs": 1699999999000,
+        "live": false,
+        "mediaFileId": 1,
+        "owner": 1,
+        "profile": "aaa",
+        "totalBytes": 1000
+      }
+    ],
+    "nowMs": 1700000000000,
+    "policy": {
+      "maxBytes": 21474836480,
+      "ttlMs": 14400000
+    }
+  },
+  "kind": "cache-gc",
+  "name": "transcode-cache.service.spec: keeps fresh entries through gc",
+  "source": "transcode-cache.service.spec"
+}

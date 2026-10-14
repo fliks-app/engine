@@ -1,0 +1,21 @@
+{
+  "expected": {
+    "result": "existing"
+  },
+  "input": {
+    "present": [],
+    "qualityMatch": true,
+    "requestedSegment": 0,
+    "run": {
+      "assembler": null,
+      "exitCode": null,
+      "outputPending": false,
+      "remux": false,
+      "signal": false,
+      "startSegment": 0
+    }
+  },
+  "kind": "resolve-existing",
+  "name": "resolve-existing-session.spec: waits on a run that has yet to write its first segment (seg 0)",
+  "source": "resolve-existing-session.spec"
+}

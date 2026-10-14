@@ -1,0 +1,16 @@
+{
+  "expected": {
+    "playhead": null
+  },
+  "input": {
+    "grid": {
+      "fps": 24,
+      "kind": "uniform",
+      "segmentDuration": 3
+    },
+    "viewers": []
+  },
+  "kind": "job-playhead",
+  "name": "ffmpeg-throttle.service.spec: jobPlayheadSeconds is null with no live session",
+  "source": "ffmpeg-throttle.service.spec"
+}
