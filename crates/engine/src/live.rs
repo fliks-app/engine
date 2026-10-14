@@ -186,6 +186,8 @@ impl Pipe {
             mode: m.mode,
             capacity_token: self.capacity_token.clone(),
             upstream: self.upstream_index(m) as u32,
+            upstream_url: Some(self.upstreams[self.upstream_index(m)].url.clone()),
+            upstream_priority: Some(self.upstreams[self.upstream_index(m)].priority),
             opened_at_ms: v.opened_at_ms as f64,
             last_seen_ms: v.last_seen_ms as f64,
             video_codec: m.active_codec.clone().or(probe.video_codec),
