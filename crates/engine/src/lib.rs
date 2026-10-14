@@ -15,8 +15,8 @@ use axum::{
     routing::{get, post},
 };
 use fliks_engine_core::api::{
-    Capabilities, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest, Hello,
-    MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
+    CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
+    Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, SourceScan,
 };
 use fliks_engine_core::hw::selected_render_node;
 use std::sync::{Arc, Mutex};
@@ -130,11 +130,15 @@ fn detecting() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {
 }
 
 #[utoipa::path(get, path = "/v1/capabilities", responses(
-    (status = 200, body = Capabilities),
+    (status = 200, body = CapabilitiesResponse),
     (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
 async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
     match s.hw.snapshot() {
-        Some(snap) => Json(snap.capabilities()).into_response(),
+        Some(snap) => Json(CapabilitiesResponse {
+            capabilities: snap.capabilities(),
+            host_caps: snap.host_caps(),
+        })
+        .into_response(),
         None => detecting().into_response(),
     }
 }

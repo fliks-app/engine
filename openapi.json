@@ -20,7 +20,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Capabilities"
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
                 }
               }
             }
@@ -532,6 +532,25 @@
             }
           }
         }
+      },
+      "CapabilitiesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Capabilities"
+          },
+          {
+            "type": "object",
+            "required": [
+              "hostCaps"
+            ],
+            "properties": {
+              "hostCaps": {
+                "$ref": "#/components/schemas/HostCaps"
+              }
+            }
+          }
+        ],
+        "description": "`GET /v1/capabilities`: the summary plus the exact host state the decision reads."
       },
       "Chapter": {
         "type": "object",
