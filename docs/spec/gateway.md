@@ -25,7 +25,8 @@ Ordered rules, first match wins, no match = forward. A rule is data, `{ "target"
   1. forward `/api/stream/info/**`
   2. forward `/api/stream/:id/edl`
   3. engine `GET`/`HEAD` `/api/stream/:id/**`
-  Non-GET verbs (`playback-info`, `DELETE sessions/:sid`) and every other path fall through to the forward. Live TV (`livetv/sessions/:sid/*`, M6) is added when it exists.
+  4. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
+  Non-GET verbs (`playback-info`, `DELETE sessions/:sid`, live `PUT .../state`) and every other path fall through to the forward.
 
 ## Forwarding
 

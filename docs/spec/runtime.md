@@ -87,7 +87,7 @@ Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET`
 
 ## 8. Deviations
 
-- No live TV (M6).
+- Live TV is its own runtime: `docs/spec/live.md`.
 - A remux file or a rung file already on disk is served without a run; the early's init gets the 10 s early wait in front of the main's (the TS waits 60 s).
 - A crashed run's rung directory is purged by the matrix (`purgeCache`); the session and the cache entry survive and the next request respawns.
 - Stop is SIGTERM then SIGKILL (TS: SIGKILL); subtitles other than WebVTT are converted by ffmpeg, not by the host's SRT/ASS converters.
