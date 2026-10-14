@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGGZ0eXBpc281AAAAAGlzbzVobHNmAAAACG1vb3Y="
+  },
+  "expected": {
+    "ok": true
+  },
+  "fn": "isCmafRewritten",
+  "name": "cmaf-rewrite: replay cmaf-rewrite cmafRewrite is idempotent — a second pass leaves an already-rewritten buffer unchanged",
+  "source": "cmaf-rewrite"
+}

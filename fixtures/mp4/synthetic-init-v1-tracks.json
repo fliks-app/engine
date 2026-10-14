@@ -1,0 +1,19 @@
+{
+  "args": {
+    "init": "AAAAHGZ0eXBpc281AAACAGlzbzVpc282bXA0MQAAAMxtb292AAAAHG12aGQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKh0cmFrAAAAKHRraGQBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAACxlZHRzAAAAJGVsc3QBAAAAAAAAAQAAAAAAAAAAAAAAAIAAAAAAAQAAAAAATG1kaWEAAAAkbWRoZAEAAAAAAAAAAAAAAAAAAAAAAAAAAAFfkAAAAAAAAAAgaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAA=="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 90000
+        }
+      ]
+    ]
+  },
+  "fn": "parseInitTracks",
+  "name": "synthetic init v1 tracks",
+  "source": "synthetic"
+}

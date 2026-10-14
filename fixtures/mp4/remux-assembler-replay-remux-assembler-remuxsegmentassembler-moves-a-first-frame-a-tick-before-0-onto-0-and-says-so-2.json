@@ -1,0 +1,20 @@
+{
+  "args": {
+    "init": "AAAA+G1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAABRAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGUAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAgAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAAAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAFGhkbHIAAAAAAAAAAHNvdW4="
+  },
+  "expected": {
+    "ok": [
+      [
+        1,
+        "81"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ]
+  },
+  "fn": "readInitEdits",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler moves a first frame a tick before 0 onto 0, and says so",
+  "source": "remux-assembler"
+}

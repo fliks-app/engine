@@ -1,0 +1,70 @@
+{
+  "args": {
+    "audioGrid": null,
+    "grid": {
+      "boundaries": [
+        0,
+        4,
+        6,
+        10,
+        12,
+        13
+      ],
+      "durations": [
+        4,
+        2,
+        4,
+        2,
+        1
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 2,
+          "pts": 2
+        },
+        {
+          "dts": 4,
+          "pts": 4
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        },
+        {
+          "dts": 8,
+          "pts": 8
+        },
+        {
+          "dts": 10,
+          "pts": 10
+        },
+        {
+          "dts": 12,
+          "pts": 12
+        }
+      ]
+    },
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 9
+  },
+  "expected": {
+    "error": "remux segment 9 is past the last one (4)",
+    "type": "RangeError"
+  },
+  "fn": "remuxRunStart",
+  "name": "synthetic run start regular 9 copy",
+  "source": "synthetic"
+}

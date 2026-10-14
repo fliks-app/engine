@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "durationSeconds": 60,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "",
+          "startTimeSeconds": 2.8,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "end": 62.8,
+      "formatStart": 2.8,
+      "origin": 2.8
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "synthetic timeline {\"video\":[{\"startTimeSeconds\":2.8}],\"durationSeconds\":60}",
+  "source": "synthetic"
+}

@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": false,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "av1",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 1,
+    "sourceFrameRate": 24,
+    "sourceHeight": 2160,
+    "sourceWidth": 3840,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist: replay master-playlist generateMasterPlaylist — HDR ladder is variant-driven (#464) emits no HDR rungs when the host has no encoder for the variant",
+  "source": "master-playlist"
+}

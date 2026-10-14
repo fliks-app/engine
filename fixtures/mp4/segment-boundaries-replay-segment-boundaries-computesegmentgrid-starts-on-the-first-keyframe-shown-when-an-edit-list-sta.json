@@ -1,0 +1,74 @@
+{
+  "args": {
+    "end": 8,
+    "keyframes": [
+      {
+        "dts": -1.52,
+        "pts": -1.52
+      },
+      {
+        "dts": 0.48,
+        "pts": 0.48
+      },
+      {
+        "dts": 2.48,
+        "pts": 2.48
+      },
+      {
+        "dts": 4.48,
+        "pts": 4.48
+      },
+      {
+        "dts": 6.48,
+        "pts": 6.48
+      }
+    ],
+    "origin": 0,
+    "segDur": 2
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0.48,
+        2.48,
+        4.48,
+        6.48,
+        8
+      ],
+      "durations": [
+        2,
+        2.0000000000000004,
+        2,
+        1.5199999999999996
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0.48,
+          "pts": 0.48
+        },
+        {
+          "dts": 2.48,
+          "pts": 2.48
+        },
+        {
+          "dts": 4.48,
+          "pts": 4.48
+        },
+        {
+          "dts": 6.48,
+          "pts": 6.48
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "segment-boundaries: replay segment-boundaries computeSegmentGrid starts on the first keyframe shown when an edit list starts mid-GOP",
+  "source": "segment-boundaries"
+}

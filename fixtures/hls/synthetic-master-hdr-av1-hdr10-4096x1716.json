@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "av1",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 7,
+    "sourceFrameRate": 23.976,
+    "sourceHeight": 1716,
+    "sourceWidth": 4096,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=42288000,AVERAGE-BANDWIDTH=28192000,RESOLUTION=3840x1610,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"2160p-hdr\",CODECS=\"av01.0.06M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/2160p-hdr/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=8538000,AVERAGE-BANDWIDTH=5692000,RESOLUTION=1920x806,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"1080p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p-hdr/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=4392000,AVERAGE-BANDWIDTH=2928000,RESOLUTION=1280x538,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"720p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p-hdr/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=2244000,AVERAGE-BANDWIDTH=1496000,RESOLUTION=854x358,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"480p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p-hdr/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=18288000,AVERAGE-BANDWIDTH=12192000,RESOLUTION=3840x1610,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"eco-2160p-hdr\",CODECS=\"av01.0.06M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-2160p-hdr/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3588000,AVERAGE-BANDWIDTH=2392000,RESOLUTION=1920x806,VIDEO-RANGE=PQ,FRAME-RATE=23.976,NAME=\"eco-1080p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p-hdr/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master hdr av1 HDR10 4096x1716",
+  "source": "synthetic"
+}

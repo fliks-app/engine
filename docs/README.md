@@ -7,6 +7,8 @@
   - [spec/probe.md](spec/probe.md): media probing (`POST /v1/probe`): ffprobe/mkvmerge/cropdetect to `MediaInfo`, moviehash.
   - [spec/session.md](spec/session.md): `core::session`, the pure session runtime: keys, `cache/v1` profile hash, seek/quality-switch matrix, throttle, segment responses, lifetimes, cache eviction.
   - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
+  - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
+  - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
 
 ## Tags
 
@@ -35,6 +37,10 @@
 - args: the TS reads probes, platform, render node and `FLIKS_OPENCL_DEVICE` from process globals; the port takes them from `HostCaps` and `hw::Device`. The run's `hwAccel` wins over `HostCaps.hwAccel`, as in the TS where the option and the detected backend are separate values.
 - args: not ported: the builders' log lines, `remuxRunStart`/`remuxAudioGrid` (the session layer's, from the keyframe grid), and the stats labels of `resolveTonemapReport` (`path`, `curve`); `decide` and `args` share one `resolve_pipeline`.
 - args fuzz: the host harness first computed `expected` from the generated object, whose key order differs from the stored one, so `No encoder for variant {...}` messages differed in key order only; the harness now runs from the stored input (`fixtures/argv/fuzz-no-encoder-variant-json.json`).
+- hls: a collapsed (pinned `remux`/`original`, or `supportsAbr: false`) HDR ladder with no fitting rung emits no rung; the TS throws reading `undefined.maxWidth`. The fuzz skips TS throws (33 of 20 000 inputs, all this one).
+- hls: every URI takes a `prefix` (the host's `/api/stream/{id}`) and a `token` suffix: the engine names no host or route root.
+- mp4: `trun_samples` refuses a `sample_count` above 2^24 (`OutOfRange`) where the TS would allocate one object per declared sample of a corrupt box.
+- mp4: ticks are `i128` and a non-integral tick count fails with the JS `BigInt` message; a value past 2^127 saturates (the TS keeps a bigint), only changing the number in an error message the write then raises anyway.
 
 ## Open divergences
 
@@ -45,7 +51,8 @@
 - decide ports read the vectors' host caps only for linux/darwin and `none`/`vaapi`/`nvenc`/`qsv`/`videotoolbox`: the win32, AMF and blacklisted-id branches (encoder ids, `{codec}_qsv[_d3d11]_decode`) follow the TS; no golden vector exercises them `[assumed]`, but the fuzz does (win32, AMF, QSV, blacklisted ids; 35 000 inputs, 0 mismatches).
 - decide `maxAudioChannels` and `audioChannelsByCodec` are `f64` on the wire; a fractional cap (`5.1`) makes the TS report fractional `channels`, which `Decision` (`u32`) truncates. The fuzz only samples integer caps.
 - decide bitrates, sample rates and ids are `u32` on the wire (`MediaInfo` already is); a host sending a fractional or negative `audioStreamIndex`/`burnInSubtitleId` gets a 422 where the TS coerces.
-- `hls-variant-ladder.ts` is not ported: `evaluate()` does not read it (master playlist, M3).
+- hls: the master route's assembly of options from the session (`hlsMaster`: crop size, `hdrPassThrough`, audio layout, DV `remuxCodecs`) stays in the host until the session state moves (M3); `copy_source_codec_string` is ported, `dvSupplementalCodecs`/`dvStandaloneCodecs` are not.
+- mp4: the stateful `RemuxSegmentAssembler` (watching GOP files, completion, run landing, audio grouping, `canServe`) and its file readers are not ported: the serve runtime will drive `core::mp4` with them. `output-timeline.spec.ts` asserts ffmpeg argv: only its `remuxRunStart` calls are replayed; the args port should reuse `mp4::remux_run_start`.
 - probe: `detectEmbeddedSubtitles` and `detectStreams` (embedded-subtitle, subtitle-sync and the media controller) are not ported: they read the same ffprobe JSON but are not part of `MediaInfo`.
 - probe crop samples share one process-wide budget of `cores - 1` runs in the engine; the host's cgroup-aware pool (and its admin override) stays in Node until the engine owns every ffmpeg slot (M3).
 - probe is verified on Linux with jellyfin-ffmpeg 8.1.2 and mkvtoolnix 82 only; `ionice`/`nice` and process kills on macOS and Windows follow the same code but have no live run. No corpus file carries Dolby Vision or HDR10+ (ffmpeg cannot write them): those fields are covered by synthetic ffprobe output.

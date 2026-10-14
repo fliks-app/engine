@@ -1,0 +1,18 @@
+{
+  "args": {
+    "duration": 9.009,
+    "frameSeconds": 0.04170837504170838,
+    "init": "init.mp4",
+    "seg": {
+      "prefix": "seg-",
+      "suffix": ".m4s"
+    },
+    "segDuration": 3.003
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:3.003,\nseg-0000.m4s\n#EXTINF:3.003,\nseg-0001.m4s\n#EXTINF:3.003,\nseg-0002.m4s\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "streaming.controller: replay streaming.controller buildVodPlaylist rounds TARGETDURATION up for fractional segment durations + emits the map",
+  "source": "streaming.controller"
+}

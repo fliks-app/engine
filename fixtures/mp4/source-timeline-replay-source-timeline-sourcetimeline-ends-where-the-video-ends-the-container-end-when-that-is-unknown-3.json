@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "h264",
+          "firstFrameSeconds": 2.8,
+          "startTimeSeconds": 2.8,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "formatStart": 0,
+      "origin": 2.8
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "source-timeline: replay source-timeline sourceTimeline ends where the video ends, the container end when that is unknown",
+  "source": "source-timeline"
+}

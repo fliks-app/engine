@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGHN0eXBtc2RoAAAAAG1zZGhtc2l4AAAAAG1kYXQBAg=="
+  },
+  "expected": {
+    "ok": "AAAAAG1kYXQBAg=="
+  },
+  "fn": "cmafRewrite",
+  "name": "synthetic cmaf size 0",
+  "source": "synthetic"
+}

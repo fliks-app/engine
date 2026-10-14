@@ -1,5 +1,5 @@
 //! Source timeline, frame-rate parsing and the segment grids audio padding is judged against.
-use crate::api::{Keyframe, MediaInfo, SourceScan, VideoStreamInfo};
+use crate::api::{MediaInfo, SourceScan, VideoStreamInfo};
 use crate::ladder::js_round;
 
 pub const DEFAULT_FPS: f64 = 24.0;
@@ -59,48 +59,25 @@ pub fn video_presentation_start(v: Option<&VideoStreamInfo>) -> Option<f64> {
 
 /// `(origin, end)` of a probed file; `end` is where the video ends or its clock breaks.
 pub fn source_timeline(info: &MediaInfo) -> (f64, Option<f64>) {
-    let v = info.video.first();
-    let format_start = info
-        .format_start_seconds
-        .unwrap_or_else(|| v.and_then(|v| v.start_time_seconds).unwrap_or(0.0));
-    let end = info
-        .timestamp_break_seconds
-        .flatten()
-        .or_else(|| v.and_then(|v| v.end_seconds))
-        .or_else(|| info.duration_seconds.map(|d| format_start + d));
-    (video_presentation_start(v).unwrap_or(0.0), end)
+    let t = crate::mp4::source_timeline(Some(info));
+    (t.origin, t.end)
 }
 
-/// Segment boundaries of a copy cut on its own keyframes: first keyframe shown at `origin`, a cut
-/// at the first keyframe past each target, then `end`. `None` without a usable keyframe.
+/// Segment boundaries of a copy cut on its own keyframes. `None` without a usable keyframe.
 pub fn remux_grid_boundaries(
     scan: &SourceScan,
     origin: f64,
     segment_duration: f64,
     frame_seconds: f64,
 ) -> Option<Vec<f64>> {
-    let same_frame = frame_seconds / 2.0;
-    let keyframes: Vec<&Keyframe> = scan
-        .keyframes
-        .iter()
-        .filter(|k| k.pts >= origin - same_frame)
-        .collect();
-    if keyframes.is_empty() || segment_duration <= 0.0 {
-        return None;
-    }
-    let total = scan.end.max(keyframes[keyframes.len() - 1].pts);
-    let start = origin.max(keyframes[0].pts);
-    let mut boundaries = vec![start];
-    let mut target = start + segment_duration;
-    for kf in keyframes.iter().skip(1) {
-        if kf.pts < target || total - kf.pts < same_frame {
-            continue;
-        }
-        boundaries.push(kf.pts);
-        target += segment_duration;
-    }
-    boundaries.push(total);
-    Some(boundaries)
+    crate::mp4::compute_segment_grid(
+        &scan.keyframes,
+        origin,
+        scan.end,
+        segment_duration,
+        frame_seconds,
+    )
+    .map(|g| g.boundaries)
 }
 
 /// How the video of a multi-audio layout is cut, which decides where its last segment starts.

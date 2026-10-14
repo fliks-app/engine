@@ -1,0 +1,25 @@
+{
+  "args": {
+    "buf": "AAAAVG1vb2YAAABMdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAAAAAAAAAF3AAAAACB0cnVuAAAHAQAAAAEAAAAAAAAEAAAAAAICAAAA",
+    "traf": {
+      "payloadStart": 16,
+      "size": 76,
+      "start": 8,
+      "type": "traf"
+    },
+    "trexDefault": 0
+  },
+  "expected": {
+    "ok": [
+      {
+        "cts": null,
+        "duration": 1024,
+        "flags": 33554432,
+        "size": 2
+      }
+    ]
+  },
+  "fn": "trunSamples",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) coalesces per-frame fragments into one moof/trun per served segment",
+  "source": "remux-assembler"
+}

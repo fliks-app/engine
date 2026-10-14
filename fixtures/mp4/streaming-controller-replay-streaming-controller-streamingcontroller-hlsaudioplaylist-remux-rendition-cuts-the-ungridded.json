@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "durationSeconds": 25,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "",
+          "frameRate": "23.976",
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "end": 25,
+      "formatStart": 0,
+      "origin": 0
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "streaming.controller: replay streaming.controller StreamingController.hlsAudioPlaylist (remux rendition) cuts the ungridded remux fallback at the plain segDur, like the video playlist, not the fps-adjusted GOP",
+  "source": "streaming.controller"
+}

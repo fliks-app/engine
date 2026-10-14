@@ -1,0 +1,23 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAAAAAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 25,
+    "startPts": 2.8,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAZGQAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt a source with a non-zero start_time anchors a mid-file run onto the same origin, not onto bare content time",
+  "source": "timeline"
+}

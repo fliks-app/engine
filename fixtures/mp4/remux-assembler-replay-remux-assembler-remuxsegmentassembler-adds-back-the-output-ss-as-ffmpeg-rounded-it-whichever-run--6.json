@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "3920"
+      ],
+      [
+        2,
+        "188160"
+      ]
+    ],
+    "seg": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAAUAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "expected": {
+    "ok": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAPoAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler adds back the output -ss as ffmpeg rounded it, whichever run made the segment",
+  "source": "remux-assembler"
+}

@@ -1,0 +1,15 @@
+{
+  "args": {
+    "video": {
+      "frameRate": "24",
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "expected": {
+    "ok": null
+  },
+  "fn": "copySourceCodecString",
+  "name": "streaming.controller: replay streaming.controller StreamingController.hlsMaster - multi-audio remux publishes the group publishes the audio group for a multi-audio remux, picked track included",
+  "source": "streaming.controller"
+}

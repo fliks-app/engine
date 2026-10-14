@@ -1,0 +1,79 @@
+{
+  "args": {
+    "end": 7.5,
+    "frameSeconds": 0.04,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 3,
+        "pts": 3
+      },
+      {
+        "dts": 6,
+        "pts": 6
+      },
+      {
+        "dts": 9,
+        "pts": 9
+      },
+      {
+        "dts": 12,
+        "pts": 12
+      }
+    ],
+    "origin": 0,
+    "segDur": 3
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        3,
+        6,
+        9,
+        12
+      ],
+      "durations": [
+        3,
+        3,
+        3,
+        3
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 3,
+          "pts": 3
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        },
+        {
+          "dts": 9,
+          "pts": 9
+        },
+        {
+          "dts": 12,
+          "pts": 12
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "synthetic grid break",
+  "source": "synthetic"
+}

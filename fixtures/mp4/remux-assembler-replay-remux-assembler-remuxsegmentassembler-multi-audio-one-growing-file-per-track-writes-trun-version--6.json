@@ -1,0 +1,19 @@
+{
+  "args": {
+    "buf": "AAAAWG1vb2YAAABQdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAAAAAAAAAAAAAAAACR0cnVuAAAPAQAAAAEAAAAAAAAEAAAAAAICAAAA////+w==",
+    "end": 88,
+    "start": 8,
+    "type": "traf"
+  },
+  "expected": {
+    "ok": {
+      "payloadStart": 16,
+      "size": 80,
+      "start": 8,
+      "type": "traf"
+    }
+  },
+  "fn": "findBox",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) writes trun version 1 for a negative CTS: version 0 is unsigned and cannot round-trip it",
+  "source": "remux-assembler"
+}

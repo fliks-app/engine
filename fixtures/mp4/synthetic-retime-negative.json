@@ -1,0 +1,22 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "-5001"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAAGHN0eXBtc2RoAAAAAG1zZGhtc2l4AAAAJHNpZHgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqG1vb2YAAAAQbWZoZAAAAAAAAAABAAAATHRyYWYAAAAQdGZoZAAAAAAAAAABAAAAEHRmZHQAAAAAAAATiAAAACR0cnVuAAADAQAAAAIAAAAAAAACAAAAAAoAAAIAAAAADAAAAER0cmFmAAAAFHRmaGQAAAAIAAAAAgAABAAAAAAQdGZkdAAAAAAAACMoAAAAGHRydW4AAAIBAAAAAQAAAAAAAAAFAAAAI21kYXQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "expected": {
+    "error": "tfdt -1 of track 1 would be negative at offset 120",
+    "type": "RangeError"
+  },
+  "fn": "retimeFragments",
+  "name": "synthetic retime negative",
+  "source": "synthetic"
+}

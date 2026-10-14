@@ -1,0 +1,31 @@
+{
+  "args": {
+    "seg": "AAAAGHN0eXBtc2RoAAAAAG1zZGhtc2l4AAAAJHNpZHgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqG1vb2YAAAAQbWZoZAAAAAAAAAABAAAATHRyYWYAAAAQdGZoZAAAAAAAAAABAAAAEHRmZHQAAAAAAAAAAAAAACR0cnVuAAADAQAAAAIAAAAAAAACAAAAAAoAAAIAAAAADAAAAER0cmFmAAAAFHRmaGQAAAAIAAAAAgAABAAAAAAQdGZkdAAAAAAAAAAAAAAAGHRydW4AAAIBAAAAAQAAAAAAAAAFAAAAI21kYXQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "segDuration": 6,
+    "segIndex": 100000,
+    "startPts": 0,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 12800
+        }
+      ],
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 48000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "error": "tfdt 7680000000 exceeds the 32-bit version-0 box at offset 120",
+    "type": "RangeError"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "synthetic rewrite v0 overflow",
+  "source": "synthetic"
+}

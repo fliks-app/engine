@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "1008"
+      ]
+    ],
+    "seg": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAD////////8EA=="
+  },
+  "expected": {
+    "ok": "AAAANG1vb2YAAAAsdHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAUdGZkdAEAAAAAAAAAAAAAAA=="
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler joins each segment from its grid GOPs and retimes them onto the served timeline",
+  "source": "remux-assembler"
+}

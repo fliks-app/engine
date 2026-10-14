@@ -1,0 +1,22 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": null,
+    "origin": 0,
+    "segmentDuration": 3,
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "output-timeline: replay output-timeline remux resume pads the run from the start to the video start",
+  "source": "output-timeline"
+}

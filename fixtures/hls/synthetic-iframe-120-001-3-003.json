@@ -1,0 +1,17 @@
+{
+  "args": {
+    "duration": 120.001,
+    "frameSeconds": 0.04170837504170838,
+    "seg": {
+      "prefix": "iframe/seg-",
+      "suffix": ".ts"
+    },
+    "segDuration": 3.003
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-I-FRAMES-ONLY\n#EXTINF:3.003,\niframe/seg-0000.ts\n#EXTINF:3.003,\niframe/seg-0001.ts\n#EXTINF:3.003,\niframe/seg-0002.ts\n#EXTINF:3.003,\niframe/seg-0003.ts\n#EXTINF:3.003,\niframe/seg-0004.ts\n#EXTINF:3.003,\niframe/seg-0005.ts\n#EXTINF:3.003,\niframe/seg-0006.ts\n#EXTINF:3.003,\niframe/seg-0007.ts\n#EXTINF:3.003,\niframe/seg-0008.ts\n#EXTINF:3.003,\niframe/seg-0009.ts\n#EXTINF:3.003,\niframe/seg-0010.ts\n#EXTINF:3.003,\niframe/seg-0011.ts\n#EXTINF:3.003,\niframe/seg-0012.ts\n#EXTINF:3.003,\niframe/seg-0013.ts\n#EXTINF:3.003,\niframe/seg-0014.ts\n#EXTINF:3.003,\niframe/seg-0015.ts\n#EXTINF:3.003,\niframe/seg-0016.ts\n#EXTINF:3.003,\niframe/seg-0017.ts\n#EXTINF:3.003,\niframe/seg-0018.ts\n#EXTINF:3.003,\niframe/seg-0019.ts\n#EXTINF:3.003,\niframe/seg-0020.ts\n#EXTINF:3.003,\niframe/seg-0021.ts\n#EXTINF:3.003,\niframe/seg-0022.ts\n#EXTINF:3.003,\niframe/seg-0023.ts\n#EXTINF:3.003,\niframe/seg-0024.ts\n#EXTINF:3.003,\niframe/seg-0025.ts\n#EXTINF:3.003,\niframe/seg-0026.ts\n#EXTINF:3.003,\niframe/seg-0027.ts\n#EXTINF:3.003,\niframe/seg-0028.ts\n#EXTINF:3.003,\niframe/seg-0029.ts\n#EXTINF:3.003,\niframe/seg-0030.ts\n#EXTINF:3.003,\niframe/seg-0031.ts\n#EXTINF:3.003,\niframe/seg-0032.ts\n#EXTINF:3.003,\niframe/seg-0033.ts\n#EXTINF:3.003,\niframe/seg-0034.ts\n#EXTINF:3.003,\niframe/seg-0035.ts\n#EXTINF:3.003,\niframe/seg-0036.ts\n#EXTINF:3.003,\niframe/seg-0037.ts\n#EXTINF:3.003,\niframe/seg-0038.ts\n#EXTINF:2.884,\niframe/seg-0039.ts\n#EXT-X-ENDLIST"
+  },
+  "fn": "iframePlaylist",
+  "name": "synthetic iframe 120.001 3.003",
+  "source": "synthetic"
+}

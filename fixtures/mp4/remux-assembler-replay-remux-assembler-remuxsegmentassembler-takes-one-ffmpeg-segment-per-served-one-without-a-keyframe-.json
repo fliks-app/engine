@@ -1,0 +1,30 @@
+{
+  "args": {
+    "grid": null,
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 0,
+      "boundaries": null,
+      "firstDecode": null,
+      "firstGop": null,
+      "gopDts": null,
+      "gopPts": null,
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler takes one ffmpeg segment per served one without a keyframe list",
+  "source": "remux-assembler"
+}

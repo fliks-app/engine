@@ -1,0 +1,30 @@
+{
+  "args": {
+    "grid": null,
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": null,
+      "startNumber": 10
+    },
+    "startSegment": 10
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 0,
+      "boundaries": null,
+      "firstDecode": null,
+      "firstGop": null,
+      "gopDts": null,
+      "gopPts": null,
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 10,
+      "startSegment": 10
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler.canServe (wait vs respawn) is false below the run's own start: it will never produce a segment behind it",
+  "source": "remux-assembler"
+}

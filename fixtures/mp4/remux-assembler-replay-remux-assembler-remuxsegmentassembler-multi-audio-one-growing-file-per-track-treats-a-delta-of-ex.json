@@ -1,0 +1,37 @@
+{
+  "args": {
+    "end": 4,
+    "keyframes": [
+      {
+        "dts": 0.14,
+        "pts": 0
+      }
+    ],
+    "origin": 0,
+    "segDur": 4
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        4
+      ],
+      "durations": [
+        4
+      ],
+      "firstKeyframe": [
+        0,
+        1
+      ],
+      "keyframes": [
+        {
+          "dts": 0.14,
+          "pts": 0
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) treats a delta of exactly 0n as already resolved, not \"not yet open\"",
+  "source": "remux-assembler"
+}

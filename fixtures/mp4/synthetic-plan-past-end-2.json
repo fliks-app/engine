@@ -1,0 +1,82 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        0,
+        10,
+        20
+      ],
+      "durations": [
+        10,
+        10
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 5,
+          "pts": 5
+        },
+        {
+          "dts": 10,
+          "pts": 10
+        },
+        {
+          "dts": 20,
+          "pts": 20
+        }
+      ]
+    },
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": 2,
+      "startNumber": 2
+    },
+    "startSegment": 2
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        0,
+        10,
+        20
+      ],
+      "firstDecode": 0,
+      "firstGop": [
+        0,
+        2,
+        4
+      ],
+      "gopDts": [
+        0,
+        5,
+        10,
+        20
+      ],
+      "gopPts": [
+        0,
+        5,
+        10,
+        20
+      ],
+      "seekSeconds": 2,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 2,
+      "startSegment": 2
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan past end 2",
+  "source": "synthetic"
+}

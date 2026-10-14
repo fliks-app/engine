@@ -1,0 +1,30 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "codec": "aac",
+        "mode": "copy"
+      }
+    ],
+    "canEmitHdrLadder": false,
+    "deviceType": "desktop",
+    "mediaFileId": 7,
+    "sdrVariant": {
+      "bitDepth": 8,
+      "codec": "hevc",
+      "hdr": null
+    },
+    "sourceFrameRate": 24,
+    "sourceHeight": 1080,
+    "sourceVideoBitrateBps": 100000000,
+    "sourceVideoCodec": "hevc",
+    "sourceWidth": 1920,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=12288000,AVERAGE-BANDWIDTH=8192000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"hvc1.1.6.L120.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=6192000,AVERAGE-BANDWIDTH=4128000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"720p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3144000,AVERAGE-BANDWIDTH=2096000,RESOLUTION=854x482,FRAME-RATE=24,NAME=\"480p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1596000,AVERAGE-BANDWIDTH=1064000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=846000,AVERAGE-BANDWIDTH=564000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=372000,AVERAGE-BANDWIDTH=248000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4788000,AVERAGE-BANDWIDTH=3192000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"hvc1.1.6.L120.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2442000,AVERAGE-BANDWIDTH=1628000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-720p/index.m3u8"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist.golden: replay master-playlist.golden generateMasterPlaylist — golden manifests (characterization) SDR HEVC ladder (1080p)",
+  "source": "master-playlist.golden"
+}

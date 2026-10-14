@@ -1,0 +1,15 @@
+{
+  "args": {
+    "deviceType": "desktop",
+    "hdrLadder": false,
+    "onlyQuality": "eco-2160p",
+    "sourceHeight": 1080,
+    "sourceWidth": 1920
+  },
+  "expected": {
+    "ok": "eco-1080p"
+  },
+  "fn": "pinnedRungName",
+  "name": "master-playlist: replay master-playlist generateMasterPlaylist — supportsAbr collapses the ladder pinnedRungName matches the rung the master publishes",
+  "source": "master-playlist"
+}

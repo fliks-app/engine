@@ -1,0 +1,14 @@
+{
+  "args": {
+    "end": 100,
+    "keyframes": [],
+    "origin": 0,
+    "segDur": 6
+  },
+  "expected": {
+    "ok": null
+  },
+  "fn": "computeSegmentGrid",
+  "name": "segment-boundaries: replay segment-boundaries computeSegmentGrid is null without keyframes",
+  "source": "segment-boundaries"
+}

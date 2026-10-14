@@ -1,0 +1,14 @@
+{
+  "args": {
+    "key": 2,
+    "kind": "embedded",
+    "mediaFileId": 9,
+    "token": "t"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:1.000,\n/api/stream/9/subtitles/embedded/2?token=t\n#EXT-X-ENDLIST"
+  },
+  "fn": "subtitleRoute",
+  "name": "synthetic subtitle embedded undefined",
+  "source": "synthetic"
+}

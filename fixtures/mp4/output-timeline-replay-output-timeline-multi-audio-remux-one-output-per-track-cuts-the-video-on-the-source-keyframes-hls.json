@@ -1,0 +1,48 @@
+{
+  "args": {
+    "end": 12,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 6,
+        "pts": 6
+      }
+    ],
+    "origin": 0,
+    "segDur": 6
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        6,
+        12
+      ],
+      "durations": [
+        6,
+        6
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "output-timeline: replay output-timeline multi-audio remux (one output per track) cuts the video on the source keyframes (hls_time 0) with a grid, the uniform duration without one",
+  "source": "output-timeline"
+}

@@ -1,0 +1,12 @@
+{
+  "args": {
+    "seg": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAAAAAAABR0cnVuAAABAAAAAAEAAAfQ",
+    "trackId": 1
+  },
+  "expected": {
+    "ok": "0"
+  },
+  "fn": "firstTfdt",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler carries a track's own priming, not the video's reorder delay, into its served edit",
+  "source": "remux-assembler"
+}

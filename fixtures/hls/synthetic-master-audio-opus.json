@@ -1,0 +1,23 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "bitrateBps": 256000,
+        "channels": 6,
+        "codec": "opus",
+        "mode": "copy"
+      }
+    ],
+    "mediaFileId": 7,
+    "sourceFrameRate": 24,
+    "sourceHeight": 1080,
+    "sourceWidth": 1920,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=12384000,AVERAGE-BANDWIDTH=8256000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=6384000,AVERAGE-BANDWIDTH=4256000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"720p\",CODECS=\"avc1.64001f,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3384000,AVERAGE-BANDWIDTH=2256000,RESOLUTION=854x482,FRAME-RATE=24,NAME=\"480p\",CODECS=\"avc1.64001f,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1884000,AVERAGE-BANDWIDTH=1256000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"avc1.64001e,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1134000,AVERAGE-BANDWIDTH=756000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"avc1.640015,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=684000,AVERAGE-BANDWIDTH=456000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"avc1.64000d,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=4884000,AVERAGE-BANDWIDTH=3256000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"avc1.640028,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=2634000,AVERAGE-BANDWIDTH=1756000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"avc1.64001f,Opus\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-720p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master audio opus",
+  "source": "synthetic"
+}

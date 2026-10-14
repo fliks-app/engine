@@ -1,0 +1,17 @@
+{
+  "args": {
+    "init": "AAAApG1vb3YAAAAYbXZoZAAAAAAAAAAAAAAAAAAAA+gAAACEdHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAADBlZHRzAAAAKGVsc3QAAAAAAAAAAgAAAfT/////AAEAAAAAAAAAAACgAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAD6AAAAAFGhkbHIAAAAAAAAAAHZpZGU=",
+    "seconds": [
+      [
+        1,
+        0.01
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAmG1vb3YAAAAYbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAACgAAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAD6AAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "fn": "withInitEdits",
+  "name": "timeline: replay timeline track edits adds an edit to a track without one, and replaces several with one",
+  "source": "timeline"
+}

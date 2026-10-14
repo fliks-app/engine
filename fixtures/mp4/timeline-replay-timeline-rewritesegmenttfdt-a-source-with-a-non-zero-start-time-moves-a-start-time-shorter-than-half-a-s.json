@@ -1,0 +1,23 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAAAAAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 0,
+    "startPts": 1.4,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAAV4AAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt a source with a non-zero start_time moves a start_time shorter than half a segment too",
+  "source": "timeline"
+}

@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGGZ0eXBpc281AAACAGlzbzVobHNmAAAACW1kYXQA"
+  },
+  "expected": {
+    "ok": "AAAAGGZ0eXBpc281AAACAGlzbzVobHNmAAAACW1kYXQA"
+  },
+  "fn": "cmafRewrite",
+  "name": "synthetic cmaf already",
+  "source": "synthetic"
+}

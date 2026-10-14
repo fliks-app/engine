@@ -1,0 +1,17 @@
+{
+  "args": {
+    "init": "AAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAAAAAAAAAAAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU=",
+    "seconds": [
+      [
+        1,
+        -0.14
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAgG1vb3YAAAB4dHJhawAAABh0a2hkAAAAAAAAAAAAAAAAAAAAAQAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAD///90AAEAAAAAADRtZGlhAAAAGG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAFGhkbHIAAAAAAAAAAHZpZGU="
+  },
+  "fn": "withInitEdits",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) treats a delta of exactly 0n as already resolved, not \"not yet open\"",
+  "source": "remux-assembler"
+}

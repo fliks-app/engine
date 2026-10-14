@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAEHN0eXBtc2RobXNpeAAAAA9zaWR4aWR4ZGF0YQAAABBtb29mbW9vZmRhdGEAAAARbWRhdGZyYW1lZGF0YQ=="
+  },
+  "expected": {
+    "ok": "AAAAEG1vb2Ztb29mZGF0YQAAABFtZGF0ZnJhbWVkYXRh"
+  },
+  "fn": "cmafRewrite",
+  "name": "cmaf-rewrite: replay cmaf-rewrite cmafRewrite strips styp and sidx from a media segment, keeping moof + mdat",
+  "source": "cmaf-rewrite"
+}

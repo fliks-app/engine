@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGG1vb2YAAAAQbWZoZAAAAAAAAAAB"
+  },
+  "expected": {
+    "ok": true
+  },
+  "fn": "isCmafRewritten",
+  "name": "synthetic cmaf is rewritten 24",
+  "source": "synthetic"
+}

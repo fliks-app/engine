@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 7,
+    "sourceFrameRate": 23.976,
+    "sourceHeight": 360,
+    "sourceWidth": 640,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master hdr hevc HDR10 640x360",
+  "source": "synthetic"
+}

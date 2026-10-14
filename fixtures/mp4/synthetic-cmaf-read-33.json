@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAGGZ0eXBpc281AAACAGlzbzVobHNmAAAACW1kYXQA"
+  },
+  "expected": {
+    "ok": "AAAAGGZ0eXBpc281AAACAGlzbzVobHNmAAAACW1kYXQA"
+  },
+  "fn": "readAndRewriteCmaf",
+  "name": "synthetic cmaf read 33",
+  "source": "synthetic"
+}

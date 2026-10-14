@@ -1,0 +1,60 @@
+{
+  "args": {
+    "end": 6,
+    "frameSeconds": 0.04,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0.083
+      },
+      {
+        "dts": 2.002,
+        "pts": 2.085
+      },
+      {
+        "dts": 4.004,
+        "pts": 4.087
+      }
+    ],
+    "origin": 0.083,
+    "segDur": 2
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0.083,
+        2.085,
+        4.087,
+        6
+      ],
+      "durations": [
+        2.002,
+        2.002,
+        1.9130000000000003
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0.083
+        },
+        {
+          "dts": 2.002,
+          "pts": 2.085
+        },
+        {
+          "dts": 4.004,
+          "pts": 4.087
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "synthetic grid open gop",
+  "source": "synthetic"
+}

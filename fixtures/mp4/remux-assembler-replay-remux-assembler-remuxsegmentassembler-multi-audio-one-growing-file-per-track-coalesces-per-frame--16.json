@@ -1,0 +1,21 @@
+{
+  "args": {
+    "buf": "AAAAVG1vb2YAAABMdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAAAAAAAAAAAAAAAACB0cnVuAAAHAQAAAAEAAAAAAAAEAAAAAAICAAAA",
+    "traf": {
+      "payloadStart": 16,
+      "size": 76,
+      "start": 8,
+      "type": "traf"
+    }
+  },
+  "expected": {
+    "ok": {
+      "value": "0",
+      "valueOffset": 44,
+      "version": 1
+    }
+  },
+  "fn": "readTfdt",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) coalesces per-frame fragments into one moof/trun per served segment",
+  "source": "remux-assembler"
+}

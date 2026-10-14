@@ -1,0 +1,14 @@
+{
+  "args": {
+    "timeline": {
+      "formatStart": 3,
+      "origin": 5
+    }
+  },
+  "expected": {
+    "ok": 3
+  },
+  "fn": "cueOffsetSeconds",
+  "name": "streaming.controller: replay streaming.controller StreamingController.embeddedSubtitle cue offset uses the live session's frozen timeline over the current streamInfo",
+  "source": "streaming.controller"
+}

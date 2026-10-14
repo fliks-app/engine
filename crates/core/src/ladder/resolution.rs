@@ -42,7 +42,7 @@ pub fn profile_fits_source(r: &Rung, width: Option<u32>, height: Option<u32>) ->
 
 /// Output size of a rung over a source: width capped at the source, height snapped up to even.
 /// Height is NaN for a zero-width source, as in the host.
-pub(super) fn profile_resolution(r: &Rung, source_width: u32, source_height: u32) -> (f64, f64) {
+pub fn profile_resolution(r: &Rung, source_width: u32, source_height: u32) -> (f64, f64) {
     let width = f64::from(r.max_width.min(source_width));
     let raw_h = width * f64::from(source_height) / f64::from(source_width);
     let h = (raw_h / 2.0).ceil() * 2.0;

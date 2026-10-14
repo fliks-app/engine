@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAMCAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "expected": {
+    "ok": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAMCAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler takes one ffmpeg segment per served one without a keyframe list",
+  "source": "remux-assembler"
+}

@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "",
+          "firstFrameSeconds": 0,
+          "startTimeSeconds": 0,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "formatStart": 0,
+      "origin": 0
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "streaming.controller: replay streaming.controller StreamingController.embeddedSubtitle cue offset falls back to the current streamInfo timeline with no live session",
+  "source": "streaming.controller"
+}

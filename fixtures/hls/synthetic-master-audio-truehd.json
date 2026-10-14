@@ -1,0 +1,22 @@
+{
+  "args": {
+    "audioPlans": [
+      {
+        "channels": 8,
+        "codec": "truehd",
+        "mode": "copy"
+      }
+    ],
+    "mediaFileId": 7,
+    "sourceFrameRate": 24,
+    "sourceHeight": 1080,
+    "sourceWidth": 1920,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=13152000,AVERAGE-BANDWIDTH=8768000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=6768000,AVERAGE-BANDWIDTH=4512000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"720p\",CODECS=\"avc1.64001f\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3576000,AVERAGE-BANDWIDTH=2384000,RESOLUTION=854x482,FRAME-RATE=24,NAME=\"480p\",CODECS=\"avc1.64001f\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1884000,AVERAGE-BANDWIDTH=1256000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"avc1.64001e\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1134000,AVERAGE-BANDWIDTH=756000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"avc1.640015\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=588000,AVERAGE-BANDWIDTH=392000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"avc1.64000d\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=5652000,AVERAGE-BANDWIDTH=3768000,RESOLUTION=1920x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"avc1.640028\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3018000,AVERAGE-BANDWIDTH=2012000,RESOLUTION=1280x720,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"avc1.64001f\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-720p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master audio truehd",
+  "source": "synthetic"
+}

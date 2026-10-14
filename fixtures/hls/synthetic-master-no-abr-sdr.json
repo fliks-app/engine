@@ -1,0 +1,16 @@
+{
+  "args": {
+    "mediaFileId": 7,
+    "sourceFrameRate": 24,
+    "sourceHeight": 872,
+    "sourceWidth": 1918,
+    "supportsAbr": false,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=12288000,AVERAGE-BANDWIDTH=8192000,RESOLUTION=1918x872,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master no-abr sdr",
+  "source": "synthetic"
+}

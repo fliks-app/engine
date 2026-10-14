@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HDR10",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "av1",
+        "hdr": "HDR10"
+      }
+    },
+    "mediaFileId": 1,
+    "sourceFrameRate": 24,
+    "sourceHeight": 2160,
+    "sourceWidth": 3840,
+    "tokenParam": ""
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=42288000,AVERAGE-BANDWIDTH=28192000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"2160p-hdr\",CODECS=\"av01.0.08M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=8538000,AVERAGE-BANDWIDTH=5692000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"1080p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/1080p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4392000,AVERAGE-BANDWIDTH=2928000,RESOLUTION=1280x720,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"720p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/720p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2244000,AVERAGE-BANDWIDTH=1496000,RESOLUTION=854x482,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"480p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/480p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=18288000,AVERAGE-BANDWIDTH=12192000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-2160p-hdr\",CODECS=\"av01.0.08M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-2160p-hdr/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3588000,AVERAGE-BANDWIDTH=2392000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,FRAME-RATE=24,NAME=\"eco-1080p-hdr\",CODECS=\"av01.0.04M.10,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/1/eco-1080p-hdr/index.m3u8"
+  },
+  "fn": "masterPlaylist",
+  "name": "master-playlist: replay master-playlist generateMasterPlaylist — HDR ladder is variant-driven (#464) emits AV1 CODECS (av01.*.10) + VIDEO-RANGE=PQ for an AV1 HDR variant",
+  "source": "master-playlist"
+}

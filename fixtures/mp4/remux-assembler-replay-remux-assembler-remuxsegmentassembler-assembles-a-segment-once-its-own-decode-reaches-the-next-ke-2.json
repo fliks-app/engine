@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAPoAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "expected": {
+    "ok": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAPoAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler assembles a segment once its own decode reaches the next keyframe, with no need for the next GOP to start",
+  "source": "remux-assembler"
+}

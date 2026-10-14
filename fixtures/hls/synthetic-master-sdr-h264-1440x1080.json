@@ -1,0 +1,22 @@
+{
+  "args": {
+    "mediaFileId": 7,
+    "sdrVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    },
+    "sourceFrameRate": 24,
+    "sourceHeight": 1080,
+    "sourceVideoBitrateBps": 6000000,
+    "sourceVideoCodec": "h264",
+    "sourceWidth": 1440,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=9288000,AVERAGE-BANDWIDTH=6192000,RESOLUTION=1440x1080,FRAME-RATE=24,NAME=\"1080p\",CODECS=\"avc1.640028,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=6192000,AVERAGE-BANDWIDTH=4128000,RESOLUTION=1280x960,FRAME-RATE=24,NAME=\"720p\",CODECS=\"avc1.640020,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/720p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=3144000,AVERAGE-BANDWIDTH=2096000,RESOLUTION=854x642,FRAME-RATE=24,NAME=\"480p\",CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=1596000,AVERAGE-BANDWIDTH=1064000,RESOLUTION=640x480,FRAME-RATE=24,NAME=\"360p\",CODECS=\"avc1.64001e,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=846000,AVERAGE-BANDWIDTH=564000,RESOLUTION=426x320,FRAME-RATE=24,NAME=\"240p\",CODECS=\"avc1.640015,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=372000,AVERAGE-BANDWIDTH=248000,RESOLUTION=256x192,FRAME-RATE=24,NAME=\"144p\",CODECS=\"avc1.64000d,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=4788000,AVERAGE-BANDWIDTH=3192000,RESOLUTION=1440x1080,FRAME-RATE=24,NAME=\"eco-1080p\",CODECS=\"avc1.640028,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-1080p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=2442000,AVERAGE-BANDWIDTH=1628000,RESOLUTION=1280x960,FRAME-RATE=24,NAME=\"eco-720p\",CODECS=\"avc1.640020,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/eco-720p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master sdr h264 1440x1080",
+  "source": "synthetic"
+}

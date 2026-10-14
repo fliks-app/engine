@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAAHGZ0eXBpc281AAAAAGlzbzVpc282bXA0MQAAAA9tb292cGF5bG9hZA=="
+  },
+  "expected": {
+    "ok": "AAAAIGZ0eXBpc281AAAAAGlzbzVpc282bXA0MWhsc2YAAAAPbW9vdnBheWxvYWQ="
+  },
+  "fn": "cmafRewrite",
+  "name": "cmaf-rewrite: replay cmaf-rewrite cmafRewrite appends hlsf to the ftyp compat list, grows the box by 4, keeps the major brand",
+  "source": "cmaf-rewrite"
+}

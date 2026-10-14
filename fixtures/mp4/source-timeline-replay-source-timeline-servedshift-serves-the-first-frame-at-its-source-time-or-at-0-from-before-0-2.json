@@ -1,0 +1,13 @@
+{
+  "args": {
+    "timeline": {
+      "origin": -0.042
+    }
+  },
+  "expected": {
+    "ok": 0
+  },
+  "fn": "servedOrigin",
+  "name": "source-timeline: replay source-timeline servedShift serves the first frame at its source time, or at 0 from before 0",
+  "source": "source-timeline"
+}

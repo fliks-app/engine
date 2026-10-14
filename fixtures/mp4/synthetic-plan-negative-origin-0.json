@@ -1,0 +1,87 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": {
+      "boundaries": [
+        -1.5,
+        2.5,
+        4.5,
+        6
+      ],
+      "durations": [
+        4,
+        2,
+        1.5
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        3,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": -1.5,
+          "pts": -1.5
+        },
+        {
+          "dts": 0.5,
+          "pts": 0.5
+        },
+        {
+          "dts": 2.5,
+          "pts": 2.5
+        },
+        {
+          "dts": 4.5,
+          "pts": 4.5
+        }
+      ]
+    },
+    "origin": -1.5,
+    "run": {
+      "audioStartSeconds": -1.5,
+      "seekSeconds": null,
+      "startNumber": 0
+    },
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": [
+        -1.5,
+        2.5,
+        4.5,
+        6
+      ],
+      "firstDecode": -1.5,
+      "firstGop": [
+        0,
+        2,
+        3,
+        4
+      ],
+      "gopDts": [
+        -1.5,
+        0.5,
+        2.5,
+        4.5
+      ],
+      "gopPts": [
+        -1.5,
+        0.5,
+        2.5,
+        4.5
+      ],
+      "seekSeconds": 0,
+      "segmentDuration": 3,
+      "start": -1.5,
+      "startNumber": 0,
+      "startSegment": 0
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan negative origin 0",
+  "source": "synthetic"
+}

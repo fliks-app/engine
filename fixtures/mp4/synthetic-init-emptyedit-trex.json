@@ -1,0 +1,11 @@
+{
+  "args": {
+    "init": "AAAAHGZ0eXBpc281AAACAGlzbzVpc282bXA0MQAAAJhtb292AAAAkHRyYWsAAAAgdGtoZAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAAX/////AAEAAAAAAERtZGlhAAAAHG1kaGQAAAAAAAAAAAAAAAAAAAPoAAAAAAAAACBoZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAA"
+  },
+  "expected": {
+    "ok": []
+  },
+  "fn": "parseTrexDefaults",
+  "name": "synthetic init emptyEdit trex",
+  "source": "synthetic"
+}

@@ -1,0 +1,14 @@
+{
+  "args": {
+    "timeline": {
+      "formatStart": 3.18,
+      "origin": 4.2
+    }
+  },
+  "expected": {
+    "ok": 3.18
+  },
+  "fn": "cueOffsetSeconds",
+  "name": "source-timeline: replay source-timeline servedShift moves the subtitle map with it",
+  "source": "source-timeline"
+}

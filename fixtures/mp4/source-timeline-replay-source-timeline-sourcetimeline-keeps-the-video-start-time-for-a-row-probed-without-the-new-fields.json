@@ -1,0 +1,24 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "h264",
+          "startTimeSeconds": 2.8,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "formatStart": 2.8,
+      "origin": 2.8
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "source-timeline: replay source-timeline sourceTimeline keeps the video start_time for a row probed without the new fields, and says so once",
+  "source": "source-timeline"
+}

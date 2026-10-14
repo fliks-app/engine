@@ -1,0 +1,26 @@
+{
+  "args": {
+    "si": {
+      "audio": [],
+      "formatStartSeconds": 14.94,
+      "subtitles": [],
+      "video": [
+        {
+          "codec": "h264",
+          "firstFrameSeconds": 15.8,
+          "startTimeSeconds": 15,
+          "streamIndex": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "formatStart": 14.94,
+      "origin": 15.8
+    }
+  },
+  "fn": "sourceTimeline",
+  "name": "source-timeline: replay source-timeline sourceTimeline anchors on the first presented frame, not the first packet",
+  "source": "source-timeline"
+}

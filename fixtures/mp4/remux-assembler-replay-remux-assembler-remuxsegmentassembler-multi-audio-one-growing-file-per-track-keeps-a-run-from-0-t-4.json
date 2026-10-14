@@ -1,0 +1,19 @@
+{
+  "args": {
+    "buf": "AAAAVG1vb2YAAABMdHJhZgAAABB0ZmhkAAIAAAAAAAoAAAAUdGZkdAEAAAD////////+IAAAACB0cnVuAAAHAQAAAAEAAAAAAAAEAAAAAAICAAAA",
+    "end": 84,
+    "start": 8,
+    "type": "traf"
+  },
+  "expected": {
+    "ok": {
+      "payloadStart": 16,
+      "size": 76,
+      "start": 8,
+      "type": "traf"
+    }
+  },
+  "fn": "findBox",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler: multi-audio (one growing file per track) keeps a run-from-0 track's own priming instead of dropping it, like the single-audio path",
+  "source": "remux-assembler"
+}

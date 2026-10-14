@@ -1,0 +1,52 @@
+{
+  "args": {
+    "audioGrid": null,
+    "grid": {
+      "boundaries": [
+        0,
+        10,
+        20
+      ],
+      "durations": [
+        10,
+        10
+      ],
+      "firstKeyframe": [
+        0,
+        2,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 5,
+          "pts": 5
+        },
+        {
+          "dts": 10,
+          "pts": 10
+        },
+        {
+          "dts": 20,
+          "pts": 20
+        }
+      ]
+    },
+    "origin": 0,
+    "segmentDuration": 6,
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 0,
+      "seekSeconds": -0.01,
+      "startNumber": 0
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "synthetic run start past end 0 copy",
+  "source": "synthetic"
+}

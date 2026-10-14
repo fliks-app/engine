@@ -1,0 +1,11 @@
+{
+  "args": {
+    "buf": "AAAACm1vb2ZvawAAA+dtZGF0AAAAAA=="
+  },
+  "expected": {
+    "ok": "AAAACm1vb2ZvawAAA+dtZGF0AAAAAA=="
+  },
+  "fn": "cmafRewrite",
+  "name": "cmaf-rewrite: replay cmaf-rewrite cmafRewrite copies a truncated trailing box verbatim instead of throwing",
+  "source": "cmaf-rewrite"
+}

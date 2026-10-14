@@ -1,0 +1,54 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": {
+      "boundaries": [
+        0.083,
+        2.085,
+        4.087,
+        6
+      ],
+      "durations": [
+        2.002,
+        2.002,
+        1.9130000000000003
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0.083
+        },
+        {
+          "dts": 2.002,
+          "pts": 2.085
+        },
+        {
+          "dts": 4.004,
+          "pts": 4.087
+        }
+      ]
+    },
+    "origin": 0.083,
+    "segmentDuration": 2,
+    "startSegment": 1
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 2.0243333333333333,
+      "seekSeconds": 2.002,
+      "startNumber": 1
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "synthetic run start open gop 1 aac",
+  "source": "synthetic"
+}

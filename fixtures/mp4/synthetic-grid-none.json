@@ -1,0 +1,15 @@
+{
+  "args": {
+    "end": 10,
+    "frameSeconds": 0.04,
+    "keyframes": [],
+    "origin": 0,
+    "segDur": 3
+  },
+  "expected": {
+    "ok": null
+  },
+  "fn": "computeSegmentGrid",
+  "name": "synthetic grid none",
+  "source": "synthetic"
+}

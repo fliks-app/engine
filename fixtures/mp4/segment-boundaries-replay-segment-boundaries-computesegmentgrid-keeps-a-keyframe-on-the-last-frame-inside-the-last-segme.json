@@ -1,0 +1,67 @@
+{
+  "args": {
+    "end": 9,
+    "keyframes": [
+      {
+        "dts": 0,
+        "pts": 0
+      },
+      {
+        "dts": 3,
+        "pts": 3
+      },
+      {
+        "dts": 6,
+        "pts": 6
+      },
+      {
+        "dts": 8.9995,
+        "pts": 8.9995
+      }
+    ],
+    "origin": 0,
+    "segDur": 3
+  },
+  "expected": {
+    "ok": {
+      "boundaries": [
+        0,
+        3,
+        6,
+        9
+      ],
+      "durations": [
+        3,
+        3,
+        3
+      ],
+      "firstKeyframe": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "keyframes": [
+        {
+          "dts": 0,
+          "pts": 0
+        },
+        {
+          "dts": 3,
+          "pts": 3
+        },
+        {
+          "dts": 6,
+          "pts": 6
+        },
+        {
+          "dts": 8.9995,
+          "pts": 8.9995
+        }
+      ]
+    }
+  },
+  "fn": "computeSegmentGrid",
+  "name": "segment-boundaries: replay segment-boundaries computeSegmentGrid keeps a keyframe on the last frame inside the last segment",
+  "source": "segment-boundaries"
+}

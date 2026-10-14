@@ -6,7 +6,9 @@ pub use bitrate::{
     RungBitrateContext, capped_rung_video_bitrate_bps, js_round, resolve_source_video_bitrate_bps,
 };
 pub(crate) use bitrate::{codec_factor, hevc_main_tier_cap_bps};
-pub use resolution::{bucket_resolution_height, profile_fits_source, resolution_fits_cap};
+pub use resolution::{
+    bucket_resolution_height, profile_fits_source, profile_resolution, resolution_fits_cap,
+};
 
 /// One rung: bitrates in bps. Ladders are sorted by `max_height`, descending, within a class.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -1,0 +1,21 @@
+{
+  "args": {
+    "deltas": [
+      [
+        1,
+        "0"
+      ],
+      [
+        2,
+        "0"
+      ]
+    ],
+    "seg": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAnEAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "expected": {
+    "ok": "AAAASG1vb2YAAABAdHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAUdGZkdAEAAAAAAAAAAAAnEAAAABR0cnVuAAABAAAAAAEAAAfQ"
+  },
+  "fn": "retimeFragments",
+  "name": "remux-assembler: replay remux-assembler RemuxSegmentAssembler advances the frontier past the tail once a clean exit assembles the last segment",
+  "source": "remux-assembler"
+}

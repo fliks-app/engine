@@ -1,0 +1,17 @@
+{
+  "args": {
+    "duration": 43.001,
+    "frameSeconds": 0.04,
+    "seg": {
+      "prefix": "seg-",
+      "suffix": ".ts"
+    },
+    "segDuration": 6
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:6.000,\nseg-0000.ts\n#EXTINF:6.000,\nseg-0001.ts\n#EXTINF:6.000,\nseg-0002.ts\n#EXTINF:6.000,\nseg-0003.ts\n#EXTINF:6.000,\nseg-0004.ts\n#EXTINF:6.000,\nseg-0005.ts\n#EXTINF:6.000,\nseg-0006.ts\n#EXTINF:1.001,\nseg-0007.ts\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "streaming.controller: replay streaming.controller remux playlist cannot drift out of A/V sync is what a uniform grid gets wrong — the regression being replaced",
+  "source": "streaming.controller"
+}

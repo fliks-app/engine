@@ -1,0 +1,31 @@
+{
+  "args": {
+    "audioRenditions": 2,
+    "grid": null,
+    "origin": 0,
+    "run": {
+      "audioStartSeconds": 0,
+      "seekSeconds": 1,
+      "startNumber": 1
+    },
+    "startSegment": 1
+  },
+  "expected": {
+    "ok": {
+      "audioRenditions": 2,
+      "boundaries": null,
+      "firstDecode": null,
+      "firstGop": null,
+      "gopDts": null,
+      "gopPts": null,
+      "seekSeconds": 1,
+      "segmentDuration": 3,
+      "start": 0,
+      "startNumber": 1,
+      "startSegment": 1
+    }
+  },
+  "fn": "remuxAssemblyPlan",
+  "name": "synthetic plan none 1",
+  "source": "synthetic"
+}

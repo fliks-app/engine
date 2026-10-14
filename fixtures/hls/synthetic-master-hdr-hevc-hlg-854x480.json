@@ -1,0 +1,24 @@
+{
+  "args": {
+    "canEmitHdrLadder": true,
+    "hdrPassThrough": {
+      "hdrFormat": "HLG",
+      "hdrVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HLG"
+      }
+    },
+    "mediaFileId": 7,
+    "sourceFrameRate": 23.976,
+    "sourceHeight": 480,
+    "sourceWidth": 854,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=2244000,AVERAGE-BANDWIDTH=1496000,RESOLUTION=854x480,VIDEO-RANGE=HLG,FRAME-RATE=23.976,NAME=\"480p-hdr\",CODECS=\"hvc1.2.4.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/480p-hdr/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master hdr hevc HLG 854x480",
+  "source": "synthetic"
+}

@@ -1,0 +1,22 @@
+{
+  "args": {
+    "mediaFileId": 7,
+    "sdrVariant": {
+      "bitDepth": 8,
+      "codec": "hevc",
+      "hdr": null
+    },
+    "sourceFrameRate": 24,
+    "sourceHeight": 360,
+    "sourceVideoBitrateBps": 6000000,
+    "sourceVideoCodec": "h264",
+    "sourceWidth": 640,
+    "tokenParam": "?token=t&sid=s"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=1596000,AVERAGE-BANDWIDTH=1064000,RESOLUTION=640x360,FRAME-RATE=24,NAME=\"360p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/360p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=846000,AVERAGE-BANDWIDTH=564000,RESOLUTION=426x240,FRAME-RATE=24,NAME=\"240p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/240p/index.m3u8?token=t&sid=s\n#EXT-X-STREAM-INF:BANDWIDTH=372000,AVERAGE-BANDWIDTH=248000,RESOLUTION=256x144,FRAME-RATE=24,NAME=\"144p\",CODECS=\"hvc1.1.6.L93.B0,mp4a.40.2\",CLOSED-CAPTIONS=NONE\n/api/stream/7/144p/index.m3u8?token=t&sid=s"
+  },
+  "fn": "masterPlaylist",
+  "name": "synthetic master sdr hevc 640x360",
+  "source": "synthetic"
+}

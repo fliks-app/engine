@@ -4,7 +4,7 @@ pub mod args;
 mod build;
 pub mod crop;
 mod ffjson;
-mod js;
+pub(crate) mod js;
 mod lang;
 mod mkv;
 pub mod moviehash;

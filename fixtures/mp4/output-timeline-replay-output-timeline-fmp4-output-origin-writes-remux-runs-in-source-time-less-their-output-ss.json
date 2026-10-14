@@ -1,0 +1,22 @@
+{
+  "args": {
+    "audioGrid": {
+      "frame": 0.021333333333333333,
+      "padding": 0.021333333333333333
+    },
+    "grid": null,
+    "origin": 2.8,
+    "segmentDuration": 3,
+    "startSegment": 0
+  },
+  "expected": {
+    "ok": {
+      "audioStartSeconds": 2.8,
+      "seekSeconds": null,
+      "startNumber": 0
+    }
+  },
+  "fn": "remuxRunStart",
+  "name": "output-timeline: replay output-timeline fMP4 output origin writes remux runs in source time, less their output -ss",
+  "source": "output-timeline"
+}

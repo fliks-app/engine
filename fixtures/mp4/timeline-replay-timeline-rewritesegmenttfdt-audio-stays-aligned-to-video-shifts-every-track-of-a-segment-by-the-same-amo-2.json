@@ -1,0 +1,30 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAAAAAAAADG1kYXQAAAAAAAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAAH0AAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 25,
+    "startPts": 2.8,
+    "tracks": [
+      [
+        1,
+        {
+          "isVideo": true,
+          "timescale": 1000
+        }
+      ],
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAEAAAAQdGZkdAAAAAAAAZGQAAAADG1kYXQAAAAAAAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAZOEAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt audio stays aligned to video shifts every track of a segment by the same amount",
+  "source": "timeline"
+}

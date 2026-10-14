@@ -1,0 +1,22 @@
+{
+  "args": {
+    "durationHint": "25",
+    "frameRate": "23.976",
+    "live": {
+      "sourceFps": 25,
+      "useExtXMedia": true,
+      "useTs": true
+    },
+    "mediaFileId": 42,
+    "quality": "1080p",
+    "resolvedDuration": 25,
+    "segmentDuration": 6,
+    "token": "abc"
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:6.000,\n/api/stream/42/1080p/seg-0000.ts?token=abc\n#EXTINF:6.000,\n/api/stream/42/1080p/seg-0001.ts?token=abc\n#EXTINF:6.000,\n/api/stream/42/1080p/seg-0002.ts?token=abc\n#EXTINF:6.000,\n/api/stream/42/1080p/seg-0003.ts?token=abc\n#EXTINF:1.000,\n/api/stream/42/1080p/seg-0004.ts?token=abc\n#EXT-X-ENDLIST"
+  },
+  "fn": "variantRoute",
+  "name": "synthetic route 1080p {\"useTs\":true,\"useExtXMedia\":true,\"sourceFps\":25}",
+  "source": "synthetic"
+}

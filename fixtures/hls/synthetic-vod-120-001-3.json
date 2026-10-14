@@ -1,0 +1,18 @@
+{
+  "args": {
+    "duration": 120.001,
+    "frameSeconds": 0.041666666666666664,
+    "init": "/api/stream/7/720p/init.mp4?token=t",
+    "seg": {
+      "prefix": "/api/stream/7/720p/seg-",
+      "suffix": ".m4s?token=t"
+    },
+    "segDuration": 3
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"/api/stream/7/720p/init.mp4?token=t\"\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0000.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0001.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0002.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0003.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0004.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0005.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0006.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0007.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0008.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0009.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0010.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0011.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0012.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0013.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0014.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0015.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0016.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0017.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0018.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0019.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0020.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0021.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0022.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0023.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0024.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0025.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0026.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0027.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0028.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0029.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0030.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0031.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0032.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0033.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0034.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0035.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0036.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0037.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0038.m4s?token=t\n#EXTINF:3.000,\n/api/stream/7/720p/seg-0039.m4s?token=t\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "synthetic vod 120.001 3",
+  "source": "synthetic"
+}

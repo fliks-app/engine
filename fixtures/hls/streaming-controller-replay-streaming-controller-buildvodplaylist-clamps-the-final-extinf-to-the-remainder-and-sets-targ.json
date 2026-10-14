@@ -1,0 +1,17 @@
+{
+  "args": {
+    "duration": 10,
+    "frameSeconds": 0.04,
+    "seg": {
+      "prefix": "seg-",
+      "suffix": ".m4s"
+    },
+    "segDuration": 3
+  },
+  "expected": {
+    "ok": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:3.000,\nseg-0000.m4s\n#EXTINF:3.000,\nseg-0001.m4s\n#EXTINF:3.000,\nseg-0002.m4s\n#EXTINF:1.000,\nseg-0003.m4s\n#EXT-X-ENDLIST"
+  },
+  "fn": "vodPlaylist",
+  "name": "streaming.controller: replay streaming.controller buildVodPlaylist clamps the final EXTINF to the remainder and sets TARGETDURATION",
+  "source": "streaming.controller"
+}

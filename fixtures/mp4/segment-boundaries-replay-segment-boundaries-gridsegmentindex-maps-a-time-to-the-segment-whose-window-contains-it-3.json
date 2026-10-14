@@ -1,0 +1,18 @@
+{
+  "args": {
+    "boundaries": [
+      0,
+      7,
+      13,
+      18
+    ],
+    "origin": 0,
+    "seconds": 7
+  },
+  "expected": {
+    "ok": 1
+  },
+  "fn": "gridSegmentIndex",
+  "name": "segment-boundaries: replay segment-boundaries gridSegmentIndex maps a time to the segment whose window contains it",
+  "source": "segment-boundaries"
+}

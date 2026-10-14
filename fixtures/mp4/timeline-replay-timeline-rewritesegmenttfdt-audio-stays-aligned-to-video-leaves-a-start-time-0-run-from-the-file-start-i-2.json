@@ -1,0 +1,22 @@
+{
+  "args": {
+    "seg": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAYagAAAADG1kYXQAAAAA",
+    "segDuration": 4,
+    "segIndex": 25,
+    "tracks": [
+      [
+        2,
+        {
+          "isVideo": false,
+          "timescale": 1000
+        }
+      ]
+    ]
+  },
+  "expected": {
+    "ok": "AAAAMG1vb2YAAAAodHJhZgAAABB0ZmhkAAAAAAAAAAIAAAAQdGZkdAAAAAAAAYagAAAADG1kYXQAAAAA"
+  },
+  "fn": "rewriteSegmentTfdt",
+  "name": "timeline: replay timeline rewriteSegmentTfdt audio stays aligned to video leaves a start_time 0 run from the file start in place",
+  "source": "timeline"
+}
