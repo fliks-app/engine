@@ -14,7 +14,7 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 ## Rules
 
 - Additive only within v1: never remove or rename a field, endpoint or enum value.
-- Readers ignore unknown fields.
+- Readers ignore unknown fields, and unknown variants of event and other tagged unions (new `EngineEvent` types are additive).
 - No 64-bit integers in JSON (use f64, u32 or i32).
 - A breaking change goes to `/v2`, served next to `/v1` for one release.
 - A host declares a minimum protocol and degrades per feature above it.

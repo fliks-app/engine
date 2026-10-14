@@ -62,7 +62,8 @@ jobs:
           if git cat-file -e origin/main:openapi.json 2>/dev/null; then
             git show origin/main:openapi.json > /tmp/base.json
             docker run --rm -v /tmp/base.json:/base.json -v "$PWD/openapi.json:/new.json" \
-              tufin/oasdiff breaking /base.json /new.json --fail-on ERR
+              -v "$PWD/.github/oasdiff-levels.txt:/levels.txt" \
+              tufin/oasdiff breaking /base.json /new.json --fail-on ERR --severity-levels /levels.txt
           else
             echo "no openapi.json on main yet, skipping"
           fi
