@@ -352,7 +352,7 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         Some((1, Some("no segment produced within the startup window")))
     );
     assert!(
-        matches!(&e1, EngineEvent::LiveAttempt { upstream_url: Some(u), upstream_priority: Some(0), .. } if u == "http://up/fail")
+        matches!(&e1, EngineEvent::LiveAttempt { upstream_url: u, upstream_priority: 0, .. } if u == "http://up/fail")
     );
     assert_eq!(
         attempt(&event(&mut rx, 5, |ev| attempt(ev).is_some()).await),

@@ -144,11 +144,9 @@ pub struct LiveSnapshot {
     /// The feeding upstream, a position in the upstreams of the open that started the session.
     pub upstream: u32,
     /// URL of the feeding upstream, so a host can name its source after a restart.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub upstream_url: Option<String>,
+    pub upstream_url: String,
     /// `priority` of the feeding upstream.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub upstream_priority: Option<i32>,
+    pub upstream_priority: i32,
     pub opened_at_ms: f64,
     pub last_seen_ms: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
