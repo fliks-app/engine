@@ -162,7 +162,8 @@ fn token_param(q: &HashMap<String, String>) -> String {
     }
 }
 
-/// The credential as received: `?token=`, else the `Authorization` value, else the `Cookie` header.
+/// The credential as received, in the host's extractor order: the `Cookie` header, else a
+/// `Bearer` `Authorization` value, else `?token=`. [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
 fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
     let h = |n| {
         headers
@@ -170,11 +171,12 @@ fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
             .and_then(|v: &HeaderValue| v.to_str().ok())
             .filter(|v| !v.is_empty())
     };
-    q.get("token")
-        .filter(|t| !t.is_empty())
-        .cloned()
-        .or_else(|| h(header::AUTHORIZATION).map(String::from))
-        .or_else(|| h(header::COOKIE).map(String::from))
+    let bearer = h(header::AUTHORIZATION)
+        .filter(|v| v.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("bearer ")));
+    h(header::COOKIE)
+        .or(bearer)
+        .map(String::from)
+        .or_else(|| q.get("token").filter(|t| !t.is_empty()).cloned())
         .unwrap_or_default()
 }
 
@@ -1220,12 +1222,14 @@ mod tests {
     #[test]
     fn credential_order_and_content_type() {
         let mut h = HeaderMap::new();
-        h.insert(header::COOKIE, HeaderValue::from_static("a=1"));
-        assert_eq!(credential(&h, &HashMap::new()), "a=1");
-        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer j"));
-        assert_eq!(credential(&h, &HashMap::new()), "Bearer j");
         let q: HashMap<String, String> = [("token".into(), "t".into())].into();
         assert_eq!(credential(&h, &q), "t");
+        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Basic x"));
+        assert_eq!(credential(&h, &q), "t");
+        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer j"));
+        assert_eq!(credential(&h, &q), "Bearer j");
+        h.insert(header::COOKIE, HeaderValue::from_static("a=1"));
+        assert_eq!(credential(&h, &q), "a=1");
         assert_eq!(content_type("/a/b.MKV", None), "video/x-matroska");
         assert_eq!(content_type("/a/b.bin", Some("video/mp4")), "video/mp4");
     }

@@ -125,6 +125,19 @@ async fn resolver_gates_caches_and_falls_back() {
         e.stub.calls.lock().unwrap().last().unwrap().credential,
         "Bearer x"
     );
+    // The host's extractor order: the cookie wins over a bearer and a `?token=`.
+    let r = http(
+        "GET",
+        &format!("{}/api/stream/7?token=alice-jwt", e.base),
+        &[("authorization", "Bearer x"), ("cookie", "access=y")],
+        None,
+    )
+    .await;
+    assert_eq!(r.status, 403);
+    assert_eq!(
+        e.stub.calls.lock().unwrap().last().unwrap().credential,
+        "access=y"
+    );
     // Host down: a cached grant keeps serving, a new credential gets 503.
     e.stub.set_down(true);
     assert_eq!(e.get("/api/stream/7", "alice-jwt", &[]).await.status, 200);
