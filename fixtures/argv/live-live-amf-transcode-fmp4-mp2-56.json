@@ -21,6 +21,8 @@
       "8000000",
       "-probesize",
       "13333333",
+      "-threads",
+      "4",
       "-i",
       "http://provider.example/live/56.ts",
       "-map",

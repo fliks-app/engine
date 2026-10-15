@@ -31,6 +31,8 @@
       "-noautorotate",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p81-mp4.mp4",
       "-copyts",

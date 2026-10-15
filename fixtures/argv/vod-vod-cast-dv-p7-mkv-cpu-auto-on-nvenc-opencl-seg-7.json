@@ -21,6 +21,8 @@
       "-threads",
       "1",
       "-noautorotate",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p7-mkv.mkv",
       "-copyts",

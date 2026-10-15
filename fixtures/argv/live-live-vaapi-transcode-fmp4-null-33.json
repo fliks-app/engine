@@ -29,6 +29,8 @@
       "vaapi",
       "-hwaccel_device",
       "va",
+      "-threads",
+      "4",
       "-i",
       "http://provider.example/live/33.ts",
       "-map",

@@ -7,9 +7,13 @@ use tokio::sync::{oneshot, watch};
 /// `cores - 1`, at least 1; `available_parallelism` already applies affinity and cgroup quotas.
 /// [ts:common/utils/ffmpeg-slots.ts:47-54]
 pub fn auto_size() -> usize {
+    cpu_quota().saturating_sub(1).max(1)
+}
+
+/// Cores this process may use. `available_parallelism` already applies affinity and cgroup quotas.
+pub fn cpu_quota() -> usize {
     std::thread::available_parallelism()
         .map_or(1, |n| n.get())
-        .saturating_sub(1)
         .max(1)
 }
 
@@ -21,7 +25,10 @@ struct Waiter {
 
 struct State {
     size: usize,
+    /// Software playback runs. These consume the CPU budget.
     playback: usize,
+    /// Hardware encodes. They do not consume the CPU budget; sprites still see them.
+    gpu: usize,
     /// Background holders in grant order, each with its "preempted" flag.
     running: Vec<(u64, watch::Sender<bool>)>,
     queue: Vec<Waiter>,
@@ -38,6 +45,7 @@ impl Slots {
             st: Mutex::new(State {
                 size,
                 playback: 0,
+                gpu: 0,
                 running: vec![],
                 queue: vec![],
                 next_id: 0,
@@ -58,9 +66,10 @@ impl Slots {
         self.st.lock().unwrap().size
     }
 
-    /// Playback slots in use (a throttled run's excluded).
+    /// Playback runs in use, software and hardware (a throttled run's excluded).
     pub fn playback_in_use(&self) -> usize {
-        self.st.lock().unwrap().playback
+        let st = self.st.lock().unwrap();
+        st.playback + st.gpu
     }
 
     /// Background runs queued for a slot.
@@ -69,13 +78,14 @@ impl Slots {
     }
 
     /// Never waits: playback runs first, past the size if need be.
-    pub fn playback(self: &Arc<Self>) -> PlaybackSlot {
-        let mut st = self.st.lock().unwrap();
-        st.playback += 1;
-        rebalance(&mut st);
+    /// `cpu` is false for a hardware encode: it barely uses the quota, so it does not
+    /// take a slot from background work.
+    pub fn playback(self: &Arc<Self>, cpu: bool) -> PlaybackSlot {
+        self.playback_delta(true, cpu);
         PlaybackSlot {
             slots: self.clone(),
             idle: Mutex::new(false),
+            cpu,
         }
     }
 
@@ -122,14 +132,17 @@ impl Slots {
         rebalance(&mut st);
     }
 
-    fn playback_delta(&self, up: bool) {
+    fn playback_delta(&self, up: bool, cpu: bool) {
         let mut st = self.st.lock().unwrap();
+        let n = if cpu { &mut st.playback } else { &mut st.gpu };
         if up {
-            st.playback += 1;
+            *n += 1;
         } else {
-            st.playback = st.playback.saturating_sub(1);
+            *n = n.saturating_sub(1);
         }
-        rebalance(&mut st);
+        if cpu {
+            rebalance(&mut st);
+        }
     }
 }
 
@@ -168,6 +181,7 @@ pub struct BackgroundSlot {
 pub struct PlaybackSlot {
     slots: Arc<Slots>,
     idle: Mutex<bool>,
+    cpu: bool,
 }
 
 impl PlaybackSlot {
@@ -176,7 +190,7 @@ impl PlaybackSlot {
         let mut i = self.idle.lock().unwrap();
         if *i != idle {
             *i = idle;
-            self.slots.playback_delta(!idle);
+            self.slots.playback_delta(!idle, self.cpu);
         }
     }
 }
@@ -184,7 +198,7 @@ impl PlaybackSlot {
 impl Drop for PlaybackSlot {
     fn drop(&mut self) {
         if !*self.idle.lock().unwrap() {
-            self.slots.playback_delta(false);
+            self.slots.playback_delta(false, self.cpu);
         }
     }
 }
@@ -227,12 +241,12 @@ mod tests {
         let old = s.background(JobPriority::Normal).await;
         let new = s.background(JobPriority::Normal).await;
         let mut queued = Box::pin(s.background(JobPriority::High));
-        let p = s.playback();
+        let p = s.playback(true);
         assert_eq!(
             (*old.preempted.borrow(), *new.preempted.borrow()),
             (false, true)
         );
-        let p2 = s.playback();
+        let p2 = s.playback(true);
         assert!(*old.preempted.borrow() && *new.preempted.borrow());
         // A throttled run lends its slot back.
         p2.set_idle(true);
@@ -249,7 +263,7 @@ mod tests {
     async fn playback_never_waits_and_a_shrink_preempts() {
         let s = Slots::new(1);
         let b = s.background(JobPriority::Normal).await;
-        let (p1, p2) = (s.playback(), s.playback());
+        let (p1, p2) = (s.playback(true), s.playback(true));
         assert_eq!(s.playback_in_use(), 2);
         assert!(*b.preempted.borrow());
         drop((p1, p2));
@@ -260,5 +274,22 @@ mod tests {
         assert!(!*b.preempted.borrow() && *c.preempted.borrow());
         s.set_size(None);
         assert_eq!(s.size(), auto_size());
+    }
+
+    #[tokio::test]
+    async fn hardware_playback_leaves_the_cpu_budget() {
+        let s = Slots::new(1);
+        let job = s.background(JobPriority::Normal).await;
+        let hw1 = s.playback(false);
+        let hw2 = s.playback(false);
+        assert_eq!(s.playback_in_use(), 2);
+        assert!(!*job.preempted.borrow(), "two hardware transcodes, one job");
+        let cpu = s.playback(true);
+        assert!(*job.preempted.borrow());
+        cpu.set_idle(true);
+        assert!(!*job.preempted.borrow());
+        drop(cpu);
+        drop((hw1, hw2));
+        assert_eq!(s.playback_in_use(), 0);
     }
 }

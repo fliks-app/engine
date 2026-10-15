@@ -39,6 +39,8 @@
       "tv",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/h264-1080p-scope-crop-mkv.mkv",
       "-copyts",

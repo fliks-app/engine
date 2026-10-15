@@ -12,6 +12,8 @@
       "0",
       "-probesize",
       "5000000",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p81-mp4.mp4",
       "-copyts",

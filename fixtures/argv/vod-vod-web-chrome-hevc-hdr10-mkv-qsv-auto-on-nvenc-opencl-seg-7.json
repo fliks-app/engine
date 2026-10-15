@@ -25,6 +25,8 @@
       "opencl=ocl",
       "-filter_hw_device",
       "ocl",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-hdr10-mkv.mkv",
       "-copyts",

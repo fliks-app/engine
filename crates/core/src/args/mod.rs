@@ -133,6 +133,13 @@ pub struct VodArgs {
     pub early: bool,
     #[serde(default)]
     pub use_ts: bool,
+    /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
+    #[serde(default = "default_encode_threads")]
+    pub encode_threads: u32,
+}
+
+fn default_encode_threads() -> u32 {
+    4
 }
 
 /// Where a remux run starts (the session layer's `remuxRunStart`).
@@ -219,6 +226,9 @@ pub struct LiveArgs {
     pub append: bool,
     #[serde(default)]
     pub probe_seconds: Option<f64>,
+    /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
+    #[serde(default = "default_encode_threads")]
+    pub encode_threads: u32,
 }
 
 /// One trick-play keyframe.
@@ -311,4 +321,6 @@ pub struct EncoderInput {
     pub qsv_native: Option<bool>,
     #[serde(default)]
     pub hdr_metadata: Option<HdrMetadata>,
+    #[serde(default = "default_encode_threads")]
+    pub threads: u32,
 }

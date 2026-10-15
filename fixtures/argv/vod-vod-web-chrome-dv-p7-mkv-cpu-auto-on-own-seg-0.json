@@ -12,6 +12,8 @@
       "0",
       "-probesize",
       "5000000",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p7-mkv.mkv",
       "-copyts",

@@ -16,6 +16,8 @@
       "21.021",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p7-mkv.mkv",
       "-copyts",

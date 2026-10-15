@@ -495,7 +495,7 @@ async fn iframe_seg(
 
 /// stdout of a short playback ffmpeg run, `None` on failure or timeout.
 async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option<Vec<u8>> {
-    let _slot = rt.slots.playback();
+    let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffmpeg);
     cmd.args(args)
         .stdin(std::process::Stdio::null())

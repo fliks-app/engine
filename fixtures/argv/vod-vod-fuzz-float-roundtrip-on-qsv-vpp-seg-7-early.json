@@ -39,6 +39,8 @@
       "tv",
       "-to",
       "4",
+      "-threads",
+      "4",
       "-i",
       "/media/m.mp4",
       "-copyts",

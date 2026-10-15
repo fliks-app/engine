@@ -18,6 +18,8 @@
       "qsv=qs@va",
       "-filter_hw_device",
       "qs",
+      "-threads",
+      "4",
       "-i",
       "/media/in.mkv",
       "-copyts",

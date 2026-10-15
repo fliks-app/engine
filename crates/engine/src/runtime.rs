@@ -1032,6 +1032,7 @@ impl Runtime {
                 start_segment: start,
                 hw,
                 early: kind == JobKind::Early,
+                encode_threads: crate::slots::cpu_quota() as u32,
             });
             fliks_engine_core::args::vod(&args, &caps, &dev)
         };
@@ -1112,6 +1113,7 @@ impl Runtime {
                 start_segment: start,
                 hw: HwAccel::None,
                 early: false,
+                encode_threads: crate::slots::cpu_quota() as u32,
             },
             &run,
         );
@@ -1161,7 +1163,7 @@ impl Runtime {
         let key = r.key;
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let slot = self.slots.playback();
+        let slot = self.slots.playback(r.hw.0 == HwAccel::None);
         let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {

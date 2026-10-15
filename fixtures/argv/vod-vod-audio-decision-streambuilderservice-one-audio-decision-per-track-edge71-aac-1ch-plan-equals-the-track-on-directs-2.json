@@ -37,6 +37,8 @@
       "bt709",
       "-color_range",
       "tv",
+      "-threads",
+      "4",
       "-i",
       "/media/file.mkv",
       "-copyts",

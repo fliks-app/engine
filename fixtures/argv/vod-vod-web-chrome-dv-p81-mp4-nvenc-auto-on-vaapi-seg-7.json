@@ -29,6 +29,8 @@
       "-noautorotate",
       "-init_hw_device",
       "opencl=ocl:0.0",
+      "-threads",
+      "4",
       "-i",
       "/media/dv-p81-mp4.mp4",
       "-copyts",

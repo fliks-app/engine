@@ -20,6 +20,8 @@
       "smpte170m",
       "-color_range",
       "tv",
+      "-threads",
+      "4",
       "-i",
       "/media/in.mkv",
       "-copyts",
