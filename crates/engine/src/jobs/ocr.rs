@@ -6,11 +6,7 @@ use fliks_engine_core::jobs::ocr as pure;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn validate(
-    info: &MediaInfo,
-    stream_index: u32,
-    language: Option<&str>,
-) -> Result<(), String> {
+pub fn validate(info: &MediaInfo, stream_index: u32, language: Option<&str>) -> Result<(), String> {
     pure::validate_ocr(info, stream_index, language)?;
     Ok(())
 }
@@ -139,7 +135,10 @@ async fn run_vobsub(
         if code == Some(0) || Path::new(&sub).is_file() {
             Ok(())
         } else {
-            Err(format!("mkvextract exited with {code:?}: {}", tail(&p[0], 2)))
+            Err(format!(
+                "mkvextract exited with {code:?}: {}",
+                tail(&p[0], 2)
+            ))
         }
     })
     .await??;
@@ -150,7 +149,10 @@ async fn run_vobsub(
     ctx.pipeline(pure::OCR_TOOL_TIMEOUT_MS, vec![cmd], |p| async move {
         match p[0].wait().await.code {
             Some(0) => Ok(()),
-            code => Err(format!("subtile-ocr exited with {code:?}: {}", tail(&p[0], 2))),
+            code => Err(format!(
+                "subtile-ocr exited with {code:?}: {}",
+                tail(&p[0], 2)
+            )),
         }
     })
     .await??;

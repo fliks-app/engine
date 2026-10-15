@@ -48,13 +48,20 @@ pub fn detect(req: IntroDetectRequest) -> Result<IntroDetectResponse, String> {
     let chapter_ids: std::collections::HashSet<u32> =
         chapter_results.iter().map(|r| r.media_file_id).collect();
 
-    let (reference_min, reference_max, reference_length) = if is_intro && chapter_starts.len() >= 2 {
+    let (reference_min, reference_max, reference_length) = if is_intro && chapter_starts.len() >= 2
+    {
         (
-            Some((chapter_starts.iter().copied().fold(f64::INFINITY, f64::min)
-                - REF_MARGIN_SECONDS)
-                .max(0.0)),
-            Some(chapter_starts.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-                + REF_MARGIN_SECONDS),
+            Some(
+                (chapter_starts.iter().copied().fold(f64::INFINITY, f64::min) - REF_MARGIN_SECONDS)
+                    .max(0.0),
+            ),
+            Some(
+                chapter_starts
+                    .iter()
+                    .copied()
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    + REF_MARGIN_SECONDS,
+            ),
             Some(median(chapter_lengths.clone())),
         )
     } else {
@@ -221,11 +228,7 @@ fn fingerprint_for(ep: &IntroEpisode, kind: IntroDetectKind) -> &Fingerprint {
     }
 }
 
-fn chapter_hit(
-    kind: IntroDetectKind,
-    chapters: &[Chapter],
-    duration: f64,
-) -> Option<(f64, f64)> {
+fn chapter_hit(kind: IntroDetectKind, chapters: &[Chapter], duration: f64) -> Option<(f64, f64)> {
     match kind {
         IntroDetectKind::Intro => extract_intro_from_chapters(chapters),
         IntroDetectKind::Outro => extract_outro_from_chapters(chapters, duration),
@@ -360,7 +363,12 @@ fn matches_end_credits(title: &str) -> bool {
     false
 }
 
-fn ref_hashes_from_window(fp: &Fingerprint, start_sec: f64, end_sec: f64, is_intro: bool) -> Vec<i32> {
+fn ref_hashes_from_window(
+    fp: &Fingerprint,
+    start_sec: f64,
+    end_sec: f64,
+    is_intro: bool,
+) -> Vec<i32> {
     let (rel_start, rel_end) = if is_intro {
         (
             seconds_to_samples(start_sec).min(fp.hashes.len()),
@@ -385,7 +393,11 @@ struct RefMatch {
     confidence: f64,
 }
 
-fn find_by_reference(ref_hashes: &[i32], target: &Fingerprint, max_start_seconds: f64) -> Option<RefMatch> {
+fn find_by_reference(
+    ref_hashes: &[i32],
+    target: &Fingerprint,
+    max_start_seconds: f64,
+) -> Option<RefMatch> {
     if ref_hashes.len() < 8 {
         return None;
     }
@@ -445,7 +457,9 @@ fn find_all_matches(a: &[i32], b: &[i32], min_segment_seconds: f64) -> Vec<RawMa
         let mut run_len = 0usize;
         let mut run_ham = 0u64;
         let mut flush = |start: Option<usize>, len: usize, ham: u64| {
-            if len >= min_len && let Some(s) = start {
+            if len >= min_len
+                && let Some(s) = start
+            {
                 out.push(RawMatch {
                     a_start: s,
                     length: len,
@@ -559,7 +573,10 @@ fn pairwise_one(
     let mut next_order = 0usize;
     for m in matches {
         let key = (m.start / bucket).round() * bucket;
-        if let Some(c) = clusters.iter_mut().find(|(k, _, _)| (*k - key).abs() < f64::EPSILON) {
+        if let Some(c) = clusters
+            .iter_mut()
+            .find(|(k, _, _)| (*k - key).abs() < f64::EPSILON)
+        {
             c.1.push(m);
         } else {
             clusters.push((key, vec![m], next_order));

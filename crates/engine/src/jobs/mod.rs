@@ -5,8 +5,8 @@ mod ocr;
 mod scan;
 mod sprite;
 mod srt;
-mod sync;
 pub(crate) mod subtitles;
+mod sync;
 
 use crate::AppState;
 use crate::proc::{Ffmpeg, Pipes, background};

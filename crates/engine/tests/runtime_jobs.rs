@@ -830,7 +830,10 @@ async fn subtitle_to_srt_reads_ffmpeg_stdout() {
     });
     let v = run_kind(&e, 7, &file, kind).await;
     assert_eq!(v["state"], "done", "{v}");
-    assert!(v["result"]["srt"].as_str().unwrap().contains("hello"), "{v}");
+    assert!(
+        v["result"]["srt"].as_str().unwrap().contains("hello"),
+        "{v}"
+    );
     let file_kind = json!({
         "type": "SubtitleToSrt",
         "info": info(),

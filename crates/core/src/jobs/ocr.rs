@@ -91,11 +91,7 @@ pub fn validate_ocr<'a>(
 
 fn matroska_ext(path: &str) -> bool {
     let base = path.rsplit('/').next().unwrap_or(path);
-    let ext = base
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let ext = base.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     matches!(ext.as_str(), "mkv" | "mka" | "webm")
 }
 
