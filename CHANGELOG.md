@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.0](https://github.com/fliks-app/engine/compare/v0.2.0...v0.3.0) (2026-10-15)
+
+
+### Features
+
+* **core:** port hls playlists and mp4 segment packaging ([#16](https://github.com/fliks-app/engine/issues/16)) ([1e9dbb3](https://github.com/fliks-app/engine/commit/1e9dbb33c547aa6262b703377d48ed0f3c44fcb9))
+* **core:** port session logic (seek matrix, throttle, cache, lifetimes) ([#12](https://github.com/fliks-app/engine/issues/12)) ([9367f33](https://github.com/fliks-app/engine/commit/9367f33e0c7f63760b410c97d46d67110ce4731e))
+* **core:** port the ffmpeg argv builders as core::args ([#14](https://github.com/fliks-app/engine/issues/14)) ([739731e](https://github.com/fliks-app/engine/commit/739731edc04a72585b75814c00caa54ec5cb9d94))
+* **core:** pure scan, fingerprint and subtitle extraction for background jobs ([#27](https://github.com/fliks-app/engine/issues/27)) ([31cbfad](https://github.com/fliks-app/engine/commit/31cbfad1d31c5d600678a79e70103ced2efa3937))
+* **engine:** add the front-door gateway role (--upstream) ([#18](https://github.com/fliks-app/engine/issues/18)) ([e7736f0](https://github.com/fliks-app/engine/commit/e7736f0f3b5f34097a2401ab20febe472e773299))
+* **engine:** background jobs on one ffmpeg budget, sprite job ([#28](https://github.com/fliks-app/engine/issues/28)) ([97bc8b5](https://github.com/fliks-app/engine/commit/97bc8b55899d856e05bf81deca5b1e74714e2229))
+* **engine:** land intro matching and the subtitle jobs ([d968a11](https://github.com/fliks-app/engine/commit/d968a11858af6b98c694196b59d4e64c3d0f5992))
+* **engine:** run a remote engine behind the nas gateway ([#37](https://github.com/fliks-app/engine/issues/37)) ([7398859](https://github.com/fliks-app/engine/commit/73988596a436bda9b9a892d8380093a357e4f69b))
+* **engine:** session runtime, data plane, resolver client and events ([#19](https://github.com/fliks-app/engine/issues/19)) ([54054de](https://github.com/fliks-app/engine/commit/54054deb78d05aac1723112f79415c067b4f895c))
+* **jobs:** demux MPEG-TS in rust for the scan's AAC walk ([#30](https://github.com/fliks-app/engine/issues/30)) ([50fd477](https://github.com/fliks-app/engine/commit/50fd4777fe3f7ec238221366aab2ad14bf43b38d))
+* **jobs:** scan, fingerprint and subtitle extraction jobs ([#29](https://github.com/fliks-app/engine/issues/29)) ([dec9f49](https://github.com/fliks-app/engine/commit/dec9f492417a3f2721bedbc8d71bc543fa7413c6))
+* **live:** expose the feeding upstream to hosts ([#33](https://github.com/fliks-app/engine/issues/33)) ([20148ff](https://github.com/fliks-app/engine/commit/20148ff2c2cd1d96eb8b2126187782674f200e4a))
+* **live:** run live tv sessions in the engine ([#32](https://github.com/fliks-app/engine/issues/32)) ([7b17218](https://github.com/fliks-app/engine/commit/7b17218de512298e3e12c5ca413e75555f3d071b))
+* **runtime:** remux runs, early companion and dolby vision codecs ([#20](https://github.com/fliks-app/engine/issues/20)) ([c6ba76c](https://github.com/fliks-app/engine/commit/c6ba76c285a2ff973ffe12ea6bb0e9b0e0a14520))
+
+
+### Bug Fixes
+
+* **api:** keep the lifetime config optional on the wire ([#15](https://github.com/fliks-app/engine/issues/15)) ([f543e0c](https://github.com/fliks-app/engine/commit/f543e0c63e04eafe9a594f3f9fccc90da1e50924))
+* **api:** unique operationIds, deflake watchdog tests ([#31](https://github.com/fliks-app/engine/issues/31)) ([b8c823b](https://github.com/fliks-app/engine/commit/b8c823b0fbfdb046f2029c2c1bfe76129334e542))
+* **runtime:** stop a session's jobs when it ends and kill hung ffmpeg runs ([#23](https://github.com/fliks-app/engine/issues/23)) ([1f61e62](https://github.com/fliks-app/engine/commit/1f61e621b8017783fcdae3e915021936c1ecb603))
+* **serve:** answer 410 for an ended sid before any resolver call ([#26](https://github.com/fliks-app/engine/issues/26)) ([35cd8fc](https://github.com/fliks-app/engine/commit/35cd8fc729a94949790c8b7654efaa5682f5c831))
+
 ## [0.2.0](https://github.com/fliks-app/engine/compare/v0.1.0...v0.2.0) (2026-10-14)
 
 
