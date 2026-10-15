@@ -161,6 +161,14 @@ fn subs(mode: &str, args: &[String]) {
 
 const OCR_SRT: &str = "1\n00:00:00,000 --> 00:00:01,000\nhello\n";
 
+/// `mkvextract` writes `id:path`. A drive letter is also a colon, so only a numeric id is stripped.
+fn track_output(spec: &str) -> &str {
+    match spec.split_once(':') {
+        Some((id, rest)) if !rest.is_empty() && id.chars().all(|c| c.is_ascii_digit()) => rest,
+        _ => spec,
+    }
+}
+
 /// PGS/VobSub OCR tools, distinguished by argv (one fake binary on PATH for all of them).
 fn ocr(args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
@@ -179,9 +187,7 @@ fn ocr(args: &[String]) {
         return;
     }
     if args.first().is_some_and(|a| a == "tracks") {
-        let dest = args.last().unwrap();
-        let idx_path = dest.rsplit(':').next().unwrap_or(dest);
-        let idx = Path::new(idx_path);
+        let idx = Path::new(track_output(args.last().unwrap()));
         put(idx, b"");
         put(&idx.with_extension("sub"), b"");
         done();
@@ -370,5 +376,16 @@ fn main() {
             let _ = std::io::stdout().flush();
         }
         _ => hang(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::track_output;
+
+    #[test]
+    fn track_output_keeps_a_drive_letter() {
+        assert_eq!(track_output("6:/cache/a.idx"), "/cache/a.idx");
+        assert_eq!(track_output(r"6:C:\refs\a.idx"), r"C:\refs\a.idx");
     }
 }
