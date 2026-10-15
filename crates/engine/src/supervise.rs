@@ -29,7 +29,7 @@ fn forward_term(_: &Child) {}
 
 /// Reaps orphans re-parented to us, leaving our direct children (the host, ffmpeg...) to tokio.
 #[cfg(unix)]
-async fn reap_orphans(child_pid: impl Fn() -> u32) {
+async fn reap_orphans() {
     use tokio::signal::unix::{SignalKind, signal};
     let mut chld = signal(SignalKind::child()).unwrap();
     while chld.recv().await.is_some() {
@@ -45,7 +45,7 @@ async fn reap_orphans(child_pid: impl Fn() -> u32) {
             };
             let pid = unsafe { info.si_pid() };
             // ponytail: a zombie child at the head of the queue hides orphans behind it until the next SIGCHLD
-            if r != 0 || pid == 0 || pid as u32 == child_pid() || crate::proc::is_own(pid as u32) {
+            if r != 0 || pid == 0 || crate::proc::is_own(pid as u32) {
                 break;
             }
             unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) };
@@ -63,13 +63,8 @@ fn backoff_base() -> Duration {
 /// Returns the exit code of the engine process.
 pub async fn run(cmd: &[String], url: &str, token: &str, extra_env: &[(&str, String)]) -> u8 {
     #[cfg(unix)]
-    let current = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-    #[cfg(unix)]
     if std::process::id() == 1 {
-        let c = current.clone();
-        tokio::spawn(reap_orphans(move || {
-            c.load(std::sync::atomic::Ordering::Relaxed)
-        }));
+        tokio::spawn(reap_orphans());
     }
     let base = backoff_base();
     let mut delay = base;
@@ -77,13 +72,12 @@ pub async fn run(cmd: &[String], url: &str, token: &str, extra_env: &[(&str, Str
     tokio::pin!(shutdown);
     loop {
         let started = Instant::now();
-        let mut child = match Command::new(&cmd[0])
-            .args(&cmd[1..])
+        let mut host = Command::new(&cmd[0]);
+        host.args(&cmd[1..])
             .env("FLIKS_ENGINE_URL", url)
             .env("FLIKS_ENGINE_TOKEN", token)
-            .envs(extra_env.iter().map(|(k, v)| (k, v)))
-            .spawn()
-        {
+            .envs(extra_env.iter().map(|(k, v)| (k, v)));
+        let mut child = match crate::proc::spawn(&mut host).await {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("spawn {}: {e}", cmd[0]);
@@ -94,11 +88,6 @@ pub async fn run(cmd: &[String], url: &str, token: &str, extra_env: &[(&str, Str
         };
         #[cfg(windows)]
         crate::proc::assign_to_job(&child);
-        #[cfg(unix)]
-        current.store(
-            child.id().unwrap_or(0),
-            std::sync::atomic::Ordering::Relaxed,
-        );
         tokio::select! {
             status = child.wait() => {
                 tracing::warn!("host exited: {status:?}");
