@@ -11,7 +11,7 @@ Two optional job kinds on the M5 job system (`engine::jobs`, `core::jobs`): `Sub
 - Validation in `engine::jobs::submit`, 400 otherwise [ts:ocr:129-143] [ts:sync:95-97,219-222]:
   - OCR: `streamIndex` ≤ 999 and present in `info.subtitles`; the track is image-based; its codec is `hdmv_pgs_subtitle` or `dvd_subtitle` (DVB, XSUB and text tracks rejected before any work); `language` if present is a 2-letter IETF code.
   - Sync: `subtitle.text` non-empty, `subtitle.format` one of `srt|sub|ass|ssa|vtt`; `reference.file` is absolute.
-- Results: `JobResult::SubtitleOcr { srt: String }` (the tools always produce SRT), `JobResult::SubtitleSync { subtitle: SubtitleText }` (ffsubsync and alass keep the input format). [ts:ocr:303] [ts:sync:254-269]
+- Results: `JobResult::SubtitleOcr { srt: String }` (the tools always produce SRT), `JobResult::SubtitleSync { subtitle: SubtitleText }` (ffsubsync and alass keep the input format), `JobResult::SubtitleToSrt { srt: String }`. [ts:ocr:303] [ts:sync:254-269]
 - `hello.features` gains `subtitle-ocr` when the PGS path (`pgsrip`) or the VobSub path (`subtile-ocr` and `mkvextract`) is complete, and `subtitle-sync` when `ffsubsync` is on PATH (the alass fallback is compiled in, it needs no feature).
 
 ## 2. SubtitleOcr (`core::jobs::ocr`, `engine::jobs::ocr`)
@@ -36,7 +36,7 @@ Input: `media.path`, `info`, `subtitle`, `reference`, options. Output: the resyn
 - The retry matrix is the job's algorithm, decided in `core` and visible in fixtures:
   1. ffsubsync with the request's reference. Success: done.
   2. On failure matching `unable to detect speech` (case-insensitive) **and** the reference was `auto`: retry with `--reference-stream stream:<first audio stream index>` taken from `info.audio` (absent: skip to 3). Success: done.
-  3. alass, compiled in (`alass-core` + `alass-util`, GPL-3.0, AGPL-compatible): the reference is the media file — one ffmpeg run extracts and resamples the audio (16-bit mono PCM on stdout, one background slot), `alass_util` builds the voice-activity reference timespans (webrtc-vad), `alass_core` aligns (offsets, splits, framerate), the engine applies the offsets to the parsed cues (`subparse`) and re-serialises. A `subtitleStream` reference or a non-Matroska-without-audio case aligns against the reference subtitle's own cues instead of audio (no ffmpeg run). Failure detail: `ffsubsync stderr: <…>\nalass error: <…>`, bounded. [ts:sync:284-345] [assumed: the alass-crate path reproduces the `alass` CLI's behaviour closely enough on the reference corpus — validated in PR 2 before the ffsubsync retry legs are kept]
+  3. alass, compiled in (`alass-core` + `alass-util`, GPL-3.0, AGPL-compatible): the reference is the media file — one ffmpeg run extracts and resamples the audio (16-bit mono PCM on stdout, one background slot), `alass_util` builds the voice-activity reference timespans (webrtc-vad), `alass_core` aligns (offsets, splits, framerate), the engine applies the offsets to the parsed cues (`subparse`) and re-serialises. A subtitle-file reference aligns against that file's cues (no ffmpeg). A `subtitleStream` reference is extracted to SRT with one ffmpeg run, then aligned against those cues. Failure detail: `ffsubsync stderr: <…>\nalass error: <…>`, bounded. [ts:sync:284-345] [assumed: the alass-crate path reproduces the `alass` CLI's behaviour closely enough on the reference corpus — validated in PR 2 before the ffsubsync retry legs are kept]
 - `auto` means ffsubsync probes the media file itself (it runs its own ffprobe); for the alass leg the engine extracts the first audio stream unless the reference names one. The engine's ffprobe/ffmpeg come from `FFPROBE_PATH`/`FFMPEG_PATH`. [ts:sync:276-281] [new: stream selection for the alass leg]
 - The embedded-only rejection (`Cannot sync an embedded subtitle`), the `locked` flag, the queue, notifications and the `synced`/`syncFailed` row updates stay host-side: they are library state. [ts:sync:95-101,348-374]
 
@@ -51,5 +51,14 @@ The job system's own budget replaces the TS's dedicated gates: at most 2 backgro
 - Results travel as wire data, not as written files: the TS OCR wrote the SRT next to the video and the sync edited the sidecar in place; the host now does both from the returned text (M9: the engine may not share a filesystem with the host).
 - Temp staging moves from `/tmp/fliks-ocr` to the engine cache (`tmp/ocr`, `tmp/sync`), so the watchdog's disk rules and cleanup apply.
 - The alass fallback is the `alass-core`/`alass-util` crate, not the `alass` CLI binary the TS spawned; a subtitle-stream reference (audio-less) aligns against the reference subtitle's cues, which the CLI cannot do. [new]
+- A `subtitleStream` reference is extracted from the container with one ffmpeg run (SRT to the job staging dir); only the sidecar `in.<format>` is written from wire data.
 - `subtitle_ocr_max_concurrency` and the sync queue's `MAX_CONCURRENT` are dropped for the job system's budget (section 4).
 - The OCR's PROCESSING/FAILED row bookkeeping, `subtitle.list_changed`/`subtitle.downloaded`/`subtitle.failed` events and `subtitle_ocr_delete_source` stay host-side (library state, no media tool).
+
+## 6. SubtitleToSrt (`core::jobs::srt`, `engine::jobs::srt`)
+
+Input: `media.path`, `info`, `source`. Output: SRT text. The host still reads an SRT sidecar itself. [ts:modules/subtitles/subtitle-translation.service.ts:409-437]
+
+- `source` is `{ type: "file", path }` (absolute non-SRT sidecar) or `{ type: "stream", index }` (embedded text track of the job's media). A stream index above 999, missing from `info.subtitles`, or image-based is a 400. A relative file path is a 400.
+- One ffmpeg run, timeout 120 s: `-y -i <path> -f srt pipe:1`, plus `-map 0:<index>` for a stream. The SRT is ffmpeg's stdout. No feature flag: ffmpeg is already required.
+- Providers, batching, API keys, the placeholder row and the progress events stay host-side. [ts:modules/subtitles/subtitle-translation.service.ts:266-307]

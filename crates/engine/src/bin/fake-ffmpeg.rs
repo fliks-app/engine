@@ -196,6 +196,32 @@ fn ocr(args: &[String]) {
     hang()
 }
 
+/// Canned ffsubsync. `NOSPEECH` in the input fails until `--reference-stream`; `FAIL` always fails.
+fn ffsubsync(args: &[String]) {
+    let input = args
+        .windows(2)
+        .find(|w| w[0] == "-i")
+        .map(|w| w[1].as_str());
+    let output = args
+        .windows(2)
+        .find(|w| w[0] == "-o")
+        .map(|w| w[1].as_str());
+    let (Some(input), Some(output)) = (input, output) else {
+        hang()
+    };
+    let body = std::fs::read_to_string(input).unwrap_or_default();
+    let streamed = args.windows(2).any(|w| w[0] == "--reference-stream");
+    if body.contains("NOSPEECH") && !streamed {
+        eprintln!("Unable to detect speech");
+        std::process::exit(1);
+    }
+    if body.contains("FAIL") {
+        eprintln!("ffsubsync boom");
+        std::process::exit(1);
+    }
+    put(Path::new(output), body.replace("LATE", "SYNCED"));
+}
+
 fn job(mode: &str, args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
     if has("-show_entries") {
@@ -300,6 +326,10 @@ fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if stem == "ffsubsync" {
+        ffsubsync(&args);
+        return;
+    }
     // "subtile-ocr" would otherwise be read as the mode "subtile".
     if stem.starts_with("subtile-ocr")
         || matches!(
@@ -328,6 +358,17 @@ fn main() {
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
         m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
         | "failsub" | "hangsub") => job(m, &args),
+        "sync" => {
+            if args.iter().any(|a| a == "pcm_s16le") {
+                eprintln!("no audio");
+                std::process::exit(1);
+            }
+            hang()
+        }
+        "srt" => {
+            let _ = writeln!(std::io::stdout(), "1\n00:00:01,000 --> 00:00:02,000\nhello");
+            let _ = std::io::stdout().flush();
+        }
         _ => hang(),
     }
 }

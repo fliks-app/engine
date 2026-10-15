@@ -2831,6 +2831,75 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Sidecar subtitle re-timed against audio or a reference track.",
+            "required": [
+              "info",
+              "subtitle",
+              "reference",
+              "type"
+            ],
+            "properties": {
+              "gss": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "maxOffsetSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "noFixFramerate": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "reference": {
+                "$ref": "#/components/schemas/SyncReference"
+              },
+              "subtitle": {
+                "$ref": "#/components/schemas/SubtitleText"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleSync"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A non-SRT sidecar or an embedded text track, converted to SRT text.",
+            "required": [
+              "info",
+              "source",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "source": {
+                "$ref": "#/components/schemas/SrtSource"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleToSrt"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -2969,6 +3038,42 @@
                 "type": "string",
                 "enum": [
                   "SubtitleOcr"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "subtitle",
+              "type"
+            ],
+            "properties": {
+              "subtitle": {
+                "$ref": "#/components/schemas/SubtitleText"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleSync"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "srt",
+              "type"
+            ],
+            "properties": {
+              "srt": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleToSrt"
                 ]
               }
             }
@@ -4834,6 +4939,49 @@
           }
         }
       },
+      "SrtSource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "type"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "index",
+              "type"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "stream"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where the SRT conversion reads. `file` is an absolute sidecar; `stream` is a text track of the job's media."
+      },
       "StreamingConfig": {
         "type": "object",
         "description": "The `streaming_*` settings, already resolved by the host. Defaults match the host's.",
@@ -4940,6 +5088,16 @@
           }
         }
       },
+      "SubtitleFormat": {
+        "type": "string",
+        "enum": [
+          "srt",
+          "sub",
+          "ass",
+          "ssa",
+          "vtt"
+        ]
+      },
       "SubtitlePrewarm": {
         "type": "string",
         "enum": [
@@ -4994,6 +5152,21 @@
           }
         }
       },
+      "SubtitleText": {
+        "type": "object",
+        "required": [
+          "format",
+          "text"
+        ],
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/SubtitleFormat"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "SubtitleTrack": {
         "type": "object",
         "description": "One text subtitle rendition of the master.",
@@ -5037,6 +5210,82 @@
         "enum": [
           "embedded",
           "external"
+        ]
+      },
+      "SyncReference": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "index",
+              "type"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "audioStream"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "index",
+              "type"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "subtitleStream"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "type"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              }
+            }
+          }
         ]
       },
       "TonemapAlgo": {

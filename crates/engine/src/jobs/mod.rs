@@ -4,6 +4,8 @@ mod fingerprint;
 mod ocr;
 mod scan;
 mod sprite;
+mod srt;
+mod sync;
 pub(crate) mod subtitles;
 
 use crate::AppState;
@@ -148,6 +150,14 @@ fn validate(kind: &JobKind) -> Result<(), String> {
             stream_index,
             language,
         } => ocr::validate(info, *stream_index, language.as_deref())?,
+        JobKind::SubtitleSync {
+            info,
+            subtitle,
+            reference,
+            max_offset_seconds,
+            ..
+        } => sync::validate(info, subtitle, reference, *max_offset_seconds)?,
+        JobKind::SubtitleToSrt { info, source } => srt::validate(info, source)?,
     }
     Ok(())
 }
@@ -157,6 +167,9 @@ pub fn optional_features() -> Vec<String> {
     let mut out = vec![];
     if ocr::announced() {
         out.push("subtitle-ocr".into());
+    }
+    if sync::announced() {
+        out.push("subtitle-sync".into());
     }
     out
 }
@@ -252,6 +265,26 @@ async fn run(rt: Arc<Runtime>, job: Arc<BgJob>) {
             stream_index,
             language,
         } => ocr::run(&ctx, info, *stream_index, language.as_deref()).await,
+        JobKind::SubtitleSync {
+            info,
+            subtitle,
+            reference,
+            max_offset_seconds,
+            no_fix_framerate,
+            gss,
+        } => {
+            sync::run(
+                &ctx,
+                info,
+                subtitle,
+                reference,
+                *max_offset_seconds,
+                no_fix_framerate.unwrap_or(false),
+                gss.unwrap_or(false),
+            )
+            .await
+        }
+        JobKind::SubtitleToSrt { info, source } => srt::run(&ctx, info, source).await,
     };
     let (state, result, error) = match out {
         Ok(r) => (BgJobState::Done, Some(r), None),

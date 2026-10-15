@@ -1,0 +1,4 @@
+{"kind":"ffsubsync","cases":[
+{"expected":{"argv":["/m.mkv","-i","/t/in.srt","-o","/t/out.srt"]},"input":{"input":"/t/in.srt","output":"/t/out.srt","reference":"/m.mkv"},"name":"auto"},
+{"expected":{"argv":["/m.mkv","-i","/t/in.srt","-o","/t/out.srt","--reference-stream","stream:3","--max-offset-seconds","2.5","--no-fix-framerate","--gss"]},"input":{"gss":true,"input":"/t/in.srt","maxOffsetSeconds":2.5,"noFixFramerate":true,"output":"/t/out.srt","reference":"/m.mkv","stream":3},"name":"stream and options"}
+]}

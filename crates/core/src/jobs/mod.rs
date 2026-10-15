@@ -4,7 +4,9 @@ pub mod fingerprint;
 pub mod ocr;
 pub mod scan;
 pub mod sprite;
+pub mod srt;
 pub mod subtitles;
+pub mod sync;
 
 fn v(a: &[&str]) -> Vec<String> {
     a.iter().map(|s| (*s).to_string()).collect()
