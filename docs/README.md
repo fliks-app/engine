@@ -12,6 +12,8 @@
   - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
   - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite`, `Scan`, `Fingerprint` and `SubtitleExtract` jobs.
   - [spec/live.md](spec/live.md): live TV (`engine::live`, `core::live`): open/join of a shared upstream, mode decision, probe, failover and stall watchdog, DVR window, direct tee, idle teardown, the `/api/livetv/sessions/:sid/*` data plane and the host's capacity contract.
+  - [spec/subtitle-jobs.md](spec/subtitle-jobs.md): the M8 subtitle jobs (`SubtitleOcr`, `SubtitleSync`): optional kinds on the job system, tool argv (pgsrip/subtile-ocr/mkvextract/ffsubsync + the alass-crate fallback), text-as-data results.
+  - [spec/intro.md](spec/intro.md): intro/outro detection (`POST /v1/intro-detect`, `core::intro`): chapter shortcut, reference search, pairwise chromaprint matching, clustering and consensus over fingerprints sent as data.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
