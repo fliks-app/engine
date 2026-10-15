@@ -173,6 +173,14 @@ impl Default for StreamingConfig {
     }
 }
 
+/// One prefix of a host media path rewritten to the path this engine opens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PathMapping {
+    pub from: String,
+    pub to: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", default)]
 pub struct EngineConfig {
@@ -187,6 +195,32 @@ pub struct EngineConfig {
     pub lifetime: LifetimeConfig,
     #[serde(default)]
     pub livetv: LiveTvConfig,
+    /// Absent: the host path is the path this engine opens.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path_mappings: Vec<PathMapping>,
+}
+
+/// Longest `from` that ends on a path boundary. `/mnt/a` does not rewrite `/mnt/ab`.
+pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
+    let best = mappings
+        .iter()
+        .filter_map(|m| {
+            let from = m.from.trim_end_matches(['/', '\\']);
+            let to = m.to.trim_end_matches(['/', '\\']);
+            if from.is_empty() || to.is_empty() {
+                return None;
+            }
+            let rest = path.strip_prefix(from)?;
+            if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\')) {
+                return None;
+            }
+            Some((from.len(), to, rest))
+        })
+        .max_by_key(|(n, _, _)| *n);
+    match best {
+        Some((_, to, rest)) => format!("{to}{rest}"),
+        None => path.to_string(),
+    }
 }
 
 // MediaInfo mirrors `MediaFileInfo` (ffprobe.service.ts). JSON integers stay u32/i32 so the
@@ -551,5 +585,33 @@ mod tests {
             "audioConfigChanges": { "1": false, "2": true }, "schemaVersion": 1
         });
         assert_eq!(roundtrip::<SourceScan>(&s), s);
+    }
+
+    #[test]
+    fn path_mappings_use_the_longest_boundary() {
+        let maps = [
+            PathMapping {
+                from: "/mnt/nas".into(),
+                to: "/data".into(),
+            },
+            PathMapping {
+                from: "/mnt/nas/films/".into(),
+                to: "/films".into(),
+            },
+        ];
+        assert_eq!(
+            apply_path_mappings(&maps, "/mnt/nas/films/a.mkv"),
+            "/films/a.mkv"
+        );
+        assert_eq!(
+            apply_path_mappings(&maps, "/mnt/nas/tv/a.mkv"),
+            "/data/tv/a.mkv"
+        );
+        assert_eq!(
+            apply_path_mappings(&maps, "/mnt/nas2/a.mkv"),
+            "/mnt/nas2/a.mkv"
+        );
+        assert_eq!(apply_path_mappings(&maps, "/mnt/nas"), "/data");
+        assert_eq!(apply_path_mappings(&[], "/mnt/nas/a.mkv"), "/mnt/nas/a.mkv");
     }
 }

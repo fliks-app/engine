@@ -10,7 +10,7 @@ mod sync;
 
 use crate::AppState;
 use crate::proc::{Ffmpeg, Pipes, background};
-use crate::runtime::{Runtime, map_media_path, now_ms};
+use crate::runtime::{Runtime, now_ms};
 use crate::slots::BackgroundSlot;
 use axum::{
     Json,
@@ -425,7 +425,7 @@ impl Ctx {
     }
 
     pub fn media_path(&self) -> String {
-        map_media_path(&self.job.req.media.path)
+        self.rt.map_media_path(&self.job.req.media.path)
     }
 
     /// Marks progress the watchdog cannot see (bytes read, lines parsed).
