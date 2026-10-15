@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/fliks-app/engine/compare/v0.3.0...v0.3.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **release:** bump Cargo.lock with the workspace version ([#38](https://github.com/fliks-app/engine/issues/38)) ([88776ce](https://github.com/fliks-app/engine/commit/88776ce8fa7cd2935bec14f1c26fca361bdab8f3))
+
 ## [0.3.0](https://github.com/fliks-app/engine/compare/v0.2.0...v0.3.0) (2026-10-15)
 
 
