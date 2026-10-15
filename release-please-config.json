@@ -10,6 +10,16 @@
           "type": "toml",
           "path": "Cargo.toml",
           "jsonpath": "$.workspace.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='fliks-engine')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='fliks-engine-core')].version"
         }
       ],
       "initial-version": "0.1.0",
