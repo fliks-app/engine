@@ -123,3 +123,44 @@ fn a_killed_engine_leaves_no_ffmpeg() {
     let _ = std::fs::remove_dir_all(&dir);
     assert!(!left, "ffmpeg {child} outlived the engine");
 }
+
+/// A SIGKILLed supervisor runs no shutdown path: the host it supervises must die with it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_killed_supervisor_leaves_no_host() {
+    let dir = std::env::temp_dir().join(format!("fliks-hostdeath-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pidfile = dir.join("pid");
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .args(["--supervise", "--", "sh", "-c"])
+        .arg(format!("echo $$ > {}; exec sleep 600", pidfile.display()))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let alive = |pid: &str| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|s| s.rsplit(") ").next().is_some_and(|r| !r.starts_with('Z')))
+    };
+    let start = Instant::now();
+    let host = loop {
+        match std::fs::read_to_string(&pidfile) {
+            Ok(p) if !p.trim().is_empty() => break p.trim().to_string(),
+            _ if start.elapsed() > TIMEOUT => panic!("supervisor never ran the host"),
+            _ => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
+    assert!(alive(&host));
+    engine.kill().unwrap();
+    engine.wait().unwrap();
+    let start = Instant::now();
+    while alive(&host) && start.elapsed() < TIMEOUT {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left = alive(&host);
+    if left {
+        let _ = Command::new("kill").args(["-9", &host]).status();
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(!left, "host {host} outlived the supervisor");
+}

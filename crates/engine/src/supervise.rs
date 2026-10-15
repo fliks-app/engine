@@ -77,13 +77,12 @@ pub async fn run(cmd: &[String], url: &str, token: &str, extra_env: &[(&str, Str
     tokio::pin!(shutdown);
     loop {
         let started = Instant::now();
-        let mut child = match Command::new(&cmd[0])
-            .args(&cmd[1..])
+        let mut host = Command::new(&cmd[0]);
+        host.args(&cmd[1..])
             .env("FLIKS_ENGINE_URL", url)
             .env("FLIKS_ENGINE_TOKEN", token)
-            .envs(extra_env.iter().map(|(k, v)| (k, v)))
-            .spawn()
-        {
+            .envs(extra_env.iter().map(|(k, v)| (k, v)));
+        let mut child = match crate::proc::spawn(&mut host).await {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("spawn {}: {e}", cmd[0]);

@@ -55,14 +55,23 @@ pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
 
 async fn spawn_retry(cmd: &mut Command) -> io::Result<Child> {
     // A SIGKILLed or crashed engine runs no shutdown path: the kernel kills the child instead.
+    // PDEATHSIG tracks the forking thread: callers spawn from the runtime's own threads, never the blocking pool.
     #[cfg(target_os = "linux")]
-    // SAFETY: prctl is async-signal-safe and touches no memory.
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-            Ok(())
-        });
+    {
+        let parent = unsafe { libc::getpid() };
+        // SAFETY: prctl, getppid and _exit are async-signal-safe and touch no memory.
+        unsafe {
+            cmd.pre_exec(move || {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                // The parent may have died before the prctl took effect.
+                if libc::getppid() != parent {
+                    libc::_exit(1);
+                }
+                Ok(())
+            });
+        }
     }
+    // macOS has no kernel parent-death mechanism: the child outlives a hard-killed supervisor.
     for _ in 0..5 {
         match cmd.spawn() {
             Err(e) if e.raw_os_error() == Some(26) => {
