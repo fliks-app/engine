@@ -684,7 +684,7 @@ async fn engine_ocr() -> (Engine, PathBuf) {
     let fake = fake("ocr");
     let dir = PathBuf::from(&fake).parent().unwrap().to_path_buf();
     for name in ["pgsrip", "mkvextract", "subtile-ocr"] {
-        let link = dir.join(name);
+        let link = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         if !link.exists() {
             std::fs::hard_link(&fake, &link).unwrap();
         }
@@ -837,7 +837,7 @@ async fn subtitle_to_srt_reads_ffmpeg_stdout() {
     let file_kind = json!({
         "type": "SubtitleToSrt",
         "info": info(),
-        "source": { "type": "file", "path": "/refs/movie.ass" }
+        "source": { "type": "file", "path": file.with_extension("ass").display().to_string() }
     });
     let v = run_kind(&e, 7, &file, file_kind).await;
     assert_eq!(v["state"], "done", "{v}");

@@ -309,20 +309,19 @@ mod tests {
 
     #[test]
     fn subtitle_file_reference_uses_cues() {
+        // A leading slash is not absolute on Windows.
+        let path = if cfg!(windows) {
+            r"C:\refs\a.SRT".to_string()
+        } else {
+            "/refs/a.SRT".to_string()
+        };
         let r = resolve_reference(
             &MediaInfo::default(),
-            &SyncReference::File {
-                path: "/refs/a.SRT".into(),
-            },
+            &SyncReference::File { path: path.clone() },
             "/m.mkv",
         )
         .unwrap();
-        assert_eq!(
-            r,
-            ResolvedReference::SubtitleFile {
-                path: "/refs/a.SRT".into()
-            }
-        );
+        assert_eq!(r, ResolvedReference::SubtitleFile { path });
     }
 
     #[test]
