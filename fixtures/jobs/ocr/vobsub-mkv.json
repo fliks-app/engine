@@ -1,0 +1,5 @@
+{"kind":"vobsub-mkv","cases":[
+{"name":"matroska extensions","input":{"path":"/v/a.MKV"},"expected":{"ok":true}},
+{"name":"webm","input":{"path":"/v/x.webm"},"expected":{"ok":true}},
+{"name":"mp4 rejected","input":{"path":"/v/a.mp4"},"expected":{"error":"VobSub OCR requires a Matroska (.mkv) source"}}
+]}

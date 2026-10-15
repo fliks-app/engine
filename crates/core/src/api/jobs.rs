@@ -25,6 +25,70 @@ pub enum JobKind {
     /// Every embedded text track of the file as WebVTT, stored in the engine cache and served by
     /// the subtitle routes (`info.subtitles` names the tracks; image-based ones are skipped).
     SubtitleExtract { info: MediaInfo },
+    /// Image-based embedded track (PGS or VobSub) OCR'd to SRT text.
+    SubtitleOcr {
+        info: MediaInfo,
+        #[serde(rename = "streamIndex")]
+        stream_index: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+    },
+    /// Sidecar subtitle re-timed against audio or a reference track.
+    SubtitleSync {
+        info: MediaInfo,
+        subtitle: SubtitleText,
+        reference: SyncReference,
+        #[serde(
+            default,
+            rename = "maxOffsetSeconds",
+            skip_serializing_if = "Option::is_none"
+        )]
+        max_offset_seconds: Option<f64>,
+        #[serde(
+            default,
+            rename = "noFixFramerate",
+            skip_serializing_if = "Option::is_none"
+        )]
+        no_fix_framerate: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gss: Option<bool>,
+    },
+    /// A non-SRT sidecar or an embedded text track, converted to SRT text.
+    SubtitleToSrt { info: MediaInfo, source: SrtSource },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtitleFormat {
+    Srt,
+    Sub,
+    Ass,
+    Ssa,
+    Vtt,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleText {
+    pub format: SubtitleFormat,
+    pub text: String,
+}
+
+/// Where the SRT conversion reads. `file` is an absolute sidecar; `stream` is a text track of the job's media.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SrtSource {
+    File { path: String },
+    Stream { index: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SyncReference {
+    Auto,
+    AudioStream { index: u32 },
+    SubtitleStream { index: u32 },
+    File { path: String },
 }
 
 /// Which audio the fingerprint reads.
@@ -47,6 +111,9 @@ impl JobKind {
             JobKind::Scan { .. } => "Scan",
             JobKind::Fingerprint { .. } => "Fingerprint",
             JobKind::SubtitleExtract { .. } => "SubtitleExtract",
+            JobKind::SubtitleOcr { .. } => "SubtitleOcr",
+            JobKind::SubtitleSync { .. } => "SubtitleSync",
+            JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
         }
     }
 }
@@ -129,6 +196,15 @@ pub enum JobResult {
     /// Stream indices whose VTT is now cached, served at `/api/stream/{id}/subtitles/embedded/{idx}`.
     SubtitleExtract {
         streams: Vec<u32>,
+    },
+    SubtitleOcr {
+        srt: String,
+    },
+    SubtitleSync {
+        subtitle: SubtitleText,
+    },
+    SubtitleToSrt {
+        srt: String,
     },
 }
 

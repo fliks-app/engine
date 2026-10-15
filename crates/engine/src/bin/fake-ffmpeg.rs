@@ -159,6 +159,75 @@ fn subs(mode: &str, args: &[String]) {
     }
 }
 
+const OCR_SRT: &str = "1\n00:00:00,000 --> 00:00:01,000\nhello\n";
+
+/// `mkvextract` writes `id:path`. A drive letter is also a colon, so only a numeric id is stripped.
+fn track_output(spec: &str) -> &str {
+    match spec.split_once(':') {
+        Some((id, rest)) if !rest.is_empty() && id.chars().all(|c| c.is_ascii_digit()) => rest,
+        _ => spec,
+    }
+}
+
+/// PGS/VobSub OCR tools, distinguished by argv (one fake binary on PATH for all of them).
+fn ocr(args: &[String]) {
+    let has = |a: &str| args.iter().any(|x| x == a);
+    let done = || {
+        let _ = writeln!(std::io::stderr(), "ok");
+    };
+    if has("-map") && has("-c:s") {
+        put(Path::new(args.last().unwrap()), b"");
+        done();
+        return;
+    }
+    if has("--language") {
+        let sup = Path::new(args.last().unwrap());
+        put(&sup.with_extension("srt"), OCR_SRT);
+        done();
+        return;
+    }
+    if args.first().is_some_and(|a| a == "tracks") {
+        let idx = Path::new(track_output(args.last().unwrap()));
+        put(idx, b"");
+        put(&idx.with_extension("sub"), b"");
+        done();
+        return;
+    }
+    if has("-l") && has("-o") {
+        let i = args.iter().position(|a| a == "-o").unwrap();
+        put(Path::new(&args[i + 1]), OCR_SRT);
+        done();
+        return;
+    }
+    hang()
+}
+
+/// Canned ffsubsync. `NOSPEECH` in the input fails until `--reference-stream`; `FAIL` always fails.
+fn ffsubsync(args: &[String]) {
+    let input = args
+        .windows(2)
+        .find(|w| w[0] == "-i")
+        .map(|w| w[1].as_str());
+    let output = args
+        .windows(2)
+        .find(|w| w[0] == "-o")
+        .map(|w| w[1].as_str());
+    let (Some(input), Some(output)) = (input, output) else {
+        hang()
+    };
+    let body = std::fs::read_to_string(input).unwrap_or_default();
+    let streamed = args.windows(2).any(|w| w[0] == "--reference-stream");
+    if body.contains("NOSPEECH") && !streamed {
+        eprintln!("Unable to detect speech");
+        std::process::exit(1);
+    }
+    if body.contains("FAIL") {
+        eprintln!("ffsubsync boom");
+        std::process::exit(1);
+    }
+    put(Path::new(output), body.replace("LATE", "SYNCED"));
+}
+
 fn job(mode: &str, args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
     if has("-show_entries") {
@@ -263,6 +332,20 @@ fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if stem == "ffsubsync" {
+        ffsubsync(&args);
+        return;
+    }
+    // "subtile-ocr" would otherwise be read as the mode "subtile".
+    if stem.starts_with("subtile-ocr")
+        || matches!(
+            stem.split('-').next().unwrap(),
+            "ocr" | "pgsrip" | "mkvextract"
+        )
+    {
+        ocr(&args);
+        return;
+    }
     match stem.split('-').next().unwrap() {
         // CPU with no file and no stderr until `<exe>.rest` exists, then hangs like the real bug.
         "busy" => {
@@ -281,6 +364,28 @@ fn main() {
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
         m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
         | "failsub" | "hangsub") => job(m, &args),
+        "sync" => {
+            if args.iter().any(|a| a == "pcm_s16le") {
+                eprintln!("no audio");
+                std::process::exit(1);
+            }
+            hang()
+        }
+        "srt" => {
+            let _ = writeln!(std::io::stdout(), "1\n00:00:01,000 --> 00:00:02,000\nhello");
+            let _ = std::io::stdout().flush();
+        }
         _ => hang(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::track_output;
+
+    #[test]
+    fn track_output_keeps_a_drive_letter() {
+        assert_eq!(track_output("6:/cache/a.idx"), "/cache/a.idx");
+        assert_eq!(track_output(r"6:C:\refs\a.idx"), r"C:\refs\a.idx");
     }
 }

@@ -1,0 +1,6 @@
+{"kind":"language","cases":[
+{"name":"request two letters","input":{"request":"FR","track":"und"},"expected":{"ietf":"fr"}},
+{"name":"track tag when request absent","input":{"request":null,"track":"it"},"expected":{"ietf":"it"}},
+{"name":"english when both untagged","input":{"request":null,"track":"und"},"expected":{"ietf":"en"}},
+{"name":"three-letter track tag ignored","input":{"request":null,"track":"eng"},"expected":{"ietf":"en"}}
+]}

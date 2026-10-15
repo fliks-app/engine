@@ -3,6 +3,7 @@ pub mod cache;
 pub mod events;
 pub mod gateway;
 pub mod hw;
+pub mod intro;
 pub mod jobs;
 pub mod live;
 pub mod probe;
@@ -28,8 +29,9 @@ use axum::{
 };
 use fliks_engine_core::api::{
     CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
-    Fingerprint, Hello, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest,
-    ResolveResponse, SessionExpired, SourceScan,
+    Fingerprint, Hello, IntroDetectRequest, IntroDetectResponse, IntroEpisode, IntroSegment,
+    MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest, ResolveResponse, SessionExpired,
+    SourceScan,
 };
 use fliks_engine_core::hw::selected_render_node;
 use std::sync::Arc;
@@ -56,9 +58,10 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
-        jobs::delete, live::open_handler, live::list_handler, live::get_handler),
-    components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, ResolveRequest,
-        ResolveResponse, SessionExpired)),
+        jobs::delete, intro::detect, live::open_handler, live::list_handler, live::get_handler),
+    components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, IntroDetectRequest,
+        IntroDetectResponse, IntroEpisode, IntroSegment, ResolveRequest, ResolveResponse,
+        SessionExpired)),
     modifiers(&Bearer)
 )]
 pub struct ApiDoc;
@@ -119,6 +122,7 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         .route("/v1/events", get(sessions::events))
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
+        .route("/v1/intro-detect", post(intro::detect))
         .route("/v1/live", get(live::list_handler).post(live::open_handler))
         .route("/v1/live/{sid}", get(live::get_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
@@ -155,21 +159,26 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     Json(Hello {
         engine_version: env!("CARGO_PKG_VERSION").into(),
         protocol_version: PROTOCOL_VERSION,
-        features: vec![
-            "decide".into(),
-            "estimate-sizes".into(),
-            "capabilities".into(),
-            "probe".into(),
-            "sessions".into(),
-            "serve".into(),
-            "events".into(),
-            "revoke".into(),
-            "jobs".into(),
-            "scan".into(),
-            "fingerprint".into(),
-            "subtitle-extract".into(),
-            "live".into(),
-        ],
+        features: {
+            let mut features = vec![
+                "decide".into(),
+                "estimate-sizes".into(),
+                "capabilities".into(),
+                "probe".into(),
+                "sessions".into(),
+                "serve".into(),
+                "events".into(),
+                "revoke".into(),
+                "jobs".into(),
+                "scan".into(),
+                "fingerprint".into(),
+                "subtitle-extract".into(),
+                "live".into(),
+                "intro-detect".into(),
+            ];
+            features.extend(jobs::optional_features());
+            features
+        },
         instance_id: s.instance_id.clone(),
     })
 }

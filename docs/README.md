@@ -12,6 +12,8 @@
   - [spec/jobs-pure.md](spec/jobs-pure.md): `core::jobs`, the pure half of the keyframe scan, intro fingerprint and subtitle extraction jobs: argv, output parsers, ASS to WebVTT, burn-in filter.
   - [spec/jobs.md](spec/jobs.md): background jobs (`engine::{jobs,slots}`, `core::jobs`): queue, priority, cancellation, progress, disk check, the one ffmpeg slot budget with playback preemption, the `Sprite`, `Scan`, `Fingerprint` and `SubtitleExtract` jobs.
   - [spec/live.md](spec/live.md): live TV (`engine::live`, `core::live`): open/join of a shared upstream, mode decision, probe, failover and stall watchdog, DVR window, direct tee, idle teardown, the `/api/livetv/sessions/:sid/*` data plane and the host's capacity contract.
+  - [spec/subtitle-jobs.md](spec/subtitle-jobs.md): the M8 subtitle jobs (`SubtitleOcr`, `SubtitleSync`): optional kinds on the job system, tool argv (pgsrip/subtile-ocr/mkvextract/ffsubsync + the alass-crate fallback), text-as-data results.
+  - [spec/intro.md](spec/intro.md): intro/outro detection (`POST /v1/intro-detect`, `core::intro`): chapter shortcut, reference search, pairwise chromaprint matching, clustering and consensus over fingerprints sent as data.
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags
@@ -63,6 +65,7 @@
 - live: the data plane asks the resolver (`purpose: live`) on every route and checks the viewer's owner (the TS served segments to any signed-in user holding the sid); upstream URL schemes are an allowlist and header values reject CR/LF; a direct upstream ending before its first byte fails the attempt (the TS waited for the stall watchdog); a leaving viewer's `direct.ts` closes; segments are found by a 200 ms listing (TS: `fs.watch`), ffmpeg stops with SIGTERM then SIGKILL, Express's `ETag`/`Last-Modified` are not sent. Spec section 6.
 - live: the capacity check moved to the host's request (`atCapacity`), still only consulted when an upstream must open; probes, failovers and releases reach the host as `LiveAttempt`/`LiveReleased` instead of its in-process counters.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
+- intro-detect: when fewer than two episodes lack a chapter intro, the TS skips reference search and pairwise; this route still reference-searches the remaining episode(s). Pairwise partners follow request order, not fingerprint-completion order.
 
 ## Open divergences
 

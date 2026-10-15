@@ -1,0 +1,42 @@
+{
+  "expected": {
+    "results": [
+      {
+        "confidence": 1,
+        "endSeconds": 2490,
+        "mediaFileId": 10,
+        "source": "chapter",
+        "startSeconds": 2400
+      }
+    ]
+  },
+  "input": {
+    "episodes": [
+      {
+        "chapters": [
+          {
+            "endSeconds": 60,
+            "startSeconds": 0,
+            "title": "Opening Credits"
+          },
+          {
+            "endSeconds": 2490,
+            "startSeconds": 2400,
+            "title": "End Credits"
+          }
+        ],
+        "durationSeconds": 2500,
+        "mediaFileId": 10,
+        "outroFingerprint": {
+          "baseOffsetSec": 1900,
+          "durationSeconds": 600.0,
+          "hashes": [
+            1
+          ]
+        }
+      }
+    ],
+    "kind": "outro",
+    "lookupSeconds": 600
+  }
+}

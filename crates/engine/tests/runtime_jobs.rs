@@ -668,6 +668,181 @@ async fn new_kinds_share_the_slot_budget() {
     assert!(e.ffmpeg_pids().is_empty());
 }
 
+const OCR_SRT: &str = "1\n00:00:00,000 --> 00:00:01,000\nhello\n";
+
+fn pgs_track(index: u32) -> Value {
+    json!({ "streamIndex": index, "codec": "hdmv_pgs_subtitle", "language": "und",
+        "forced": false, "hearingImpaired": false, "isImageBased": true })
+}
+
+fn vobsub_track(index: u32) -> Value {
+    json!({ "streamIndex": index, "codec": "dvd_subtitle", "language": "en",
+        "forced": false, "hearingImpaired": false, "isImageBased": true })
+}
+
+async fn engine_ocr() -> (Engine, PathBuf) {
+    let fake = fake("ocr");
+    let dir = PathBuf::from(&fake).parent().unwrap().to_path_buf();
+    for name in ["pgsrip", "mkvextract", "subtile-ocr"] {
+        let link = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        if !link.exists() {
+            std::fs::hard_link(&fake, &link).unwrap();
+        }
+    }
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            format!(
+                "{}{}{}",
+                dir.display(),
+                sep,
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        );
+    }
+    let pause = if cfg!(unix) { "signal" } else { "stdin" };
+    let e = engine_with_tools(
+        host(HwAccel::None, "/dev/dri/renderD128", pause),
+        &fake,
+        &fake,
+        &fake,
+        json!({}),
+    )
+    .await;
+    let file = temp_dir("media").join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    (e, file)
+}
+
+#[tokio::test]
+async fn subtitle_ocr_job_pgs_and_vobsub() {
+    let (e, file) = engine_ocr().await;
+    let pgs = json!({ "type": "SubtitleOcr", "info": tool_info(json!({ "subtitles": [pgs_track(4)] })),
+        "streamIndex": 4 });
+    let v = run_kind(&e, 7, &file, pgs).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["type"], "SubtitleOcr");
+    assert_eq!(v["result"]["srt"], OCR_SRT);
+    let vob = json!({ "type": "SubtitleOcr", "info": tool_info(json!({ "subtitles": [vobsub_track(6)] })),
+        "streamIndex": 6 });
+    let v = run_kind(&e, 7, &file, vob).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["srt"], OCR_SRT);
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
+async fn engine_sync() -> (Engine, PathBuf) {
+    let fake_bin = fake("sync");
+    let dir = PathBuf::from(&fake_bin).parent().unwrap().to_path_buf();
+    let link = dir.join(format!("ffsubsync{}", std::env::consts::EXE_SUFFIX));
+    if !link.exists() {
+        std::fs::hard_link(&fake_bin, &link).unwrap();
+    }
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            format!(
+                "{}{}{}",
+                dir.display(),
+                sep,
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        );
+    }
+    let pause = if cfg!(unix) { "signal" } else { "stdin" };
+    let e = engine_with_tools(
+        host(HwAccel::None, "/dev/dri/renderD128", pause),
+        &fake_bin,
+        &fake_bin,
+        &fake_bin,
+        json!({}),
+    )
+    .await;
+    let file = temp_dir("media").join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    (e, file)
+}
+
+fn sync_kind(text: &str) -> Value {
+    json!({
+        "type": "SubtitleSync",
+        "info": info(),
+        "subtitle": { "format": "srt", "text": text },
+        "reference": { "type": "auto" },
+        "maxOffsetSeconds": 12,
+        "noFixFramerate": true,
+        "gss": true
+    })
+}
+
+#[tokio::test]
+async fn subtitle_sync_ffsubsync_then_speech_retry() {
+    let (e, file) = engine_sync().await;
+    let late = "1\n00:00:10,000 --> 00:00:12,000\nLATE\n";
+    let v = run_kind(&e, 7, &file, sync_kind(late)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(
+        v["result"]["subtitle"]["text"],
+        "1\n00:00:10,000 --> 00:00:12,000\nSYNCED\n"
+    );
+    let noisy = "1\n00:00:10,000 --> 00:00:12,000\nNOSPEECH LATE\n";
+    let v = run_kind(&e, 7, &file, sync_kind(noisy)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert!(
+        v["result"]["subtitle"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("SYNCED"),
+        "{v}"
+    );
+    let v = run_kind(
+        &e,
+        7,
+        &file,
+        sync_kind("1\n00:00:01,000 --> 00:00:02,000\nFAIL\n"),
+    )
+    .await;
+    assert_eq!(v["state"], "failed", "{v}");
+    let err = v["error"].as_str().unwrap();
+    assert!(err.contains("ffsubsync stderr:"), "{err}");
+    assert!(err.contains("ffsubsync boom"), "{err}");
+    assert!(err.contains("alass error:"), "{err}");
+}
+
+#[tokio::test]
+async fn subtitle_to_srt_reads_ffmpeg_stdout() {
+    let (e, file) = engine_of("srt", json!({})).await;
+    let mut probed = info();
+    probed["subtitles"] = json!([{
+        "streamIndex": 3, "codec": "ass", "language": "eng",
+        "forced": false, "hearingImpaired": false, "isImageBased": false
+    }]);
+    let kind = json!({
+        "type": "SubtitleToSrt",
+        "info": probed,
+        "source": { "type": "stream", "index": 3 }
+    });
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert!(
+        v["result"]["srt"].as_str().unwrap().contains("hello"),
+        "{v}"
+    );
+    let file_kind = json!({
+        "type": "SubtitleToSrt",
+        "info": info(),
+        "source": { "type": "file", "path": file.with_extension("ass").display().to_string() }
+    });
+    let v = run_kind(&e, 7, &file, file_kind).await;
+    assert_eq!(v["state"], "done", "{v}");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn playback_pauses_a_fingerprint_job() {

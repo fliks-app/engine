@@ -64,8 +64,11 @@ async fn provider(
                 let redirect = head.starts_with("get /start ");
                 seen.lock().unwrap().push(head);
                 if redirect {
-                    let r = "HTTP/1.1 302 Found\r\nLocation: /live.ts\r\nContent-Length: 0\r\n\r\n";
+                    let r = "HTTP/1.1 302 Found\r\nLocation: /live.ts\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                     let _ = tls.write_all(r.as_bytes()).await;
+                    let _ = tls.flush().await;
+                    // An abrupt close is retried as a second GET.
+                    let _ = tls.shutdown().await;
                     return;
                 }
                 let r = "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n";

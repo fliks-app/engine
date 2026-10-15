@@ -1,0 +1,3 @@
+{"kind":"vobsub-argv","cases":[
+{"name":"mkv vobsub extract and ocr","input":{"path":"/media/dvdrip.mkv","streamIndex":2,"base":"/cache/tmp/ocr/j3/ocr-2-4/ocr-2-4","language":null,"trackLanguage":"es"},"expected":{"ietf":"es","pack":"spa","extract":["tracks","/media/dvdrip.mkv","2:/cache/tmp/ocr/j3/ocr-2-4/ocr-2-4.idx"],"ocr":["-l","spa","-o","/cache/tmp/ocr/j3/ocr-2-4/ocr-2-4.srt","/cache/tmp/ocr/j3/ocr-2-4/ocr-2-4.idx"]}}
+]}
