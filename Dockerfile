@@ -1,3 +1,12 @@
+FROM ubuntu:24.04 AS vobsub-ocr-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential pkg-config clang libclang-dev \
+    libtesseract-dev libleptonica-dev \
+  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
+  && . "$HOME/.cargo/env" \
+  && cargo install subtile-ocr --version 0.2.6 --root /opt/subtile-ocr \
+  && rm -rf /var/lib/apt/lists/* "$HOME/.cargo/registry" "$HOME/.rustup"
+
 FROM rust:1-bookworm AS build
 ARG CARGO_BUILD_JOBS
 WORKDIR /src
@@ -13,6 +22,10 @@ ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix \
+    python3 python3-pip tesseract-ocr tesseract-ocr-all \
+  && python3 -m pip install --no-cache-dir --break-system-packages pgsrip \
+  && python3 -m pip uninstall -y --break-system-packages opencv-python \
+  && python3 -m pip install --no-cache-dir --break-system-packages opencv-python-headless \
   && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-opencl-icd; fi \
   && wget -q -O /tmp/jellyfin-ffmpeg.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_${TARGETARCH}.deb" \
   && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \
@@ -23,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
+COPY --from=vobsub-ocr-build /opt/subtile-ocr/bin/subtile-ocr /usr/local/bin/subtile-ocr
 
 # The container toolkit mounts libnvidia-opencl.so on NVENC hosts but not its ICD entry (harmless elsewhere).
 RUN mkdir -p /etc/OpenCL/vendors && echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd

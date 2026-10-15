@@ -1,6 +1,7 @@
 //! Background jobs: queue, priority, cancellation, progress, disk check, and their ffmpeg runs on
 //! the shared slot budget. Spec: `docs/spec/jobs.md`.
 mod fingerprint;
+mod ocr;
 mod scan;
 mod sprite;
 pub(crate) mod subtitles;
@@ -142,8 +143,22 @@ fn validate(kind: &JobKind) -> Result<(), String> {
             }
         }
         JobKind::SubtitleExtract { info } => subtitles::validate(info)?,
+        JobKind::SubtitleOcr {
+            info,
+            stream_index,
+            language,
+        } => ocr::validate(info, *stream_index, language.as_deref())?,
     }
     Ok(())
+}
+
+/// Optional kinds and routes the host may surface in `hello.features`.
+pub fn optional_features() -> Vec<String> {
+    let mut out = vec![];
+    if ocr::announced() {
+        out.push("subtitle-ocr".into());
+    }
+    out
 }
 
 /// Queues a job, or answers the in-flight one of an identical request.
@@ -232,6 +247,11 @@ async fn run(rt: Arc<Runtime>, job: Arc<BgJob>) {
             max_lookup_minutes,
         } => fingerprint::run(&ctx, window, *max_lookup_minutes).await,
         JobKind::SubtitleExtract { info } => subtitles::run(&ctx, info).await,
+        JobKind::SubtitleOcr {
+            info,
+            stream_index,
+            language,
+        } => ocr::run(&ctx, info, *stream_index, language.as_deref()).await,
     };
     let (state, result, error) = match out {
         Ok(r) => (BgJobState::Done, Some(r), None),

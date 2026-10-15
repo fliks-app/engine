@@ -65,6 +65,7 @@
 - live: the data plane asks the resolver (`purpose: live`) on every route and checks the viewer's owner (the TS served segments to any signed-in user holding the sid); upstream URL schemes are an allowlist and header values reject CR/LF; a direct upstream ending before its first byte fails the attempt (the TS waited for the stall watchdog); a leaving viewer's `direct.ts` closes; segments are found by a 200 ms listing (TS: `fs.watch`), ffmpeg stops with SIGTERM then SIGKILL, Express's `ETag`/`Last-Modified` are not sent. Spec section 6.
 - live: the capacity check moved to the host's request (`atCapacity`), still only consulted when an upstream must open; probes, failovers and releases reach the host as `LiveAttempt`/`LiveReleased` instead of its in-process counters.
 - jobs fingerprint: a `DURATION=` that parses to nothing (`DURATION=.`) falls back to the asked length; the host keeps `NaN`. fpcalc never prints it.
+- intro-detect: when fewer than two episodes lack a chapter intro, the TS skips reference search and pairwise; this route still reference-searches the remaining episode(s). Pairwise partners follow request order, not fingerprint-completion order.
 
 ## Open divergences
 

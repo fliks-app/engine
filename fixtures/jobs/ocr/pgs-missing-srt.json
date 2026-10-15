@@ -1,0 +1,4 @@
+{"kind":"pgs-missing-srt","cases":[
+{"name":"stderr tail","input":{"ietf":"en","stderr":"no matching track in sup","stdout":""},"expected":{"error":"pgsrip produced no SRT for language \"en\" — no matching track in sup"}},
+{"name":"stdout when stderr empty","input":{"ietf":"fr","stderr":"","stdout":"babelfish: nothing written"},"expected":{"error":"pgsrip produced no SRT for language \"fr\" — babelfish: nothing written"}}
+]}

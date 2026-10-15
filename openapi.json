@@ -245,6 +245,42 @@
         }
       }
     },
+    "/v1/intro-detect": {
+      "post": {
+        "tags": [
+          "intro"
+        ],
+        "operationId": "intro_detect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntroDetectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntroDetectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request"
+          },
+          "500": {
+            "description": "worker join failed"
+          }
+        }
+      }
+    },
     "/v1/invalidate": {
       "post": {
         "tags": [
@@ -2497,6 +2533,144 @@
           "none"
         ]
       },
+      "IntroDetectKind": {
+        "type": "string",
+        "enum": [
+          "intro",
+          "outro"
+        ]
+      },
+      "IntroDetectRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "lookupSeconds",
+          "episodes"
+        ],
+        "properties": {
+          "episodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntroEpisode"
+            }
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IntroDetectKind"
+          },
+          "lookupSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "minSegmentSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "IntroDetectResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntroSegment"
+            }
+          }
+        }
+      },
+      "IntroEpisode": {
+        "type": "object",
+        "required": [
+          "mediaFileId",
+          "durationSeconds"
+        ],
+        "properties": {
+          "chapters": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            }
+          },
+          "durationSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "introFingerprint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Fingerprint"
+              }
+            ]
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "outroFingerprint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Fingerprint"
+              }
+            ]
+          }
+        }
+      },
+      "IntroSegment": {
+        "type": "object",
+        "required": [
+          "mediaFileId",
+          "startSeconds",
+          "endSeconds",
+          "confidence",
+          "source"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "endSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "source": {
+            "$ref": "#/components/schemas/IntroSegmentSource"
+          },
+          "startSeconds": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "IntroSegmentSource": {
+        "type": "string",
+        "enum": [
+          "chapter",
+          "reference",
+          "pairwise"
+        ]
+      },
       "InvalidateRequest": {
         "type": "object",
         "required": [
@@ -2626,6 +2800,37 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Image-based embedded track (PGS or VobSub) OCR'd to SRT text.",
+            "required": [
+              "info",
+              "streamIndex",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "language": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "streamIndex": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleOcr"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -2746,6 +2951,24 @@
                 "type": "string",
                 "enum": [
                   "SubtitleExtract"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "srt",
+              "type"
+            ],
+            "properties": {
+              "srt": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubtitleOcr"
                 ]
               }
             }

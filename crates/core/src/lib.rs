@@ -4,6 +4,7 @@ pub mod args;
 pub mod decide;
 pub mod hls;
 pub mod hw;
+pub mod intro;
 pub mod jobs;
 pub mod jsnum;
 pub mod ladder;

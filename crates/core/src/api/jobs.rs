@@ -25,6 +25,14 @@ pub enum JobKind {
     /// Every embedded text track of the file as WebVTT, stored in the engine cache and served by
     /// the subtitle routes (`info.subtitles` names the tracks; image-based ones are skipped).
     SubtitleExtract { info: MediaInfo },
+    /// Image-based embedded track (PGS or VobSub) OCR'd to SRT text.
+    SubtitleOcr {
+        info: MediaInfo,
+        #[serde(rename = "streamIndex")]
+        stream_index: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+    },
 }
 
 /// Which audio the fingerprint reads.
@@ -47,6 +55,7 @@ impl JobKind {
             JobKind::Scan { .. } => "Scan",
             JobKind::Fingerprint { .. } => "Fingerprint",
             JobKind::SubtitleExtract { .. } => "SubtitleExtract",
+            JobKind::SubtitleOcr { .. } => "SubtitleOcr",
         }
     }
 }
@@ -129,6 +138,9 @@ pub enum JobResult {
     /// Stream indices whose VTT is now cached, served at `/api/stream/{id}/subtitles/embedded/{idx}`.
     SubtitleExtract {
         streams: Vec<u32>,
+    },
+    SubtitleOcr {
+        srt: String,
     },
 }
 

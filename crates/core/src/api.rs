@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 
 mod decide;
 mod fingerprint;
+mod intro;
 mod jobs;
 mod lifetime;
 mod live;
@@ -13,6 +14,7 @@ mod probe;
 mod runtime;
 pub use decide::*;
 pub use fingerprint::*;
+pub use intro::*;
 pub use jobs::*;
 pub use lifetime::*;
 pub use live::*;

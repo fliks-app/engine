@@ -1,0 +1,39 @@
+{
+  "expected": {
+    "results": [
+      {
+        "confidence": 1,
+        "endSeconds": 90,
+        "mediaFileId": 1,
+        "source": "chapter",
+        "startSeconds": 30
+      }
+    ]
+  },
+  "input": {
+    "episodes": [
+      {
+        "chapters": [
+          {
+            "endSeconds": 90,
+            "startSeconds": 30,
+            "title": "Main Titles"
+          }
+        ],
+        "durationSeconds": 3600,
+        "introFingerprint": {
+          "baseOffsetSec": 0.0,
+          "durationSeconds": 600.0,
+          "hashes": [
+            1,
+            2,
+            3
+          ]
+        },
+        "mediaFileId": 1
+      }
+    ],
+    "kind": "intro",
+    "lookupSeconds": 600
+  }
+}

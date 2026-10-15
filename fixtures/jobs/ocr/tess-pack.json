@@ -1,0 +1,6 @@
+{"kind":"tess-pack","cases":[
+{"name":"english","input":{"ietf":"en"},"expected":{"pack":"eng"}},
+{"name":"french","input":{"ietf":"fr"},"expected":{"pack":"fra"}},
+{"name":"chinese simplified","input":{"ietf":"zh"},"expected":{"pack":"chi_sim"}},
+{"name":"unknown falls back","input":{"ietf":"xx"},"expected":{"pack":"eng"}}
+]}

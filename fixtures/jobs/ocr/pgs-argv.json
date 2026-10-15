@@ -1,0 +1,4 @@
+{"kind":"pgs-argv","cases":[
+{"name":"default language on untagged track","input":{"path":"/media/film.mkv","streamIndex":3,"base":"/cache/tmp/ocr/j1/ocr-3-1/ocr-3-1","language":null,"trackLanguage":"und"},"expected":{"ietf":"en","extract":["-y","-i","/media/film.mkv","-map","0:3","-c:s","copy","/cache/tmp/ocr/j1/ocr-3-1/ocr-3-1.en.sup"],"pgsrip":["--language","en","/cache/tmp/ocr/j1/ocr-3-1/ocr-3-1.en.sup"]}},
+{"name":"request language wins","input":{"path":"/media/film.mkv","streamIndex":5,"base":"/cache/tmp/ocr/j2/ocr-5-9/ocr-5-9","language":"fr","trackLanguage":"deu"},"expected":{"ietf":"fr","extract":["-y","-i","/media/film.mkv","-map","0:5","-c:s","copy","/cache/tmp/ocr/j2/ocr-5-9/ocr-5-9.fr.sup"],"pgsrip":["--language","fr","/cache/tmp/ocr/j2/ocr-5-9/ocr-5-9.fr.sup"]}}
+]}

@@ -1,0 +1,6 @@
+{"kind":"validate","cases":[
+{"name":"PGS track ok","input":{"streamIndex":4,"language":null,"info":{"video":[],"audio":[],"subtitles":[{"streamIndex":4,"codec":"hdmv_pgs_subtitle","language":"und","forced":false,"hearingImpaired":false,"isImageBased":true}]}},"expected":{"codec":"hdmv_pgs_subtitle"}},
+{"name":"unsupported codec","input":{"streamIndex":1,"language":null,"info":{"video":[],"audio":[],"subtitles":[{"streamIndex":1,"codec":"dvb_subtitle","language":"eng","forced":false,"hearingImpaired":false,"isImageBased":true}]}},"expected":{"error":"OCR is not available for \"dvb_subtitle\" subtitles"}},
+{"name":"text track rejected","input":{"streamIndex":2,"language":null,"info":{"video":[],"audio":[],"subtitles":[{"streamIndex":2,"codec":"subrip","language":"eng","forced":false,"hearingImpaired":false,"isImageBased":false}]}},"expected":{"error":"SubtitleOcr needs an image-based subtitle track"}},
+{"name":"bad language code","input":{"streamIndex":3,"language":"english","info":{"video":[],"audio":[],"subtitles":[{"streamIndex":3,"codec":"dvd_subtitle","language":"eng","forced":false,"hearingImpaired":false,"isImageBased":true}]}},"expected":{"error":"SubtitleOcr language must be two ASCII letters"}}
+]}

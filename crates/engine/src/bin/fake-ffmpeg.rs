@@ -159,6 +159,43 @@ fn subs(mode: &str, args: &[String]) {
     }
 }
 
+const OCR_SRT: &str = "1\n00:00:00,000 --> 00:00:01,000\nhello\n";
+
+/// PGS/VobSub OCR tools, distinguished by argv (one fake binary on PATH for all of them).
+fn ocr(args: &[String]) {
+    let has = |a: &str| args.iter().any(|x| x == a);
+    let done = || {
+        let _ = writeln!(std::io::stderr(), "ok");
+    };
+    if has("-map") && has("-c:s") {
+        put(Path::new(args.last().unwrap()), b"");
+        done();
+        return;
+    }
+    if has("--language") {
+        let sup = Path::new(args.last().unwrap());
+        put(&sup.with_extension("srt"), OCR_SRT);
+        done();
+        return;
+    }
+    if args.first().is_some_and(|a| a == "tracks") {
+        let dest = args.last().unwrap();
+        let idx_path = dest.rsplit(':').next().unwrap_or(dest);
+        let idx = Path::new(idx_path);
+        put(idx, b"");
+        put(&idx.with_extension("sub"), b"");
+        done();
+        return;
+    }
+    if has("-l") && has("-o") {
+        let i = args.iter().position(|a| a == "-o").unwrap();
+        put(Path::new(&args[i + 1]), OCR_SRT);
+        done();
+        return;
+    }
+    hang()
+}
+
 fn job(mode: &str, args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
     if has("-show_entries") {
@@ -263,6 +300,16 @@ fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // "subtile-ocr" would otherwise be read as the mode "subtile".
+    if stem.starts_with("subtile-ocr")
+        || matches!(
+            stem.split('-').next().unwrap(),
+            "ocr" | "pgsrip" | "mkvextract"
+        )
+    {
+        ocr(&args);
+        return;
+    }
     match stem.split('-').next().unwrap() {
         // CPU with no file and no stderr until `<exe>.rest` exists, then hangs like the real bug.
         "busy" => {

@@ -668,6 +668,72 @@ async fn new_kinds_share_the_slot_budget() {
     assert!(e.ffmpeg_pids().is_empty());
 }
 
+const OCR_SRT: &str = "1\n00:00:00,000 --> 00:00:01,000\nhello\n";
+
+fn pgs_track(index: u32) -> Value {
+    json!({ "streamIndex": index, "codec": "hdmv_pgs_subtitle", "language": "und",
+        "forced": false, "hearingImpaired": false, "isImageBased": true })
+}
+
+fn vobsub_track(index: u32) -> Value {
+    json!({ "streamIndex": index, "codec": "dvd_subtitle", "language": "en",
+        "forced": false, "hearingImpaired": false, "isImageBased": true })
+}
+
+async fn engine_ocr() -> (Engine, PathBuf) {
+    let fake = fake("ocr");
+    let dir = PathBuf::from(&fake).parent().unwrap().to_path_buf();
+    for name in ["pgsrip", "mkvextract", "subtile-ocr"] {
+        let link = dir.join(name);
+        if !link.exists() {
+            std::fs::hard_link(&fake, &link).unwrap();
+        }
+    }
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            format!(
+                "{}{}{}",
+                dir.display(),
+                sep,
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        );
+    }
+    let pause = if cfg!(unix) { "signal" } else { "stdin" };
+    let e = engine_with_tools(
+        host(HwAccel::None, "/dev/dri/renderD128", pause),
+        &fake,
+        &fake,
+        &fake,
+        json!({}),
+    )
+    .await;
+    let file = temp_dir("media").join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    (e, file)
+}
+
+#[tokio::test]
+async fn subtitle_ocr_job_pgs_and_vobsub() {
+    let (e, file) = engine_ocr().await;
+    let pgs = json!({ "type": "SubtitleOcr", "info": tool_info(json!({ "subtitles": [pgs_track(4)] })),
+        "streamIndex": 4 });
+    let v = run_kind(&e, 7, &file, pgs).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["type"], "SubtitleOcr");
+    assert_eq!(v["result"]["srt"], OCR_SRT);
+    let vob = json!({ "type": "SubtitleOcr", "info": tool_info(json!({ "subtitles": [vobsub_track(6)] })),
+        "streamIndex": 6 });
+    let v = run_kind(&e, 7, &file, vob).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["srt"], OCR_SRT);
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn playback_pauses_a_fingerprint_job() {
