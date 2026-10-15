@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/fliks-app/engine/compare/v0.3.1...v0.3.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **supervise:** kill the host when its supervisor dies ([#40](https://github.com/fliks-app/engine/issues/40)) ([30e6be5](https://github.com/fliks-app/engine/commit/30e6be52e6e5b4587bafa50a905788e2c664ff5a))
+
 ## [0.3.1](https://github.com/fliks-app/engine/compare/v0.3.0...v0.3.1) (2026-10-15)
 
 
