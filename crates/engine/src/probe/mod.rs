@@ -12,6 +12,18 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+/// Host path rewritten by `pathMappings`. Both sides stay absolute: a relative one is an argv option.
+fn resolve_probe_path(rt: &crate::runtime::Runtime, host: &str) -> Result<String, StatusCode> {
+    if !Path::new(host).is_absolute() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let path = rt.map_media_path(host);
+    if !Path::new(&path).is_absolute() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(path)
+}
+
 /// First and last 64 KiB of the file for the moviehash; `None` when unreadable or under 128 KiB.
 async fn moviehash(path: &str) -> Option<MovieHash> {
     use probe::moviehash::CHUNK;
@@ -38,11 +50,7 @@ pub async fn probe(
     State(s): State<Arc<AppState>>,
     Json(req): Json<ProbeRequest>,
 ) -> Result<Json<ProbeResult>, StatusCode> {
-    let path = req.media.path;
-    // A relative path could read as an option of the tools.
-    if !Path::new(&path).is_absolute() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    let path = resolve_probe_path(&s.rt, &req.media.path)?;
     // Before the first detection ends the host's own platform and default node stand in.
     let (platform, node) = s.hw.snapshot().map_or_else(
         || {
@@ -90,4 +98,52 @@ pub async fn probe(
         },
         error: out.error,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_probe_path;
+    use crate::cache::Cache;
+    use crate::hw::Hw;
+    use crate::runtime::Runtime;
+    use fliks_engine_core::api::{EngineConfig, PathMapping};
+    use std::sync::Arc;
+
+    fn rt(from: &str, to: &str) -> Arc<Runtime> {
+        let hw = Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
+        let rt = Runtime::with_tools(
+            hw,
+            Cache::from_env(),
+            "ffmpeg".into(),
+            "ffprobe".into(),
+            "fpcalc".into(),
+        );
+        rt.config.lock().unwrap().replace(EngineConfig {
+            path_mappings: vec![PathMapping {
+                from: from.into(),
+                to: to.into(),
+            }],
+            ..EngineConfig::default()
+        });
+        rt
+    }
+
+    #[test]
+    fn probe_opens_the_mapped_path() {
+        let (from, to, host, mapped) = if cfg!(windows) {
+            (r"C:\nas", r"D:\data", r"C:\nas\a.mkv", r"D:\data\a.mkv")
+        } else {
+            (
+                "/mnt/nas",
+                "/data/server",
+                "/mnt/nas/a.mkv",
+                "/data/server/a.mkv",
+            )
+        };
+        let opened = rt(from, to);
+        assert_eq!(resolve_probe_path(&opened, host).unwrap(), mapped);
+        assert!(resolve_probe_path(&opened, "rel.mkv").is_err());
+        let relative = rt(from, "relative");
+        assert!(resolve_probe_path(&relative, host).is_err());
+    }
 }
