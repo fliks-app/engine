@@ -27,6 +27,8 @@
       "-noautorotate",
       "-init_hw_device",
       "opencl=ocl:0.0",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-hdr10-mkv.mkv",
       "-copyts",

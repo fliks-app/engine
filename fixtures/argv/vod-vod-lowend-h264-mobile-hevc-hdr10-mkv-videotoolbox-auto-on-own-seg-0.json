@@ -17,6 +17,8 @@
       "-noautorotate",
       "-hwaccel_output_format",
       "videotoolbox_vld",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-hdr10-mkv.mkv",
       "-copyts",

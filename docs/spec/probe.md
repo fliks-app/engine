@@ -4,7 +4,7 @@
 
 ## Contract `[new]`
 
-- Request `{ media: { mediaFileId, path }, crop, mkvTags, moviehash }`. `path` must be absolute (400 otherwise: a relative path could read as a tool option). The host does the ACL.
+- Request `{ media: { mediaFileId, path }, crop, mkvTags, moviehash }`. `path` must be absolute (400 otherwise: a relative path could read as a tool option). It is then rewritten with `EngineConfig.pathMappings` (`map_media_path`); a mapped path that is not absolute is also 400. The host does the ACL.
 - Response `{ ok, info?, moviehash?, error? }`. `ok: false`: ffprobe could not read the file (spawn error, timeout, exit != 0, output over 1 MiB, unparsable JSON): `error` is its stderr, else the failure message, and `info` is the empty blob `{video:[],audio:[],subtitles:[],error}` the host persisted before. A readable file without video and audio is `ok: true` with `info.error = "No streams detected"`. `[ts:backend/src/modules/media-probe/ffprobe.service.ts:583-587,724-762]`
 - `info` is the host's `MediaFileInfo` plus `schemaVersion` (`MEDIA_INFO_SCHEMA_VERSION`, stamped by the endpoint when ok; the pure parser leaves it out like the host). `moviehash` is `{ hash, bytesize }`, absent under 128 KiB or unreadable.
 - `crop` runs the cropdetect samples on `video[0]` and sets `video[0].crop`; `mkvTags` runs `mkvmerge -J` on Matroska/WebM. The host has no such switches: it crops where the caller asks (`probeAndResolve` `detectCrop`) and always reads tags. `[ts:backend/src/modules/media/media-service/media-rescan.service.ts:1038-1066]`

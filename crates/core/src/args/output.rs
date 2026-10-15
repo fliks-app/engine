@@ -375,6 +375,8 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     ]);
     if o.mode == super::LiveMode::Transcode {
         a.extend(live_input(o.hw_accel, dev));
+        let threads = o.encode_threads.max(1).to_string();
+        a.extend(["-threads".into(), threads]);
     }
     a.extend(["-i".into(), o.input_url.clone()]);
     a.extend(s(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
@@ -595,5 +597,35 @@ mod tests {
             tail,
             "0:v:0 -an -f mp4 -movflags +faststart /out/silent.mp4"
         );
+    }
+
+    fn live_request(mode: &str, hw: &str, threads: u32) -> LiveArgs {
+        serde_json::from_value(json!({
+            "inputUrl": "http://x/a.ts",
+            "outputDir": "/out",
+            "segmentSeconds": 2.0,
+            "windowMinutes": 15.0,
+            "mode": mode,
+            "useTs": false,
+            "hwAccel": hw,
+            "encodeThreads": threads
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn live_transcode_caps_threads() {
+        let caps = HostCaps::default();
+        let cpu = live(&live_request("transcode", "none", 2), &caps, &dev());
+        let i = cpu.iter().position(|a| a == "-i").unwrap();
+        assert_eq!(&cpu[i - 2..i], ["-threads", "2"]);
+        let c = cpu.iter().position(|a| a == "-c:v").unwrap();
+        assert_eq!(&cpu[c..c + 4], ["-c:v", "libx264", "-threads:v", "2"]);
+        let hw = live(&live_request("transcode", "vaapi", 2), &caps, &dev());
+        let i = hw.iter().position(|a| a == "-i").unwrap();
+        assert_eq!(&hw[i - 2..i], ["-threads", "2"]);
+        assert!(!hw.iter().any(|a| a == "-threads:v"));
+        let copy = live(&live_request("remux", "none", 2), &caps, &dev());
+        assert!(!copy.iter().any(|a| a == "-threads" || a == "-threads:v"));
     }
 }

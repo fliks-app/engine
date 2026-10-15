@@ -33,6 +33,8 @@
       "qsv",
       "-hwaccel_device",
       "qs",
+      "-threads",
+      "4",
       "-i",
       "http://provider.example/live/24.ts",
       "-map",

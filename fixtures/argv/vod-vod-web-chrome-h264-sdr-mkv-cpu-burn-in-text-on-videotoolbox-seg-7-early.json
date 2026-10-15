@@ -27,6 +27,8 @@
       "tv",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/h264-sdr-mkv.mkv",
       "-copyts",

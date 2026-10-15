@@ -22,6 +22,8 @@
       "bt709",
       "-color_range",
       "tv",
+      "-threads",
+      "4",
       "-i",
       "/media/in.ts",
       "-copyts",

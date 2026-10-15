@@ -7,9 +7,11 @@ The engine can own the public port and forward what it does not serve to a host 
 | Flag | Meaning |
 |---|---|
 | `--upstream URL` | host to forward to; `http://host[:port]` only (no path, no TLS: terminate TLS in front) |
+| `--engine-upstream URL` | remote engine for route-table `engine` rows; same URL shape as `--upstream`; requires `--upstream` and `FLIKS_ENGINE_TOKEN` in the environment (no local data plane, no transcoding in this process) |
 | `--public-listen ADDR` | public listener, default `0.0.0.0:4848` when `--upstream` is set; error without `--upstream` |
 | `--gateway-routes FILE` | JSON route table replacing the default |
 
+- `--engine-upstream`: `engine` rows go to that URL, everything else to `--upstream`. No local runtime, no `--listen`, no data plane mount. Off-LAN TLS is terminated in front of this process (same as `--upstream`; no TLS client here). With `--supervise`, the child gets `FLIKS_ENGINE_URL=<engine-upstream URL>` and `FLIKS_ENGINE_TOKEN` from the environment; `PORT` stays the `--upstream` port.
 - `--listen` stays the private control plane (`/v1/*`, bearer). The public listener never serves `/v1/*` of the engine: it only has the route table and the forwarder. A `/v1/...` request there matches no engine rule, so it is forwarded to the upstream like any other path (the host's own `/v1`, if any, is its business).
 - `--upstream` without `--supervise` works (remote or separately managed host). `--supervise` without `--upstream` is unchanged (no public listener, no `PORT`).
 - `--supervise --upstream URL`: the host is spawned with `PORT=<port of URL>` (80 when absent) next to `FLIKS_ENGINE_URL`/`FLIKS_ENGINE_TOKEN`, so a host that reads `PORT` (Fliks Nest) listens on the internal port. The host part of URL is not interpreted: the host must be reachable there.

@@ -24,6 +24,8 @@
       "tv",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-4k-highbitrate-mkv.mkv",
       "-copyts",

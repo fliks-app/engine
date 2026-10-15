@@ -35,6 +35,8 @@
       "bt709",
       "-color_range",
       "tv",
+      "-threads",
+      "4",
       "-i",
       "/media/multi-audio-truehd-ac3.mkv",
       "-copyts",

@@ -214,6 +214,8 @@ pub struct RunInput<'a> {
     pub hw: HwAccel,
     /// The early companion: seg-0 and seg-1 only. [ts:transcoding/transcoding.service.ts:965-1060]
     pub early: bool,
+    /// ffmpeg `-threads` / `-threads:v`. The engine passes the CPU quota.
+    pub encode_threads: u32,
 }
 
 /// The picked audio track, when it names one of the source's.
@@ -349,6 +351,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         trusted_stream_info: v.is_some_and(|v| !v.codec.is_empty()),
         early: r.early,
         use_ts: plan.use_ts,
+        encode_threads: r.encode_threads.max(1),
     }
 }
 

@@ -255,13 +255,14 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
         "yuv420p"
     };
     let vf = cpu_chain(f, &w, !hlg, fmt);
+    let threads = i.threads.max(1).to_string();
     match e.codec {
         VideoCodec::H264 => {
             let mut a = s(&[
                 "-c:v",
                 "libx264",
                 "-threads:v",
-                "4",
+                &threads,
                 "-preset",
                 "veryfast",
                 "-profile:v",
@@ -280,7 +281,14 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             a
         }
         VideoCodec::Hevc => {
-            let mut a = s(&["-c:v", "libx265", "-threads:v", "4", "-preset", &i.preset]);
+            let mut a = s(&[
+                "-c:v",
+                "libx265",
+                "-threads:v",
+                &threads,
+                "-preset",
+                &i.preset,
+            ]);
             if e.hdr.is_some() {
                 a.extend(s(&["-pix_fmt", "yuv420p10le"]));
             }

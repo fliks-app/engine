@@ -511,7 +511,7 @@ fn join(
 
 /// ffprobe of one upstream under a playback slot; `None` when it could not tell. [ts:svc:746-773]
 async fn probe(rt: &Runtime, u: &fliks_engine_core::api::LiveUpstream) -> Option<LiveProbe> {
-    let _slot = rt.slots.playback();
+    let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffprobe);
     cmd.args(core_live::probe_args(&u.url, &u.headers))
         .stdin(std::process::Stdio::null())
@@ -610,6 +610,11 @@ async fn spawn_packaged(
     let append = !fresh && attempted_once && dir.join("index.m3u8").exists();
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
+    let hw_accel = if transcode {
+        caps.hw_accel
+    } else {
+        fliks_engine_core::api::HwAccel::None
+    };
     let argv = args::live(
         &LiveArgs {
             input_url: u.url.clone(),
@@ -625,15 +630,12 @@ async fn spawn_packaged(
             user_agent: ua,
             referer,
             extra_headers: extra,
-            hw_accel: if transcode {
-                caps.hw_accel
-            } else {
-                fliks_engine_core::api::HwAccel::None
-            },
+            hw_accel,
             video_bitrate_bps: pipe.bitrate,
             audio_codec: audio,
             append,
             probe_seconds: Some(pipe.probe_seconds),
+            encode_threads: crate::slots::cpu_quota() as u32,
         },
         &caps,
         &rt.device(&caps),
@@ -649,7 +651,10 @@ async fn spawn_packaged(
         let mut m = pipe.m.lock().unwrap();
         if !m.ended {
             m.proc = Some(proc.clone());
-            m.slot = Some(rt.slots.playback());
+            m.slot = Some(
+                rt.slots
+                    .playback(hw_accel == fliks_engine_core::api::HwAccel::None),
+            );
             m.last_segment_at = Instant::now();
             m.last_seg = None;
         }

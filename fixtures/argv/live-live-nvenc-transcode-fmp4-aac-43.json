@@ -25,6 +25,8 @@
       "cuda",
       "-hwaccel_output_format",
       "cuda",
+      "-threads",
+      "4",
       "-i",
       "http://provider.example/live/43.ts",
       "-map",

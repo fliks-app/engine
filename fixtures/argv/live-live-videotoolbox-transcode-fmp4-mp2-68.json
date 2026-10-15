@@ -23,6 +23,8 @@
       "5000000",
       "-hwaccel",
       "videotoolbox",
+      "-threads",
+      "4",
       "-i",
       "http://provider.example/live/68.ts",
       "-map",

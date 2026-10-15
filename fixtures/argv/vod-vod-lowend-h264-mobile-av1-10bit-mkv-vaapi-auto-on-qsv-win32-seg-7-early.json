@@ -39,6 +39,8 @@
       "tv",
       "-to",
       "7",
+      "-threads",
+      "4",
       "-i",
       "/media/av1-10bit-mkv.mkv",
       "-copyts",

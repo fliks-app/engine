@@ -35,6 +35,8 @@
       "bt709",
       "-color_range",
       "tv",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-4k-highbitrate-mkv.mkv",
       "-copyts",

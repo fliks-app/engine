@@ -616,6 +616,8 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     if read_end.is_finite() {
         args.extend(["-to".into(), seconds(read_end)]);
     }
+    let threads = o.encode_threads.max(1).to_string();
+    args.extend(["-threads".into(), threads]);
     args.extend(["-i".into(), o.input_path.clone()]);
     args.extend(s(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
     if output_seek != 0.0 {
@@ -657,6 +659,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         tonemap: o.tonemap,
         tonemap_path: p.path,
         tonemap_curve: o.tonemap_curve,
+        threads: o.encode_threads.max(1),
         dv_apply_rpu,
         has_burn_in: text_burn_in,
         has_crop: o.crop.is_some(),
@@ -777,6 +780,8 @@ pub fn live_video(o: &LiveArgs) -> Vec<String> {
     }
     let mut a = vec!["-c:v".to_string(), live_h264_encoder(o.hw_accel)];
     if o.hw_accel == HwAccel::None {
+        let threads = o.encode_threads.max(1).to_string();
+        a.extend(["-threads:v".into(), threads]);
         a.extend(s(&["-preset", "veryfast", "-tune", "zerolatency"]));
     }
     let b = o.video_bitrate_bps.unwrap_or(4_000_000.0);

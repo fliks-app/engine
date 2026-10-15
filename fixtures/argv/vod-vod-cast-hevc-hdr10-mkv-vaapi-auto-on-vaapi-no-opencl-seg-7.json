@@ -14,6 +14,8 @@
       "5000000",
       "-ss",
       "21.021",
+      "-threads",
+      "4",
       "-i",
       "/media/hevc-hdr10-mkv.mkv",
       "-copyts",

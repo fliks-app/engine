@@ -43,12 +43,6 @@ pub fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-/// M9 hook: the host's media path as this engine sees it.
-// ponytail: identity until `EngineConfig.pathMappings` (remote engine, M9)
-pub fn map_media_path(p: &str) -> String {
-    p.to_string()
-}
-
 struct SessionMut {
     last_beat_ms: i64,
     position_s: f64,
@@ -543,6 +537,11 @@ impl Runtime {
         self.config.lock().unwrap().clone().unwrap_or_default()
     }
 
+    /// The host's media path as this engine opens it (`EngineConfig.pathMappings`).
+    pub fn map_media_path(&self, path: &str) -> String {
+        fliks_engine_core::api::apply_path_mappings(&self.current_config().path_mappings, path)
+    }
+
     fn lifetime(&self) -> LifetimeConfig {
         self.config
             .lock()
@@ -640,7 +639,7 @@ impl Runtime {
                 sid: sid.clone(),
                 owner: owner.clone(),
                 media_file_id: file,
-                path: map_media_path(&req.decide.media.path),
+                path: self.map_media_path(&req.decide.media.path),
                 decision: decision.clone(),
                 streaming: config.streaming.clone(),
                 config_revision: config.revision,
@@ -1033,6 +1032,7 @@ impl Runtime {
                 start_segment: start,
                 hw,
                 early: kind == JobKind::Early,
+                encode_threads: crate::slots::cpu_quota() as u32,
             });
             fliks_engine_core::args::vod(&args, &caps, &dev)
         };
@@ -1113,6 +1113,7 @@ impl Runtime {
                 start_segment: start,
                 hw: HwAccel::None,
                 early: false,
+                encode_threads: crate::slots::cpu_quota() as u32,
             },
             &run,
         );
@@ -1162,7 +1163,7 @@ impl Runtime {
         let key = r.key;
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let slot = self.slots.playback();
+        let slot = self.slots.playback(r.hw.0 == HwAccel::None);
         let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {

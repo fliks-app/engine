@@ -106,50 +106,82 @@ impl RouteTable {
 
 /// `http://host[:port]` of the host the gateway forwards to.
 #[derive(Clone, Debug)]
-pub struct Upstream(Authority);
+pub struct Upstream {
+    authority: Authority,
+    url: String,
+}
 
 impl Upstream {
     pub fn parse(s: &str) -> Result<Self, String> {
         let uri: Uri = s.parse().map_err(|e| format!("invalid upstream: {e}"))?;
         match (uri.scheme_str(), uri.authority(), uri.path()) {
-            (Some("http"), Some(a), "/" | "") if uri.query().is_none() => Ok(Self(a.clone())),
+            (Some("http"), Some(a), "/" | "") if uri.query().is_none() => Ok(Self {
+                authority: a.clone(),
+                url: format!("http://{a}"),
+            }),
             _ => Err("upstream must be http://host[:port] (no path, no TLS)".into()),
         }
     }
 
     pub fn port(&self) -> u16 {
-        self.0.port_u16().unwrap_or(80)
+        self.authority.port_u16().unwrap_or(80)
+    }
+
+    /// Origin with no trailing slash, for `FLIKS_ENGINE_URL`.
+    pub fn url(&self) -> &str {
+        &self.url
     }
 }
 
 struct Gateway {
     table: RouteTable,
-    authority: Authority,
-    engine: Option<Router>,
+    host: Authority,
+    engine_local: Option<Router>,
+    engine_remote: Option<Authority>,
     client: Client<HttpConnector, Body>,
+}
+
+fn new_gateway(
+    table: RouteTable,
+    host: Upstream,
+    engine_local: Option<Router>,
+    engine_remote: Option<Upstream>,
+) -> Arc<Gateway> {
+    let mut http = HttpConnector::new();
+    http.set_connect_timeout(Some(Duration::from_secs(5)));
+    http.set_nodelay(true);
+    Arc::new(Gateway {
+        table,
+        host: host.authority,
+        engine_local,
+        engine_remote: engine_remote.map(|u| u.authority),
+        client: Client::builder(TokioExecutor::new()).build(http),
+    })
 }
 
 /// Public router. `engine` serves the table's engine routes; without it they are forwarded.
 pub fn router(table: RouteTable, upstream: Upstream, engine: Option<Router>) -> Router {
-    let mut http = HttpConnector::new();
-    http.set_connect_timeout(Some(Duration::from_secs(5)));
-    http.set_nodelay(true);
-    let gw = Arc::new(Gateway {
-        table,
-        authority: upstream.0,
-        engine,
-        client: Client::builder(TokioExecutor::new()).build(http),
-    });
-    Router::new().fallback(handle).with_state(gw)
+    Router::new()
+        .fallback(handle)
+        .with_state(new_gateway(table, upstream, engine, None))
+}
+
+/// Forwards engine-table routes to `engine` and everything else to `host` (no local data plane).
+pub fn router_remote(table: RouteTable, host: Upstream, engine: Upstream) -> Router {
+    Router::new()
+        .fallback(handle)
+        .with_state(new_gateway(table, host, None, Some(engine)))
 }
 
 async fn handle(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
-    if let Some(engine) = &gw.engine
-        && gw.table.target(req.method(), req.uri().path()) == Target::Engine
-    {
-        return engine.clone().oneshot(req).await.into_response();
+    if gw.table.target(req.method(), req.uri().path()) == Target::Engine {
+        if let Some(engine) = &gw.engine_local {
+            return engine.clone().oneshot(req).await.into_response();
+        }
+        let authority = gw.engine_remote.as_ref().unwrap_or(&gw.host).clone();
+        return forward(gw.as_ref(), req, authority).await;
     }
-    forward(&gw, req).await
+    forward(gw.as_ref(), req, gw.host.clone()).await
 }
 
 const HOP: [&str; 8] = [
@@ -216,7 +248,7 @@ fn set_forwarded(h: &mut HeaderMap, peer: Option<SocketAddr>) {
     }
 }
 
-async fn forward(gw: &Gateway, mut req: Request) -> Response {
+async fn forward(gw: &Gateway, mut req: Request, authority: Authority) -> Response {
     let peer = req
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
@@ -227,7 +259,7 @@ async fn forward(gw: &Gateway, mut req: Request) -> Response {
     let pq = parts.uri.path_and_query().cloned();
     parts.uri = match Uri::builder()
         .scheme("http")
-        .authority(gw.authority.clone())
+        .authority(authority.clone())
         .path_and_query(pq.as_ref().map_or("/", |p| p.as_str()))
         .build()
     {
@@ -240,7 +272,7 @@ async fn forward(gw: &Gateway, mut req: Request) -> Response {
     let mut res = match gw.client.request(Request::from_parts(parts, body)).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("upstream {}: {e}", gw.authority);
+            tracing::warn!("upstream {}: {e}", authority);
             return StatusCode::BAD_GATEWAY.into_response();
         }
     };
@@ -302,5 +334,9 @@ mod tests {
         assert!(Upstream::parse("https://x:1").is_err());
         assert!(Upstream::parse("http://x:1/p").is_err());
         assert_eq!(Upstream::parse("http://x:9000").unwrap().port(), 9000);
+        assert_eq!(
+            Upstream::parse("http://x:9000/").unwrap().url(),
+            "http://x:9000"
+        );
     }
 }

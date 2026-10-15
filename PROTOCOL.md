@@ -23,7 +23,7 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 
 | Endpoint | Status |
 |---|---|
-| `GET /v1/hello`, `GET`/`PUT /v1/config` (409 on lower revision) | M0 implemented |
+| `GET /v1/hello`, `GET`/`PUT /v1/config` (409 on lower revision). `pathMappings`: `{ from, to }[]`, longest prefix on a path boundary; absent leaves the path unchanged | M0 implemented, mappings M9 |
 | `GET /v1/capabilities` (`Capabilities` of the detected host plus `hostCaps`, the exact state the decision reads; 503 + `Retry-After: 1` until the first detection run ends; `FFMPEG_PATH` selects the ffmpeg, see `docs/spec/hw.md`) | M2 implemented |
 | `POST /v1/estimate-sizes` (`{ info, fileSize? }` -> `[{ key, label, estimatedSize }]`, see `docs/spec/estimate-sizes.md`) | M1 implemented |
 | `POST /v1/probe` (`{ media: { mediaFileId, path }, crop, mkvTags, moviehash }` -> `{ ok, info?, moviehash?, error? }`: `ok: false` means ffprobe could not tell, never "no subtitles"; see `docs/spec/probe.md`) | M2 implemented |
@@ -79,8 +79,8 @@ DirectStream: `:id/remux/*` and a remux session's audio renditions come from cop
 
 ## Gateway (`--upstream`, spec: `docs/spec/gateway.md`)
 
-`fliks-engine --upstream http://host:port [--public-listen 0.0.0.0:4848] [--gateway-routes routes.json] [--supervise -- cmd]`
+`fliks-engine --upstream http://host:port [--engine-upstream http://engine:port] [--public-listen 0.0.0.0:4848] [--gateway-routes routes.json] [--supervise -- cmd]`
 
-- The public listener serves the engine routes of a configurable route table (ordered `{ target: engine|forward, methods?, path }` rules, `:name`/`*` one segment, trailing `**`; default = the table above) and forwards everything else to the upstream verbatim: method, path+query, headers (plus `X-Forwarded-For/Proto/Host`, minus hop-by-hop), streamed bodies, SSE, WebSocket/`Upgrade`. Upstream unreachable: `502` on forwarded routes, engine routes unaffected.
+- The public listener serves the engine routes of a configurable route table (ordered `{ target: engine|forward, methods?, path }` rules, `:name`/`*` one segment, trailing `**`; default = the table above) and forwards everything else to the upstream verbatim: method, path+query, headers (plus `X-Forwarded-For/Proto/Host`, minus hop-by-hop), streamed bodies, SSE, WebSocket/`Upgrade`. Upstream unreachable: `502` on forwarded routes, engine routes unaffected. With `--engine-upstream`, the `engine` rows are forwarded to that URL instead of a local data plane; this process does not transcode.
 - `/v1/*` of the engine is never on the public listener; it stays on `--listen`. A `/v1/*` path there is just another forwarded path.
 - `--supervise --upstream`: the host is started with `PORT=<upstream port>` (plus `FLIKS_ENGINE_URL`/`FLIKS_ENGINE_TOKEN`) so it listens on the internal address. Without `--supervise` the host is any process reachable at the URL (remote host, gateway-only role); without `--upstream` nothing changes.

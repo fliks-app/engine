@@ -79,7 +79,7 @@ Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET`
 - Sprites (`purpose: sprite`, `path` = `sprite.jpg`, `sprite.json` its sibling, neither checked by the host): 404 when missing, `Cache-Control: public, max-age=86400`. [ts:ctl:1363-1395]
 - Subtitles (`purpose: subtitle`): external `:subId` (`subtitleId`; `path` = the file, `format` its extension), embedded `embedded/:idx` (`streamIndex`; `format: embedded`, `path` = the media file). WebVTT: `.vtt` verbatim (BOM, CRLF normalised), anything else through ffmpeg `-f webvtt`; an embedded track is extracted as ASS and converted by `jobs::subtitles::ass_to_vtt` (the `SubtitleExtract` job's path, `jobs.md` section 8) and cached under `<root>/subtitles/v2/<file>/<idx>.vtt`. `X-TIMESTAMP-MAP=MPEGTS:<round(max(0,o)*90000)>,LOCAL:<hh:mm:ss.mmm of max(0,-o)>` after the `WEBVTT` line, `o` = `cue_offset_seconds` of the latest session of (file, owner), else 0. `/download` serves the original file (external) or the VTT (embedded) as an attachment; `/index.m3u8` is `hls::subtitle_playlist`. [ts:ctl:119-130,1682-1849]
 - CORS: `Access-Control-Allow-Origin: *` on every data-plane answer, as the host does for HLS.
-- Media paths go through `map_media_path` (identity until M9's `pathMappings`). Nothing assumes localhost: `hostUrl` is whatever the host registered.
+- Media paths go through `map_media_path` (`EngineConfig.pathMappings`: longest `from` prefix that ends on a separator; absent, the path is unchanged). Nothing assumes localhost: `hostUrl` is whatever the host registered.
 
 ## 7. Events
 

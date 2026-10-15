@@ -1850,6 +1850,14 @@
               "timeshiftMinutes": 15
             }
           },
+          "pathMappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PathMapping"
+            },
+            "description": "Absent: the host path is the path this engine opens.",
+            "default": []
+          },
           "revision": {
             "type": "integer",
             "format": "int32",
@@ -3945,6 +3953,22 @@
                 "description": "The curve that tone-map applies; absent when it takes none."
               }
             ]
+          }
+        }
+      },
+      "PathMapping": {
+        "type": "object",
+        "description": "One prefix of a host media path rewritten to the path this engine opens.",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
           }
         }
       },

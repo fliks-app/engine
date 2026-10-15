@@ -353,6 +353,67 @@ async fn engine_and_forwarded_routes_are_told_apart() {
 }
 
 #[tokio::test]
+async fn remote_gateway_splits_engine_and_host_upstreams() {
+    let engine_hits = Arc::new(AtomicUsize::new(0));
+    let host_hits = Arc::new(AtomicUsize::new(0));
+    let eh = engine_hits.clone();
+    let hh = host_hits.clone();
+    let host = serve(Router::new().fallback(move |req| {
+        hh.fetch_add(1, SeqCst);
+        echo(req)
+    }))
+    .await;
+    let engine = serve(Router::new().fallback(move |req| {
+        eh.fetch_add(1, SeqCst);
+        echo(req)
+    }))
+    .await;
+    let host_up = Upstream::parse(&format!("http://{host}")).unwrap();
+    let engine_up = Upstream::parse(&format!("http://{engine}")).unwrap();
+    let gw = serve(gateway::router_remote(
+        RouteTable::fliks(),
+        host_up,
+        engine_up,
+    ))
+    .await;
+    let out = text(send(gw, req(Method::GET, "/api/stream/7/master.m3u8")).await).await;
+    assert!(out.contains("/api/stream/7/master.m3u8"), "{out}");
+    assert_eq!(engine_hits.load(SeqCst), 1);
+    assert_eq!(host_hits.load(SeqCst), 0);
+    for uri in ["/api/system/liveness", "/api/stream/7/playback-info"] {
+        let method = if uri.ends_with("playback-info") {
+            Method::POST
+        } else {
+            Method::GET
+        };
+        let before = host_hits.load(SeqCst);
+        let out = text(send(gw, req(method, uri)).await).await;
+        assert!(out.contains(uri), "{uri}: {out}");
+        assert_eq!(host_hits.load(SeqCst), before + 1);
+        assert_eq!(engine_hits.load(SeqCst), 1);
+    }
+    let dead = Upstream::parse(&format!("http://{}", dead_addr())).unwrap();
+    let gw = serve(gateway::router_remote(
+        RouteTable::fliks(),
+        Upstream::parse(&format!("http://{host}")).unwrap(),
+        dead,
+    ))
+    .await;
+    assert_eq!(
+        send(gw, req(Method::GET, "/api/stream/7/master.m3u8"))
+            .await
+            .status(),
+        StatusCode::BAD_GATEWAY
+    );
+    assert_eq!(
+        send(gw, req(Method::GET, "/api/system/liveness"))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
 async fn control_plane_is_not_on_the_public_listener() {
     let up = serve(Router::new().fallback(|req: Request| async move {
         (

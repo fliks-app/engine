@@ -24,6 +24,8 @@
       "tv",
       "-to",
       "30.021",
+      "-threads",
+      "4",
       "-i",
       "/media/in.ts",
       "-copyts",

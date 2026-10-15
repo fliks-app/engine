@@ -469,7 +469,7 @@ async fn iframe_seg(
     );
     let t = &s.plan.timeline;
     let args = iframe(&IframeArgs {
-        input_path: crate::runtime::map_media_path(&res.path),
+        input_path: rt.map_media_path(&res.path),
         seek_seconds: input_seek_seconds(
             f64::from(n) * real_segment_seconds(s.plan.segment_duration, s.plan.source_fps),
             t,
@@ -495,7 +495,7 @@ async fn iframe_seg(
 
 /// stdout of a short playback ffmpeg run, `None` on failure or timeout.
 async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option<Vec<u8>> {
-    let _slot = rt.slots.playback();
+    let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffmpeg);
     cmd.args(args)
         .stdin(std::process::Stdio::null())
@@ -881,7 +881,7 @@ async fn direct(
     if let Some(s) = &a.session {
         rt.touch(s, None);
     }
-    let path = crate::runtime::map_media_path(&a.resolved.path);
+    let path = rt.map_media_path(&a.resolved.path);
     let Ok(md) = tokio::fs::metadata(&path).await else {
         return text(StatusCode::NOT_FOUND, "File not found");
     };
@@ -1088,7 +1088,7 @@ async fn embedded_vtt(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let media = crate::runtime::map_media_path(&a.resolved.path);
+    let media = rt.map_media_path(&a.resolved.path);
     match embedded_text(&rt, id, idx, &media).await {
         Some(t) => vtt_response(with_timestamp_map(&t, cue_offset(&rt, id, &a)), None),
         None => text(StatusCode::NOT_FOUND, "Subtitle stream not found"),
@@ -1106,7 +1106,7 @@ async fn embedded_download(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let media = crate::runtime::map_media_path(&a.resolved.path);
+    let media = rt.map_media_path(&a.resolved.path);
     let stem = Path::new(&media)
         .file_stem()
         .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
@@ -1130,7 +1130,7 @@ async fn external_vtt(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let path = crate::runtime::map_media_path(&a.resolved.path);
+    let path = rt.map_media_path(&a.resolved.path);
     match external_text(&rt, &path, a.resolved.format.as_deref()).await {
         Some(t) => vtt_response(with_timestamp_map(&t, cue_offset(&rt, id, &a)), None),
         None => text(StatusCode::NOT_FOUND, "Subtitle not found"),
@@ -1148,7 +1148,7 @@ async fn external_download(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let path = crate::runtime::map_media_path(&a.resolved.path);
+    let path = rt.map_media_path(&a.resolved.path);
     match tokio::fs::read(&path).await {
         Ok(b) => (
             [

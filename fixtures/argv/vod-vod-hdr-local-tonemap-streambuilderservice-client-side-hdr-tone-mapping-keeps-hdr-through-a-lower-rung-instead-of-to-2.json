@@ -27,6 +27,8 @@
       "-extra_hw_frames",
       "32",
       "-noautorotate",
+      "-threads",
+      "4",
       "-i",
       "/m/in.mkv",
       "-copyts",
