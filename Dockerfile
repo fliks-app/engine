@@ -23,7 +23,7 @@ ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix \
     python3 python3-pip tesseract-ocr tesseract-ocr-all \
-  && python3 -m pip install --no-cache-dir --break-system-packages pgsrip \
+  && python3 -m pip install --no-cache-dir --break-system-packages pgsrip ffsubsync==0.5.1 \
   && python3 -m pip uninstall -y --break-system-packages opencv-python \
   && python3 -m pip install --no-cache-dir --break-system-packages opencv-python-headless \
   && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-opencl-icd; fi \
