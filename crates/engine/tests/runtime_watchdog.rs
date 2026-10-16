@@ -32,7 +32,7 @@ async fn engine_of(ffmpeg: &str, lifetime: Value) -> (Engine, std::path::PathBuf
         lifetime,
     )
     .await;
-    let file = temp_dir("media").join("movie.mkv");
+    let file = e.root.join("movie.mkv");
     std::fs::write(&file, b"x").unwrap();
     e.stub.file(7, &file);
     e.stub.grant("alice-jwt", "alice");

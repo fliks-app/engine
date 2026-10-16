@@ -30,8 +30,7 @@ async fn setup_with(lifetime: Value) -> (Engine, std::path::PathBuf) {
         lifetime,
     )
     .await;
-    let dir = temp_dir("media");
-    let file = dir.join("movie.mkv");
+    let file = e.root.join("movie.mkv");
     std::fs::write(
         &file,
         (0..10_000u32).map(|i| (i % 251) as u8).collect::<Vec<_>>(),

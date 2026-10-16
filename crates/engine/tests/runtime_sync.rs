@@ -14,9 +14,8 @@ fn ffmpeg_bin() -> String {
 
 /// 20 s WAV: silence, then full-scale noise from 5 s to 8 s. Samples are written
 /// at those offsets so the burst is not shifted by a filter graph.
-fn burst_media() -> PathBuf {
+fn burst_media(dir: &Path) -> PathBuf {
     const RATE: u32 = 8000;
-    let dir = temp_dir("sync-e2e");
     let pcm = dir.join("burst.pcm");
     let out = dir.join("burst.wav");
     let mut samples = vec![0i16; (RATE * 20) as usize];
@@ -116,7 +115,8 @@ async fn job_snap(e: &Engine, id: &str) -> Value {
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn subtitle_sync_alass_moves_late_cue_toward_burst() {
-    let file = burst_media();
+    let dir = temp_dir("sync-e2e");
+    let file = burst_media(&dir);
     let e = engine().await;
     e.stub.file(42, &file);
     let id = submit_sync(&e, &file, sync_info(0), LATE_SRT).await;

@@ -165,7 +165,7 @@ pub struct Engine {
     pub base: String,
     pub rt: Arc<Runtime>,
     pub stub: Arc<Stub>,
-    pub root: PathBuf,
+    pub root: TempDir,
     pub ffmpeg: String,
 }
 
@@ -183,8 +183,24 @@ fn unique_dir(base: &Path, tag: &str) -> PathBuf {
     d
 }
 
-pub fn temp_dir(tag: &str) -> PathBuf {
-    unique_dir(&std::env::temp_dir(), tag)
+/// A unique directory under the system temp dir, removed on drop (errors ignored: Windows).
+pub struct TempDir(PathBuf);
+
+impl std::ops::Deref for TempDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub fn temp_dir(tag: &str) -> TempDir {
+    TempDir(unique_dir(&std::env::temp_dir(), tag))
 }
 
 /// An engine on its own cache root, configured with the stub as host and `lifetime`.
@@ -215,7 +231,9 @@ pub async fn engine_with_tools(
     let root = temp_dir("cache");
     let rt = Runtime::with_tools(
         hw,
-        fliks_engine::cache::Cache { root: root.clone() },
+        fliks_engine::cache::Cache {
+            root: root.to_path_buf(),
+        },
         ffmpeg.into(),
         ffprobe.into(),
         fpcalc.into(),
@@ -534,7 +552,8 @@ pub fn ts_two_aac_clip(change: bool) -> PathBuf {
         return a;
     }
     let b = part("two-aac-b.ts", 32000, 1);
-    let list = temp_dir("concat").join("two-aac.txt");
+    let concat = temp_dir("concat");
+    let list = concat.join("two-aac.txt");
     std::fs::write(
         &list,
         format!("file '{}'\nfile '{}'\n", a.display(), b.display()),
