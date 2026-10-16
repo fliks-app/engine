@@ -89,7 +89,8 @@ async fn provider(
 #[tokio::test]
 async fn direct_play_from_an_https_upstream() {
     let (ca, cert, key) = pki();
-    let ca_file = temp_dir("tls").join("ca.pem");
+    let ca_file_dir = temp_dir("tls");
+    let ca_file = ca_file_dir.join("ca.pem");
     std::fs::write(&ca_file, ca).unwrap();
     // SAFETY: set before any thread of this binary reads the environment.
     unsafe { std::env::set_var("SSL_CERT_FILE", &ca_file) };

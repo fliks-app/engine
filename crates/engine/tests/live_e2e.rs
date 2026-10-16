@@ -156,7 +156,8 @@ async fn fetch(e: &Engine, sid: &str, uri: &str) -> Vec<u8> {
 
 /// ffprobe's `codec_name` of each stream of `bytes` (MPEG-TS lists its program's streams again).
 fn codecs(bytes: &[u8]) -> Vec<String> {
-    let f = temp_dir("live-probe").join("seg.bin");
+    let f_dir = temp_dir("live-probe");
+    let f = f_dir.join("seg.bin");
     std::fs::write(&f, bytes).unwrap();
     let out = std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
         .args([

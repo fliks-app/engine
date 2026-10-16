@@ -286,14 +286,29 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::time::Instant as StdInstant;
 
-    /// A shell script standing in for a tool.
-    fn script(name: &str, body: &str) -> String {
-        let dir = std::env::temp_dir().join(format!("fliks-probe-run-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path.to_string_lossy().into_owned()
+    /// Scripts standing in for the tools, in a directory removed on drop.
+    struct Scripts(std::path::PathBuf);
+
+    impl Scripts {
+        fn new(test: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("fliks-probe-run-{test}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn script(&self, name: &str, body: &str) -> String {
+            let path = self.0.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for Scripts {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     fn tools(ffprobe: &str) -> ProcessTools {
@@ -310,9 +325,10 @@ mod tests {
 
     #[tokio::test]
     async fn output_exit_status_and_missing_binary() {
-        let ok = tools(&script("ok", "echo '{\"a\":1}'; echo warn >&2"));
+        let dir = Scripts::new("output");
+        let ok = tools(&dir.script("ok", "echo '{\"a\":1}'; echo warn >&2"));
         assert_eq!(ok.ffprobe(vec![], 5000).await.unwrap().trim(), "{\"a\":1}");
-        let bad = tools(&script("bad", "echo nope >&2; exit 1"));
+        let bad = tools(&dir.script("bad", "echo nope >&2; exit 1"));
         let e = bad.ffprobe(vec!["-v".into()], 5000).await.unwrap_err();
         assert_eq!(e.stderr.trim(), "nope");
         assert!(e.message.starts_with("Command failed:") && !e.missing);
@@ -325,21 +341,21 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_and_output_cap_kill_the_process() {
-        let slow = tools(&script("slow", "sleep 30"));
+        let dir = Scripts::new("timeout");
+        let slow = tools(&dir.script("slow", "sleep 30"));
         let t = StdInstant::now();
         assert!(slow.ffprobe(vec![], 200).await.is_err());
         assert!(t.elapsed() < Duration::from_secs(5));
-        let loud = tools(&script("loud", "yes | head -c 3000000"));
+        let loud = tools(&dir.script("loud", "yes | head -c 3000000"));
         let e = loud.ffprobe(vec![], 5000).await.unwrap_err();
         assert_eq!(e.message, "stdout maxBuffer length exceeded");
     }
 
     #[tokio::test]
     async fn lines_stop_the_process_early() {
-        let endless = tools(&script(
-            "endless",
-            "i=0; while true; do echo $i; i=$((i+1)); done",
-        ));
+        let dir = Scripts::new("lines");
+        let endless =
+            tools(&dir.script("endless", "i=0; while true; do echo $i; i=$((i+1)); done"));
         let mut seen = vec![];
         let t = StdInstant::now();
         endless
@@ -351,7 +367,7 @@ mod tests {
             .unwrap();
         assert_eq!(seen, ["0", "1", "2"]);
         assert!(t.elapsed() < Duration::from_secs(3));
-        let failing = tools(&script("failing", "echo 1; echo bad >&2; exit 3"));
+        let failing = tools(&dir.script("failing", "echo 1; echo bad >&2; exit 3"));
         let e = failing
             .ffprobe_lines(vec![], 5000, &mut |_| true)
             .await
@@ -360,7 +376,7 @@ mod tests {
             e.message.contains("exited 3") && e.stderr.contains("bad"),
             "{e:?}"
         );
-        let hang = tools(&script("hang", "echo 1; sleep 30"));
+        let hang = tools(&dir.script("hang", "echo 1; sleep 30"));
         assert!(
             hang.ffprobe_lines(vec![], 300, &mut |_| true)
                 .await

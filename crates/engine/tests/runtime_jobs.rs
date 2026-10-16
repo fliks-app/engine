@@ -42,7 +42,7 @@ async fn engine_of(mode: &str, streaming: Value) -> (Engine, PathBuf) {
         e.control("PUT", "/v1/config", Some(config)).await.status,
         200
     );
-    let file = temp_dir("media").join("movie.mkv");
+    let file = e.root.join("movie.mkv");
     std::fs::write(&file, b"x").unwrap();
     for id in [7, 8, 9] {
         e.stub.file(id, &file);
@@ -710,7 +710,7 @@ async fn engine_ocr() -> (Engine, PathBuf) {
         json!({}),
     )
     .await;
-    let file = temp_dir("media").join("movie.mkv");
+    let file = e.root.join("movie.mkv");
     std::fs::write(&file, b"x").unwrap();
     e.stub.file(7, &file);
     e.stub.grant("alice-jwt", "alice");
@@ -762,7 +762,7 @@ async fn engine_sync() -> (Engine, PathBuf) {
         json!({}),
     )
     .await;
-    let file = temp_dir("media").join("movie.mkv");
+    let file = e.root.join("movie.mkv");
     std::fs::write(&file, b"x").unwrap();
     e.stub.file(7, &file);
     e.stub.grant("alice-jwt", "alice");
