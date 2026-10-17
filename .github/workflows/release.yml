@@ -66,6 +66,10 @@ jobs:
       - name: Install cargo-xwin
         if: matrix.xwin
         uses: taiki-e/install-action@cargo-xwin
+      - name: Put the runner's LLVM tools on PATH
+        if: matrix.xwin
+        shell: bash
+        run: dirname "$(ls /usr/lib/llvm-*/bin/llvm-lib | sort -V | tail -1)" >> "$GITHUB_PATH"
       - name: Build
         shell: bash
         run: |
