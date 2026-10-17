@@ -321,22 +321,19 @@ pub async fn open(
     }
 }
 
-/// Clears the in-flight start of `key` when the open is dropped before it ends, failing its waiters.
+/// Clears the in-flight start of `key` when the open is dropped before it ends; its waiters retry.
 struct OpeningGuard<'a> {
     live: &'a Live,
     key: &'a str,
-    tx: watch::Sender<Outcome>,
+    tx: Option<watch::Sender<Outcome>>,
 }
 
 impl Drop for OpeningGuard<'_> {
     fn drop(&mut self) {
-        self.live.opening.lock().unwrap().remove(self.key);
-        self.tx.send_if_modified(|o| {
-            o.is_none() && {
-                *o = Some(Err(OpenError::Unavailable));
-                true
-            }
-        });
+        if let Some(tx) = self.tx.take() {
+            self.live.opening.lock().unwrap().remove(self.key);
+            let _ = tx.send(Some(Ok(())));
+        }
     }
 }
 
@@ -359,6 +356,7 @@ impl Drop for StartGuard {
 
 /// Tears a failed start down in a task of its own, so a dropped open cannot leave it half done.
 async fn teardown_detached(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, release: bool) {
+    unregister(rt, pipe);
     let (rt, pipe) = (rt.clone(), pipe.clone());
     let _ = tokio::spawn(async move { teardown(&rt, &pipe, "failed", release).await }).await;
 }
@@ -389,16 +387,15 @@ async fn acquire(
         };
         match found {
             Ok(tx) => {
-                let guard = OpeningGuard {
+                let mut guard = OpeningGuard {
                     live: &rt.live,
                     key,
-                    tx,
+                    tx: Some(tx),
                 };
                 let out = start(rt, key, req, mode, caps, order, probes).await;
                 rt.live.opening.lock().unwrap().remove(key);
-                let _ = guard
-                    .tx
-                    .send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
+                let tx = guard.tx.take().expect("armed");
+                let _ = tx.send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
                 return out;
             }
             Err(mut rx) => {
@@ -451,8 +448,9 @@ async fn start(
         let seq = rt.live.seq.fetch_add(1, Ordering::Relaxed);
         root(&rt.cache).join(format!("{safe}-{seq}"))
     });
+    // Not awaited: a dropped open cannot leave the directory without its `StartGuard`.
     if let Some(d) = &dir
-        && let Err(e) = tokio::fs::create_dir_all(d).await
+        && let Err(e) = std::fs::create_dir_all(d)
     {
         tracing::error!(dir = %d.display(), "live dir: {e}");
         return Err(OpenError::Unavailable);
@@ -1014,8 +1012,6 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
     false
 }
 
-/// Ends the pipe: transport, viewers, directory, then `LiveReleased` when `release`.
-/// [ts:svc:1147-1164]
 fn unregister(rt: &Runtime, pipe: &Pipe) {
     let mut reg = rt.live.reg.lock().unwrap();
     if reg
@@ -1027,6 +1023,8 @@ fn unregister(rt: &Runtime, pipe: &Pipe) {
     }
 }
 
+/// Ends the pipe: transport, viewers, directory, then `LiveReleased` when `release`.
+/// [ts:svc:1147-1164]
 async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
     let viewers: Vec<String> = {
         let mut m = pipe.m.lock().unwrap();
