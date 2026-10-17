@@ -10,6 +10,10 @@ on:
       tag:
         description: 'Existing release tag to (re)build assets for (e.g. v0.1.0)'
         required: true
+      dry_run:
+        description: 'Build only, attach nothing (tests the build and warms the cache)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -49,6 +53,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
       - name: Install musl tools
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -69,6 +76,7 @@ jobs:
           if command -v sha256sum >/dev/null; then sha256sum "fliks-engine-${{ matrix.name }}${{ matrix.ext }}" > "fliks-engine-${{ matrix.name }}${{ matrix.ext }}.sha256"
           else shasum -a 256 "fliks-engine-${{ matrix.name }}${{ matrix.ext }}" > "fliks-engine-${{ matrix.name }}${{ matrix.ext }}.sha256"; fi
       - name: Attach to the release
+        if: ${{ !inputs.dry_run }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,6 +91,7 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.tag }}
       - name: Attach openapi.json
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag }}" openapi.json --clobber --repo "$GITHUB_REPOSITORY"
