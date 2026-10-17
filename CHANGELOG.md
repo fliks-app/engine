@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/fliks-app/engine/compare/v0.3.2...v0.4.0) (2026-10-17)
+
+
+### Features
+
+* **live:** capacity veto per upstream, owner-only viewer denial ([#44](https://github.com/fliks-app/engine/issues/44)) ([805f908](https://github.com/fliks-app/engine/commit/805f908520dcc90aef4a271dafe4fa8d7fa87b1b))
+
 ## [0.3.2](https://github.com/fliks-app/engine/compare/v0.3.1...v0.3.2) (2026-10-15)
 
 
