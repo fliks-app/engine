@@ -48,7 +48,7 @@ Gate: unknown sid first (no resolver call), then the resolver `{ mediaId: <sid>,
 
 ## 5. Host contract (capacity)
 
-Before an open the host reserves `capacityToken` on the source of the first upstream without `atCapacity` and sends each upstream's `assertBelowLimit` verdict as `atCapacity` (sources it already holds count as free). The verdicts are as of the open: a session that fails over later does not re-ask. It frees the reservation on 409, on `LiveReleased` (also sent before a 503), or when the answer's `capacityToken` is another (joined). A held token moves to the source of the upstream its last ok `LiveAttempt` names; `LiveAttempt.error` on a fed upstream and `LiveReleased` start that source's release grace (`recordRelease`). The engine's probes run inside the token's hold. [ts:cap:1-75] [ts:svc:448-453,1097,1159]
+Before an open the host reserves `capacityToken` on the source of the first upstream without `atCapacity` and sends each upstream's `assertBelowLimit` verdict as `atCapacity` (sources it already holds count as free). Known ceiling: the verdicts are taken at the open and a failover does not re-ask, so a failover onto a source that filled after the open can exceed its `maxStreams` by one stream; closing it would need a host callback before every attempt, adding latency to each failover. It frees the reservation on 409, on `LiveReleased` (also sent before a 503), or when the answer's `capacityToken` is another (joined). A held token moves to the source of the upstream its last ok `LiveAttempt` names; `LiveAttempt.error` on a fed upstream and `LiveReleased` start that source's release grace (`recordRelease`). The engine's probes run inside the token's hold. [ts:cap:1-75] [ts:svc:448-453,1097,1159]
 
 ## 6. Deviations
 

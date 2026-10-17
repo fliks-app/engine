@@ -37,6 +37,8 @@ pub struct Stub {
     pub down: AtomicBool,
     /// Live sids the host refuses (its per-channel access check).
     pub live_denied: Mutex<Vec<String>>,
+    /// `ttlS` of live answers; 0 (re-asked on every request) when unset.
+    pub live_ttl: Mutex<Option<f64>>,
 }
 
 impl Stub {
@@ -97,7 +99,7 @@ async fn resolve(
                 path: None,
                 owner_id: Some(owner),
                 format: None,
-                ttl_s: Some(0.0),
+                ttl_s: Some(stub.live_ttl.lock().unwrap().unwrap_or(0.0)),
             }));
         }
     };

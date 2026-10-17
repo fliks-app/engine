@@ -1222,7 +1222,7 @@ async fn live_access(
     q: &HashMap<String, String>,
     unknown: &str,
 ) -> Result<Arc<crate::live::Pipe>, Response> {
-    let Some(pipe) = rt.live.get_for_serve(sid) else {
+    let Some(pipe) = rt.live.lookup(sid) else {
         return Err(nest(StatusCode::NOT_FOUND, unknown));
     };
     let config = rt.current_config();
@@ -1250,7 +1250,10 @@ async fn live_access(
             Err(text(StatusCode::FORBIDDEN, "Forbidden"))
         }
         // Host down: a known viewer keeps watching.
-        Ok(_) | Err(ResolveError::Unavailable) => Ok(pipe),
+        Ok(_) | Err(ResolveError::Unavailable) => {
+            rt.live.touch(&pipe, sid);
+            Ok(pipe)
+        }
     }
 }
 

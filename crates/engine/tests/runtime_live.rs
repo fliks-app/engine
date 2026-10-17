@@ -540,11 +540,57 @@ async fn a_vetoed_upstream_is_never_used() {
         )
         .await;
     assert_eq!(r.status, 503);
+    let mut failed0 = false;
     while let Ok(ev) = rx.try_recv() {
-        if let Some((up, _)) = attempt(&ev) {
+        if let Some((up, err)) = attempt(&ev) {
             assert_ne!(up, 1, "the vetoed upstream was attempted");
+            failed0 |= up == 0 && err.is_some();
         }
     }
+    assert!(failed0, "no failed attempt on upstream 0 was seen");
+}
+
+fn vetoed(url: &str, priority: i32) -> Value {
+    let mut u = upstream(url, priority);
+    u["atCapacity"] = json!(true);
+    u
+}
+
+#[tokio::test]
+async fn a_vetoed_primary_still_plans_direct_and_joins_a_running_session() {
+    let e = live_engine(json!({}), json!({})).await;
+    let (up, conns) = provider().await;
+    let live = format!("{up}/live.ts");
+    let direct = json!({ "directPlay": true });
+    let a = open(
+        &e,
+        open_req(
+            "11",
+            vec![vetoed("http://127.0.0.1:1/x", 0), upstream(&live, 1)],
+            direct.clone(),
+            "alice",
+            "t1",
+        ),
+    )
+    .await;
+    assert_eq!(
+        (a["mode"].clone(), a["upstream"].clone()),
+        (json!("direct"), json!(1))
+    );
+    // The vetoed primary's source feeds the running session: a new open joins it, no new hold.
+    let b = open(
+        &e,
+        open_req(
+            "11",
+            vec![vetoed(&live, 0), upstream("http://127.0.0.1:1/x", 1)],
+            direct,
+            "bob",
+            "t2",
+        ),
+    )
+    .await;
+    assert_eq!(b["capacityToken"], "t1");
+    assert_eq!(conns.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -718,6 +764,84 @@ async fn access_denial_and_revocation_end_viewers() {
         EngineEvent::SessionEnded {
             session_id: c,
             reason: "revoked".into()
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_cached_owner_denial_ends_the_viewer_once() {
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    *e.stub.live_ttl.lock().unwrap() = Some(60.0);
+    let a = sid(&open(
+        &e,
+        open_req(
+            "12",
+            vec![upstream("http://up/a", 0)],
+            json!({}),
+            "alice",
+            "t",
+        ),
+    )
+    .await);
+    let url = format!("/api/livetv/sessions/{a}/index.m3u8");
+    e.stub.live_denied.lock().unwrap().push(a.clone());
+    assert_eq!(e.get(&url, "alice-jwt", &[]).await.status, 403);
+    let ended = event(&mut rx, 30, |ev| {
+        matches!(ev, EngineEvent::SessionEnded { .. })
+    })
+    .await;
+    assert_eq!(
+        ended,
+        EngineEvent::SessionEnded {
+            session_id: a,
+            reason: "revoked".into()
+        }
+    );
+    // The viewer is gone: later requests are refused without ending anything again.
+    assert_eq!(e.get(&url, "alice-jwt", &[]).await.status, 404);
+    assert!(
+        !std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|ev| matches!(ev, EngineEvent::SessionEnded { .. }))
+    );
+}
+
+#[tokio::test]
+async fn a_refused_request_does_not_keep_the_viewer() {
+    let e = live_engine(
+        json!({ "liveSessionTtlMs": 600 }),
+        json!({ "channelIdleSeconds": 0 }),
+    )
+    .await;
+    let mut rx = e.rt.events.subscribe();
+    let a = sid(&open(
+        &e,
+        open_req(
+            "13",
+            vec![upstream("http://up/a", 0)],
+            json!({}),
+            "alice",
+            "t",
+        ),
+    )
+    .await);
+    let url = format!("/api/livetv/sessions/{a}/index.m3u8");
+    // Polled only with a refused credential: it still expires.
+    let poll = async {
+        loop {
+            assert_eq!(e.get(&url, "garbage-jwt", &[]).await.status, 403);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    let ended = tokio::select! {
+        ev = event(&mut rx, 30, |ev| matches!(ev, EngineEvent::SessionEnded { .. })) => ev,
+        _ = poll => unreachable!(),
+    };
+    assert_eq!(
+        ended,
+        EngineEvent::SessionEnded {
+            session_id: a,
+            reason: "expired".into()
         }
     );
 }
