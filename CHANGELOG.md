@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/fliks-app/engine/compare/v0.4.0...v0.4.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **live:** a cancelled open no longer blocks its channel ([#47](https://github.com/fliks-app/engine/issues/47)) ([a1ece5c](https://github.com/fliks-app/engine/commit/a1ece5c6fc3a256223686c36ce4c492b81c683a9))
+
 ## [0.4.0](https://github.com/fliks-app/engine/compare/v0.3.2...v0.4.0) (2026-10-17)
 
 
