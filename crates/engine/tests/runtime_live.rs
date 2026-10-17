@@ -446,6 +446,59 @@ async fn every_upstream_failing_answers_503_and_releases() {
 }
 
 #[tokio::test]
+async fn a_dropped_open_does_not_block_the_channel() {
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    // The client gives up while ffmpeg is still starting.
+    let stuck = e.control(
+        "POST",
+        "/v1/live",
+        Some(open_req(
+            "14",
+            vec![upstream("http://up/slowstart", 0)],
+            json!({}),
+            "alice",
+            "t1",
+        )),
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1500), stuck)
+            .await
+            .is_err()
+    );
+    let rel = event(&mut rx, 30, |ev| {
+        matches!(ev, EngineEvent::LiveReleased { .. })
+    })
+    .await;
+    assert_eq!(
+        rel,
+        EngineEvent::LiveReleased {
+            capacity_token: "t1".into(),
+            reason: "failed".into()
+        }
+    );
+    until("ffmpeg gone", 30, || e.ffmpeg_pids().is_empty()).await;
+    // The key opens again: success or failure, never a hang.
+    let again = tokio::time::timeout(
+        Duration::from_secs(20),
+        e.control(
+            "POST",
+            "/v1/live",
+            Some(open_req(
+                "14",
+                vec![upstream("http://up/a", 0)],
+                json!({}),
+                "alice",
+                "t2",
+            )),
+        ),
+    )
+    .await
+    .expect("the open hung on a stale in-flight entry");
+    assert_eq!(again.status, 200, "{}", again.text());
+}
+
+#[tokio::test]
 async fn capacity_gates_only_a_new_upstream() {
     let e = live_engine(json!({}), json!({})).await;
     let mut full = open_req(

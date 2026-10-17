@@ -321,6 +321,48 @@ pub async fn open(
     }
 }
 
+/// Clears the in-flight start of `key` when the open is dropped before it ends, failing its waiters.
+struct OpeningGuard<'a> {
+    live: &'a Live,
+    key: &'a str,
+    tx: watch::Sender<Outcome>,
+}
+
+impl Drop for OpeningGuard<'_> {
+    fn drop(&mut self) {
+        self.live.opening.lock().unwrap().remove(self.key);
+        self.tx.send_if_modified(|o| {
+            o.is_none() && {
+                *o = Some(Err(OpenError::Unavailable));
+                true
+            }
+        });
+    }
+}
+
+/// A started pipe the open is dropped on (or that never got fed) is torn down like a failed start.
+struct StartGuard {
+    rt: Arc<Runtime>,
+    pipe: Arc<Pipe>,
+    armed: bool,
+}
+
+impl Drop for StartGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            unregister(&self.rt, &self.pipe);
+            let (rt, pipe) = (self.rt.clone(), self.pipe.clone());
+            tokio::spawn(async move { teardown(&rt, &pipe, "failed", true).await });
+        }
+    }
+}
+
+/// Tears a failed start down in a task of its own, so a dropped open cannot leave it half done.
+async fn teardown_detached(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, release: bool) {
+    let (rt, pipe) = (rt.clone(), pipe.clone());
+    let _ = tokio::spawn(async move { teardown(&rt, &pipe, "failed", release).await }).await;
+}
+
 /// The running pipe of `key`, or the outcome of starting one; concurrent callers share a start.
 /// [ts:svc:389-436]
 async fn acquire(
@@ -347,9 +389,16 @@ async fn acquire(
         };
         match found {
             Ok(tx) => {
+                let guard = OpeningGuard {
+                    live: &rt.live,
+                    key,
+                    tx,
+                };
                 let out = start(rt, key, req, mode, caps, order, probes).await;
                 rt.live.opening.lock().unwrap().remove(key);
-                let _ = tx.send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
+                let _ = guard
+                    .tx
+                    .send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
                 return out;
             }
             Err(mut rx) => {
@@ -448,13 +497,20 @@ async fn start(
         .unwrap()
         .pipes
         .insert(key.into(), pipe.clone());
-    if !recover(rt, &pipe, false).await {
+    let mut guard = StartGuard {
+        rt: rt.clone(),
+        pipe: pipe.clone(),
+        armed: true,
+    };
+    let fed = recover(rt, &pipe, false).await;
+    guard.armed = false;
+    if !fed {
         // A manifest is re-opened packaged under the same hold: not a release.
         if pipe.m.lock().unwrap().not_streamable {
-            teardown(rt, &pipe, "failed", false).await;
+            teardown_detached(rt, &pipe, false).await;
             return Err(OpenError::NotStreamable);
         }
-        teardown(rt, &pipe, "failed", true).await;
+        teardown_detached(rt, &pipe, true).await;
         return Err(OpenError::Unavailable);
     }
     tokio::spawn(supervise(rt.clone(), pipe.clone()));
@@ -960,6 +1016,17 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
 
 /// Ends the pipe: transport, viewers, directory, then `LiveReleased` when `release`.
 /// [ts:svc:1147-1164]
+fn unregister(rt: &Runtime, pipe: &Pipe) {
+    let mut reg = rt.live.reg.lock().unwrap();
+    if reg
+        .pipes
+        .get(&pipe.key)
+        .is_some_and(|p| std::ptr::eq(&**p, pipe))
+    {
+        reg.pipes.remove(&pipe.key);
+    }
+}
+
 async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
     let viewers: Vec<String> = {
         let mut m = pipe.m.lock().unwrap();
@@ -970,15 +1037,9 @@ async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
         m.tees.clear();
         m.viewers.drain().map(|(sid, _)| sid).collect()
     };
+    unregister(rt, pipe);
     {
         let mut reg = rt.live.reg.lock().unwrap();
-        if reg
-            .pipes
-            .get(&pipe.key)
-            .is_some_and(|p| std::ptr::eq(&**p, pipe))
-        {
-            reg.pipes.remove(&pipe.key);
-        }
         for sid in &viewers {
             reg.viewers.remove(sid);
         }
