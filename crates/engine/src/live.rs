@@ -321,6 +321,46 @@ pub async fn open(
     }
 }
 
+/// Clears the in-flight start of `key` when the open is dropped before it ends; its waiters retry.
+struct OpeningGuard<'a> {
+    live: &'a Live,
+    key: &'a str,
+    tx: Option<watch::Sender<Outcome>>,
+}
+
+impl Drop for OpeningGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(tx) = self.tx.take() {
+            self.live.opening.lock().unwrap().remove(self.key);
+            let _ = tx.send(Some(Ok(())));
+        }
+    }
+}
+
+/// A started pipe the open is dropped on (or that never got fed) is torn down like a failed start.
+struct StartGuard {
+    rt: Arc<Runtime>,
+    pipe: Arc<Pipe>,
+    armed: bool,
+}
+
+impl Drop for StartGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            unregister(&self.rt, &self.pipe);
+            let (rt, pipe) = (self.rt.clone(), self.pipe.clone());
+            tokio::spawn(async move { teardown(&rt, &pipe, "failed", true).await });
+        }
+    }
+}
+
+/// Tears a failed start down in a task of its own, so a dropped open cannot leave it half done.
+async fn teardown_detached(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, release: bool) {
+    unregister(rt, pipe);
+    let (rt, pipe) = (rt.clone(), pipe.clone());
+    let _ = tokio::spawn(async move { teardown(&rt, &pipe, "failed", release).await }).await;
+}
+
 /// The running pipe of `key`, or the outcome of starting one; concurrent callers share a start.
 /// [ts:svc:389-436]
 async fn acquire(
@@ -347,8 +387,14 @@ async fn acquire(
         };
         match found {
             Ok(tx) => {
+                let mut guard = OpeningGuard {
+                    live: &rt.live,
+                    key,
+                    tx: Some(tx),
+                };
                 let out = start(rt, key, req, mode, caps, order, probes).await;
                 rt.live.opening.lock().unwrap().remove(key);
+                let tx = guard.tx.take().expect("armed");
                 let _ = tx.send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
                 return out;
             }
@@ -402,8 +448,9 @@ async fn start(
         let seq = rt.live.seq.fetch_add(1, Ordering::Relaxed);
         root(&rt.cache).join(format!("{safe}-{seq}"))
     });
+    // Not awaited: a dropped open cannot leave the directory without its `StartGuard`.
     if let Some(d) = &dir
-        && let Err(e) = tokio::fs::create_dir_all(d).await
+        && let Err(e) = std::fs::create_dir_all(d)
     {
         tracing::error!(dir = %d.display(), "live dir: {e}");
         return Err(OpenError::Unavailable);
@@ -448,13 +495,20 @@ async fn start(
         .unwrap()
         .pipes
         .insert(key.into(), pipe.clone());
-    if !recover(rt, &pipe, false).await {
+    let mut guard = StartGuard {
+        rt: rt.clone(),
+        pipe: pipe.clone(),
+        armed: true,
+    };
+    let fed = recover(rt, &pipe, false).await;
+    guard.armed = false;
+    if !fed {
         // A manifest is re-opened packaged under the same hold: not a release.
         if pipe.m.lock().unwrap().not_streamable {
-            teardown(rt, &pipe, "failed", false).await;
+            teardown_detached(rt, &pipe, false).await;
             return Err(OpenError::NotStreamable);
         }
-        teardown(rt, &pipe, "failed", true).await;
+        teardown_detached(rt, &pipe, true).await;
         return Err(OpenError::Unavailable);
     }
     tokio::spawn(supervise(rt.clone(), pipe.clone()));
@@ -958,6 +1012,17 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
     false
 }
 
+fn unregister(rt: &Runtime, pipe: &Pipe) {
+    let mut reg = rt.live.reg.lock().unwrap();
+    if reg
+        .pipes
+        .get(&pipe.key)
+        .is_some_and(|p| std::ptr::eq(&**p, pipe))
+    {
+        reg.pipes.remove(&pipe.key);
+    }
+}
+
 /// Ends the pipe: transport, viewers, directory, then `LiveReleased` when `release`.
 /// [ts:svc:1147-1164]
 async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
@@ -970,15 +1035,9 @@ async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
         m.tees.clear();
         m.viewers.drain().map(|(sid, _)| sid).collect()
     };
+    unregister(rt, pipe);
     {
         let mut reg = rt.live.reg.lock().unwrap();
-        if reg
-            .pipes
-            .get(&pipe.key)
-            .is_some_and(|p| std::ptr::eq(&**p, pipe))
-        {
-            reg.pipes.remove(&pipe.key);
-        }
         for sid in &viewers {
             reg.viewers.remove(sid);
         }
