@@ -222,7 +222,7 @@ async fn access(
     }
     let resolved = match rt.resolver.resolve(host.as_ref(), ask).await {
         Ok(r) => r,
-        Err(ResolveError::Denied) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
+        Err(ResolveError::Denied { .. }) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
         // Host down: a live session of this file keeps playing.
         Err(ResolveError::Unavailable) => match &session {
             Some(Some(s)) if s.media_file_id == id => Resolved {
@@ -1213,7 +1213,7 @@ fn nest(status: StatusCode, message: &str) -> Response {
     (status, axum::Json(body)).into_response()
 }
 
-/// Unknown sid 404 before any resolver call, then `purpose: live`: a denial ends the viewer.
+/// Unknown sid 404 before any resolver call, then `purpose: live`: a denial for the viewer's owner ends it.
 /// [ts:modules/livetv/controllers/livetv.controller.ts:201-215]
 async fn live_access(
     rt: &Arc<Runtime>,
@@ -1242,8 +1242,11 @@ async fn live_access(
         Ok(r) if pipe.owner_of(sid).is_some_and(|o| o != r.owner) => {
             Err(text(StatusCode::FORBIDDEN, "Forbidden"))
         }
-        Err(ResolveError::Denied) => {
-            rt.live.leave(rt, sid, "revoked");
+        Err(ResolveError::Denied { owner }) => {
+            // Only a denial for the viewer's owner ends it; any other just refuses the request.
+            if owner.is_some() && pipe.owner_of(sid) == Some(owner) {
+                rt.live.leave(rt, sid, "revoked");
+            }
             Err(text(StatusCode::FORBIDDEN, "Forbidden"))
         }
         // Host down: a known viewer keeps watching.

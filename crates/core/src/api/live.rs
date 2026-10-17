@@ -62,6 +62,10 @@ pub struct LiveUpstream {
     pub probed_video_codec: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_audio_codec: Option<String>,
+    /// The host's capacity policy refuses a hold on this upstream's source: a new session never
+    /// uses it, failover skips it. The verdict is the host's, taken at open.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub at_capacity: bool,
 }
 
 /// What the viewer's player takes.
@@ -90,6 +94,7 @@ pub struct OpenLiveRequest {
     /// The host's capacity hold; given back by `LiveReleased` when the session ends.
     pub capacity_token: String,
     /// The host's capacity policy refuses a new upstream: answered 409 unless a session is joined.
+    /// The same answer when every upstream has `atCapacity`.
     #[serde(default)]
     pub at_capacity: bool,
     #[serde(default)]

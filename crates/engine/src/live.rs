@@ -288,6 +288,10 @@ pub async fn open(
     validate(&req)?;
     let mut order: Vec<usize> = (0..req.upstreams.len()).collect();
     order.sort_by_key(|i| req.upstreams[*i].priority);
+    // Vetoed upstreams are never used; when all are, `start` answers 409 (a joined session needs none).
+    if order.iter().any(|i| !req.upstreams[*i].at_capacity) {
+        order.retain(|i| !req.upstreams[*i].at_capacity);
+    }
     let mut probes: Vec<Option<LiveProbe>> = req.upstreams.iter().map(known_probe).collect();
     let fast_zap = config.livetv.fast_zap;
     loop {
@@ -367,7 +371,7 @@ async fn start(
     order: &[usize],
     probes: &[Option<LiveProbe>],
 ) -> Result<Arc<Pipe>, OpenError> {
-    if req.at_capacity {
+    if req.at_capacity || req.upstreams[order[0]].at_capacity {
         return Err(OpenError::AtCapacity);
     }
     let config = rt.current_config().livetv;

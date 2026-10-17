@@ -35,9 +35,10 @@ pub struct Resolved {
     pub format: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
-    Denied,
+    /// `owner`: the user the host denied, when it names one.
+    Denied { owner: Option<String> },
     /// The host is unreachable or failing and nothing is cached.
     Unavailable,
 }
@@ -79,7 +80,9 @@ impl Default for Resolver {
 /// A sprite grant may come without a path (the engine serves its own), a live one has none.
 fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, ResolveError> {
     if !res.allow {
-        return Err(ResolveError::Denied);
+        return Err(ResolveError::Denied {
+            owner: res.owner_id.clone(),
+        });
     }
     if res.path.is_none() && !matches!(purpose, ResolvePurpose::Sprite | ResolvePurpose::Live) {
         return Err(ResolveError::Unavailable);

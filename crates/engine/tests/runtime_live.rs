@@ -479,6 +479,75 @@ async fn capacity_gates_only_a_new_upstream() {
 }
 
 #[tokio::test]
+async fn a_vetoed_upstream_is_never_used() {
+    let e = live_engine(json!({}), json!({})).await;
+    let veto = |url: &str, priority| {
+        let mut u = upstream(url, priority);
+        u["atCapacity"] = json!(true);
+        u
+    };
+    // The primary is vetoed: the next upstream feeds the session.
+    let r = open(
+        &e,
+        open_req(
+            "8",
+            vec![veto("http://up/a", 0), upstream("http://up/b", 1)],
+            json!({}),
+            "alice",
+            "t1",
+        ),
+    )
+    .await;
+    assert_eq!(r["upstream"], 1);
+    // Every upstream vetoed: 409 for a new session, a running one is still joined.
+    let all = open_req(
+        "9",
+        vec![veto("http://up/a", 0), veto("http://up/b", 1)],
+        json!({}),
+        "alice",
+        "t2",
+    );
+    let r = e.control("POST", "/v1/live", Some(all.clone())).await;
+    assert_eq!(
+        (r.status, r.json()),
+        (409, json!({ "code": "live_at_capacity" }))
+    );
+    open(
+        &e,
+        open_req(
+            "9",
+            vec![upstream("http://up/a", 0)],
+            json!({}),
+            "alice",
+            "t3",
+        ),
+    )
+    .await;
+    assert_eq!(open(&e, all).await["capacityToken"], "t3");
+    // A failing upstream never fails over onto a vetoed one.
+    let mut rx = e.rt.events.subscribe();
+    let r = e
+        .control(
+            "POST",
+            "/v1/live",
+            Some(open_req(
+                "10",
+                vec![upstream("http://up/fail", 0), veto("http://up/b", 1)],
+                json!({}),
+                "alice",
+                "t4",
+            )),
+        )
+        .await;
+    assert_eq!(r.status, 503);
+    while let Ok(ev) = rx.try_recv() {
+        if let Some((up, _)) = attempt(&ev) {
+            assert_ne!(up, 1, "the vetoed upstream was attempted");
+        }
+    }
+}
+
+#[tokio::test]
 async fn probe_picks_a_transcode_and_ts_segments() {
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
@@ -629,6 +698,13 @@ async fn access_denial_and_revocation_end_viewers() {
         .status,
         404
     );
+    // A denial that is not for the viewer's owner (unknown credential, another user) only refuses.
+    let url = format!("/api/livetv/sessions/{c}/index.m3u8");
+    assert_eq!(e.get(&url, "garbage-jwt", &[]).await.status, 403);
+    e.stub.live_denied.lock().unwrap().push(c.clone());
+    assert_eq!(e.get(&url, "bob-jwt", &[]).await.status, 403);
+    e.stub.live_denied.lock().unwrap().retain(|s| *s != c);
+    assert_eq!(e.get(&url, "alice-jwt", &[]).await.status, 200);
     let r = e
         .control("POST", "/v1/revoke", Some(json!({ "ownerId": "alice" })))
         .await;

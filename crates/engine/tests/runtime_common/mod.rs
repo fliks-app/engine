@@ -95,7 +95,7 @@ async fn resolve(
             return Ok(Json(ResolveResponse {
                 allow,
                 path: None,
-                owner_id: allow.then_some(owner),
+                owner_id: Some(owner),
                 format: None,
                 ttl_s: Some(0.0),
             }));

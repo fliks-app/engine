@@ -483,6 +483,8 @@ pub struct ResolveResponse {
     /// subtitle) or the media file (embedded subtitle).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// The user the answer is for. A `live` denial carries it so the engine ends the viewer only
+    /// when it is the viewer's owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
     /// MIME type of a media file; a subtitle's extension (`srt`, `ass`, `vtt`) or `embedded`.
