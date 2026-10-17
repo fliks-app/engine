@@ -3541,6 +3541,10 @@
           "url"
         ],
         "properties": {
+          "atCapacity": {
+            "type": "boolean",
+            "description": "The host's capacity policy refuses a hold on this upstream's source: a new session never\nuses it, failover skips it. The verdict is the host's, taken at open."
+          },
           "headers": {
             "type": "object",
             "description": "Sent with every request to the upstream; `User-Agent` defaults to VLC's.",
@@ -3723,7 +3727,7 @@
         "properties": {
           "atCapacity": {
             "type": "boolean",
-            "description": "The host's capacity policy refuses a new upstream: answered 409 unless a session is joined."
+            "description": "The host's capacity policy refuses a new upstream: answered 409 unless a session is joined.\nThe same answer when every upstream has `atCapacity`."
           },
           "capacityToken": {
             "type": "string",
@@ -4666,7 +4670,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The user the answer is for. A `live` denial carries it so the engine ends the viewer only\nwhen it is the viewer's owner."
           },
           "path": {
             "type": [

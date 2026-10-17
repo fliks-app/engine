@@ -288,12 +288,17 @@ pub async fn open(
     validate(&req)?;
     let mut order: Vec<usize> = (0..req.upstreams.len()).collect();
     order.sort_by_key(|i| req.upstreams[*i].priority);
+    // Vetoed upstreams are never used; when all are, `start` answers 409 (a joined session needs none).
+    if order.iter().any(|i| !req.upstreams[*i].at_capacity) {
+        order.retain(|i| !req.upstreams[*i].at_capacity);
+    }
     let mut probes: Vec<Option<LiveProbe>> = req.upstreams.iter().map(known_probe).collect();
     let fast_zap = config.livetv.fast_zap;
     loop {
         let snapped = core_live::snapped(&req.caps);
         let first = order[0];
-        if core_live::decide_mode(&snapped, fast_zap, caps.hw_accel) == LiveMode::Direct
+        if !req.upstreams[first].at_capacity
+            && core_live::decide_mode(&snapped, fast_zap, caps.hw_accel) == LiveMode::Direct
             && !has_video(&probes[first])
             && let Some(p) = probe(rt, &req.upstreams[first]).await
         {
@@ -367,7 +372,7 @@ async fn start(
     order: &[usize],
     probes: &[Option<LiveProbe>],
 ) -> Result<Arc<Pipe>, OpenError> {
-    if req.at_capacity {
+    if req.at_capacity || req.upstreams[order[0]].at_capacity {
         return Err(OpenError::AtCapacity);
     }
     let config = rt.current_config().livetv;
@@ -1019,14 +1024,18 @@ impl Live {
         reg.pipes.get(reg.viewers.get(sid)?).cloned()
     }
 
-    /// The viewer's pipe for a data-plane request, which keeps the viewer. [ts:svc:590-601]
-    pub fn get_for_serve(&self, sid: &str) -> Option<Arc<Pipe>> {
+    /// The viewer's pipe, without keeping the viewer alive (see `touch`).
+    pub fn lookup(&self, sid: &str) -> Option<Arc<Pipe>> {
         let pipe = self.pipe_of(sid)?;
-        let mut m = pipe.m.lock().unwrap();
-        let v = m.viewers.get_mut(sid)?;
-        v.last_seen_ms = now_ms();
-        drop(m);
-        Some(pipe)
+        let known = pipe.m.lock().unwrap().viewers.contains_key(sid);
+        known.then_some(pipe)
+    }
+
+    /// A served data-plane request keeps the viewer. [ts:svc:590-601]
+    pub fn touch(&self, pipe: &Pipe, sid: &str) {
+        if let Some(v) = pipe.m.lock().unwrap().viewers.get_mut(sid) {
+            v.last_seen_ms = now_ms();
+        }
     }
 
     /// The viewer leaves (its direct streams close); false for a sid this registry never had.
