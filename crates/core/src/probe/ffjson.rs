@@ -72,6 +72,18 @@ pub struct Disposition {
     pub visual_impaired: Option<f64>,
     #[serde(default, deserialize_with = "float")]
     pub descriptions: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub original: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub dub: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub clean_effects: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub karaoke: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub lyrics: Option<f64>,
+    #[serde(default, deserialize_with = "float")]
+    pub captions: Option<f64>,
 }
 
 #[derive(Debug, Default, Deserialize)]

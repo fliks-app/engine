@@ -889,10 +889,23 @@
             "format": "int32",
             "minimum": 0
           },
+          "cleanEffects": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Music and effects only."
+          },
           "codec": {
             "type": "string"
           },
           "commentary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dub": {
             "type": [
               "boolean",
               "null"
@@ -905,11 +918,24 @@
             ],
             "format": "double"
           },
+          "hearingImpaired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "isDefault": {
             "type": [
               "boolean",
               "null"
             ]
+          },
+          "karaoke": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The `karaoke` or `lyrics` disposition."
           },
           "language": {
             "type": "string"
@@ -917,6 +943,12 @@
           "languageTag": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "original": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -5149,6 +5181,18 @@
           "codec": {
             "type": "string"
           },
+          "commentary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "descriptions": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "forced": {
             "type": "boolean"
           },
@@ -5165,6 +5209,12 @@
           "languageTag": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "lyrics": {
+            "type": [
+              "boolean",
               "null"
             ]
           },

@@ -32,6 +32,7 @@
 - probe errors: the text of an unparsable ffprobe output and of a spawn failure is the engine's own (`ok: false` either way); a timeout reads `Command failed: ...` like the host's.
 - probe ffprobe fields of an unexpected type (e.g. `level: "4.1"`) are dropped; the host copies them through. A non-numeric `format.duration` or `start_time` is absent; the host would pass `NaN` to `-ss` and `-analyzeduration`. ffprobe never prints either.
 - probe adds `mkvTags` and `crop` switches, absolute-path validation, `FFPROBE_PATH`/`FFMPEG_PATH`/`MKVMERGE_PATH`, and stamps `schemaVersion` (the pure parser's output does not carry it). The host's warning logs are not ported.
+- probe reports more track dispositions than the host (audio `hearingImpaired`, `original`, `dub`, `cleanEffects`, `karaoke`; subtitle `commentary`, `descriptions`, `lyrics`, `captions` as hearing impaired), `schemaVersion` 2.
 
 - hw: every detection run recomputes all flags (the TS keeps the flags of probes a re-pin did not re-run), uses the pinned node for the backend choice too, and runs CPU probes serially; `FFMPEG_PATH` is new (the TS only looks `ffmpeg` up on PATH). Details in `spec/hw.md` section 10.
 - hw: `/v1/capabilities` and `/v1/decide` answer 503 until the first detection run ends (the TS treats unprobed encoders as usable and probes as off).

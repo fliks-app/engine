@@ -207,8 +207,13 @@ fn subtitle_flags(s: &Stream) -> (bool, bool) {
     let (forced, hi) = subtitle_flags_from_title(s.tags.get("title"));
     (
         s.disposition.forced == Some(1.0) || forced,
-        s.disposition.hearing_impaired == Some(1.0) || hi,
+        s.disposition.hearing_impaired == Some(1.0) || s.disposition.captions == Some(1.0) || hi,
     )
+}
+
+/// A set disposition, absent otherwise.
+fn flag(d: Option<f64>) -> Option<bool> {
+    (d == Some(1.0)).then_some(true)
 }
 
 /// `scaleMetaValue`: a rational or decimal scaled to its integer SEI unit.
@@ -411,10 +416,15 @@ pub fn build(main: &Main, x: &Extras) -> Built {
             is_default: Some(s.disposition.default == Some(1.0)),
             start_time_seconds: start_seconds(s),
             end_seconds: stream_end_seconds(s),
-            commentary: (s.disposition.comment == Some(1.0)).then_some(true),
+            commentary: flag(s.disposition.comment),
             audio_description: (s.disposition.visual_impaired == Some(1.0)
                 || s.disposition.descriptions == Some(1.0))
             .then_some(true),
+            hearing_impaired: flag(s.disposition.hearing_impaired),
+            original: flag(s.disposition.original),
+            dub: flag(s.disposition.dub),
+            clean_effects: flag(s.disposition.clean_effects),
+            karaoke: flag(s.disposition.karaoke).or(flag(s.disposition.lyrics)),
             language_tag: None,
         })
         .collect();
@@ -457,6 +467,9 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 forced,
                 hearing_impaired,
                 is_image_based: is_image_based(s.codec_name.as_deref()),
+                commentary: flag(s.disposition.comment),
+                descriptions: flag(s.disposition.descriptions),
+                lyrics: flag(s.disposition.lyrics),
             }
         })
         .collect();
