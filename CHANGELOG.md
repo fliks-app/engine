@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/fliks-app/engine/compare/v0.4.1...v0.5.0) (2026-10-18)
+
+
+### Features
+
+* **probe:** report every track disposition the player can mark ([#49](https://github.com/fliks-app/engine/issues/49)) ([03cb443](https://github.com/fliks-app/engine/commit/03cb443f03084f3e04b1e490aaa1bcc3ddef7810))
+
 ## [0.4.1](https://github.com/fliks-app/engine/compare/v0.4.0...v0.4.1) (2026-10-17)
 
 
