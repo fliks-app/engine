@@ -8,10 +8,13 @@ use utoipa::ToSchema;
 #[serde(tag = "type")]
 pub enum JobKind {
     /// Seek-bar thumbnails: `sprite.jpg` + `sprite.json`, served by the data plane.
+    #[schema(title = "SpriteJob")]
     Sprite { info: MediaInfo },
     /// Keyframe scan of the whole file; needs a video stream in `info`.
+    #[schema(title = "ScanJob")]
     Scan { info: MediaInfo },
     /// Chromaprint of the head of the file (an intro) or of its tail (an outro).
+    #[schema(title = "FingerprintJob")]
     Fingerprint {
         window: FingerprintWindow,
         /// `introMaxLookupMinutes`: minutes of audio read; absent or 0: 10.
@@ -24,8 +27,10 @@ pub enum JobKind {
     },
     /// Every embedded text track of the file as WebVTT, stored in the engine cache and served by
     /// the subtitle routes (`info.subtitles` names the tracks; image-based ones are skipped).
+    #[schema(title = "SubtitleExtractJob")]
     SubtitleExtract { info: MediaInfo },
     /// Image-based embedded track (PGS or VobSub) OCR'd to SRT text.
+    #[schema(title = "SubtitleOcrJob")]
     SubtitleOcr {
         info: MediaInfo,
         #[serde(rename = "streamIndex")]
@@ -34,6 +39,7 @@ pub enum JobKind {
         language: Option<String>,
     },
     /// Sidecar subtitle re-timed against audio or a reference track.
+    #[schema(title = "SubtitleSyncJob")]
     SubtitleSync {
         info: MediaInfo,
         subtitle: SubtitleText,
@@ -54,6 +60,7 @@ pub enum JobKind {
         gss: Option<bool>,
     },
     /// A non-SRT sidecar or an embedded text track, converted to SRT text.
+    #[schema(title = "SubtitleToSrtJob")]
     SubtitleToSrt { info: MediaInfo, source: SrtSource },
 }
 

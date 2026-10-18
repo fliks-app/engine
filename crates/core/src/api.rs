@@ -22,7 +22,7 @@ pub use probe::*;
 pub use runtime::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 1;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 2;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -343,6 +343,18 @@ pub struct AudioStreamInfo {
     pub commentary: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_description: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hearing_impaired: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dub: Option<bool>,
+    /// Music and effects only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean_effects: Option<bool>,
+    /// The `karaoke` or `lyrics` disposition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub karaoke: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -359,6 +371,12 @@ pub struct SubtitleStreamInfo {
     pub hearing_impaired: bool,
     /// Bitmap subtitles (PGS, VOBSUB, DVB) need burn-in.
     pub is_image_based: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commentary: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptions: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lyrics: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

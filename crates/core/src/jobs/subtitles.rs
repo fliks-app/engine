@@ -430,6 +430,7 @@ mod tests {
             forced: false,
             hearing_impaired: false,
             is_image_based: img,
+            ..Default::default()
         };
         let info = MediaInfo {
             subtitles: vec![s(2, false), s(3, true), s(4, false)],
