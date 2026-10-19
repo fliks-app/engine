@@ -1,2 +1,7 @@
 target
 .git
+.github
+.claude
+docs
+.tags
+*.md
