@@ -204,9 +204,9 @@ async fn access(
 ) -> Result<Access, Response> {
     let sid = q.get("sid").filter(|s| !s.is_empty());
     let config = rt.current_config();
-    let host = config.host_url.map(|url| Host {
+    let host = config.host_url.clone().map(|url| Host {
         url,
-        token: config.host_token,
+        token: config.host_token.clone(),
     });
     let cred = credential(headers, q);
     let ask = Ask {
@@ -1226,9 +1226,9 @@ async fn live_access(
         return Err(nest(StatusCode::NOT_FOUND, unknown));
     };
     let config = rt.current_config();
-    let host = config.host_url.map(|url| Host {
+    let host = config.host_url.clone().map(|url| Host {
         url,
-        token: config.host_token,
+        token: config.host_token.clone(),
     });
     let cred = credential(headers, q);
     let ask = Ask {

@@ -4,7 +4,7 @@ use crate::cache::{Cache, remove_dir, valid_owner};
 use crate::events::Events;
 use crate::hw::Hw;
 use crate::proc::{Exit, Ffmpeg};
-use crate::remux::Assembler;
+use crate::remux::Remux;
 use crate::resolve::Resolver;
 use crate::slots::{PlaybackSlot, Slots};
 use fliks_engine_core::api::{
@@ -206,7 +206,7 @@ pub struct Job {
     /// Media time a run with a natural end produces (the early companion's `-to`), in ms.
     natural_end_ms: Option<i64>,
     proc: Ffmpeg,
-    remux: Option<Arc<Mutex<Assembler>>>,
+    remux: Option<Remux>,
     /// Held while the process lives; lent back while throttled.
     slot: Mutex<Option<PlaybackSlot>>,
     m: Mutex<JobMut>,
@@ -281,8 +281,8 @@ impl Job {
                     m.last_progress_ms = m.started_ms;
                 }
             }
-            if let Some(a) = &self.remux {
-                a.lock().unwrap().pause(pause);
+            if let Some(r) = &self.remux {
+                r.view.pause(pause);
             }
             if let Some(s) = &*self.slot.lock().unwrap() {
                 s.set_idle(pause);
@@ -411,10 +411,7 @@ impl Job {
             output_pending: self.m.lock().unwrap().pending,
             start_segment: self.start_segment,
             remux: self.remux.is_some(),
-            assembler: self
-                .remux
-                .as_ref()
-                .map(|a| a.lock().unwrap().progress(audio)),
+            assembler: self.remux.as_ref().map(|r| r.view.progress(audio)),
         }
     }
 
@@ -450,7 +447,7 @@ struct Run {
     /// (actual, requested)
     hw: (HwAccel, HwAccel),
     restarts: u32,
-    remux: Option<Arc<Mutex<Assembler>>>,
+    remux: Option<Remux>,
 }
 
 #[derive(Default)]
@@ -482,7 +479,7 @@ pub enum Fetch {
 }
 
 pub struct Runtime {
-    pub config: Mutex<Option<EngineConfig>>,
+    pub config: Mutex<Option<Arc<EngineConfig>>>,
     pub hw: Arc<Hw>,
     pub cache: Cache,
     pub events: Events,
@@ -533,7 +530,7 @@ impl Runtime {
         })
     }
 
-    pub fn current_config(&self) -> EngineConfig {
+    pub fn current_config(&self) -> Arc<EngineConfig> {
         self.config.lock().unwrap().clone().unwrap_or_default()
     }
 
@@ -770,8 +767,8 @@ impl Runtime {
             return Some(s.clone());
         }
         let buried = reg.tombstones.remove(sid)?;
-        let lifetime = self.current_config().lifetime;
-        if !tombstone_revivable(buried.m.lock().unwrap().last_beat_ms, now_ms(), &lifetime) {
+        let lifetime = &self.current_config().lifetime;
+        if !tombstone_revivable(buried.m.lock().unwrap().last_beat_ms, now_ms(), lifetime) {
             return None;
         }
         tracing::info!(sid, "revived a session");
@@ -1148,7 +1145,7 @@ impl Runtime {
             start,
             hw: (HwAccel::None, HwAccel::None),
             restarts: 0,
-            remux: Some(Arc::new(Mutex::new(Assembler::new(asm_plan, dir, gop_dir)))),
+            remux: Some(Remux::new(asm_plan, dir, gop_dir)),
         };
         self.launch(s, run, &argv).await
     }
@@ -1279,11 +1276,11 @@ impl Runtime {
 
     /// One assembler pass off the async threads; true when it gave up.
     async fn pump(job: &Job) -> bool {
-        let Some(a) = job.remux.clone() else {
+        let Some(r) = job.remux.clone() else {
             return false;
         };
         tokio::task::spawn_blocking(move || {
-            let mut a = a.lock().unwrap();
+            let mut a = r.asm.lock().unwrap();
             a.pump();
             a.stopped()
         })
@@ -1324,9 +1321,10 @@ impl Runtime {
             }
             let exit = job.proc.exited().unwrap();
             job.slot.lock().unwrap().take();
-            if let Some(a) = job.remux.clone() {
+            if let Some(r) = job.remux.clone() {
                 let clean = exit.code == Some(0) && !job.killed();
-                let _ = tokio::task::spawn_blocking(move || a.lock().unwrap().finish(clean)).await;
+                let _ =
+                    tokio::task::spawn_blocking(move || r.asm.lock().unwrap().finish(clean)).await;
             }
             job.scan().await;
             job.m.lock().unwrap().pending = false;
@@ -1760,7 +1758,7 @@ impl Runtime {
     /// Session expiry, then the jobs no session owns are stopped, every `liveSessionGcIntervalMs`.
     pub async fn gc_tick(&self) {
         let now = now_ms();
-        let lifetime = self.current_config().lifetime;
+        let lifetime = &self.current_config().lifetime;
         let (expired, orphans) = {
             let mut reg = self.reg.lock().unwrap();
             let expired: Vec<String> = reg
@@ -1771,7 +1769,7 @@ impl Runtime {
                         s.m.lock().unwrap().last_beat_ms,
                         s.pinned(),
                         now,
-                        &lifetime,
+                        lifetime,
                     )
                 })
                 .map(|s| s.sid.clone())
@@ -1782,7 +1780,7 @@ impl Runtime {
                 }
             }
             reg.tombstones.retain(|_, s| {
-                tombstone_revivable(s.m.lock().unwrap().last_beat_ms, now, &lifetime)
+                tombstone_revivable(s.m.lock().unwrap().last_beat_ms, now, lifetime)
             });
             (expired, take_orphans(&mut reg))
         };
@@ -1798,7 +1796,7 @@ impl Runtime {
     /// One throttle pass over the running jobs. [ts:modules/streaming/transcoding/ffmpeg-throttle.service.ts:94-150]
     pub async fn throttle_tick(&self) {
         let cap = self.pause_capability();
-        let streaming = self.current_config().streaming;
+        let streaming = &self.current_config().streaming;
         let work: Vec<(Arc<Job>, Vec<Viewer>)> = {
             let reg = self.reg.lock().unwrap();
             reg.jobs
@@ -1824,8 +1822,8 @@ impl Runtime {
                     keyframe_grid: true,
                 },
             };
-            let remux = job.remux.as_ref().map(|a| {
-                let a = a.lock().unwrap();
+            let remux = job.remux.as_ref().map(|r| {
+                let a = &r.view;
                 let (start_seconds, frontier_seconds) = a.span();
                 let last = viewers
                     .iter()

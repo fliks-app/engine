@@ -118,13 +118,13 @@ mod tests {
             "ffprobe".into(),
             "fpcalc".into(),
         );
-        rt.config.lock().unwrap().replace(EngineConfig {
+        rt.config.lock().unwrap().replace(Arc::new(EngineConfig {
             path_mappings: vec![PathMapping {
                 from: from.into(),
                 to: to.into(),
             }],
             ..EngineConfig::default()
-        });
+        }));
         rt
     }
 

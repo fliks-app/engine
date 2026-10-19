@@ -78,13 +78,13 @@ fn assembler_reproduces_the_host() {
             );
         }
         assert_eq!(
-            a.progress(None).frontier.map(u64::from),
+            a.view().progress(None).frontier.map(u64::from),
             v["expected"]["videoFrontier"].as_u64(),
             "{name}: video frontier"
         );
         for i in 1..=renditions {
             assert_eq!(
-                a.progress(Some(i)).frontier.map(u64::from),
+                a.view().progress(Some(i)).frontier.map(u64::from),
                 v["expected"]["audioFrontiers"][i - 1].as_u64(),
                 "{name}: audio {i} frontier"
             );
