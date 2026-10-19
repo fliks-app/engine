@@ -27,7 +27,7 @@ jobs:
     steps:
       - id: rp
         if: github.event_name == 'push'
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -46,14 +46,18 @@ jobs:
           - { name: darwin-arm64, os: macos-14, target: aarch64-apple-darwin }
           - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.release-please.outputs.tag }}
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - name: Add the target
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
       - name: Install musl tools
@@ -61,7 +65,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Install cross
         if: matrix.cross
-        uses: taiki-e/install-action@cross
+        uses: taiki-e/install-action@0e2bf4f9b6d26ffa61b50f640b26684368f2056e # cross
+        with:
+          tool: cross
       - name: Build
         shell: bash
         run: |
@@ -75,6 +81,11 @@ jobs:
           cd out
           if command -v sha256sum >/dev/null; then sha256sum "fliks-engine-${{ matrix.name }}${{ matrix.ext }}" > "fliks-engine-${{ matrix.name }}${{ matrix.ext }}.sha256"
           else shasum -a 256 "fliks-engine-${{ matrix.name }}${{ matrix.ext }}" > "fliks-engine-${{ matrix.name }}${{ matrix.ext }}.sha256"; fi
+      - name: Attest build provenance
+        if: ${{ !inputs.dry_run }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: out/fliks-engine-${{ matrix.name }}${{ matrix.ext }}
       - name: Attach to the release
         if: ${{ !inputs.dry_run }}
         shell: bash
@@ -87,7 +98,7 @@ jobs:
     if: needs.release-please.outputs.tag != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.release-please.outputs.tag }}
       - name: Attach openapi.json
@@ -95,3 +106,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag }}" openapi.json --clobber --repo "$GITHUB_REPOSITORY"
+
+  checksums:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.tag != '' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.release-please.outputs.tag }}
+    steps:
+      - name: Publish SHA256SUMS
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'fliks-engine-*.sha256'
+          cat fliks-engine-*.sha256 > SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
