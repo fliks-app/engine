@@ -33,13 +33,15 @@ use fliks_engine_core::session::{
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 type Q = Query<HashMap<String, String>>;
 type S = State<Arc<Runtime>>;
 
+/// Rendition directories whose init is cached; the map restarts empty past it.
+const MAX_INIT_TRACKS: usize = 1024;
 const PLAYLIST: &str = "application/vnd.apple.mpegurl";
 
 /// The data-plane router, mountable behind the gateway or on its own listener.
@@ -511,15 +513,13 @@ async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option
     out.status.success().then_some(out.stdout)
 }
 
-fn init_tracks_cache() -> &'static Mutex<HashMap<PathBuf, IdMap<TrackInfo>>> {
-    static C: OnceLock<Mutex<HashMap<PathBuf, IdMap<TrackInfo>>>> = OnceLock::new();
-    C.get_or_init(Default::default)
-}
-
-/// Track info of a rendition directory, parsed once from its init.
-async fn init_tracks(dir: &Path) -> IdMap<TrackInfo> {
-    if let Some(t) = init_tracks_cache().lock().unwrap().get(dir) {
-        return t.clone();
+/// Track info of a rendition directory, parsed from its init and cached while the file is unchanged.
+async fn init_tracks(rt: &Runtime, dir: &Path) -> IdMap<TrackInfo> {
+    let known = rt.init_tracks.lock().unwrap().get(dir).cloned();
+    if let Some((init, stamp, tracks)) = known
+        && stamp_of(&init).await == Some(stamp)
+    {
+        return tracks;
     }
     let mut init = None;
     if let Ok(mut rd) = tokio::fs::read_dir(dir).await {
@@ -528,27 +528,41 @@ async fn init_tracks(dir: &Path) -> IdMap<TrackInfo> {
                 parse_segment_name(&e.file_name().to_string_lossy()),
                 Some(SegmentName::Init(_))
             ) {
-                init = tokio::fs::read(e.path()).await.ok();
+                init = Some(e.path());
                 break;
             }
         }
     }
-    let tracks = init
+    let Some(init) = init else {
+        return IdMap::default();
+    };
+    let stamp = stamp_of(&init).await;
+    let tracks = tokio::fs::read(&init)
+        .await
+        .ok()
         .and_then(|b| parse_init_tracks(&b).ok())
         .unwrap_or_default();
-    if !tracks.is_empty() {
-        init_tracks_cache()
-            .lock()
-            .unwrap()
-            .insert(dir.to_path_buf(), tracks.clone());
+    if let (false, Some(stamp)) = (tracks.is_empty(), stamp) {
+        let mut cache = rt.init_tracks.lock().unwrap();
+        if cache.len() >= MAX_INIT_TRACKS {
+            cache.clear();
+        }
+        cache.insert(dir.to_path_buf(), (init, stamp, tracks.clone()));
     }
     tracks
+}
+
+/// Modification time and size of a file: what tells a regenerated init from the cached one.
+async fn stamp_of(path: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let m = tokio::fs::metadata(path).await.ok()?;
+    Some((m.modified().ok()?, m.len()))
 }
 
 /// Wire body of a cache file and its length: TS streamed verbatim; fMP4 CMAF-rewritten and
 /// anchored on the served timeline, unless `keyframe_cut` (a remux file, assembled on it already).
 /// [ts:modules/streaming/services/segment-packaging.service.ts:30-130]
 async fn package(
+    rt: &Runtime,
     path: &Path,
     name: SegmentName,
     s: &Session,
@@ -561,7 +575,7 @@ async fn package(
     }
     let mut buf = rewrite_cmaf(tokio::fs::read(path).await.ok()?)?;
     if let (SegmentName::Segment(n), false) = (name, keyframe_cut) {
-        let tracks = init_tracks(path.parent()?).await;
+        let tracks = init_tracks(rt, path.parent()?).await;
         let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
         let origin = served_origin(s.plan.timeline.origin);
         buf = match rewrite_segment_tfdt(buf, &tracks, n, seg, origin) {
@@ -619,7 +633,7 @@ async fn respond(
         Fetch::Failed => return text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
     };
     // A restart can remove the file between the wait and the read.
-    let Some((body, len)) = package(&path, name, s, remux).await else {
+    let Some((body, len)) = package(rt, &path, name, s, remux).await else {
         return retry();
     };
     if let SegmentName::Segment(index) = name {

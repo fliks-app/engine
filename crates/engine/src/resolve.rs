@@ -13,6 +13,9 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_TTL_S: f64 = 60.0;
 const TIMEOUT: Duration = Duration::from_secs(5);
+/// An expired grant still answers while the host is down, for this long.
+const STALE_GRACE: Duration = Duration::from_secs(3600);
+const MAX_ENTRIES: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Key {
@@ -94,6 +97,24 @@ fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, R
     })
 }
 
+/// Keeps `cache` under `cap`: drops grants stale past the grace, then the soonest to expire.
+fn make_room(cache: &mut HashMap<Key, Entry>, cap: usize, now: Instant) {
+    if cache.len() < cap {
+        return;
+    }
+    cache.retain(|_, e| e.until + STALE_GRACE > now);
+    while cache.len() >= cap {
+        let Some(k) = cache
+            .iter()
+            .min_by_key(|(_, e)| e.until)
+            .map(|(k, _)| k.clone())
+        else {
+            return;
+        };
+        cache.remove(&k);
+    }
+}
+
 impl Resolver {
     pub async fn resolve(
         &self,
@@ -122,10 +143,13 @@ impl Resolver {
                     .filter(|t| *t >= 0.0 && t.is_finite())
                     .unwrap_or(DEFAULT_TTL_S);
                 let out = granted(&res, ask.purpose);
-                self.cache.lock().unwrap().insert(
+                let now = Instant::now();
+                let mut cache = self.cache.lock().unwrap();
+                make_room(&mut cache, MAX_ENTRIES, now);
+                cache.insert(
                     key,
                     Entry {
-                        until: Instant::now() + Duration::from_secs_f64(ttl),
+                        until: now + Duration::from_secs_f64(ttl),
                         res,
                     },
                 );
@@ -187,5 +211,47 @@ impl Resolver {
                 || matches!(&k.media, ResolveMediaId::File(m) if media.contains(m));
             !(by_owner && by_media)
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(until: Instant) -> Entry {
+        Entry {
+            until,
+            res: ResolveResponse {
+                allow: true,
+                path: None,
+                owner_id: None,
+                format: None,
+                ttl_s: None,
+            },
+        }
+    }
+
+    fn key(n: u64) -> Key {
+        Key {
+            credential: n,
+            media: ResolveMediaId::File(1),
+            purpose: ResolvePurpose::Stream,
+            subtitle_id: None,
+            stream_index: None,
+        }
+    }
+
+    #[test]
+    fn make_room_drops_long_stale_grants_then_the_soonest_to_expire() {
+        let now = Instant::now();
+        let mut cache = HashMap::new();
+        cache.insert(key(1), entry(now - STALE_GRACE - Duration::from_secs(1)));
+        cache.insert(key(2), entry(now + Duration::from_secs(10)));
+        cache.insert(key(3), entry(now + Duration::from_secs(5)));
+        make_room(&mut cache, 3, now);
+        assert_eq!(cache.len(), 2);
+        cache.insert(key(4), entry(now + Duration::from_secs(60)));
+        make_room(&mut cache, 3, now);
+        assert!(!cache.contains_key(&key(3)) && cache.len() == 2);
     }
 }
