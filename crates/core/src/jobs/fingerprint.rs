@@ -1,8 +1,8 @@
 //! Intro fingerprint extraction: the fpcalc/ffmpeg argv, the audio window and the fpcalc output.
 //! Matching stays out. [ts:modules/markers/intro-detection.service.ts:815-940]
-use super::v;
 use crate::api::Fingerprint;
 use crate::jsnum::{js_string, parse_float};
+use crate::strs;
 
 /// The host's `execFile` timeout of the head read and the kill timer of the window pipeline.
 pub const TIMEOUT_MS: u64 = 180_000;
@@ -25,7 +25,7 @@ pub fn outro_window(duration: f64, lookup: f64) -> Option<(f64, f64)> {
 
 /// The head of the file (an intro), read by fpcalc itself.
 pub fn head_args(path: &str, max_seconds: f64) -> Vec<String> {
-    let mut a = v(&["-raw", "-length"]);
+    let mut a = strs(&["-raw", "-length"]);
     a.push(js_string(max_seconds));
     a.push(path.into());
     a
@@ -34,18 +34,18 @@ pub fn head_args(path: &str, max_seconds: f64) -> Vec<String> {
 /// ffmpeg writing `[start, start + length]` of the audio as mono 22.05 kHz WAV on stdout, for
 /// `window_fpcalc_args`. fpcalc has no start flag, so the seek is whole seconds.
 pub fn window_ffmpeg_args(path: &str, start: f64, length: f64) -> Vec<String> {
-    let mut a = v(&["-nostdin", "-hide_banner", "-loglevel", "error", "-ss"]);
+    let mut a = strs(&["-nostdin", "-hide_banner", "-loglevel", "error", "-ss"]);
     a.push(js_string(start.floor().max(0.0)));
     a.push("-i".into());
     a.push(path.into());
     a.push("-t".into());
     a.push(js_string(length));
-    a.extend(v(&["-vn", "-ac", "1", "-ar", "22050", "-f", "wav", "-"]));
+    a.extend(strs(&["-vn", "-ac", "1", "-ar", "22050", "-f", "wav", "-"]));
     a
 }
 
 pub fn window_fpcalc_args(length: f64) -> Vec<String> {
-    let mut a = v(&["-raw", "-length"]);
+    let mut a = strs(&["-raw", "-length"]);
     a.push(js_string(length));
     a.push("-".into());
     a

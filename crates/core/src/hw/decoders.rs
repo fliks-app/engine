@@ -2,6 +2,7 @@
 //! [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:30-125]
 use super::device::Device;
 use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::strs;
 
 /// Frame memory between decode and encode. [ts:backend/src/modules/streaming/transcoding/codec/decoders/types.ts:20]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -83,14 +84,13 @@ impl Decoder {
     }
 
     pub fn input_args(&self, d: &Device) -> Vec<String> {
-        let s = |v: &[&str]| -> Vec<String> { v.iter().map(|x| x.to_string()).collect() };
         let tail = ["-extra_hw_frames", "32", "-noautorotate"];
         match self.kind {
             Kind::Cpu => vec![],
             Kind::Vaapi => d
                 .vaapi_init()
                 .into_iter()
-                .chain(s(&[
+                .chain(strs(&[
                     "-filter_hw_device",
                     "va",
                     "-hwaccel",
@@ -100,12 +100,12 @@ impl Decoder {
                     "-hwaccel_device",
                     "va",
                 ]))
-                .chain(s(&tail))
+                .chain(strs(&tail))
                 .collect(),
             Kind::QsvVaapi => d
                 .qsv_init()
                 .into_iter()
-                .chain(s(&[
+                .chain(strs(&[
                     "-filter_hw_device",
                     "qs",
                     "-hwaccel",
@@ -115,11 +115,11 @@ impl Decoder {
                     "-hwaccel_device",
                     "va",
                 ]))
-                .chain(s(&tail))
+                .chain(strs(&tail))
                 .collect(),
             Kind::QsvD3d11 => Device::qsv_via_d3d11_init()
                 .into_iter()
-                .chain(s(&[
+                .chain(strs(&[
                     "-filter_hw_device",
                     "qs",
                     "-hwaccel",
@@ -129,9 +129,9 @@ impl Decoder {
                     "-hwaccel_device",
                     "dx",
                 ]))
-                .chain(s(&tail))
+                .chain(strs(&tail))
                 .collect(),
-            Kind::Cuda => s(&[
+            Kind::Cuda => strs(&[
                 "-hwaccel",
                 "cuda",
                 "-hwaccel_output_format",
@@ -140,10 +140,10 @@ impl Decoder {
                 "1",
                 "-noautorotate",
             ]),
-            Kind::D3d11Cpu => s(&["-hwaccel", "d3d11va", "-noautorotate"]),
+            Kind::D3d11Cpu => strs(&["-hwaccel", "d3d11va", "-noautorotate"]),
             Kind::D3d11Native => Device::amf_d3d11_opencl_init()
                 .into_iter()
-                .chain(s(&[
+                .chain(strs(&[
                     "-hwaccel",
                     "d3d11va",
                     "-hwaccel_output_format",
@@ -151,13 +151,13 @@ impl Decoder {
                     "-hwaccel_device",
                     "dx",
                 ]))
-                .chain(s(&tail))
+                .chain(strs(&tail))
                 .collect(),
             Kind::Vt => {
-                let mut a = s(&["-hwaccel", "videotoolbox"]);
+                let mut a = strs(&["-hwaccel", "videotoolbox"]);
                 // ffmpeg defaults AV1 to libdav1d, which ignores the hwaccel.
                 if self.codec == Some(VideoCodec::Av1) {
-                    a.extend(s(&["-c:v", "av1"]));
+                    a.extend(strs(&["-c:v", "av1"]));
                 }
                 a.push("-noautorotate".into());
                 a

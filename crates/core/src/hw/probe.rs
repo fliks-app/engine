@@ -3,6 +3,7 @@ use super::Encoder;
 use super::decoders::{self, Decoder};
 use super::device::Device;
 use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::strs;
 
 /// One ffmpeg invocation: argv after the binary, and the kill deadline.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,10 +21,6 @@ fn cat(parts: &[&[String]]) -> Vec<String> {
     parts.concat()
 }
 
-pub fn st(x: &[&str]) -> Vec<String> {
-    x.iter().map(|s| s.to_string()).collect()
-}
-
 const QUIET: &[&str] = &["-hide_banner", "-loglevel", "error"];
 // 320x240: AMD VCN rejects tinier frames. [ts:backend/src/modules/streaming/transcoding/hw-detect.ts:11-14]
 const BLACK_INPUT: &[&str] = &["-f", "lavfi", "-i", "color=black:s=320x240:d=0.1"];
@@ -31,7 +28,7 @@ const ONE_FRAME_NULL: &[&str] = &["-frames:v", "1", "-f", "null", "-"];
 
 /// `ffmpeg -encoders`, read for `libfdk_aac`. [ts:backend/src/modules/streaming/transcoding/audio-encoder-probe.ts:25-35]
 pub fn encoders_listing() -> Cmd {
-    cmd(st(&["-hide_banner", "-encoders"]), 10_000)
+    cmd(strs(&["-hide_banner", "-encoders"]), 10_000)
 }
 
 /// One-frame encode per backend, in the platform's probe order: the first to pass is the backend.
@@ -43,29 +40,29 @@ pub fn hw_tests(d: &Device) -> Vec<(HwAccel, Cmd)> {
         "hwupload,format=qsv"
     };
     let qsv = cat(&[
-        &st(QUIET),
+        &strs(QUIET),
         &d.qsv_init(),
-        &st(&["-filter_hw_device", "qs"]),
-        &st(BLACK_INPUT),
-        &st(&["-vf", qsv_filter, "-c:v", "h264_qsv"]),
-        &st(ONE_FRAME_NULL),
+        &strs(&["-filter_hw_device", "qs"]),
+        &strs(BLACK_INPUT),
+        &strs(&["-vf", qsv_filter, "-c:v", "h264_qsv"]),
+        &strs(ONE_FRAME_NULL),
     ]);
     let vaapi = cat(&[
-        &st(QUIET),
+        &strs(QUIET),
         &d.vaapi_init(),
-        &st(BLACK_INPUT),
-        &st(&["-filter_hw_device", "va", "-vf", "format=nv12,hwupload"]),
-        &st(&["-c:v", "h264_vaapi"]),
-        &st(ONE_FRAME_NULL),
+        &strs(BLACK_INPUT),
+        &strs(&["-filter_hw_device", "va", "-vf", "format=nv12,hwupload"]),
+        &strs(&["-c:v", "h264_vaapi"]),
+        &strs(ONE_FRAME_NULL),
     ]);
     // No -hwaccel on AMF: it probes the encoder only.
     let simple = |pre: &[&str], enc: &str| {
         cat(&[
-            &st(QUIET),
-            &st(pre),
-            &st(BLACK_INPUT),
-            &st(&["-c:v", enc]),
-            &st(ONE_FRAME_NULL),
+            &strs(QUIET),
+            &strs(pre),
+            &strs(BLACK_INPUT),
+            &strs(&["-c:v", enc]),
+            &strs(ONE_FRAME_NULL),
         ])
     };
     let amf = simple(&[], "h264_amf");
@@ -98,10 +95,10 @@ pub fn probeable(detected: HwAccel, hw: HwAccel) -> bool {
 pub fn vaapi_driver_cmd(d: &Device) -> Cmd {
     cmd(
         cat(&[
-            &st(&["-hide_banner", "-loglevel", "verbose"]),
+            &strs(&["-hide_banner", "-loglevel", "verbose"]),
             &d.vaapi_init(),
-            &st(&["-f", "lavfi", "-i", "nullsrc=size=64x64:rate=1"]),
-            &st(ONE_FRAME_NULL),
+            &strs(&["-f", "lavfi", "-i", "nullsrc=size=64x64:rate=1"]),
+            &strs(ONE_FRAME_NULL),
         ]),
         10_000,
     )
@@ -113,26 +110,26 @@ pub fn encoder_cmd(e: &Encoder, d: &Device) -> Cmd {
     let pix = if e.ten_bit { "yuv420p10le" } else { "yuv420p" };
     let surface = if e.ten_bit { "p010le" } else { "nv12" };
     let lavfi = format!("nullsrc=size=320x180:rate=30,format={pix}");
-    let lavfi_in = |dev: &str| st(&["-filter_hw_device", dev, "-f", "lavfi", "-i", &lavfi]);
+    let lavfi_in = |dev: &str| strs(&["-filter_hw_device", dev, "-f", "lavfi", "-i", &lavfi]);
     let (input, filter) = match e.hw {
         HwAccel::Vaapi => (
             cat(&[&d.vaapi_init(), &lavfi_in("va")]),
-            st(&["-vf", &format!("format={surface},hwupload")]),
+            strs(&["-vf", &format!("format={surface},hwupload")]),
         ),
         HwAccel::Qsv => (
             cat(&[&d.qsv_init(), &lavfi_in("qs")]),
-            st(&["-vf", &format!("format={surface},hwupload,format=qsv")]),
+            strs(&["-vf", &format!("format={surface},hwupload,format=qsv")]),
         ),
-        _ => (st(&["-f", "lavfi", "-i", &lavfi]), vec![]),
+        _ => (strs(&["-f", "lavfi", "-i", &lavfi]), vec![]),
     };
     cmd(
         cat(&[
-            &st(QUIET),
+            &strs(QUIET),
             &input,
-            &st(&["-frames:v", "1"]),
+            &strs(&["-frames:v", "1"]),
             &filter,
-            &st(e.args),
-            &st(&["-f", "null", "-"]),
+            &strs(e.args),
+            &strs(&["-f", "null", "-"]),
         ]),
         10_000,
     )
@@ -158,7 +155,7 @@ pub fn decoder_sample_name(c: VideoCodec, pid: u32) -> String {
 /// [ts:backend/src/modules/streaming/transcoding/codec/decoder-probe.ts:105-150]
 pub fn decoder_sample_cmd(c: VideoCodec, path: &str) -> Cmd {
     cmd(
-        st(&[
+        strs(&[
             "-hide_banner",
             "-loglevel",
             "error",
@@ -181,13 +178,13 @@ pub fn decoder_sample_cmd(c: VideoCodec, path: &str) -> Cmd {
 
 /// [ts:backend/src/modules/streaming/transcoding/codec/decoder-probe.ts:156-190]
 pub fn decoder_cmd(dec: &Decoder, d: &Device, sample: &str) -> Cmd {
-    let mut a = st(&["-hide_banner", "-loglevel", "error"]);
+    let mut a = strs(&["-hide_banner", "-loglevel", "error"]);
     a.extend(dec.input_args(d));
-    a.extend(st(&["-i", sample, "-frames:v", "1"]));
+    a.extend(strs(&["-i", sample, "-frames:v", "1"]));
     if dec.gpu_output() {
-        a.extend(st(&["-vf", "hwdownload,format=nv12"]));
+        a.extend(strs(&["-vf", "hwdownload,format=nv12"]));
     }
-    a.extend(st(&["-f", "null", "-"]));
+    a.extend(strs(&["-f", "null", "-"]));
     cmd(a, 10_000)
 }
 
@@ -195,7 +192,7 @@ pub fn decoder_cmd(dec: &Decoder, d: &Device, sample: &str) -> Cmd {
 /// [ts:backend/src/modules/streaming/transcoding/codec/hdr-probe-sample.ts:9-45]
 pub fn hdr_sample_cmd(path: &str) -> Cmd {
     cmd(
-        st(&[
+        strs(&[
             "-hide_banner",
             "-loglevel",
             "error",
@@ -236,9 +233,9 @@ pub fn vaapi_decode_args(d: &Device) -> Vec<String> {
 
 fn tail_enc(enc: &[&str], frames: &str) -> Vec<String> {
     cat(&[
-        &st(&["-c:v"]),
-        &st(enc),
-        &st(&[
+        &strs(&["-c:v"]),
+        &strs(enc),
+        &strs(&[
             "-preset",
             "veryfast",
             "-frames:v",
@@ -255,10 +252,10 @@ fn tail_enc(enc: &[&str], frames: &str) -> Vec<String> {
 pub fn vpp_qsv_cmd(d: &Device, sample: &str) -> Cmd {
     cmd(
         cat(&[
-            &st(QUIET),
+            &strs(QUIET),
             &qsv_native_decode_args(d),
-            &st(&["-i", sample, "-vf"]),
-            &st(&["hwmap=derive_device=qsv,vpp_qsv=tonemap=1:w=320:h=176:format=nv12"]),
+            &strs(&["-i", sample, "-vf"]),
+            &strs(&["hwmap=derive_device=qsv,vpp_qsv=tonemap=1:w=320:h=176:format=nv12"]),
             &tail_enc(&["h264_qsv"], "1"),
         ]),
         15_000,
@@ -275,9 +272,9 @@ pub fn tonemap_opencl_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 3] {
         vaapi_decode_args(d)
     };
     let base = cat(&[
-        &st(QUIET),
+        &strs(QUIET),
         &decode,
-        &st(&["-init_hw_device", "opencl=ocl:0.0", "-i", sample, "-vf"]),
+        &strs(&["-init_hw_device", "opencl=ocl:0.0", "-i", sample, "-vf"]),
     ]);
     let reverse = if qsv {
         "hwmap=derive_device=qsv:mode=write:reverse=1:extra_hw_frames=16,format=qsv"
@@ -322,8 +319,8 @@ pub fn tonemap_opencl_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 3] {
 /// [ts:backend/src/modules/streaming/transcoding/codec/opencl-tonemap-probe.ts:25-72]
 pub fn opencl_tonemap_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 2] {
     let decode = match hw {
-        HwAccel::Nvenc => st(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
-        HwAccel::Amf => st(&["-hwaccel", "d3d11va"]),
+        HwAccel::Nvenc => strs(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
+        HwAccel::Amf => strs(&["-hwaccel", "d3d11va"]),
         _ => vec![],
     };
     let download = if hw == HwAccel::Nvenc {
@@ -334,11 +331,11 @@ pub fn opencl_tonemap_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 2] {
     let mk = |vf: String| {
         cmd(
             cat(&[
-                &st(QUIET),
+                &strs(QUIET),
                 &decode,
                 &d.opencl_tonemap_init(),
-                &st(&["-i", sample, "-vf", &vf]),
-                &st(ONE_FRAME_NULL),
+                &strs(&["-i", sample, "-vf", &vf]),
+                &strs(ONE_FRAME_NULL),
             ]),
             20_000,
         )
@@ -359,8 +356,8 @@ pub fn qsv_opencl_cmds(sample: &str) -> [Cmd; 2] {
     let mk = |vf: &str, enc: &[&str]| {
         cmd(
             cat(&[
-                &st(QUIET),
-                &st(&[
+                &strs(QUIET),
+                &strs(&[
                     "-init_hw_device",
                     "d3d11va=dx",
                     "-init_hw_device",
@@ -402,9 +399,9 @@ pub fn qsv_opencl_cmds(sample: &str) -> [Cmd; 2] {
 pub fn vulkan_cmd(d: &Device, sample: &str) -> Cmd {
     cmd(
         cat(&[
-            &st(QUIET),
+            &strs(QUIET),
             &d.vulkan_init(),
-            &st(&[
+            &strs(&[
                 "-hwaccel",
                 "vaapi",
                 "-hwaccel_output_format",
@@ -416,7 +413,7 @@ pub fn vulkan_cmd(d: &Device, sample: &str) -> Cmd {
                 "-vf",
                 "hwmap=derive_device=drm,format=drm_prime,libplacebo=w=320:h=-2:upscaler=none:downscaler=none:format=bgra:tonemapping=mobius:peak_detect=0:color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=pc:apply_dolbyvision=0,format=vulkan,hwmap=derive_device=vaapi,format=vaapi,scale_vaapi=format=nv12:out_range=tv",
             ]),
-            &st(ONE_FRAME_NULL),
+            &strs(ONE_FRAME_NULL),
         ]),
         20_000,
     )
@@ -427,7 +424,7 @@ pub fn vulkan_cmd(d: &Device, sample: &str) -> Cmd {
 pub fn cuda_cmds() -> [Cmd; 2] {
     let mk = |vf: &str| {
         cmd(
-            st(&[
+            strs(&[
                 "-hide_banner",
                 "-loglevel",
                 "error",
@@ -468,11 +465,11 @@ pub fn amf_opencl_cmds(sample: &str) -> [Cmd; 2] {
     let mk = |vf: &str, enc: &[&str]| {
         cmd(
             cat(&[
-                &st(QUIET),
+                &strs(QUIET),
                 &decode,
-                &st(&["-i", sample, "-vf", vf, "-c:v"]),
-                &st(enc),
-                &st(&["-frames:v", "2", "-f", "null", "-"]),
+                &strs(&["-i", sample, "-vf", vf, "-c:v"]),
+                &strs(enc),
+                &strs(&["-frames:v", "2", "-f", "null", "-"]),
             ]),
             15_000,
         )

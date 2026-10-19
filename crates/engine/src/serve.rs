@@ -30,6 +30,7 @@ use fliks_engine_core::mp4::{
 };
 use fliks_engine_core::session::{
     MasterQuery, SegmentName, is_valid_quality, master_options, parse_segment_name,
+    rung_source_size,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -457,16 +458,8 @@ async fn iframe_seg(
     };
     let v = s.req.decide.info.video.first();
     let crop = v.and_then(|v| v.crop.clone());
-    let (w, h) = iframe_resolution(
-        crop.as_ref()
-            .map(|c| c.width)
-            .or(v.and_then(|v| v.width))
-            .unwrap_or(1920) as f64,
-        crop.as_ref()
-            .map(|c| c.height)
-            .or(v.and_then(|v| v.height))
-            .unwrap_or(1080) as f64,
-    );
+    let (w, h) = rung_source_size(v);
+    let (w, h) = iframe_resolution(f64::from(w), f64::from(h));
     let t = &s.plan.timeline;
     let args = iframe(&IframeArgs {
         input_path: rt.map_media_path(&res.path),
@@ -841,20 +834,44 @@ fn base_name(p: &str) -> String {
 async fn file_body(path: &str, start: u64, len: u64) -> std::io::Result<Body> {
     let mut f = tokio::fs::File::open(path).await?;
     f.seek(std::io::SeekFrom::Start(start)).await?;
-    let stream = futures_util::stream::unfold(
-        (f.take(len), vec![0u8; 64 * 1024]),
-        |(mut r, mut buf)| async move {
-            match r.read(&mut buf).await {
-                Ok(0) => None,
-                Ok(n) => Some((
-                    Ok::<_, std::io::Error>(axum::body::Bytes::copy_from_slice(&buf[..n])),
-                    (r, buf),
-                )),
-                Err(e) => Some((Err(e), (r, buf))),
+    let stream = futures_util::stream::try_unfold(f.take(len), |mut r| async move {
+        let mut chunk = vec![0; 64 * 1024];
+        let n = r.read(&mut chunk).await?;
+        chunk.truncate(n);
+        Ok::<_, std::io::Error>((n > 0).then(|| (axum::body::Bytes::from(chunk), r)))
+    });
+    Ok(Body::from_stream(stream))
+}
+
+/// `path` whole, or the part of it a `Range` header asks for; `res` carries the route's headers.
+async fn ranged_file(
+    mut res: axum::http::response::Builder,
+    headers: &HeaderMap,
+    path: &str,
+    size: u64,
+) -> std::io::Result<Response> {
+    let (status, start, len) = match headers.get(header::RANGE).and_then(|r| r.to_str().ok()) {
+        None => (StatusCode::OK, 0, size),
+        Some(r) => match parse_range(r, size) {
+            Some((s, e)) => {
+                res = res.header(header::CONTENT_RANGE, format!("bytes {s}-{e}/{size}"));
+                (StatusCode::PARTIAL_CONTENT, s, e - s + 1)
+            }
+            None => {
+                return Ok((
+                    StatusCode::RANGE_NOT_SATISFIABLE,
+                    [(header::CONTENT_RANGE, format!("bytes */{size}"))],
+                )
+                    .into_response());
             }
         },
-    );
-    Ok(Body::from_stream(stream))
+    };
+    let body = file_body(path, start, len).await?;
+    Ok(res
+        .status(status)
+        .header(header::CONTENT_LENGTH, len)
+        .body(body)
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()))
 }
 
 /// Direct play and `?download=1`. [ts:modules/streaming/streaming.controller.ts:2555-2641]
@@ -907,33 +924,12 @@ async fn direct(
     if download {
         res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
     }
-    let (status, start, len) = match headers.get(header::RANGE).and_then(|r| r.to_str().ok()) {
-        None => (StatusCode::OK, 0, size),
-        Some(r) => match parse_range(r, size) {
-            Some((s, e)) => {
-                res = res.header(header::CONTENT_RANGE, format!("bytes {s}-{e}/{size}"));
-                (StatusCode::PARTIAL_CONTENT, s, e - s + 1)
-            }
-            None => {
-                return (
-                    StatusCode::RANGE_NOT_SATISFIABLE,
-                    [(header::CONTENT_RANGE, format!("bytes */{size}"))],
-                )
-                    .into_response();
-            }
-        },
-    };
-    match file_body(&path, start, len).await {
-        Ok(body) => res
-            .status(status)
-            .header(header::CONTENT_LENGTH, len)
-            .body(body)
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-        Err(e) => {
+    ranged_file(res, &headers, &path, size)
+        .await
+        .unwrap_or_else(|e| {
             tracing::error!(path, "direct play read: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-    }
+        })
 }
 
 /// The engine's `sprite.json` / `sprite.jpg`, else the ones next to the resolver's `sprite.jpg`. [ts:modules/streaming/streaming.controller.ts:1363-1395]
@@ -1047,19 +1043,7 @@ async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option
             .ok()
             .map(|t| normalize_vtt(&t));
     }
-    let args: Vec<String> = [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        path,
-        "-f",
-        "webvtt",
-        "pipe:1",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let args = fliks_engine_core::jobs::subtitles::webvtt_args(path);
     run_capture(rt, &args, Duration::from_secs(60))
         .await
         .map(|o| String::from_utf8_lossy(&o).into_owned())
@@ -1323,35 +1307,14 @@ async fn live_segment(
     } else {
         "video/mp4"
     };
-    let mut res = Response::builder()
+    let res = Response::builder()
         .header(header::CONTENT_TYPE, ct)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "public, max-age=0");
-    let (status, start, len) = match headers.get(header::RANGE).and_then(|r| r.to_str().ok()) {
-        None => (StatusCode::OK, 0, size),
-        Some(r) => match parse_range(r, size) {
-            Some((s, e)) => {
-                res = res.header(header::CONTENT_RANGE, format!("bytes {s}-{e}/{size}"));
-                (StatusCode::PARTIAL_CONTENT, s, e - s + 1)
-            }
-            None => {
-                return (
-                    StatusCode::RANGE_NOT_SATISFIABLE,
-                    [(header::CONTENT_RANGE, format!("bytes */{size}"))],
-                )
-                    .into_response();
-            }
-        },
-    };
-    match file_body(&path, start, len).await {
-        Ok(body) => res
-            .status(status)
-            .header(header::CONTENT_LENGTH, len)
-            .body(body)
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-        // ffmpeg slid the window between the stat and the open.
-        Err(_) => nest(StatusCode::NOT_FOUND, MISSING),
-    }
+    // ffmpeg may slide the window between the stat and the open.
+    ranged_file(res, &headers, &path, size)
+        .await
+        .unwrap_or_else(|_| nest(StatusCode::NOT_FOUND, MISSING))
 }
 
 /// The shared upstream of a direct session, from now on. [ts:modules/livetv/controllers/livetv.controller.ts:268-290]

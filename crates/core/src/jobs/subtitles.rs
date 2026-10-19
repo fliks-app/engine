@@ -1,8 +1,8 @@
 //! Embedded text subtitle extraction and the burn-in `.ass`: argv, the ASS to WebVTT conversion
 //! and the libass filter. [ts:modules/streaming/{subtitle-stream.service,subtitle-vtt.util,subtitle-burn-in.service}.ts]
-use super::v;
 use crate::api::{BurnInKind, MediaInfo};
 use crate::jsnum::{is_space, js_string, number, to_fixed};
+use crate::strs;
 use std::collections::HashMap;
 
 /// Cap on one extraction (a full container read).
@@ -14,7 +14,7 @@ pub const MAX_STREAM_INDEX: u32 = 999;
 /// ffmpeg writing each stream as ASS to its own file in one run: the container read dominates the cost.
 /// `-analyzeduration 0 -probesize 200000` trusts the stored stream info.
 pub fn extract_args(path: &str, outputs: &[(u32, &str)]) -> Vec<String> {
-    let mut a = v(&[
+    let mut a = strs(&[
         "-analyzeduration",
         "0",
         "-probesize",
@@ -25,11 +25,19 @@ pub fn extract_args(path: &str, outputs: &[(u32, &str)]) -> Vec<String> {
     ]);
     a.push(path.into());
     for (idx, raw) in outputs {
-        a.extend(v(&["-map"]));
+        a.extend(strs(&["-map"]));
         a.push(format!("0:{idx}"));
-        a.extend(v(&["-c:s", "ass", "-f", "ass", "-y"]));
+        a.extend(strs(&["-c:s", "ass", "-f", "ass", "-y"]));
         a.push((*raw).into());
     }
+    a
+}
+
+/// ffmpeg converting an external subtitle file to WebVTT on stdout.
+pub fn webvtt_args(path: &str) -> Vec<String> {
+    let mut a = strs(&["-hide_banner", "-loglevel", "error", "-i"]);
+    a.push(path.into());
+    a.extend(strs(&["-f", "webvtt", "pipe:1"]));
     a
 }
 
@@ -52,11 +60,11 @@ pub fn check_extracted(len: u64, raw: &str) -> Result<(), String> {
 
 /// ffmpeg writing the embedded text track `stream_index` as ASS to `out` for a burn-in.
 pub fn burn_in_extract_args(video_path: &str, stream_index: u32, out: &str) -> Vec<String> {
-    let mut a = v(&["-y", "-i"]);
+    let mut a = strs(&["-y", "-i"]);
     a.push(video_path.into());
     a.push("-map".into());
     a.push(format!("0:{stream_index}"));
-    a.extend(v(&["-c:s", "ass"]));
+    a.extend(strs(&["-c:s", "ass"]));
     a.push(out.into());
     a
 }

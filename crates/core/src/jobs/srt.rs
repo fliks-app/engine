@@ -1,6 +1,6 @@
 //! Convert a sidecar or an embedded text track to SRT. Spec: `docs/spec/subtitle-jobs.md` section 6.
-use super::v;
 use crate::api::{MediaInfo, SrtSource};
+use crate::strs;
 
 pub const TIMEOUT_MS: u64 = 120_000;
 pub const MAX_STREAM_INDEX: u32 = 999;
@@ -33,13 +33,13 @@ pub fn validate_srt(info: &MediaInfo, source: &SrtSource) -> Result<(), String> 
 
 /// ffmpeg writing SRT on stdout. `map` is set for an embedded stream.
 pub fn to_srt_argv(input: &str, map: Option<u32>) -> Vec<String> {
-    let mut a = v(&["-y", "-i"]);
+    let mut a = strs(&["-y", "-i"]);
     a.push(input.into());
     if let Some(index) = map {
         a.push("-map".into());
         a.push(format!("0:{index}"));
     }
-    a.extend(v(&["-f", "srt", "pipe:1"]));
+    a.extend(strs(&["-f", "srt", "pipe:1"]));
     a
 }
 

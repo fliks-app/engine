@@ -1,5 +1,6 @@
 //! Command lines of the probe tools: the same arguments, order and timeouts as the host.
 use crate::api::Platform;
+use crate::strs;
 
 pub const MAIN_TIMEOUT_MS: u64 = 30_000;
 pub const FPS_TIMEOUT_MS: u64 = 30_000;
@@ -16,10 +17,6 @@ pub const MKVMERGE_MAX_OUTPUT_BYTES: usize = 1 << 24;
 /// `format=nv12` first: cropdetect compares `limit` to raw samples, 10-bit black sits near 64.
 const CROP_FILTER: &str = "format=nv12,cropdetect=limit=24:round=16:reset=0:skip=24";
 
-fn v(a: &[&str]) -> Vec<String> {
-    a.iter().map(|s| (*s).to_string()).collect()
-}
-
 fn with(mut a: Vec<String>, rest: &[String]) -> Vec<String> {
     a.extend_from_slice(rest);
     a
@@ -27,7 +24,7 @@ fn with(mut a: Vec<String>, rest: &[String]) -> Vec<String> {
 
 pub fn main(path: &str) -> Vec<String> {
     with(
-        v(&[
+        strs(&[
             "-v",
             "error",
             "-print_format",
@@ -42,7 +39,7 @@ pub fn main(path: &str) -> Vec<String> {
 
 pub fn fps(path: &str, stream: u32, from: u32) -> Vec<String> {
     with(
-        v(&["-v", "error", "-select_streams"]),
+        strs(&["-v", "error", "-select_streams"]),
         &[
             stream.to_string(),
             "-show_entries".into(),
@@ -58,7 +55,7 @@ pub fn fps(path: &str, stream: u32, from: u32) -> Vec<String> {
 
 pub fn first_frame(path: &str, stream: u32) -> Vec<String> {
     with(
-        v(&["-v", "error", "-select_streams"]),
+        strs(&["-v", "error", "-select_streams"]),
         &[
             stream.to_string(),
             "-show_entries".into(),
@@ -72,7 +69,7 @@ pub fn first_frame(path: &str, stream: u32) -> Vec<String> {
 
 pub fn audio_packets(path: &str) -> Vec<String> {
     with(
-        v(&[
+        strs(&[
             "-v",
             "error",
             "-show_entries",
@@ -86,7 +83,7 @@ pub fn audio_packets(path: &str) -> Vec<String> {
 
 pub fn late_audio(path: &str, reach_seconds: f64, file_size: u64) -> Vec<String> {
     with(
-        v(&["-v", "error", "-analyzeduration"]),
+        strs(&["-v", "error", "-analyzeduration"]),
         &[
             ((reach_seconds * 1_000_000.0).ceil() as u64).to_string(),
             "-probesize".into(),
@@ -103,7 +100,7 @@ pub fn late_audio(path: &str, reach_seconds: f64, file_size: u64) -> Vec<String>
 }
 
 pub fn mkvmerge(path: &str) -> Vec<String> {
-    v(&["-J", path])
+    strs(&["-J", path])
 }
 
 /// Hardware decode args of a crop sample, `None` when the host has nothing usable. Only VAAPI keeps
@@ -116,7 +113,7 @@ pub fn crop_hw_decode(
     nvidia_exists: bool,
 ) -> Option<Vec<String>> {
     match platform {
-        Platform::Linux if node_exists => Some(v(&[
+        Platform::Linux if node_exists => Some(strs(&[
             "-hwaccel",
             "vaapi",
             "-hwaccel_device",
@@ -125,10 +122,10 @@ pub fn crop_hw_decode(
             "vaapi",
         ])),
         // The nvidia runtime injects /dev/nvidiactl but no /dev/dri node.
-        Platform::Linux if nvidia_exists => Some(v(&["-hwaccel", "cuda"])),
+        Platform::Linux if nvidia_exists => Some(strs(&["-hwaccel", "cuda"])),
         Platform::Linux => None,
-        Platform::Win32 => Some(v(&["-hwaccel", "d3d11va"])),
-        Platform::Darwin => Some(v(&["-hwaccel", "videotoolbox"])),
+        Platform::Win32 => Some(strs(&["-hwaccel", "d3d11va"])),
+        Platform::Darwin => Some(strs(&["-hwaccel", "videotoolbox"])),
     }
 }
 
@@ -136,7 +133,7 @@ pub fn crop_hw_decode(
 /// timeout on a weak CPU).
 pub fn crop_sample(path: &str, ss: u32, hw: Option<&[String]>) -> Vec<String> {
     let on_device = hw.is_some_and(|h| h.iter().any(|a| a == "-hwaccel_output_format"));
-    let mut a = hw.map_or_else(|| v(&["-threads", "2"]), <[String]>::to_vec);
+    let mut a = hw.map_or_else(|| strs(&["-threads", "2"]), <[String]>::to_vec);
     a.extend([
         "-ss".into(),
         ss.to_string(),

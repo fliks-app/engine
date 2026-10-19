@@ -1,7 +1,7 @@
 //! Layer 2: what a run writes (HLS VOD, remux GOP files, live window, trick-play frame, plain file).
 use super::encode::{
     AudioEnc, DEFAULT_AUDIO_PLAN, audio_copy_args, audio_encode_args, audio_map, audio_stream_args,
-    encode, live_input, live_video, probe_args, s, video_map,
+    encode, live_input, live_video, probe_args, video_map,
 };
 use super::filters::crop_filter;
 use super::{AudioStream, FileArgs, FileFormat, IframeArgs, LiveArgs, RemuxArgs, VodArgs};
@@ -9,6 +9,7 @@ use crate::api::{AudioCodec, AudioPlan, HostCaps};
 use crate::decide::dolby_vision::has_no_base;
 use crate::hw::Device;
 use crate::jsnum::{js_string as js, round, seconds, to_fixed};
+use crate::strs;
 
 /// Under `-hls_time` so the muxer cuts on every forced IDR.
 const HLS_TIME_MARGIN: f64 = 0.0001;
@@ -50,12 +51,30 @@ struct Muxer<'a> {
     dolby_vision: bool,
 }
 
+fn hls_head(hls_time: String, list_size: String) -> Vec<String> {
+    let mut a = strs(&["-f", "hls", "-hls_time"]);
+    a.extend([hls_time, "-hls_list_size".into(), list_size]);
+    a
+}
+
+fn hls_segment_type(use_ts: bool) -> [String; 2] {
+    [
+        "-hls_segment_type".into(),
+        if use_ts { "mpegts" } else { "fmp4" }.into(),
+    ]
+}
+
 /// The shared HLS muxer tail. [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:191-255]
 fn hls_muxer(m: Muxer) -> Vec<String> {
     let origin = if m.use_ts { 0.0 } else { m.origin };
     let mut a = vec![];
     if !m.use_ts {
-        a.extend(s(&["-movflags", "+cmaf", "-avoid_negative_ts", "disabled"]));
+        a.extend(strs(&[
+            "-movflags",
+            "+cmaf",
+            "-avoid_negative_ts",
+            "disabled",
+        ]));
     }
     if m.source_timestamps {
         let strict = if m.dolby_vision {
@@ -75,22 +94,13 @@ fn hls_muxer(m: Muxer) -> Vec<String> {
     if m.use_ts && ts_offset > 0.0 {
         a.extend(["-output_ts_offset".into(), seconds(ts_offset)]);
     }
-    a.extend([
-        "-f".into(),
-        "hls".into(),
-        "-hls_time".into(),
-        m.hls_time,
-        "-hls_list_size".into(),
-        m.list_size.to_string(),
-        "-start_number".into(),
-        m.start_number.to_string(),
-        "-hls_segment_type".into(),
-        if m.use_ts { "mpegts" } else { "fmp4" }.into(),
-    ]);
+    a.extend(hls_head(m.hls_time, m.list_size.to_string()));
+    a.extend(["-start_number".into(), m.start_number.to_string()]);
+    a.extend(hls_segment_type(m.use_ts));
     if !m.use_ts {
         a.extend(["-hls_fmp4_init_filename".into(), m.init.into()]);
     }
-    a.extend(s(&["-hls_flags", "independent_segments+temp_file"]));
+    a.extend(strs(&["-hls_flags", "independent_segments+temp_file"]));
     if let Some(v) = m.var_stream_map {
         a.extend(["-var_stream_map".into(), v]);
     }
@@ -191,11 +201,17 @@ pub fn vod(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Vec<String>, St
 
 /// A copy-video run cut into one file per GOP. [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:1531-1733]
 pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
-    let mut a = s(&["-hide_banner", "-loglevel", "warning"]);
+    let mut a = strs(&["-hide_banner", "-loglevel", "warning"]);
     a.extend(probe_args(o.trusted_stream_info));
     let seek = o.run.seek_seconds.map(seconds);
     if let Some(ss) = &seek {
-        a.extend(s(&["-noaccurate_seek", "-seek_timestamp", "1", "-ss", ss]));
+        a.extend(strs(&[
+            "-noaccurate_seek",
+            "-seek_timestamp",
+            "1",
+            "-ss",
+            ss,
+        ]));
     }
     let audio = AudioEnc {
         stereo_bps: REMUX_STEREO_BPS,
@@ -206,7 +222,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
     };
     let plan = o.audio_plan.as_ref().unwrap_or(&DEFAULT_AUDIO_PLAN);
     a.extend(["-i".into(), o.input_path.clone()]);
-    a.extend(s(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
+    a.extend(strs(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
     if let Some(ss) = &seek {
         a.extend(["-ss".into(), ss.clone()]);
     }
@@ -235,7 +251,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
         } else {
             format!("hevc_mp4toannexb,hevc_metadata={}", meta.join(":"))
         };
-        video.extend(s(&[
+        video.extend(strs(&[
             "-tag:v",
             if dv_no_base_tag { "dvh1" } else { "hvc1" },
             "-bsf:v",
@@ -245,10 +261,10 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
         ]));
     }
     if codec == Some("av1") && dv_no_base_tag {
-        video.extend(s(&["-tag:v", "dav1"]));
+        video.extend(strs(&["-tag:v", "dav1"]));
     }
     if codec == Some("av1") && strip_hdr10_plus {
-        video.extend(s(&["-bsf:v", "av1_metadata=remove_hdr10plus=1"]));
+        video.extend(strs(&["-bsf:v", "av1_metadata=remove_hdr10plus=1"]));
     }
 
     let streams = o.audio_streams.as_deref();
@@ -265,7 +281,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
             "-map".into(),
             audio_map(streams, o.audio_stream_index.unwrap_or(0) as usize),
         ]);
-        a.extend(s(&["-c:v", "copy"]));
+        a.extend(strs(&["-c:v", "copy"]));
         a.extend(audio_stream_args("", plan, &audio));
     }
     a.extend(video);
@@ -308,7 +324,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
             }
             a.extend(["-map".into(), audio_map(streams.into(), i)]);
             a.extend(audio_stream_args("", p, &audio));
-            a.extend(s(&[
+            a.extend(strs(&[
                 "-f",
                 "mp4",
                 "-movflags",
@@ -349,7 +365,7 @@ pub fn http_header_args(
 /// A live channel into ffmpeg's sliding-window HLS muxer.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:99-208]
 pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
-    let mut a = s(&[
+    let mut a = strs(&[
         "-reconnect",
         "1",
         "-reconnect_streamed",
@@ -379,7 +395,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         a.extend(["-threads".into(), threads]);
     }
     a.extend(["-i".into(), o.input_url.clone()]);
-    a.extend(s(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
+    a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
     a.extend(live_video(o));
     // A broadcast switches AAC layouts at programme boundaries: ADTS in TS says so, fMP4 cannot.
     if o.audio_codec.as_deref() == Some("aac") && o.use_ts {
@@ -400,20 +416,11 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     if o.append {
         flags.push_str("+append_list+discont_start");
     }
-    a.extend([
-        "-f".into(),
-        "hls".into(),
-        "-hls_time".into(),
-        js(o.segment_seconds),
-        "-hls_list_size".into(),
-        js(list),
-        "-hls_delete_threshold".into(),
-        "3".into(),
-        "-hls_segment_type".into(),
-        if o.use_ts { "mpegts" } else { "fmp4" }.into(),
-    ]);
+    a.extend(hls_head(js(o.segment_seconds), js(list)));
+    a.extend(["-hls_delete_threshold".into(), "3".into()]);
+    a.extend(hls_segment_type(o.use_ts));
     if !o.use_ts {
-        a.extend(s(&["-hls_fmp4_init_filename", "init.mp4"]));
+        a.extend(strs(&["-hls_fmp4_init_filename", "init.mp4"]));
     }
     a.extend([
         "-hls_flags".into(),
@@ -431,12 +438,12 @@ pub fn iframe(o: &IframeArgs) -> Vec<String> {
         .crop
         .as_ref()
         .map_or(String::new(), |c| format!("{},", crop_filter(c)));
-    let mut a = s(&["-hide_banner", "-loglevel", "error", "-ss"]);
+    let mut a = strs(&["-hide_banner", "-loglevel", "error", "-ss"]);
     a.push(to_fixed(o.seek_seconds, 3));
-    a.extend(s(&["-copyts", "-i", &o.input_path]));
-    a.extend(s(&["-frames:v", "1", "-an", "-sn", "-dn", "-vf"]));
+    a.extend(strs(&["-copyts", "-i", &o.input_path]));
+    a.extend(strs(&["-frames:v", "1", "-an", "-sn", "-dn", "-vf"]));
     a.push(format!("{crop}scale={}:{}", o.width, o.height));
-    a.extend(s(&[
+    a.extend(strs(&[
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
     ]));
     if let Some(off) = o
@@ -445,7 +452,7 @@ pub fn iframe(o: &IframeArgs) -> Vec<String> {
     {
         a.extend(["-output_ts_offset".into(), js(off)]);
     }
-    a.extend(s(&[
+    a.extend(strs(&[
         "-f",
         "mpegts",
         "-muxdelay",
@@ -491,8 +498,8 @@ pub fn file(f: &FileArgs, caps: &HostCaps, dev: &Device) -> Result<Vec<String>, 
         }
     }
     match f.format {
-        FileFormat::Mp4 => a.extend(s(&["-f", "mp4", "-movflags", "+faststart"])),
-        FileFormat::Mkv => a.extend(s(&["-f", "matroska"])),
+        FileFormat::Mp4 => a.extend(strs(&["-f", "mp4", "-movflags", "+faststart"])),
+        FileFormat::Mkv => a.extend(strs(&["-f", "matroska"])),
     }
     a.push(f.path.clone());
     Ok(a)
@@ -546,7 +553,7 @@ mod tests {
         assert_eq!(got[..layer1.len()], layer1[..]);
         assert_eq!(
             got[layer1.len()..],
-            s(&[
+            strs(&[
                 "-map",
                 "0:v:0",
                 "-map",

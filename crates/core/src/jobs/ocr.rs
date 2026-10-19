@@ -1,6 +1,6 @@
 //! Subtitle OCR argv, language resolution and validation. Spec: `docs/spec/subtitle-jobs.md` section 2.
-use super::v;
 use crate::api::{MediaInfo, SubtitleStreamInfo};
+use crate::strs;
 
 pub const EXTRACT_TIMEOUT_MS: u64 = 900_000;
 pub const OCR_TOOL_TIMEOUT_MS: u64 = 1_800_000;
@@ -108,28 +108,28 @@ pub fn pgs_sup_path(base: &str, ietf: &str) -> String {
 }
 
 pub fn pgs_extract_argv(path: &str, stream_index: u32, sup: &str) -> Vec<String> {
-    let mut a = v(&["-y", "-i"]);
+    let mut a = strs(&["-y", "-i"]);
     a.push(path.into());
     a.push("-map".into());
     a.push(format!("0:{stream_index}"));
-    a.extend(v(&["-c:s", "copy"]));
+    a.extend(strs(&["-c:s", "copy"]));
     a.push(sup.into());
     a
 }
 
 pub fn pgsrip_argv(ietf: &str, sup: &str) -> Vec<String> {
-    v(&["--language", ietf, sup])
+    strs(&["--language", ietf, sup])
 }
 
 pub fn mkvextract_argv(path: &str, stream_index: u32, idx: &str) -> Vec<String> {
-    let mut a = v(&["tracks"]);
+    let mut a = strs(&["tracks"]);
     a.push(path.into());
     a.push(format!("{stream_index}:{idx}"));
     a
 }
 
 pub fn subtile_ocr_argv(pack: &str, base: &str) -> Vec<String> {
-    let mut a = v(&["-l", pack, "-o"]);
+    let mut a = strs(&["-l", pack, "-o"]);
     a.push(format!("{base}.srt"));
     a.push(format!("{base}.idx"));
     a

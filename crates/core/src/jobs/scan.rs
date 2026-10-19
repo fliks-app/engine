@@ -1,8 +1,8 @@
 //! Keyframe scan of a whole source file. [ts:modules/streaming/services/{source-scan,video-packets}.ts]
-use super::v;
 use crate::api::{Keyframe, MediaInfo, SourceScan};
 use crate::decide::source::is_mpeg_ts;
 use crate::jsnum::{number, parse_float};
+use crate::strs;
 use std::collections::{BTreeMap, HashMap};
 
 /// Slowest storage a whole-file scan still waits out; the packet read times out after
@@ -125,9 +125,9 @@ pub fn lead_from_probe(line: &str) -> f64 {
 }
 
 pub fn reorder_args(video: &VideoRef, file: &str) -> Vec<String> {
-    let mut a = v(&["-v", "error", "-select_streams"]);
+    let mut a = strs(&["-v", "error", "-select_streams"]);
     a.push(video.stream_index.to_string());
-    a.extend(v(&[
+    a.extend(strs(&[
         "-show_entries",
         "stream=has_b_frames,avg_frame_rate",
         "-of",
@@ -139,9 +139,9 @@ pub fn reorder_args(video: &VideoRef, file: &str) -> Vec<String> {
 
 /// Every video packet, none decoded; `file` is read from stdin (`pipe:0`) when the plan is piped.
 pub fn packet_args(plan: &ScanPlan, file: &str) -> Vec<String> {
-    let mut a = v(&["-v", "error", "-select_streams"]);
+    let mut a = strs(&["-v", "error", "-select_streams"]);
     a.push(plan.video.stream_index.to_string());
-    a.extend(v(&[
+    a.extend(strs(&[
         "-show_entries",
         "packet=pts_time,dts_time,duration_time,flags",
         "-of",
@@ -153,8 +153,8 @@ pub fn packet_args(plan: &ScanPlan, file: &str) -> Vec<String> {
 
 /// ffprobe's `stream=index,id`: the PID of every stream of a MPEG-TS file.
 pub fn pid_args(file: &str) -> Vec<String> {
-    let mut a = v(&["-v", "error", "-show_entries", "stream=index,id", "-of"]);
-    a.extend(v(&["compact=p=0"]));
+    let mut a = strs(&["-v", "error", "-show_entries", "stream=index,id", "-of"]);
+    a.extend(strs(&["compact=p=0"]));
     a.push(file.into());
     a
 }
