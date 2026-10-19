@@ -1,9 +1,10 @@
 //! The `SubtitleSync` job: ffsubsync when it is on PATH, then alass.
+use super::alass::{SAMPLE_RATE, Voice, sync_text};
 use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
-use alass_util::{AudioSink, SyncOptions, TimeSpans};
-use fliks_engine_core::api::{JobResult, MediaInfo, SubtitleText, SyncReference};
+use fliks_engine_core::api::{JobResult, MediaInfo, SubtitleFormat, SubtitleText, SyncReference};
 use fliks_engine_core::decide::timeline::parse_source_fps;
+use fliks_engine_core::jobs::cues::cue_spans;
 use fliks_engine_core::jobs::sync as pure;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,20 +22,6 @@ pub fn validate(
 fn alass_err(msg: impl AsRef<str>) -> String {
     let s: String = msg.as_ref().chars().take(300).collect();
     format!("alass error: {s}")
-}
-
-/// Framerate correction divides by the reference fps; without one it stays off.
-fn sync_options(fps: Option<f64>) -> (SyncOptions, f64) {
-    match fps {
-        Some(fps) => (
-            SyncOptions {
-                framerate_correction: true,
-                ..SyncOptions::default()
-            },
-            fps,
-        ),
-        None => (SyncOptions::default(), 1.0),
-    }
 }
 
 fn ref_fps(info: &MediaInfo) -> Option<f64> {
@@ -82,7 +69,7 @@ pub async fn run(
         no_fix_framerate,
         gss,
     };
-    let out = run_inner(ctx, info, reference, &resolved, &stage, &flags).await;
+    let out = run_inner(ctx, info, subtitle, reference, &resolved, &stage, &flags).await;
     remove_tree(&dir).await;
     out.map(|text| JobResult::SubtitleSync {
         subtitle: SubtitleText {
@@ -107,6 +94,7 @@ struct FfsubsyncFlags {
 async fn run_inner(
     ctx: &Ctx,
     info: &MediaInfo,
+    subtitle: &SubtitleText,
     reference: &SyncReference,
     resolved: &pure::ResolvedReference,
     stage: &Stage<'_>,
@@ -116,14 +104,14 @@ async fn run_inner(
         match ffsubsync_text(ctx, info, reference, stage, flags).await {
             Ok(text) => return Ok(text),
             Err(ff) => {
-                return match alass_text(ctx, info, resolved, stage).await {
+                return match alass_text(ctx, info, subtitle, resolved, stage).await {
                     Ok(text) => Ok(text),
                     Err(alass) => Err(format!("ffsubsync stderr: {ff}\n{alass}")),
                 };
             }
         }
     }
-    alass_text(ctx, info, resolved, stage).await
+    alass_text(ctx, info, subtitle, resolved, stage).await
 }
 
 fn on_path(name: &str) -> bool {
@@ -218,6 +206,7 @@ async fn read_subtitle(path: &Path) -> Result<String, String> {
 async fn alass_text(
     ctx: &Ctx,
     info: &MediaInfo,
+    subtitle: &SubtitleText,
     resolved: &pure::ResolvedReference,
     stage: &Stage<'_>,
 ) -> Result<String, String> {
@@ -231,38 +220,50 @@ async fn alass_text(
             }
         })?;
     ctx.progress(50.0);
-    let in_s = stage.input.to_string_lossy().into_owned();
-    let out_s = stage.output.to_string_lossy().into_owned();
-    let (opts, fps) = sync_options(ref_fps(info));
-    tokio::task::spawn_blocking(move || alass_util::sync(&in_s, &out_s, &spans, fps, None, &opts))
+    let (text, format, fps) = (subtitle.text.clone(), subtitle.format, ref_fps(info));
+    tokio::task::spawn_blocking(move || sync_text(&text, format, &spans, fps))
         .await
-        .map_err(|e| alass_err(e.to_string()))?
-        .map_err(|e| alass_err(e.to_string()))?;
-    read_subtitle(stage.output).await.map_err(alass_err)
+        .map_err(|e| alass_err(e.to_string()))
 }
 
 async fn reference_spans(
     ctx: &Ctx,
     resolved: &pure::ResolvedReference,
     ref_srt: &Path,
-) -> Result<TimeSpans, String> {
+) -> Result<Vec<(i64, i64)>, String> {
     match resolved {
         pure::ResolvedReference::Pcm { path, map } => pcm_spans(ctx, path, &map.map_arg()).await,
-        pure::ResolvedReference::SubtitleFile { path } => subtitle_file_spans(path),
+        pure::ResolvedReference::SubtitleFile { path } => {
+            subtitle_file_spans(Path::new(path), None).await
+        }
         pure::ResolvedReference::ExtractSubtitleStream {
             media_path,
             stream_index,
         } => {
             extract_subtitle_stream(ctx, media_path.as_str(), *stream_index, ref_srt).await?;
-            let ref_s = ref_srt.to_string_lossy().into_owned();
-            subtitle_file_spans(&ref_s)
+            subtitle_file_spans(ref_srt, Some(SubtitleFormat::Srt)).await
         }
     }
 }
 
-fn subtitle_file_spans(path: &str) -> Result<TimeSpans, String> {
-    let (sub, _) = alass_util::open_sub_file(path, None).map_err(|e| alass_err(e.to_string()))?;
-    TimeSpans::from_sub_file(&sub).map_err(|e| alass_err(e.to_string()))
+/// Cue spans of a subtitle file; its format is the extension's unless given. Only the timestamps
+/// are read, so the file's own encoding does not matter.
+async fn subtitle_file_spans(
+    path: &Path,
+    format: Option<SubtitleFormat>,
+) -> Result<Vec<(i64, i64)>, String> {
+    let format = format
+        .or_else(|| pure::format_of_path(&path.to_string_lossy()))
+        .ok_or_else(|| {
+            alass_err(format!(
+                "subtitle format not supported ({})",
+                path.display()
+            ))
+        })?;
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| alass_err(format!("{}: {e}", path.display())))?;
+    Ok(cue_spans(&String::from_utf8_lossy(&bytes), format))
 }
 
 async fn extract_subtitle_stream(
@@ -283,23 +284,21 @@ async fn extract_subtitle_stream(
     .await?
 }
 
-async fn pcm_spans(ctx: &Ctx, path: &str, map: &str) -> Result<TimeSpans, String> {
-    let rate = AudioSink::expected_sample_rate() as u32;
+async fn pcm_spans(ctx: &Ctx, path: &str, map: &str) -> Result<Vec<(i64, i64)>, String> {
+    let rate = SAMPLE_RATE;
     let argv = pure::pcm_extract_argv(path, map, rate);
     let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes { stdout: true });
     let c = ctx.clone();
     ctx.pipeline(pure::PCM_TIMEOUT_MS, vec![cmd], |p| async move {
         let ff = Arc::clone(&p[0]);
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<i16>>(64);
-        // AudioSink is not Send, so voice activity runs on a blocking thread.
+        // The detector is not Send, so voice activity runs on a blocking thread.
         let vad = tokio::task::spawn_blocking(move || {
-            let mut sink = AudioSink::default().map_err(alass_err)?;
+            let mut voice = Voice::new();
             while let Some(samples) = rx.blocking_recv() {
-                sink.send_samples(&samples)
-                    .map_err(|e| alass_err(e.to_string()))?;
+                voice.push(&samples).map_err(alass_err)?;
             }
-            sink.close().map_err(|e| alass_err(e.to_string()))?;
-            Ok(TimeSpans::from(&sink.voice_activity()))
+            voice.finish().map_err(alass_err)
         });
         let feed = feed_pcm(c, ff.clone(), tx);
         let (feed_out, exit, spans_out) = tokio::join!(feed, ff.wait(), vad);

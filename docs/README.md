@@ -34,6 +34,7 @@
 - probe adds `mkvTags` and `crop` switches, absolute-path validation, `FFPROBE_PATH`/`FFMPEG_PATH`/`MKVMERGE_PATH`, and stamps `schemaVersion` (the pure parser's output does not carry it). The host's warning logs are not ported.
 - probe reports more track dispositions than the host (audio `hearingImpaired`, `original`, `dub`, `cleanEffects`, `karaoke`; subtitle `commentary`, `descriptions`, `lyrics`, `captions` as hearing impaired), `schemaVersion` 2.
 
+- subtitle sync (alass): cue times are read and rewritten in the subtitle text (`core::jobs::cues`) instead of through `subparse` (`alass-util`), which pulled about 50 crates. The text outside the timestamps is kept as is (no renumbering or re-serialising), WebVTT is supported, a reference subtitle file is read as lossy UTF-8 (only its timestamps matter) and a binary `idx` reference is refused.
 - hw: every detection run recomputes all flags (the TS keeps the flags of probes a re-pin did not re-run), uses the pinned node for the backend choice too, and runs CPU probes serially; `FFMPEG_PATH` is new (the TS only looks `ffmpeg` up on PATH). Details in `spec/hw.md` section 10.
 - hw: `/v1/capabilities` and `/v1/decide` answer 503 until the first detection run ends (the TS treats unprobed encoders as usable and probes as off).
 - session: the cache profile hash is new (`cache/v1`, FNV-1a 64 over a documented canonical string, `spec/session.md` section 2), not the host's sha1 of `computeProfileHash`: no parity, snapshot and stability tests only. The old cache layout is purged once.

@@ -1,5 +1,6 @@
 //! Background jobs: queue, priority, cancellation, progress, disk check, and their ffmpeg runs on
 //! the shared slot budget. Spec: `docs/spec/jobs.md`.
+mod alass;
 mod fingerprint;
 mod ocr;
 mod scan;
