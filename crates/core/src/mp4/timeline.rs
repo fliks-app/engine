@@ -183,27 +183,27 @@ fn move_tfdts(
 
 /// Shift every fragment so segment `index` of a uniform grid decodes at its true content time.
 pub fn rewrite_segment_tfdt(
-    seg: &[u8],
+    seg: Vec<u8>,
     tracks: &IdMap<TrackInfo>,
     index: u32,
     duration: f64,
     start_pts: f64,
 ) -> Result<Vec<u8>, Mp4Error> {
     if tracks.is_empty() {
-        return Ok(seg.to_vec());
+        return Ok(seg);
     }
-    let frags = collect_tfdts(seg)?;
+    let frags = collect_tfdts(&seg)?;
     let video = frags
         .iter()
         .find(|f| get(tracks, f.track_id).is_some_and(|t| t.is_video));
     let Some(reference) = video.or(frags.first()) else {
-        return Ok(seg.to_vec());
+        return Ok(seg);
     };
     let Some(ref_ts) = get(tracks, reference.track_id)
         .map(|t| t.timescale)
         .filter(|t| *t != 0)
     else {
-        return Ok(seg.to_vec());
+        return Ok(seg);
     };
     let seg_start = f64::from(index) * duration + start_pts;
     let mut run_start = seg_start - reference.tfdt.value as f64 / f64::from(ref_ts);
@@ -211,7 +211,7 @@ pub fn rewrite_segment_tfdt(
         // Only the content part is a grid multiple: snap it, keep the start time.
         run_start = round((run_start - start_pts) / duration) * duration + start_pts;
     }
-    move_tfdts(seg.to_vec(), &frags, |id| {
+    move_tfdts(seg, &frags, |id| {
         get(tracks, id)
             .filter(|t| t.timescale != 0)
             .map(|t| big_int(round(run_start * f64::from(t.timescale))))

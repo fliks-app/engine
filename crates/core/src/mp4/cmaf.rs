@@ -52,13 +52,13 @@ pub fn cmaf_rewrite(buf: &[u8]) -> Vec<u8> {
 }
 
 /// What the host serves for a segment or init file's bytes: `None` when empty.
-pub fn rewrite_cmaf(buf: &[u8]) -> Option<Vec<u8>> {
+pub fn rewrite_cmaf(buf: Vec<u8>) -> Option<Vec<u8>> {
     if buf.is_empty() {
         return None;
     }
-    Some(if is_cmaf_rewritten(buf) {
-        buf.to_vec()
+    Some(if is_cmaf_rewritten(&buf) {
+        buf
     } else {
-        cmaf_rewrite(buf)
+        cmaf_rewrite(&buf)
     })
 }
