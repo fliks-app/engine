@@ -32,6 +32,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+/// Concurrent on-demand ffmpeg runs of the data plane; more wait for a permit.
+const MAX_CAPTURES: usize = 4;
 const WATCH_EVERY: Duration = Duration::from_millis(200);
 const THROTTLE_EVERY: Duration = Duration::from_secs(5);
 const SEGMENT_WAIT: Duration = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
@@ -493,6 +495,8 @@ pub struct Runtime {
     pub fpcalc: String,
     /// The one ffmpeg budget: session runs, extracts, background jobs and probe samples.
     pub slots: Arc<Slots>,
+    /// Bounds the on-demand ffmpeg runs of the data plane (trick play, subtitle extraction).
+    pub capture: tokio::sync::Semaphore,
     pub jobs: crate::jobs::Jobs,
     pub live: crate::live::Live,
     reg: Mutex<Reg>,
@@ -526,6 +530,7 @@ impl Runtime {
             ffprobe,
             fpcalc,
             slots: Slots::new(crate::slots::auto_size()),
+            capture: tokio::sync::Semaphore::new(MAX_CAPTURES),
             jobs: Default::default(),
             live: Default::default(),
             reg: Mutex::new(Reg::default()),
@@ -550,7 +555,7 @@ impl Runtime {
             .map_or_else(Default::default, |c| c.lifetime.clone())
     }
 
-    fn lock_for(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    pub(crate) fn lock_for(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.locks
             .lock()
             .unwrap()

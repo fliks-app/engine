@@ -147,6 +147,17 @@ fn subs(mode: &str, args: &[String]) {
     match mode {
         "failsub" => std::process::exit(1),
         "hangsub" => hang(),
+        // One line per run in `<input>.runs`, and a run slow enough for requests to overlap.
+        "slowsub" => {
+            let i = args.iter().position(|a| a == "-i").unwrap() + 1;
+            let mut runs = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(format!("{}.runs", args[i]))
+                .unwrap();
+            writeln!(runs).unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+        }
         _ => {}
     }
     let body = if mode == "emptysub" { "" } else { ASS };
@@ -366,7 +377,7 @@ fn main() {
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
         m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
-        | "failsub" | "hangsub") => job(m, &args),
+        | "failsub" | "hangsub" | "slowsub") => job(m, &args),
         "sync" => {
             if args.iter().any(|a| a == "pcm_s16le") {
                 eprintln!("no audio");

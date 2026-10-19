@@ -587,6 +587,21 @@ async fn subtitle_job_stores_the_vtt_the_routes_serve() {
 }
 
 #[tokio::test]
+async fn concurrent_embedded_requests_extract_once() {
+    let (e, file) = engine_of("slowsub", json!({})).await;
+    let rs = futures_util::future::join_all(
+        (0..6).map(|_| e.get("/api/stream/7/subtitles/embedded/2", "alice-jwt", &[])),
+    )
+    .await;
+    assert!(
+        rs.iter()
+            .all(|r| r.status == 200 && r.text() == rs[0].text())
+    );
+    let runs = std::fs::read_to_string(format!("{}.runs", file.display())).unwrap();
+    assert_eq!(runs.lines().count(), 1, "one ffmpeg run for six requests");
+}
+
+#[tokio::test]
 async fn subtitle_job_skips_cached_tracks_fails_and_cancels() {
     // `failsub` fails any ffmpeg run: a cached track needs none.
     let (e, file) = engine_of("failsub", json!({})).await;
