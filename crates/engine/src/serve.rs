@@ -611,6 +611,7 @@ async fn respond(
     let Some(bytes) = package(&path, name, s, remux).await else {
         return retry();
     };
+    rt.cache.touch(&path).await;
     if let SegmentName::Segment(index) = name {
         if track == Track::Video {
             let hw = job
