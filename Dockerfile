@@ -2,14 +2,24 @@ FROM ubuntu:24.04 AS vobsub-ocr-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl build-essential pkg-config clang libclang-dev \
     libtesseract-dev libleptonica-dev \
-  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
+  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99.0 \
   && . "$HOME/.cargo/env" \
-  && cargo install subtile-ocr --version 0.2.6 --root /opt/subtile-ocr \
+  && cargo install subtile-ocr --version 0.2.6 --locked --root /opt/subtile-ocr \
   && rm -rf /var/lib/apt/lists/* "$HOME/.cargo/registry" "$HOME/.rustup"
 
-FROM rust:1-bookworm AS build
-ARG CARGO_BUILD_JOBS
+FROM rust:1.99.0-bookworm AS chef
+RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY crates crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+ARG CARGO_BUILD_JOBS
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json -p fliks-engine --bin fliks-engine
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked -p fliks-engine --bin fliks-engine
@@ -23,16 +33,16 @@ ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix \
     python3 python3-pip tesseract-ocr tesseract-ocr-all \
-  && python3 -m pip install --no-cache-dir --break-system-packages pgsrip ffsubsync==0.5.1 \
-  && python3 -m pip uninstall -y --break-system-packages opencv-python \
   && python3 -m pip install --no-cache-dir --break-system-packages opencv-python-headless \
+     appdirs babelfish cleanit click numpy pysrt pytesseract pyyaml setuptools trakit ffsubsync==0.5.1 \
+  && python3 -m pip install --no-cache-dir --break-system-packages --no-deps pgsrip \
   && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-opencl-icd; fi \
   && wget -q -O /tmp/jellyfin-ffmpeg.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_${TARGETARCH}.deb" \
   && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && rm -f /tmp/jellyfin-ffmpeg.deb \
-  && apt-get purge -y wget && apt-get autoremove -y \
+  && apt-get purge -y wget python3-pip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
