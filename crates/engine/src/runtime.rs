@@ -371,30 +371,16 @@ impl Job {
 
     /// One listing of the run's directories; true when something changed.
     async fn scan(&self) -> bool {
-        let mut sets = vec![];
-        let mut inits = vec![];
-        let mut tmp_bytes = 0;
-        for t in 0..self.tracks {
-            let mut set = SegmentSet::default();
-            let mut init = false;
-            if let Ok(mut rd) = tokio::fs::read_dir(self.track_dir(t)).await {
-                while let Ok(Some(e)) = rd.next_entry().await {
-                    let name = e.file_name();
-                    let name = name.to_string_lossy();
-                    if name.contains(".tmp") {
-                        tmp_bytes += e.metadata().await.map_or(0, |m| m.len());
-                    }
-                    let ext_ok = name.ends_with(self.ext) || name.ends_with(".mp4");
-                    match parse_segment_name(&name) {
-                        Some(SegmentName::Segment(n)) if ext_ok => set.insert(n),
-                        Some(SegmentName::Init(_)) => init = true,
-                        _ => {}
-                    }
-                }
-            }
-            sets.push(set);
-            inits.push(init);
-        }
+        let (dirs, ext) = (
+            (0..self.tracks).map(|t| self.track_dir(t)).collect(),
+            self.ext,
+        );
+        // One blocking hop for the whole listing, not one per batch of entries.
+        let Ok((sets, inits, tmp_bytes)) =
+            tokio::task::spawn_blocking(move || list_tracks(dirs, ext)).await
+        else {
+            return false;
+        };
         let mut m = self.m.lock().unwrap();
         let changed = m.sets != sets || m.inits != inits;
         if changed || m.tmp_bytes != tmp_bytes {
@@ -426,6 +412,31 @@ impl Job {
     async fn settled(&self) {
         self.wait_for(Duration::from_secs(3600), |_| false).await;
     }
+}
+
+/// Segments, init presence and in-flight bytes of each track directory of a run.
+fn list_tracks(dirs: Vec<PathBuf>, ext: &str) -> (Vec<SegmentSet>, Vec<bool>, u64) {
+    let (mut sets, mut inits, mut tmp_bytes) = (vec![], vec![], 0);
+    for dir in dirs {
+        let mut set = SegmentSet::default();
+        let mut init = false;
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if name.contains(".tmp") {
+                tmp_bytes += e.metadata().map_or(0, |m| m.len());
+            }
+            let ext_ok = name.ends_with(ext) || name.ends_with(".mp4");
+            match parse_segment_name(&name) {
+                Some(SegmentName::Segment(n)) if ext_ok => set.insert(n),
+                Some(SegmentName::Init(_)) => init = true,
+                _ => {}
+            }
+        }
+        sets.push(set);
+        inits.push(init);
+    }
+    (sets, inits, tmp_bytes)
 }
 
 pub async fn non_empty_within(p: &Path, timeout: Duration) -> bool {

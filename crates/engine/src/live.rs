@@ -744,26 +744,32 @@ async fn first_segment(dir: &Path, proc: &Ffmpeg) -> bool {
 }
 
 async fn has_segment(dir: &Path) -> bool {
-    let Ok(mut rd) = tokio::fs::read_dir(dir).await else {
-        return false;
-    };
-    while let Ok(Some(e)) = rd.next_entry().await {
-        if e.file_name().to_string_lossy().starts_with("seg-") {
-            return true;
-        }
-    }
-    false
+    let dir = dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("seg-"))
+    })
+    .await
+    .unwrap_or(false)
 }
 
+/// One blocking hop for the whole listing, not one per batch of entries.
 async fn highest_segment(dir: &Path) -> Option<u32> {
-    let mut rd = tokio::fs::read_dir(dir).await.ok()?;
-    let mut top = None;
-    while let Ok(Some(e)) = rd.next_entry().await {
-        if let Some(n) = core_live::segment_number(&e.file_name().to_string_lossy()) {
-            top = top.max(Some(n));
-        }
-    }
-    top
+    let dir = dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| core_live::segment_number(&e.file_name().to_string_lossy()))
+            .max()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// A GET (http or https) following up to 5 redirects; `Err` is the reason to record.
