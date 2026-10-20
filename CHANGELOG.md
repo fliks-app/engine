@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.1](https://github.com/fliks-app/engine/compare/v0.5.0...v0.5.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **cache:** rank eviction by when an entry was served, not written ([#62](https://github.com/fliks-app/engine/issues/62)) ([af984ce](https://github.com/fliks-app/engine/commit/af984ce8d59004b69c0cdeaaabb0ea2ac5f2d017))
+* **engine:** bound ffmpeg stderr reads, map the host path once, trim axum features ([#65](https://github.com/fliks-app/engine/issues/65)) ([4f84626](https://github.com/fliks-app/engine/commit/4f846262a3e90f4c2722bc17e3bc4a9419527ee8))
+* **engine:** bound the resolver, init-track and lock caches ([#58](https://github.com/fliks-app/engine/issues/58)) ([ad9a90a](https://github.com/fliks-app/engine/commit/ad9a90ac4194523f986ea8242aac50de7a1038f5))
+* **engine:** keep serving after a panic under a lock ([#66](https://github.com/fliks-app/engine/issues/66)) ([a1f1181](https://github.com/fliks-app/engine/commit/a1f1181720743aa0597ffb0f541bf3fca34a3fae))
+* **serve:** bound on-demand ffmpeg runs and extract an embedded subtitle once ([#57](https://github.com/fliks-app/engine/issues/57)) ([36ec337](https://github.com/fliks-app/engine/commit/36ec337be2c22a3753980b075040424d1b598c1c))
+
+
+### Performance Improvements
+
+* **jobs:** index the job queue instead of scanning it ([#59](https://github.com/fliks-app/engine/issues/59)) ([b4e0723](https://github.com/fliks-app/engine/commit/b4e07233d96fff793161fde8410858c24fe14fde))
+* **runtime:** list a run's directories in one blocking hop ([#60](https://github.com/fliks-app/engine/issues/60)) ([1073d12](https://github.com/fliks-app/engine/commit/1073d1298aac52e6041e233686ad9b266005afe0))
+* **runtime:** read remux progress and the config without blocking ([#61](https://github.com/fliks-app/engine/issues/61)) ([1878656](https://github.com/fliks-app/engine/commit/18786568ef8e489afd8cc84857d1e7e606cc5314))
+* **serve:** stop copying segments up to three times per request ([#55](https://github.com/fliks-app/engine/issues/55)) ([5cd9639](https://github.com/fliks-app/engine/commit/5cd9639521dd044545d88e16d12f5e0c23d04fe5))
+
 ## [0.5.0](https://github.com/fliks-app/engine/compare/v0.4.1...v0.5.0) (2026-10-18)
 
 
