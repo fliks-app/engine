@@ -2,6 +2,11 @@ use clap::Parser;
 use fliks_engine::gateway::{self, RouteTable, Upstream};
 use std::net::SocketAddr;
 
+// glibc keeps the peaks of a many-threaded server resident; musl malloc is slow under contention.
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Parser)]
 #[command(version)]
 struct Cli {

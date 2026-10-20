@@ -50,3 +50,6 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mimalloc = "0.1"
