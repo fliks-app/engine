@@ -1,6 +1,8 @@
 //! HLS playlists, init and media segments, trick-play and audio renditions.
 
-use super::{Q, S, duration_of, file_id, hls, playlist, prefix, retry, text, token_param};
+use super::{
+    Q, S, duration_of, file_id, hls, playlist, prefix, retry, stream_body, text, token_param,
+};
 use crate::lock::Locked;
 use crate::runtime::{Fetch, Runtime, Session};
 use axum::body::Body;
@@ -26,7 +28,6 @@ use fliks_engine_core::session::{
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
 
 /// Rendition directories whose init is cached; the map restarts empty past it.
 const MAX_INIT_TRACKS: usize = 1024;
@@ -323,7 +324,7 @@ async fn package(
     if path.extension().is_some_and(|e| e == "ts") {
         let file = tokio::fs::File::open(path).await.ok()?;
         let len = usize::try_from(file.metadata().await.ok()?.len()).ok()?;
-        return (len > 0).then(|| (stream_file(file), len));
+        return (len > 0).then(|| (stream_body(file, 256 * 1024), len));
     }
     let mut buf = rewrite_cmaf(tokio::fs::read(path).await.ok()?)?;
     if let (SegmentName::Segment(n), false) = (name, keyframe_cut) {
@@ -340,16 +341,6 @@ async fn package(
     }
     let len = buf.len();
     Some((Body::from(buf), len))
-}
-
-/// A file as a response body, read in chunks instead of held whole in memory.
-fn stream_file(file: tokio::fs::File) -> Body {
-    Body::from_stream(futures_util::stream::try_unfold(file, |mut f| async move {
-        let mut chunk = vec![0; 256 * 1024];
-        let n = f.read(&mut chunk).await?;
-        chunk.truncate(n);
-        Ok::<_, std::io::Error>((n > 0).then(|| (axum::body::Bytes::from(chunk), f)))
-    }))
 }
 
 /// CMCD of a request: `?CMCD=`, else the `CMCD-*` headers.

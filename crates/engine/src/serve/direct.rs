@@ -1,6 +1,6 @@
 //! Direct play, byte ranges and the sprite sheet.
 
-use super::{Q, S, access, encode, file_id, text};
+use super::{Q, S, access, encode, file_id, stream_body, text};
 use axum::body::Body;
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -82,13 +82,7 @@ pub(super) fn base_name(p: &str) -> String {
 async fn file_body(path: &str, start: u64, len: u64) -> std::io::Result<Body> {
     let mut f = tokio::fs::File::open(path).await?;
     f.seek(std::io::SeekFrom::Start(start)).await?;
-    let stream = futures_util::stream::try_unfold(f.take(len), |mut r| async move {
-        let mut chunk = vec![0; 64 * 1024];
-        let n = r.read(&mut chunk).await?;
-        chunk.truncate(n);
-        Ok::<_, std::io::Error>((n > 0).then(|| (axum::body::Bytes::from(chunk), r)))
-    });
-    Ok(Body::from_stream(stream))
+    Ok(stream_body(f.take(len), 64 * 1024))
 }
 
 /// `path` whole, or the part of it a `Range` header asks for; `res` carries the route's headers.
