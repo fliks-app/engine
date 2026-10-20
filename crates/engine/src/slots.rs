@@ -77,9 +77,8 @@ impl Slots {
         self.st.lock().unwrap().queue.len()
     }
 
-    /// Never waits: playback runs first, past the size if need be.
-    /// `cpu` is false for a hardware encode: it barely uses the quota, so it does not
-    /// take a slot from background work.
+    /// Never waits: playback runs first, past the size if need be. A hardware encode (`cpu` false)
+    /// barely uses the quota, so it takes no slot from background work.
     pub fn playback(self: &Arc<Self>, cpu: bool) -> PlaybackSlot {
         self.playback_delta(true, cpu);
         PlaybackSlot {

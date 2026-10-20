@@ -173,9 +173,12 @@ impl Tools for ProcessTools {
             let stderr = child.stderr.take().unwrap();
             // The last 2000 bytes of stderr, collected while stdout is read.
             let tail = tokio::spawn(async move {
-                let mut buf = Vec::new();
-                let _ = BufReader::new(stderr).read_to_end(&mut buf).await;
-                String::from_utf8_lossy(&buf[buf.len().saturating_sub(2000)..]).into_owned()
+                let (mut stderr, mut tail, mut chunk) = (stderr, Vec::new(), [0u8; 4096]);
+                while let Ok(n @ 1..) = stderr.read(&mut chunk).await {
+                    tail.extend_from_slice(&chunk[..n]);
+                    tail.drain(..tail.len().saturating_sub(2000));
+                }
+                String::from_utf8_lossy(&tail).into_owned()
             });
             let deadline = Instant::now() + Duration::from_millis(timeout_ms);
             loop {

@@ -254,9 +254,8 @@ fn job(mode: &str, args: &[String]) {
     }
 }
 
-/// Live TV: the probe answers by URL, a run writes segments by URL (`fail` exits at once,
-/// `slowstart` never writes, `stall` writes one segment then goes silent, `dies` writes three then
-/// exits once `die` exists in the run's directory).
+/// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
+/// silent, `dies` writes three then exits once `die` exists in the run's directory.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {

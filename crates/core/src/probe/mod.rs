@@ -260,9 +260,8 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
     }
 }
 
-/// `detectCrop`: samples spread over the file, loosest box wins. Whether the GPU decodes a file
-/// depends on its codec, so the first sample decides: on failure every sample runs in software
-/// (same nv12 pixels). Also returns the decoder used.
+/// `detectCrop`: samples spread over the file, loosest box wins; the first decides GPU or
+/// software decode for all (same nv12 pixels). Also returns the decoder used.
 async fn detect_crop<T: Tools>(
     t: &T,
     path: &str,

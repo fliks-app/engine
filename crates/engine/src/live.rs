@@ -666,7 +666,11 @@ async fn spawn_packaged(
         }
         (m.mode, p.video_codec, p.audio_codec, fresh)
     };
-    let append = !fresh && attempted_once && dir.join("index.m3u8").exists();
+    let append = !fresh
+        && attempted_once
+        && tokio::fs::try_exists(dir.join("index.m3u8"))
+            .await
+            .unwrap_or(false);
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
     let hw_accel = if transcode {

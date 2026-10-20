@@ -35,9 +35,8 @@ pub struct HostCaps {
     /// Not read by `decide` (it picks the AAC encoder binary in the argv builder).
     pub libfdk_aac: bool,
     pub vaapi_writes_hdr_metadata: bool,
-    /// Names of the probes that passed; unlisted ones read false. Known names: `tonemapOpencl`,
-    /// `tonemapOpenclCrop`, `tonemapOpenclHdr10`, `qsvOpencl`, `qsvOpenclHdr10`, `vppQsv`,
-    /// `vulkan`, `cuda`, `cudaHdr10`, `opencl`, `openclHdr10`, `amfOpencl`.
+    /// Names of the probes that passed; unlisted ones read false (`tonemapOpencl`, `vppQsv`,
+    /// `vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants).
     pub probes: Vec<String>,
     /// Encoder descriptor ids the boot probe blacklisted (`hevc_qsv_main10`, `libx265`, ...).
     pub disabled_encoders: Vec<String>,
