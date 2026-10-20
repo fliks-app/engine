@@ -3,6 +3,7 @@
 //! `backend/src/modules/livetv/` (`svc` = `services/livetv-session.service.ts`).
 use crate::AppState;
 use crate::cache::{Cache, remove_dir, valid_owner};
+use crate::lock::Locked;
 use crate::proc::Ffmpeg;
 use crate::runtime::{Runtime, now_ms};
 use crate::slots::PlaybackSlot;
@@ -208,18 +209,13 @@ impl Pipe {
     }
 
     pub fn owner_of(&self, sid: &str) -> Option<Option<String>> {
-        self.m
-            .lock()
-            .unwrap()
-            .viewers
-            .get(sid)
-            .map(|v| v.owner.clone())
+        self.m.locked().viewers.get(sid).map(|v| v.owner.clone())
     }
 
     /// A viewer's stream of the shared upstream (`direct.ts`) and its content type.
     pub fn attach(&self, sid: &str) -> (mpsc::Receiver<Bytes>, String) {
         let (tx, rx) = mpsc::channel(TEE_CHUNKS);
-        let mut m = self.m.lock().unwrap();
+        let mut m = self.m.locked();
         m.tees.push((sid.into(), tx));
         let ct = m
             .content_type
@@ -278,12 +274,7 @@ pub async fn open(
     rt: &Arc<Runtime>,
     mut req: OpenLiveRequest,
 ) -> Result<OpenLiveResponse, OpenError> {
-    let config = rt
-        .config
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or(OpenError::NoConfig)?;
+    let config = rt.config.locked().clone().ok_or(OpenError::NoConfig)?;
     let caps = rt.caps().ok_or(OpenError::Detecting)?;
     validate(&req)?;
     let mut order: Vec<usize> = (0..req.upstreams.len()).collect();
@@ -331,7 +322,7 @@ struct OpeningGuard<'a> {
 impl Drop for OpeningGuard<'_> {
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
-            self.live.opening.lock().unwrap().remove(self.key);
+            self.live.opening.locked().remove(self.key);
             let _ = tx.send(Some(Ok(())));
         }
     }
@@ -374,10 +365,10 @@ async fn acquire(
 ) -> Result<Arc<Pipe>, OpenError> {
     loop {
         let found = {
-            let mut opening = rt.live.opening.lock().unwrap();
+            let mut opening = rt.live.opening.locked();
             if let Some(rx) = opening.get(key) {
                 Err(rx.clone())
-            } else if let Some(p) = rt.live.reg.lock().unwrap().pipes.get(key) {
+            } else if let Some(p) = rt.live.reg.locked().pipes.get(key) {
                 return Ok(p.clone());
             } else {
                 let (tx, rx) = watch::channel(None);
@@ -393,7 +384,7 @@ async fn acquire(
                     tx: Some(tx),
                 };
                 let out = start(rt, key, req, mode, caps, order, probes).await;
-                rt.live.opening.lock().unwrap().remove(key);
+                rt.live.opening.locked().remove(key);
                 let tx = guard.tx.take().expect("armed");
                 let _ = tx.send(Some(out.as_ref().map(|_| ()).map_err(Clone::clone)));
                 return out;
@@ -489,12 +480,7 @@ async fn start(
             ended: false,
         }),
     });
-    rt.live
-        .reg
-        .lock()
-        .unwrap()
-        .pipes
-        .insert(key.into(), pipe.clone());
+    rt.live.reg.locked().pipes.insert(key.into(), pipe.clone());
     let mut guard = StartGuard {
         rt: rt.clone(),
         pipe: pipe.clone(),
@@ -504,7 +490,7 @@ async fn start(
     guard.armed = false;
     if !fed {
         // A manifest is re-opened packaged under the same hold: not a release.
-        if pipe.m.lock().unwrap().not_streamable {
+        if pipe.m.locked().not_streamable {
             teardown_detached(rt, &pipe, false).await;
             return Err(OpenError::NotStreamable);
         }
@@ -524,7 +510,7 @@ fn join(
 ) -> OpenLiveResponse {
     let sid = crate::random_hex(16);
     let now = now_ms();
-    let mut m = pipe.m.lock().unwrap();
+    let mut m = pipe.m.locked();
     m.viewers.insert(
         sid.clone(),
         Viewer {
@@ -537,8 +523,7 @@ fn join(
     m.idle_since = None;
     rt.live
         .reg
-        .lock()
-        .unwrap()
+        .locked()
         .viewers
         .insert(sid.clone(), pipe.key.clone());
     let upstream = pipe.upstream_index(&m);
@@ -594,7 +579,7 @@ async fn probe(rt: &Runtime, u: &fliks_engine_core::api::LiveUpstream) -> Option
 async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_once: bool) -> bool {
     loop {
         let pos = {
-            let mut m = pipe.m.lock().unwrap();
+            let mut m = pipe.m.locked();
             if m.ended {
                 return false;
             }
@@ -617,19 +602,19 @@ async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_once: bool) 
             return true;
         }
         stop_transport(pipe).await;
-        let error = pipe.m.lock().unwrap().last_error.take();
+        let error = pipe.m.locked().last_error.take();
         attempt(
             rt,
             pipe,
             i,
             Some(error.unwrap_or_else(|| STARTUP_ERROR.into())),
         );
-        pipe.m.lock().unwrap().failover.failed(pos);
+        pipe.m.locked().failover.failed(pos);
     }
 }
 
 fn attempt(rt: &Runtime, pipe: &Pipe, upstream: usize, error: Option<String>) {
-    let probe = pipe.m.lock().unwrap().probes[upstream].clone();
+    let probe = pipe.m.locked().probes[upstream].clone();
     rt.events.emit(EngineEvent::LiveAttempt {
         capacity_token: pipe.capacity_token.clone(),
         upstream: upstream as u32,
@@ -648,16 +633,16 @@ async fn spawn_packaged(
     attempted_once: bool,
 ) -> bool {
     let u = &pipe.upstreams[i];
-    let has = pipe.m.lock().unwrap().probes[i].clone();
+    let has = pipe.m.locked().probes[i].clone();
     if !has_video(&has)
         && let Some(p) = probe(rt, u).await
     {
-        pipe.m.lock().unwrap().probes[i] = Some(p);
+        pipe.m.locked().probes[i] = Some(p);
     }
     let Some(caps) = rt.caps() else { return false };
     let dir = pipe.dir.clone().expect("packaged pipe");
     let (mode, video, audio, fresh) = {
-        let mut m = pipe.m.lock().unwrap();
+        let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
         let fresh = m.mode == LiveMode::Remux
             && core_live::forces_transcode(p.video_codec.as_deref(), m.active_codec.as_deref());
@@ -706,12 +691,12 @@ async fn spawn_packaged(
     let proc = match Ffmpeg::spawn(&rt.ffmpeg, &argv).await {
         Ok(p) => Arc::new(p),
         Err(e) => {
-            pipe.m.lock().unwrap().last_error = Some(format!("spawn: {e}"));
+            pipe.m.locked().last_error = Some(format!("spawn: {e}"));
             return false;
         }
     };
     {
-        let mut m = pipe.m.lock().unwrap();
+        let mut m = pipe.m.locked();
         if !m.ended {
             m.proc = Some(proc.clone());
             m.slot = Some(
@@ -722,13 +707,13 @@ async fn spawn_packaged(
             m.last_seg = None;
         }
     }
-    if pipe.m.lock().unwrap().ended {
+    if pipe.m.locked().ended {
         proc.stop().await;
         return false;
     }
     let ok = first_segment(&dir, &proc).await;
     if ok && mode == LiveMode::Remux {
-        pipe.m.lock().unwrap().active_codec = video;
+        pipe.m.locked().active_codec = video;
     }
     ok
 }
@@ -835,11 +820,11 @@ async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     let res = match tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, http_get(rt, u)).await {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
-            pipe.m.lock().unwrap().last_error = Some(e);
+            pipe.m.locked().last_error = Some(e);
             return false;
         }
         Err(_) => {
-            pipe.m.lock().unwrap().last_error = Some("timeout of 30000ms exceeded".into());
+            pipe.m.locked().last_error = Some("timeout of 30000ms exceeded".into());
             return false;
         }
     };
@@ -850,7 +835,7 @@ async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
         .unwrap_or("video/mp2t")
         .to_string();
     if core_live::is_manifest_content_type(&content_type) {
-        pipe.m.lock().unwrap().not_streamable = true;
+        pipe.m.locked().not_streamable = true;
         return false;
     }
     let mut body = res.into_body();
@@ -858,12 +843,12 @@ async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
         Err(_) => None,
         Ok(Some(Ok(f))) => f.into_data().ok(),
         Ok(_) => {
-            pipe.m.lock().unwrap().last_error = Some("upstream closed before any data".into());
+            pipe.m.locked().last_error = Some("upstream closed before any data".into());
             return false;
         }
     };
     if first.as_deref().is_some_and(core_live::is_manifest_payload) {
-        pipe.m.lock().unwrap().not_streamable = true;
+        pipe.m.locked().not_streamable = true;
         return false;
     }
     let down = Arc::new(AtomicBool::new(false));
@@ -879,7 +864,7 @@ async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
         }
         d.store(true, Ordering::SeqCst);
     });
-    let mut m = pipe.m.lock().unwrap();
+    let mut m = pipe.m.locked();
     m.content_type = Some(content_type);
     m.last_segment_at = Instant::now();
     m.direct = Some(Direct {
@@ -895,7 +880,7 @@ async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
 
 /// A viewer that cannot keep up is dropped, never the upstream. [ts:svc:970-984]
 fn fan_out(pipe: &Pipe, chunk: Bytes) {
-    let mut m = pipe.m.lock().unwrap();
+    let mut m = pipe.m.locked();
     m.last_segment_at = Instant::now();
     m.tees.retain(|(_, tx)| tx.try_send(chunk.clone()).is_ok());
 }
@@ -903,7 +888,7 @@ fn fan_out(pipe: &Pipe, chunk: Bytes) {
 /// Stops the process or the connection feeding the pipe; viewers and tees stay. [ts:svc:1121-1133]
 async fn stop_transport(pipe: &Pipe) {
     let (proc, slot, direct) = {
-        let mut m = pipe.m.lock().unwrap();
+        let mut m = pipe.m.locked();
         (m.proc.take(), m.slot.take(), m.direct.take())
     };
     if let Some(d) = direct {
@@ -921,7 +906,7 @@ async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
     let mut stall_check = Instant::now();
     loop {
         tokio::time::sleep(TICK).await;
-        if pipe.m.lock().unwrap().ended {
+        if pipe.m.locked().ended {
             return;
         }
         let top = match &pipe.dir {
@@ -933,7 +918,7 @@ async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
         let idle = Duration::from_secs(config.livetv.channel_idle_seconds.max(0) as u64);
         let now = Instant::now();
         let (expired, idle_over, failure) = {
-            let mut m = pipe.m.lock().unwrap();
+            let mut m = pipe.m.locked();
             if top.is_some() && top > m.last_seg {
                 m.last_seg = top;
                 m.last_segment_at = now;
@@ -981,7 +966,7 @@ async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
             (expired, idle_over, failure)
         };
         if !expired.is_empty() {
-            let mut reg = rt.live.reg.lock().unwrap();
+            let mut reg = rt.live.reg.locked();
             for sid in &expired {
                 reg.viewers.remove(sid);
             }
@@ -1008,10 +993,10 @@ async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
 async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> bool {
     tracing::warn!(key = pipe.key, "live upstream failed: {error}");
     stop_transport(pipe).await;
-    let pos = pipe.m.lock().unwrap().current;
+    let pos = pipe.m.locked().current;
     attempt(rt, pipe, pipe.order[pos], Some(error));
     {
-        let mut m = pipe.m.lock().unwrap();
+        let mut m = pipe.m.locked();
         m.failover.failed(pos);
         m.last_seg = None;
     }
@@ -1023,7 +1008,7 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
 }
 
 fn unregister(rt: &Runtime, pipe: &Pipe) {
-    let mut reg = rt.live.reg.lock().unwrap();
+    let mut reg = rt.live.reg.locked();
     if reg
         .pipes
         .get(&pipe.key)
@@ -1037,7 +1022,7 @@ fn unregister(rt: &Runtime, pipe: &Pipe) {
 /// [ts:svc:1147-1164]
 async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
     let viewers: Vec<String> = {
-        let mut m = pipe.m.lock().unwrap();
+        let mut m = pipe.m.locked();
         if m.ended {
             return;
         }
@@ -1047,7 +1032,7 @@ async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
     };
     unregister(rt, pipe);
     {
-        let mut reg = rt.live.reg.lock().unwrap();
+        let mut reg = rt.live.reg.locked();
         for sid in &viewers {
             reg.viewers.remove(sid);
         }
@@ -1073,15 +1058,7 @@ async fn teardown(rt: &Runtime, pipe: &Pipe, reason: &str, release: bool) {
 
 /// Every pipe, at engine shutdown.
 pub async fn shutdown(rt: &Arc<Runtime>) {
-    let pipes: Vec<Arc<Pipe>> = rt
-        .live
-        .reg
-        .lock()
-        .unwrap()
-        .pipes
-        .values()
-        .cloned()
-        .collect();
+    let pipes: Vec<Arc<Pipe>> = rt.live.reg.locked().pipes.values().cloned().collect();
     for p in pipes {
         teardown(rt, &p, "shutdown", true).await;
     }
@@ -1089,20 +1066,20 @@ pub async fn shutdown(rt: &Arc<Runtime>) {
 
 impl Live {
     fn pipe_of(&self, sid: &str) -> Option<Arc<Pipe>> {
-        let reg = self.reg.lock().unwrap();
+        let reg = self.reg.locked();
         reg.pipes.get(reg.viewers.get(sid)?).cloned()
     }
 
     /// The viewer's pipe, without keeping the viewer alive (see `touch`).
     pub fn lookup(&self, sid: &str) -> Option<Arc<Pipe>> {
         let pipe = self.pipe_of(sid)?;
-        let known = pipe.m.lock().unwrap().viewers.contains_key(sid);
+        let known = pipe.m.locked().viewers.contains_key(sid);
         known.then_some(pipe)
     }
 
     /// A served data-plane request keeps the viewer. [ts:svc:590-601]
     pub fn touch(&self, pipe: &Pipe, sid: &str) {
-        if let Some(v) = pipe.m.lock().unwrap().viewers.get_mut(sid) {
+        if let Some(v) = pipe.m.locked().viewers.get_mut(sid) {
             v.last_seen_ms = now_ms();
         }
     }
@@ -1113,9 +1090,9 @@ impl Live {
         let Some(pipe) = self.pipe_of(sid) else {
             return false;
         };
-        self.reg.lock().unwrap().viewers.remove(sid);
+        self.reg.locked().viewers.remove(sid);
         {
-            let mut m = pipe.m.lock().unwrap();
+            let mut m = pipe.m.locked();
             m.viewers.remove(sid);
             m.tees.retain(|(s, _)| s != sid);
         }
@@ -1137,11 +1114,11 @@ impl Live {
     }
 
     pub fn list(&self, owner: Option<&str>) -> Vec<LiveSnapshot> {
-        let pipes: Vec<Arc<Pipe>> = self.reg.lock().unwrap().pipes.values().cloned().collect();
+        let pipes: Vec<Arc<Pipe>> = self.reg.locked().pipes.values().cloned().collect();
         let mut out: Vec<LiveSnapshot> = pipes
             .iter()
             .flat_map(|p| {
-                let m = p.m.lock().unwrap();
+                let m = p.m.locked();
                 m.viewers
                     .keys()
                     .filter_map(|sid| p.snapshot(sid, &m))
@@ -1155,7 +1132,7 @@ impl Live {
 
     pub fn snapshot(&self, sid: &str) -> Option<LiveSnapshot> {
         let p = self.pipe_of(sid)?;
-        let m = p.m.lock().unwrap();
+        let m = p.m.locked();
         p.snapshot(sid, &m)
     }
 }

@@ -10,6 +10,7 @@ pub(crate) mod subtitles;
 mod sync;
 
 use crate::AppState;
+use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes, background};
 use crate::runtime::{Runtime, now_ms};
 use crate::slots::BackgroundSlot;
@@ -74,11 +75,11 @@ impl BgJob {
     }
 
     fn base_state(&self) -> BgJobState {
-        self.m.lock().unwrap().state
+        self.m.locked().state
     }
 
     pub fn snapshot(&self) -> JobSnapshot {
-        let m = self.m.lock().unwrap();
+        let m = self.m.locked();
         let paused = m.state == BgJobState::Running && m.runs > 0 && m.paused_runs == m.runs;
         JobSnapshot {
             job_id: self.id.clone(),
@@ -118,17 +119,17 @@ struct Queue {
 
 impl Jobs {
     pub fn get(&self, id: &str) -> Option<Arc<BgJob>> {
-        let q = self.q.lock().unwrap();
+        let q = self.q.locked();
         q.all.get(q.by_id.get(id)?).cloned()
     }
 
     pub fn snapshots(&self) -> Vec<JobSnapshot> {
-        let all: Vec<_> = self.q.lock().unwrap().all.values().cloned().collect();
+        let all: Vec<_> = self.q.locked().all.values().cloned().collect();
         all.iter().map(|j| j.snapshot()).collect()
     }
 
     fn live(&self, keep: impl Fn(&BgJob) -> bool) -> Vec<Arc<BgJob>> {
-        let q = self.q.lock().unwrap();
+        let q = self.q.locked();
         let open: Vec<_> = q
             .open
             .values()
@@ -202,7 +203,7 @@ pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
     validate(&req.kind)?;
     let dedupe = serde_json::to_string(&(&req.kind, &req.media)).unwrap_or_default();
     let id = {
-        let mut q = rt.jobs.q.lock().unwrap();
+        let mut q = rt.jobs.q.locked();
         if let Some(j) = q.open.get(&dedupe).and_then(|s| q.all.get(s))
             && !j.base_state().ended()
         {
@@ -244,13 +245,13 @@ pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
 /// Starts queued jobs by priority, then age, while fewer than `MAX_RUNNING` run.
 fn pump(rt: &Arc<Runtime>) {
     let start: Vec<Arc<BgJob>> = {
-        let mut q = rt.jobs.q.lock().unwrap();
+        let mut q = rt.jobs.q.locked();
         let mut picked = vec![];
         while q.running < MAX_RUNNING {
             let Some((_, j)) = q.waiting.pop_first() else {
                 break;
             };
-            let mut m = j.m.lock().unwrap();
+            let mut m = j.m.locked();
             if m.state != BgJobState::Queued {
                 continue;
             }
@@ -264,7 +265,7 @@ fn pump(rt: &Arc<Runtime>) {
     };
     for j in start {
         let task = tokio::spawn(run(rt.clone(), j.clone()));
-        *j.task.lock().unwrap() = Some(task);
+        *j.task.locked() = Some(task);
     }
 }
 
@@ -327,7 +328,7 @@ fn finish(
     error: Option<String>,
 ) {
     let was = {
-        let mut m = job.m.lock().unwrap();
+        let mut m = job.m.locked();
         if m.state.ended() {
             return;
         }
@@ -347,7 +348,7 @@ fn finish(
         result,
         error,
     });
-    let mut q = rt.jobs.q.lock().unwrap();
+    let mut q = rt.jobs.q.locked();
     if q.open.get(&job.dedupe) == Some(&job.seq) {
         q.open.remove(&job.dedupe);
     }
@@ -375,7 +376,7 @@ async fn stop(rt: &Arc<Runtime>, jobs: Vec<Arc<BgJob>>) {
         }
     }
     for j in jobs {
-        let task = j.task.lock().unwrap().take();
+        let task = j.task.locked().take();
         if let Some(t) = task {
             let _ = t.await;
         }
@@ -420,7 +421,7 @@ impl Ctx {
     /// `BgJobProgress`, at most once per `PROGRESS_EVERY`.
     pub fn progress(&self, pct: f64) {
         let due = {
-            let mut m = self.job.m.lock().unwrap();
+            let mut m = self.job.m.locked();
             m.pct = pct;
             let due = m
                 .last_progress
@@ -503,7 +504,7 @@ impl Ctx {
             let p = Ffmpeg::spawn_with(&bin, &args, c.pipes).await;
             procs.push(Arc::new(p.map_err(|e| format!("spawn {}: {e}", c.bin))?));
         }
-        self.job.m.lock().unwrap().runs += 1;
+        self.job.m.locked().runs += 1;
         let paused = AtomicBool::new(false);
         let work = work(procs.clone());
         let verdict = {
@@ -515,7 +516,7 @@ impl Ctx {
             }
         };
         {
-            let mut m = self.job.m.lock().unwrap();
+            let mut m = self.job.m.locked();
             m.runs -= 1;
             m.paused_runs -= u32::from(paused.load(Relaxed));
         }
@@ -572,7 +573,7 @@ impl Ctx {
                 if sent {
                     paused = want;
                     paused_out.store(paused, Relaxed);
-                    let mut m = self.job.m.lock().unwrap();
+                    let mut m = self.job.m.locked();
                     if paused {
                         m.paused_runs += 1;
                     } else {

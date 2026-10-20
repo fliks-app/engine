@@ -1,5 +1,6 @@
 //! Child process helpers shared by every ffmpeg/ffprobe/mkvmerge caller, and the lifecycle of
 //! long ffmpeg runs (`docs/spec/runtime.md` section 1).
+use crate::lock::Locked;
 use fliks_engine_core::session::{PauseCapability, PauseCommand, pause_command};
 use std::collections::VecDeque;
 use std::io;
@@ -18,13 +19,13 @@ static OWN: Mutex<std::collections::BTreeSet<u32>> = Mutex::new(std::collections
 /// Only PID 1 runs the reaper that consults it.
 #[cfg(unix)]
 fn track(pid: u32) {
-    OWN.lock().unwrap().insert(pid);
+    OWN.locked().insert(pid);
 }
 
 /// Whether `pid` is still a child `spawn` started; forgets it once tokio has reaped it.
 #[cfg(unix)]
 pub fn is_own(pid: u32) -> bool {
-    let mut own = OWN.lock().unwrap();
+    let mut own = OWN.locked();
     if !own.contains(&pid) {
         return false;
     }
@@ -218,7 +219,7 @@ impl Ffmpeg {
                 while let Ok(1..) = (&mut err).take(MAX_LINE).read_until(b'\n', &mut buf).await {
                     count.fetch_add(1, Ordering::Relaxed);
                     let l = String::from_utf8_lossy(&buf);
-                    let mut r = ring.lock().unwrap();
+                    let mut r = ring.locked();
                     if r.len() == RING_LINES {
                         r.pop_front();
                     }
@@ -266,7 +267,7 @@ impl Ffmpeg {
     }
 
     pub fn take_stdout(&self) -> Option<ChildStdout> {
-        self.stdout.lock().unwrap().take()
+        self.stdout.locked().take()
     }
 
     pub fn exited(&self) -> Option<Exit> {
@@ -339,7 +340,7 @@ impl Ffmpeg {
     }
 
     pub fn stderr_tail(&self) -> Vec<String> {
-        self.stderr.lock().unwrap().iter().cloned().collect()
+        self.stderr.locked().iter().cloned().collect()
     }
 
     async fn write_key(&self, key: u8) -> bool {

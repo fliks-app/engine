@@ -1,6 +1,7 @@
 //! A remux run's served segments, assembled from its GOP files and growing audio files onto the
 //! grid and the served timeline (`RemuxSegmentAssembler`); the decisions are `core::mp4`'s.
 //! Spec: `docs/spec/runtime.md` section 9.
+use crate::lock::Locked;
 use fliks_engine_core::mp4::{
     AudioGroup, OpenedRun, RemuxAssemblyPlan, check_gop, gop_complete, gops_of, open_audio,
     open_run, parse_frame, plan_boundary_seconds, read_box_header, retime_fragments, seg_name,
@@ -79,7 +80,7 @@ struct ViewState {
 impl RemuxView {
     /// Progress of the video (`None`) or of rendition `audio` (1-based).
     pub fn progress(&self, audio: Option<usize>) -> RemuxProgress {
-        let st = self.st.lock().unwrap();
+        let st = self.st.locked();
         let frontier = st.run_next.and_then(|run_next| match audio {
             None => Some(st.next),
             Some(i) => st
@@ -106,7 +107,7 @@ impl RemuxView {
 
     /// `(run start, frontier)` in content seconds, `None` before the run landed.
     pub fn span(&self) -> (Option<f64>, Option<f64>) {
-        let st = self.st.lock().unwrap();
+        let st = self.st.locked();
         match st.run_next {
             Some(_) => (
                 Some(self.segment_content_seconds(st.open_start)),
@@ -118,7 +119,7 @@ impl RemuxView {
 
     /// Freezes or resumes the throughput clock with the throttle's pause.
     pub fn pause(&self, pause: bool) {
-        let mut st = self.st.lock().unwrap();
+        let mut st = self.st.locked();
         match (pause, st.paused_since) {
             (true, None) => st.paused_since = Some(Instant::now()),
             (false, Some(p)) => {
@@ -393,7 +394,7 @@ impl Assembler {
 
     /// Makes this pass's progress readable without the assembler's lock.
     fn publish(&self) {
-        let mut st = self.view.st.lock().unwrap();
+        let mut st = self.view.st.locked();
         st.next = self.next;
         st.run_next = self.run.as_ref().map(|r| r.next);
         st.open_start = self.open_start;

@@ -1,5 +1,6 @@
 //! One ffmpeg slot budget for the whole engine: playback takes a slot at once, background runs
 //! queue and are preempted while playback needs the machine. Spec: `docs/spec/jobs.md` section 3.
+use crate::lock::Locked;
 use fliks_engine_core::api::JobPriority;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{oneshot, watch};
@@ -55,7 +56,7 @@ impl Slots {
 
     /// `streaming.ffmpegSlots`: absent or 0 restores the derived size.
     pub fn set_size(&self, configured: Option<u32>) {
-        let mut st = self.st.lock().unwrap();
+        let mut st = self.st.locked();
         st.size = configured
             .filter(|n| *n > 0)
             .map_or_else(auto_size, |n| n as usize);
@@ -63,18 +64,18 @@ impl Slots {
     }
 
     pub fn size(&self) -> usize {
-        self.st.lock().unwrap().size
+        self.st.locked().size
     }
 
     /// Playback runs in use, software and hardware (a throttled run's excluded).
     pub fn playback_in_use(&self) -> usize {
-        let st = self.st.lock().unwrap();
+        let st = self.st.locked();
         st.playback + st.gpu
     }
 
     /// Background runs queued for a slot.
     pub fn waiting(&self) -> usize {
-        self.st.lock().unwrap().queue.len()
+        self.st.locked().queue.len()
     }
 
     /// Never waits: playback runs first, past the size if need be. A hardware encode (`cpu` false)
@@ -92,7 +93,7 @@ impl Slots {
     pub async fn background(self: &Arc<Self>, priority: JobPriority) -> BackgroundSlot {
         let (tx, rx) = oneshot::channel();
         let ticket = {
-            let mut st = self.st.lock().unwrap();
+            let mut st = self.st.locked();
             let id = st.next_id;
             st.next_id += 1;
             let at = st
@@ -125,14 +126,14 @@ impl Slots {
     }
 
     fn release(&self, id: u64) {
-        let mut st = self.st.lock().unwrap();
+        let mut st = self.st.locked();
         st.queue.retain(|w| w.id != id);
         st.running.retain(|(r, _)| *r != id);
         rebalance(&mut st);
     }
 
     fn playback_delta(&self, up: bool, cpu: bool) {
-        let mut st = self.st.lock().unwrap();
+        let mut st = self.st.locked();
         let n = if cpu { &mut st.playback } else { &mut st.gpu };
         if up {
             *n += 1;
@@ -186,7 +187,7 @@ pub struct PlaybackSlot {
 impl PlaybackSlot {
     /// A paused (throttled) playback run lends its slot back to background work.
     pub fn set_idle(&self, idle: bool) {
-        let mut i = self.idle.lock().unwrap();
+        let mut i = self.idle.locked();
         if *i != idle {
             *i = idle;
             self.slots.playback_delta(!idle, self.cpu);
@@ -196,7 +197,7 @@ impl PlaybackSlot {
 
 impl Drop for PlaybackSlot {
     fn drop(&mut self) {
-        if !*self.idle.lock().unwrap() {
+        if !*self.idle.locked() {
             self.slots.playback_delta(false, self.cpu);
         }
     }

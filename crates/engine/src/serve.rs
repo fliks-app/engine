@@ -2,6 +2,7 @@
 //! resolver. Spec: `docs/spec/runtime.md` section 6.
 // The error side of these helpers is the HTTP answer itself.
 #![allow(clippy::result_large_err)]
+use crate::lock::Locked;
 use crate::resolve::{Ask, Host, ResolveError, Resolved};
 use crate::runtime::{Fetch, Runtime, Session};
 use axum::{
@@ -508,7 +509,7 @@ async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option
 
 /// Track info of a rendition directory, parsed from its init and cached while the file is unchanged.
 async fn init_tracks(rt: &Runtime, dir: &Path) -> IdMap<TrackInfo> {
-    let known = rt.init_tracks.lock().unwrap().get(dir).cloned();
+    let known = rt.init_tracks.locked().get(dir).cloned();
     if let Some((init, stamp, tracks)) = known
         && stamp_of(&init).await == Some(stamp)
     {
@@ -536,7 +537,7 @@ async fn init_tracks(rt: &Runtime, dir: &Path) -> IdMap<TrackInfo> {
         .and_then(|b| parse_init_tracks(&b).ok())
         .unwrap_or_default();
     if let (false, Some(stamp)) = (tracks.is_empty(), stamp) {
-        let mut cache = rt.init_tracks.lock().unwrap();
+        let mut cache = rt.init_tracks.locked();
         if cache.len() >= MAX_INIT_TRACKS {
             cache.clear();
         }

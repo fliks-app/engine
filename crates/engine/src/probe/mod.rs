@@ -105,6 +105,7 @@ mod tests {
     use super::resolve_probe_path;
     use crate::cache::Cache;
     use crate::hw::Hw;
+    use crate::lock::Locked;
     use crate::runtime::Runtime;
     use fliks_engine_core::api::{EngineConfig, PathMapping};
     use std::sync::Arc;
@@ -118,7 +119,7 @@ mod tests {
             "ffprobe".into(),
             "fpcalc".into(),
         );
-        rt.config.lock().unwrap().replace(Arc::new(EngineConfig {
+        rt.config.locked().replace(Arc::new(EngineConfig {
             path_mappings: vec![PathMapping {
                 from: from.into(),
                 to: to.into(),

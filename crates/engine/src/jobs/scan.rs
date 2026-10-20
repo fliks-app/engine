@@ -1,6 +1,7 @@
 //! The `Scan` job: ffprobe over every video packet (keyframes, end, clock break) and, on MPEG-TS
 //! with AAC, the ADTS headers a `Demuxer` reads from the same bytes. Spec: `docs/spec/jobs.md` section 6.
 use super::{Cmd, Ctx};
+use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes};
 use fliks_engine_core::api::{JobResult, MediaInfo, SOURCE_SCAN_SCHEMA_VERSION};
 use fliks_engine_core::jobs::scan::*;
@@ -143,7 +144,7 @@ async fn piped(
                     let _ = feeder.await;
                 }
             }
-            out.map(|(r, _)| (r, d.lock().unwrap().finish()))
+            out.map(|(r, _)| (r, d.locked().finish()))
         })
         .await??;
     Ok((reader, audio_config_changes(&plan.aac, &walkers)))
@@ -158,7 +159,7 @@ async fn feed(ctx: Ctx, file: String, ffprobe: Arc<Ffmpeg>, demux: Arc<Mutex<Dem
     };
     let mut buf = vec![0u8; CHUNK];
     while let Ok(n @ 1..) = f.read(&mut buf).await {
-        demux.lock().unwrap().push(&buf[..n]);
+        demux.locked().push(&buf[..n]);
         if sink.write_all(&buf[..n]).await.is_err() {
             return;
         }

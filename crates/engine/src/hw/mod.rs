@@ -4,6 +4,7 @@ mod io;
 
 pub use io::{ProcRunner, enumerate_gpus, probe_stdin_pause};
 
+use crate::lock::Locked;
 use fliks_engine_core::api::{Capabilities, HostCaps};
 use fliks_engine_core::hw::{
     DEFAULT_RENDER_NODE, Detected, Device, GpuInfo, detect, pause_capability, platform_from_os,
@@ -108,12 +109,12 @@ impl Hw {
     /// Already detected, never re-runs on its own (tests).
     pub fn fixed(snapshot: Snapshot) -> Arc<Self> {
         let hw = Self::new(Arc::new(|_| unreachable!("fixed host caps")));
-        hw.state.lock().unwrap().current = Some(snapshot);
+        hw.state.locked().current = Some(snapshot);
         hw
     }
 
     pub fn snapshot(&self) -> Option<Snapshot> {
-        self.state.lock().unwrap().current.clone()
+        self.state.locked().current.clone()
     }
 
     /// Boot detection in the background.
@@ -124,7 +125,7 @@ impl Hw {
     /// The host changed `gpuRenderNode`: detect again on the new node unless it is the one in use.
     pub fn set_render_node(self: &Arc<Self>, node: Option<String>) {
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.locked();
             if s.node == node {
                 return;
             }
@@ -136,7 +137,7 @@ impl Hw {
     /// One run at a time; requests during a run coalesce into one follow-up on the latest node.
     fn schedule(self: &Arc<Self>) {
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.locked();
             if s.running {
                 s.rerun = true;
                 return;
@@ -147,7 +148,7 @@ impl Hw {
         tokio::spawn(async move {
             loop {
                 let node = {
-                    let mut s = hw.state.lock().unwrap();
+                    let mut s = hw.state.locked();
                     s.rerun = false;
                     s.node.clone()
                 };
@@ -159,7 +160,7 @@ impl Hw {
                     probes = ?snap.detected.probes,
                     "host capabilities detected"
                 );
-                let mut s = hw.state.lock().unwrap();
+                let mut s = hw.state.locked();
                 s.current = Some(snap);
                 if !s.rerun {
                     s.running = false;

@@ -6,6 +6,7 @@ pub mod hw;
 pub mod intro;
 pub mod jobs;
 pub mod live;
+pub mod lock;
 pub mod probe;
 pub mod proc;
 pub mod remux;
@@ -16,6 +17,7 @@ pub mod sessions;
 pub mod slots;
 pub mod supervise;
 
+use crate::lock::Locked;
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -216,7 +218,7 @@ async fn put_config(
     State(s): State<Arc<AppState>>,
     Json(new): Json<EngineConfig>,
 ) -> Result<Json<EngineConfig>, StatusCode> {
-    let mut cur = s.rt.config.lock().unwrap();
+    let mut cur = s.rt.config.locked();
     if new.revision < cur.as_ref().map_or(0, |c| c.revision) {
         return Err(StatusCode::CONFLICT);
     }
@@ -230,7 +232,7 @@ async fn put_config(
     responses((status = 200, body = Decision), (status = 400, description = "no config set yet"),
     (status = 503, description = "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
 async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) -> Response {
-    let Some(config) = s.rt.config.lock().unwrap().clone() else {
+    let Some(config) = s.rt.config.locked().clone() else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     let caps = match (body.host_caps, s.hw.snapshot()) {
