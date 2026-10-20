@@ -546,7 +546,7 @@ impl Ctx {
         paused_out: &AtomicBool,
     ) -> &'static str {
         let cap = self.rt.pause_capability();
-        let lifetime = self.rt.current_config().lifetime;
+        let lifetime = &self.rt.current_config().lifetime;
         let (mut paused, mut active_ms, mut tick) = (false, 0u64, Instant::now());
         let (mut lines, mut cpu, mut last_progress) = (0, 0, now_ms());
         loop {
@@ -600,7 +600,7 @@ impl Ctx {
                 cpu_delta_ms,
                 natural_end_ms: None,
             };
-            if job_watch(&watch, &lifetime) != JobWatch::Ok {
+            if job_watch(&watch, lifetime) != JobWatch::Ok {
                 return "stalled";
             }
             if active_ms > timeout_ms {

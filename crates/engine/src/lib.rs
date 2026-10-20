@@ -207,7 +207,7 @@ async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
 
 #[utoipa::path(get, path = "/v1/config", responses((status = 200, body = EngineConfig)))]
 async fn get_config(State(s): State<Arc<AppState>>) -> Json<EngineConfig> {
-    Json(s.rt.config.lock().unwrap().clone().unwrap_or_default())
+    Json(EngineConfig::clone(&s.rt.current_config()))
 }
 
 #[utoipa::path(put, path = "/v1/config", request_body = EngineConfig,
@@ -220,7 +220,7 @@ async fn put_config(
     if new.revision < cur.as_ref().map_or(0, |c| c.revision) {
         return Err(StatusCode::CONFLICT);
     }
-    *cur = Some(new.clone());
+    *cur = Some(Arc::new(new.clone()));
     s.rt.slots.set_size(new.streaming.ffmpeg_slots);
     s.hw.set_render_node(selected_render_node(&new.streaming.gpu_render_node));
     Ok(Json(new))

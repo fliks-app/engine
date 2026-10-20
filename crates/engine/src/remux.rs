@@ -10,6 +10,7 @@ use fliks_engine_core::session::RemuxProgress;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Passes a segment may fail before the error is not a passing lock.
@@ -36,8 +37,97 @@ pub struct Assembler {
     stopped: bool,
     opened_at: Option<Instant>,
     open_start: usize,
+    view: Arc<RemuxView>,
+}
+
+/// An assembler and the view other tasks read without waiting for a pump pass.
+#[derive(Clone)]
+pub struct Remux {
+    pub asm: Arc<Mutex<Assembler>>,
+    pub view: Arc<RemuxView>,
+}
+
+impl Remux {
+    pub fn new(plan: RemuxAssemblyPlan, dir: PathBuf, gop_dir: PathBuf) -> Self {
+        let asm = Assembler::new(plan, dir, gop_dir);
+        Self {
+            view: asm.view.clone(),
+            asm: Arc::new(Mutex::new(asm)),
+        }
+    }
+}
+
+/// Progress of an assembler as of the end of its last pass, plus the throttle's pause clock.
+pub struct RemuxView {
+    plan: RemuxAssemblyPlan,
+    st: Mutex<ViewState>,
+}
+
+#[derive(Default)]
+struct ViewState {
+    next: usize,
+    /// The first GOP's landing segment (`run.next`), once the run opened.
+    run_next: Option<usize>,
+    open_start: usize,
+    opened_at: Option<Instant>,
+    /// Segments served so far of each audio rendition, `None` before its group opened.
+    served: Vec<Option<usize>>,
     paused: Duration,
     paused_since: Option<Instant>,
+}
+
+impl RemuxView {
+    /// Progress of the video (`None`) or of rendition `audio` (1-based).
+    pub fn progress(&self, audio: Option<usize>) -> RemuxProgress {
+        let st = self.st.lock().unwrap();
+        let frontier = st.run_next.and_then(|run_next| match audio {
+            None => Some(st.next),
+            Some(i) => st
+                .served
+                .get(i.wrapping_sub(1))
+                .map(|g| g.unwrap_or(run_next)),
+        });
+        let paused = st.paused + st.paused_since.map_or(Duration::ZERO, |p| p.elapsed());
+        let per_second = st.opened_at.and_then(|at| {
+            let secs = at.elapsed().saturating_sub(paused).as_secs_f64();
+            (secs > 0.0).then(|| (st.next - st.open_start) as f64 / secs)
+        });
+        RemuxProgress {
+            start_segment: self.plan.start_segment as u32,
+            frontier: frontier.map(|f| f as u32),
+            segments_per_second: per_second,
+        }
+    }
+
+    /// Content seconds of segment `i` (source time less the plan's start).
+    pub fn segment_content_seconds(&self, i: usize) -> f64 {
+        plan_boundary_seconds(&self.plan, i) - self.plan.start
+    }
+
+    /// `(run start, frontier)` in content seconds, `None` before the run landed.
+    pub fn span(&self) -> (Option<f64>, Option<f64>) {
+        let st = self.st.lock().unwrap();
+        match st.run_next {
+            Some(_) => (
+                Some(self.segment_content_seconds(st.open_start)),
+                Some(self.segment_content_seconds(st.next)),
+            ),
+            None => (None, None),
+        }
+    }
+
+    /// Freezes or resumes the throughput clock with the throttle's pause.
+    pub fn pause(&self, pause: bool) {
+        let mut st = self.st.lock().unwrap();
+        match (pause, st.paused_since) {
+            (true, None) => st.paused_since = Some(Instant::now()),
+            (false, Some(p)) => {
+                st.paused += p.elapsed();
+                st.paused_since = None;
+            }
+            _ => {}
+        }
+    }
 }
 
 fn exists(p: &Path) -> bool {
@@ -110,6 +200,10 @@ impl Assembler {
                 failures: 0,
             })
             .collect();
+        let view = Arc::new(RemuxView {
+            plan: plan.clone(),
+            st: Mutex::default(),
+        });
         Self {
             next: plan.start_segment,
             plan,
@@ -121,8 +215,7 @@ impl Assembler {
             stopped: false,
             opened_at: None,
             open_start: 0,
-            paused: Duration::ZERO,
-            paused_since: None,
+            view,
         }
     }
 
@@ -152,6 +245,12 @@ impl Assembler {
     /// One pass over what ffmpeg wrote; true when a segment landed. Gives up (`stopped`) after
     /// `SEGMENT_ATTEMPTS` failures in a row.
     pub fn pump(&mut self) -> bool {
+        let landed = self.pass();
+        self.publish();
+        landed
+    }
+
+    fn pass(&mut self) -> bool {
         if self.stopped {
             return false;
         }
@@ -288,7 +387,18 @@ impl Assembler {
                 }
             }
         }
+        self.publish();
         let _ = std::fs::remove_dir_all(&self.gop_dir);
+    }
+
+    /// Makes this pass's progress readable without the assembler's lock.
+    fn publish(&self) {
+        let mut st = self.view.st.lock().unwrap();
+        st.next = self.next;
+        st.run_next = self.run.as_ref().map(|r| r.next);
+        st.open_start = self.open_start;
+        st.opened_at = self.opened_at;
+        st.served = self.audio_served();
     }
 
     fn assemble_tail(&mut self) -> Result<(), String> {
@@ -413,55 +523,7 @@ impl Assembler {
         Ok(())
     }
 
-    /// Segments per second since open, pauses excluded.
-    fn segments_per_second(&self) -> Option<f64> {
-        let at = self.opened_at?;
-        let paused = self.paused + self.paused_since.map_or(Duration::ZERO, |p| p.elapsed());
-        let secs = at.elapsed().saturating_sub(paused).as_secs_f64();
-        (secs > 0.0).then(|| (self.next - self.open_start) as f64 / secs)
-    }
-
-    /// Progress of the video (`None`) or of rendition `audio` (1-based).
-    pub fn progress(&self, audio: Option<usize>) -> RemuxProgress {
-        let frontier = self.run.as_ref().and_then(|r| match audio {
-            None => Some(self.next),
-            Some(i) => self
-                .audio
-                .get(i.wrapping_sub(1))
-                .map(|a| a.group.as_ref().map_or(r.next, |g| g.served)),
-        });
-        RemuxProgress {
-            start_segment: self.plan.start_segment as u32,
-            frontier: frontier.map(|f| f as u32),
-            segments_per_second: self.segments_per_second(),
-        }
-    }
-
-    /// Content seconds of segment `i` (source time less the plan's start).
-    pub fn segment_content_seconds(&self, i: usize) -> f64 {
-        plan_boundary_seconds(&self.plan, i) - self.plan.start
-    }
-
-    /// `(run start, frontier)` in content seconds, `None` before the run landed.
-    pub fn span(&self) -> (Option<f64>, Option<f64>) {
-        match self.run {
-            Some(_) => (
-                Some(self.segment_content_seconds(self.open_start)),
-                Some(self.segment_content_seconds(self.next)),
-            ),
-            None => (None, None),
-        }
-    }
-
-    /// Freezes or resumes the throughput clock with the throttle's pause.
-    pub fn pause(&mut self, pause: bool) {
-        match (pause, self.paused_since) {
-            (true, None) => self.paused_since = Some(Instant::now()),
-            (false, Some(p)) => {
-                self.paused += p.elapsed();
-                self.paused_since = None;
-            }
-            _ => {}
-        }
+    pub fn view(&self) -> &Arc<RemuxView> {
+        &self.view
     }
 }

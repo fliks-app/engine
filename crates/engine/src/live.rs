@@ -421,7 +421,7 @@ async fn start(
     if req.at_capacity || req.upstreams[order[0]].at_capacity {
         return Err(OpenError::AtCapacity);
     }
-    let config = rt.current_config().livetv;
+    let config = &rt.current_config().livetv;
     let mut probes = probes.to_vec();
     let first = order[0];
     if mode != LiveMode::Direct
