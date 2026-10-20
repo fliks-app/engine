@@ -14,16 +14,13 @@ use crate::hw::Device;
 use crate::hw::decoders::{DECODERS, Decoder, Surface, find};
 use crate::jsnum::{js_string as js, round, seconds};
 use crate::ladder::{codec_factor, hevc_main_tier_cap_bps};
+use crate::strs;
 
 const DEFAULT_SEGMENT_DURATION: f64 = 3.0;
 const DEFAULT_FPS: f64 = 24.0;
 /// Read ceiling of the trusted-streamInfo fast path: AV1-in-Matroska needs ~3 MB to seek.
 const TRUSTED_PROBE_SIZE: &str = "5000000";
 const ENCODE_SAMPLE_RATE: &str = "48000";
-
-pub(super) fn s(v: &[&str]) -> Vec<String> {
-    v.iter().map(|x| x.to_string()).collect()
-}
 
 /// What layer 2 needs of a layer-1 run.
 pub struct Encoded {
@@ -58,9 +55,9 @@ pub const DEFAULT_AUDIO_PLAN: AudioPlan = AudioPlan::Transcode {
 
 pub fn probe_args(trusted: bool) -> Vec<String> {
     if trusted {
-        s(&["-analyzeduration", "0", "-probesize", TRUSTED_PROBE_SIZE])
+        strs(&["-analyzeduration", "0", "-probesize", TRUSTED_PROBE_SIZE])
     } else {
-        s(&["-analyzeduration", "1000000", "-probesize", "1000000"])
+        strs(&["-analyzeduration", "1000000", "-probesize", "1000000"])
     }
 }
 
@@ -181,7 +178,7 @@ fn sdr_tags(o: &VodArgs) -> Sdr {
 }
 
 fn color_args(c: &Sdr) -> Vec<String> {
-    s(&[
+    strs(&[
         "-color_primaries",
         &c.primaries,
         "-color_trc",
@@ -389,7 +386,7 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
     // A CPU decoder inits no device, yet the qsv encoder's filters need one.
     if surface == Surface::Cpu && hw == HwAccel::Qsv {
         args.extend(dev.qsv_init());
-        args.extend(s(&["-filter_hw_device", "qs"]));
+        args.extend(strs(&["-filter_hw_device", "qs"]));
     }
     let vulkan = p.path == TonemapPath::Vulkan && surface == Surface::Vaapi && hw == HwAccel::Vaapi;
     if let Some(k) = args.iter().position(|a| a == "-filter_hw_device")
@@ -408,7 +405,7 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
         && vt_surface_decodable(codec, caps);
     let vt_surface = vt_eligible || vt_passthrough;
     if vt_surface {
-        args.extend(s(&["-hwaccel_output_format", "videotoolbox_vld"]));
+        args.extend(strs(&["-hwaccel_output_format", "videotoolbox_vld"]));
     }
     if n.tonemap
         && !p.use_vaapi_tonemap
@@ -418,7 +415,7 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
         && p.path != TonemapPath::Vulkan
         && hw != HwAccel::Nvenc
     {
-        args.extend(s(&["-init_hw_device", "opencl=ocl:0.0"]));
+        args.extend(strs(&["-init_hw_device", "opencl=ocl:0.0"]));
     }
     if n.opencl_tonemap && !amf_native {
         args.extend(dev.opencl_tonemap_init());
@@ -431,7 +428,7 @@ fn decode_stage(p: &Pipeline, n: &DecodeNeeds, caps: &HostCaps, dev: &Device) ->
         && qsv_opencl_tonemap
     {
         args[k + 1] = "ocl".into();
-        args.splice(k..k, s(&["-init_hw_device", "opencl=ocl@dx"]));
+        args.splice(k..k, strs(&["-init_hw_device", "opencl=ocl@dx"]));
     }
     DecodeStage {
         args,
@@ -471,7 +468,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         libfdk_aac: caps.libfdk_aac,
     };
 
-    let mut args = s(&["-hide_banner", "-loglevel", "warning"]);
+    let mut args = strs(&["-hide_banner", "-loglevel", "warning"]);
     args.extend(probe_args(o.trusted_stream_info));
     if start > 0 {
         let ss = match o.seek_keyframe_dts {
@@ -565,7 +562,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         o.encoder_preset.clone().unwrap_or_else(|| "faster".into())
     };
     let qsv = QsvTuning {
-        extra: s(&[
+        extra: strs(&[
             "-forced_idr",
             "1",
             "-adaptive_i",
@@ -619,7 +616,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     let threads = o.encode_threads.max(1).to_string();
     args.extend(["-threads".into(), threads]);
     args.extend(["-i".into(), o.input_path.clone()]);
-    args.extend(s(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
+    args.extend(strs(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
     if output_seek != 0.0 {
         args.extend(["-ss".into(), seconds(align)]);
     }
@@ -736,7 +733,7 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
     match hw {
         HwAccel::Qsv => {
             let mut a = dev.qsv_init();
-            a.extend(s(&[
+            a.extend(strs(&[
                 "-hwaccel",
                 "qsv",
                 "-hwaccel_output_format",
@@ -748,7 +745,7 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
         }
         HwAccel::Vaapi => {
             let mut a = dev.vaapi_init();
-            a.extend(s(&[
+            a.extend(strs(&[
                 "-hwaccel",
                 "vaapi",
                 "-hwaccel_output_format",
@@ -758,8 +755,8 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
             ]));
             a
         }
-        HwAccel::Nvenc => s(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
-        HwAccel::Videotoolbox => s(&["-hwaccel", "videotoolbox"]),
+        HwAccel::Nvenc => strs(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
+        HwAccel::Videotoolbox => strs(&["-hwaccel", "videotoolbox"]),
         _ => vec![],
     }
 }
@@ -776,13 +773,13 @@ pub fn live_h264_encoder(hw: HwAccel) -> String {
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:135-156]
 pub fn live_video(o: &LiveArgs) -> Vec<String> {
     if o.mode == LiveMode::Remux {
-        return s(&["-c:v", "copy"]);
+        return strs(&["-c:v", "copy"]);
     }
     let mut a = vec!["-c:v".to_string(), live_h264_encoder(o.hw_accel)];
     if o.hw_accel == HwAccel::None {
         let threads = o.encode_threads.max(1).to_string();
         a.extend(["-threads:v".into(), threads]);
-        a.extend(s(&["-preset", "veryfast", "-tune", "zerolatency"]));
+        a.extend(strs(&["-preset", "veryfast", "-tune", "zerolatency"]));
     }
     let b = o.video_bitrate_bps.unwrap_or(4_000_000.0);
     a.extend([

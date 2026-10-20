@@ -3,6 +3,7 @@
 use crate::api::{CropInfo, HwAccel, MediaInfo, Platform, SpriteMeta};
 use crate::jsnum::{js_string, round};
 use crate::mp4::{input_seek_seconds, source_timeline};
+use crate::strs;
 
 pub const COLUMNS: u32 = 10;
 pub const THUMB_WIDTH: u32 = 240;
@@ -132,7 +133,7 @@ pub fn frame_args(e: &Extractor, a: &FrameArgs) -> Result<Vec<String>, String> {
     ]
     .map(String::from)
     .to_vec();
-    let push = |v: &mut Vec<String>, xs: &[&str]| v.extend(xs.iter().map(|s| s.to_string()));
+    let push = |v: &mut Vec<String>, xs: &[&str]| v.extend(strs(xs));
     let ss = js_string(a.seek_seconds);
     let vf = match e {
         Extractor::Software => {

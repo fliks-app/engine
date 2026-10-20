@@ -231,17 +231,9 @@ impl Job {
         }
     }
 
-    pub fn init_path(&self, t: usize) -> PathBuf {
-        let name = if self.split(t) {
-            format!("init_{t}.mp4")
-        } else {
-            "init.mp4".into()
-        };
-        self.track_dir(t).join(name)
-    }
-
-    pub fn segment_path(&self, t: usize, n: u32) -> PathBuf {
-        self.track_dir(t).join(format!("seg-{n:04}.{}", self.ext))
+    /// The init or segment file of track `t`.
+    pub fn file_path(&self, t: usize, name: SegmentName) -> PathBuf {
+        layout_path(&self.dir, self.split(t), t, self.ext, name)
     }
 
     /// The process lives or its output is still being assembled.
@@ -366,7 +358,7 @@ impl Job {
         {
             return false;
         }
-        non_empty_within(&self.init_path(t), INIT_NON_EMPTY).await
+        non_empty_within(&self.file_path(t, SegmentName::Init(None)), INIT_NON_EMPTY).await
     }
 
     /// One listing of the run's directories; true when something changed.
@@ -478,6 +470,21 @@ pub enum OpenError {
     BadRequest(String),
     NoConfig,
     Detecting,
+}
+
+/// A run's file under the rung directory `dir`. A split layout keeps each track in `<t>/` and
+/// names its init `init_<t>.mp4`.
+fn layout_path(dir: &Path, split: bool, t: usize, ext: &str, name: SegmentName) -> PathBuf {
+    let dir = if split {
+        dir.join(t.to_string())
+    } else {
+        dir.to_path_buf()
+    };
+    match name {
+        SegmentName::Init(_) if split => dir.join(format!("init_{t}.mp4")),
+        SegmentName::Init(_) => dir.join("init.mp4"),
+        SegmentName::Segment(n) => dir.join(format!("seg-{n:04}.{ext}")),
+    }
 }
 
 /// What a segment request found.
@@ -743,12 +750,7 @@ impl Runtime {
             return;
         }
         let v = s.req.decide.info.video.first();
-        let w = v
-            .and_then(|v| v.crop.as_ref().map(|c| c.width).or(v.width))
-            .unwrap_or(1920);
-        let h = v
-            .and_then(|v| v.crop.as_ref().map(|c| c.height).or(v.height))
-            .unwrap_or(1080);
+        let (w, h) = core_session::rung_source_size(v);
         let quality = fliks_engine_core::hls::pinned_rung_name(q, w, h, s.decision.use_hdr_ladder);
         if !core_session::is_valid_quality(&quality) {
             return;
@@ -1561,10 +1563,7 @@ impl Runtime {
             );
             return None;
         }
-        let path = match name {
-            SegmentName::Init(_) => job.init_path(track),
-            SegmentName::Segment(n) => job.segment_path(track, n),
-        };
+        let path = job.file_path(track, name);
         Some(finish(path, job, true, t0).await)
     }
 
@@ -1591,28 +1590,15 @@ impl Runtime {
         if let (Some(j), SegmentName::Segment(n)) = (&same, name)
             && j.has(0, n)
         {
-            return ready(j.segment_path(0, n), Some(j.clone()), 0.0, true);
+            return ready(j.file_path(0, name), Some(j.clone()), 0.0, true);
         }
         if same.is_none() {
             // An earlier run of this rung left the file: serve it without spawning. [new]
             let dir = self
                 .cache
                 .rung_dir(s.owner.as_deref(), s.media_file_id, &s.hash, quality);
-            let path = match name {
-                SegmentName::Init(_) if s.plan.multi_audio => dir.join("0/init_0.mp4"),
-                SegmentName::Init(_) => dir.join("init.mp4"),
-                SegmentName::Segment(n) => {
-                    let sub = if s.plan.multi_audio {
-                        dir.join("0")
-                    } else {
-                        dir
-                    };
-                    sub.join(format!(
-                        "seg-{n:04}.{}",
-                        if s.plan.use_ts { "ts" } else { "m4s" }
-                    ))
-                }
-            };
+            let ext = if s.plan.use_ts { "ts" } else { "m4s" };
+            let path = layout_path(&dir, s.plan.multi_audio, 0, ext, name);
             if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > 0) {
                 return ready(path, existing, 0.0, true);
             }
@@ -1649,10 +1635,7 @@ impl Runtime {
             },
         };
         let (job, landed) = self.wait_file(job, 0, name, SEGMENT_WAIT).await;
-        let path = match name {
-            SegmentName::Init(_) => job.init_path(0),
-            SegmentName::Segment(n) => job.segment_path(0, n),
-        };
+        let path = job.file_path(0, name);
         finish(path, job, landed, t0).await
     }
 
@@ -1672,10 +1655,7 @@ impl Runtime {
             Some(j) => j,
             None => {
                 let v = s.req.decide.info.video.first();
-                let (w, h) = (
-                    v.and_then(|v| v.width).unwrap_or(1920),
-                    v.and_then(|v| v.height).unwrap_or(1080),
-                );
+                let (w, h) = core_session::rung_source_size(v);
                 let quality = core_session::top_rung(w, h, s.decision.use_hdr_ladder);
                 let start = match name {
                     SegmentName::Init(_) => s.resume_floor(None),
@@ -1713,10 +1693,7 @@ impl Runtime {
         }
         let t0 = Instant::now();
         let (job, landed) = self.wait_file(job, track, name, SEGMENT_WAIT).await;
-        let path = match name {
-            SegmentName::Init(_) => job.init_path(track),
-            SegmentName::Segment(n) => job.segment_path(track, n),
-        };
+        let path = job.file_path(track, name);
         finish(path, job, landed, t0).await
     }
 
@@ -1735,12 +1712,7 @@ impl Runtime {
             &s.cache_hash(JobKind::Remux),
             "remux",
         );
-        let path = match (track, name) {
-            (0, SegmentName::Init(_)) => dir.join("init.mp4"),
-            (0, SegmentName::Segment(n)) => dir.join(format!("seg-{n:04}.m4s")),
-            (t, SegmentName::Init(_)) => dir.join(format!("{t}/init_{t}.mp4")),
-            (t, SegmentName::Segment(n)) => dir.join(format!("{t}/seg-{n:04}.m4s")),
-        };
+        let path = layout_path(&dir, track > 0, track, "m4s", name);
         let existing = self.job(&s.key(JobKind::Remux));
         if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > 0) {
             return ready(path, existing, 0.0, true);

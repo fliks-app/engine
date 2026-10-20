@@ -5,7 +5,7 @@ use super::{SessionVariant, remux_variant};
 use crate::api::{
     AudioCodec, AudioPlan, BurnInKind, Decision, HdrFormat, HostCaps, HwAccel, MediaInfo,
     MuxFlavour, OpenSessionRequest, PlayMethod, QsvPreset, SessionKind, StreamingConfig,
-    SubtitleTrackKind,
+    SubtitleTrackKind, VideoStreamInfo,
 };
 use crate::args::{self, AudioStream, BurnIn, Profile, VodArgs};
 use crate::args::{RemuxArgs, RemuxRun};
@@ -156,6 +156,19 @@ pub fn rung_profile(quality: &str) -> Profile {
         video_bitrate: format!("{}", r.video_bps),
         audio_bitrate: format!("{}", r.audio_bps),
     }
+}
+
+/// The size rungs are picked on: the cropped picture, else the stream's, else 1920x1080.
+pub fn rung_source_size(v: Option<&VideoStreamInfo>) -> (u32, u32) {
+    let crop = v.and_then(|v| v.crop.as_ref());
+    (
+        crop.map(|c| c.width)
+            .or(v.and_then(|v| v.width))
+            .unwrap_or(1920),
+        crop.map(|c| c.height)
+            .or(v.and_then(|v| v.height))
+            .unwrap_or(1080),
+    )
 }
 
 /// The top rung of the ladder that fits the source (its last rung when none does).
@@ -454,12 +467,8 @@ pub fn master_options(
     MasterOptions {
         prefix: q.prefix.into(),
         token_param: q.token.into(),
-        source_width: v
-            .and_then(|v| v.crop.as_ref().map(|c| c.width).or(v.width))
-            .unwrap_or(1920),
-        source_height: v
-            .and_then(|v| v.crop.as_ref().map(|c| c.height).or(v.height))
-            .unwrap_or(1080),
+        source_width: rung_source_size(v).0,
+        source_height: rung_source_size(v).1,
         remux_width: v.and_then(|v| v.width),
         remux_height: v.and_then(|v| v.height),
         include_remux: q.include_remux,
@@ -527,6 +536,24 @@ mod tests {
         assert_eq!(top_rung(1920, 1080, false), "1080p");
         assert_eq!(top_rung(1920, 1080, true), "1080p-hdr");
         assert_eq!(top_rung(320, 180, false), "240p");
+    }
+
+    #[test]
+    fn rungs_are_picked_on_the_cropped_size() {
+        let mut v = VideoStreamInfo {
+            width: Some(3840),
+            height: Some(2160),
+            ..Default::default()
+        };
+        assert_eq!(rung_source_size(Some(&v)), (3840, 2160));
+        v.crop = Some(crate::api::CropInfo {
+            width: 3840,
+            height: 1608,
+            x: 0,
+            y: 276,
+        });
+        assert_eq!(rung_source_size(Some(&v)), (3840, 1608));
+        assert_eq!(rung_source_size(None), (1920, 1080));
     }
 
     #[test]

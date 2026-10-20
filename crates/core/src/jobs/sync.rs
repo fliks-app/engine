@@ -1,8 +1,8 @@
 //! Subtitle sync argv, the ffsubsync retry, and alass reference resolution.
 //! Spec: `docs/spec/subtitle-jobs.md` section 3.
-use super::v;
 use crate::api::{MediaInfo, SubtitleFormat, SubtitleText, SyncReference};
 use crate::jsnum::js_string;
+use crate::strs;
 
 pub const PCM_TIMEOUT_MS: u64 = 900_000;
 pub const MAX_STREAM_INDEX: u32 = 999;
@@ -156,14 +156,14 @@ pub fn resolve_reference(
 }
 
 pub fn pcm_extract_argv(path: &str, map: &str, sample_rate: u32) -> Vec<String> {
-    let mut a = v(&["-nostdin", "-i"]);
+    let mut a = strs(&["-nostdin", "-i"]);
     a.push(path.into());
     a.push("-map".into());
     a.push(map.into());
-    a.extend(v(&["-ac", "1"]));
+    a.extend(strs(&["-ac", "1"]));
     a.push("-ar".into());
     a.push(sample_rate.to_string());
-    a.extend(v(&["-f", "s16le", "-c:a", "pcm_s16le", "pipe:1"]));
+    a.extend(strs(&["-f", "s16le", "-c:a", "pcm_s16le", "pipe:1"]));
     a
 }
 
@@ -219,11 +219,11 @@ pub fn speech_retry_stream(
 }
 
 pub fn subtitle_stream_extract_argv(path: &str, stream_index: u32, out_srt: &str) -> Vec<String> {
-    let mut a = v(&["-y", "-i"]);
+    let mut a = strs(&["-y", "-i"]);
     a.push(path.into());
     a.push("-map".into());
     a.push(format!("0:{stream_index}"));
-    a.extend(v(&["-c:s", "srt"]));
+    a.extend(strs(&["-c:s", "srt"]));
     a.push(out_srt.into());
     a
 }
