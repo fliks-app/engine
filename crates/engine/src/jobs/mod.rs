@@ -24,6 +24,7 @@ use fliks_engine_core::api::{
 };
 use fliks_engine_core::jobs::sprite::RUN_TIMEOUT_MS;
 use fliks_engine_core::session::{JobWatch, JobWatchInput, job_watch};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
@@ -56,6 +57,7 @@ struct JobMut {
 pub struct BgJob {
     pub id: String,
     pub req: JobRequest,
+    seq: u64,
     dedupe: String,
     created_ms: i64,
     cancel: watch::Sender<bool>,
@@ -96,27 +98,44 @@ impl BgJob {
 /// Every job of the engine, in creation order (ended ones trimmed to the last `KEEP_ENDED`).
 #[derive(Default)]
 pub struct Jobs {
-    list: Mutex<Vec<Arc<BgJob>>>,
+    q: Mutex<Queue>,
+}
+
+/// The jobs and the indexes `submit`, `pump` and `finish` keep in step, all under one lock.
+#[derive(Default)]
+struct Queue {
+    next_seq: u64,
+    all: BTreeMap<u64, Arc<BgJob>>,
+    by_id: HashMap<String, u64>,
+    /// Unfinished jobs by request, to answer an identical one with the same job.
+    open: HashMap<String, u64>,
+    /// Queued jobs, next to start first: by priority, then age.
+    waiting: BTreeMap<(JobPriority, u64), Arc<BgJob>>,
+    running: usize,
+    ended: VecDeque<u64>,
 }
 
 impl Jobs {
     pub fn get(&self, id: &str) -> Option<Arc<BgJob>> {
-        self.list
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|j| j.id == id)
-            .cloned()
+        let q = self.q.lock().unwrap();
+        q.all.get(q.by_id.get(id)?).cloned()
     }
 
     pub fn snapshots(&self) -> Vec<JobSnapshot> {
-        let list = self.list.lock().unwrap().clone();
-        list.iter().map(|j| j.snapshot()).collect()
+        let all: Vec<_> = self.q.lock().unwrap().all.values().cloned().collect();
+        all.iter().map(|j| j.snapshot()).collect()
     }
 
     fn live(&self, keep: impl Fn(&BgJob) -> bool) -> Vec<Arc<BgJob>> {
-        let list = self.list.lock().unwrap().clone();
-        list.into_iter()
+        let q = self.q.lock().unwrap();
+        let open: Vec<_> = q
+            .open
+            .values()
+            .filter_map(|s| q.all.get(s))
+            .cloned()
+            .collect();
+        drop(q);
+        open.into_iter()
             .filter(|j| !j.base_state().ended() && keep(j))
             .collect()
     }
@@ -182,17 +201,19 @@ pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
     validate(&req.kind)?;
     let dedupe = serde_json::to_string(&(&req.kind, &req.media)).unwrap_or_default();
     let id = {
-        let mut list = rt.jobs.list.lock().unwrap();
-        if let Some(j) = list
-            .iter()
-            .find(|j| j.dedupe == dedupe && !j.base_state().ended())
+        let mut q = rt.jobs.q.lock().unwrap();
+        if let Some(j) = q.open.get(&dedupe).and_then(|s| q.all.get(s))
+            && !j.base_state().ended()
         {
             return Ok(j.id.clone());
         }
+        let seq = q.next_seq;
+        q.next_seq += 1;
         let j = Arc::new(BgJob {
             id: crate::random_hex(8),
             req,
-            dedupe,
+            seq,
+            dedupe: dedupe.clone(),
             created_ms: now_ms(),
             cancel: watch::channel(false).0,
             activity: AtomicU64::new(0),
@@ -209,7 +230,10 @@ pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
             }),
             task: Mutex::new(None),
         });
-        list.push(j.clone());
+        q.all.insert(seq, j.clone());
+        q.by_id.insert(j.id.clone(), seq);
+        q.open.insert(dedupe, seq);
+        q.waiting.insert((j.priority(), seq), j.clone());
         j.id.clone()
     };
     pump(rt);
@@ -219,25 +243,21 @@ pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
 /// Starts queued jobs by priority, then age, while fewer than `MAX_RUNNING` run.
 fn pump(rt: &Arc<Runtime>) {
     let start: Vec<Arc<BgJob>> = {
-        let list = rt.jobs.list.lock().unwrap();
-        let running = list
-            .iter()
-            .filter(|j| j.base_state() == BgJobState::Running)
-            .count();
-        let mut queued: Vec<&Arc<BgJob>> = list
-            .iter()
-            .filter(|j| j.base_state() == BgJobState::Queued)
-            .collect();
-        queued.sort_by_key(|j| j.priority());
-        let picked: Vec<Arc<BgJob>> = queued
-            .into_iter()
-            .take(MAX_RUNNING.saturating_sub(running))
-            .cloned()
-            .collect();
-        for j in &picked {
+        let mut q = rt.jobs.q.lock().unwrap();
+        let mut picked = vec![];
+        while q.running < MAX_RUNNING {
+            let Some((_, j)) = q.waiting.pop_first() else {
+                break;
+            };
             let mut m = j.m.lock().unwrap();
+            if m.state != BgJobState::Queued {
+                continue;
+            }
             m.state = BgJobState::Running;
             m.started_ms = Some(now_ms());
+            drop(m);
+            q.running += 1;
+            picked.push(j);
         }
         picked
     };
@@ -305,11 +325,12 @@ fn finish(
     result: Option<JobResult>,
     error: Option<String>,
 ) {
-    {
+    let was = {
         let mut m = job.m.lock().unwrap();
         if m.state.ended() {
             return;
         }
+        let was = m.state;
         m.state = state;
         m.ended_ms = Some(now_ms());
         m.result = result.clone();
@@ -317,18 +338,29 @@ fn finish(
         if state == BgJobState::Done {
             m.pct = 100.0;
         }
-    }
+        was
+    };
     rt.events.emit(EngineEvent::BgJobDone {
         job_id: job.id.clone(),
         state,
         result,
         error,
     });
-    let mut list = rt.jobs.list.lock().unwrap();
-    let ended = list.iter().filter(|j| j.base_state().ended()).count();
-    for _ in KEEP_ENDED..ended {
-        if let Some(i) = list.iter().position(|j| j.base_state().ended()) {
-            list.remove(i);
+    let mut q = rt.jobs.q.lock().unwrap();
+    if q.open.get(&job.dedupe) == Some(&job.seq) {
+        q.open.remove(&job.dedupe);
+    }
+    match was {
+        BgJobState::Queued => {
+            q.waiting.remove(&(job.priority(), job.seq));
+        }
+        BgJobState::Running => q.running -= 1,
+        _ => {}
+    }
+    q.ended.push_back(job.seq);
+    while q.ended.len() > KEEP_ENDED {
+        if let Some(old) = q.ended.pop_front().and_then(|s| q.all.remove(&s)) {
+            q.by_id.remove(&old.id);
         }
     }
 }
