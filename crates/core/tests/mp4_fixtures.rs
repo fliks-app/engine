@@ -109,7 +109,7 @@ fn run(fn_: &str, a: &Value) -> Result<Value, Mp4Error> {
         }
         "parseInitTracks" => json!(mp4::parse_init_tracks(&bytes(&a["init"]))?),
         "rewriteSegmentTfdt" => b64(&mp4::rewrite_segment_tfdt(
-            &bytes(&a["seg"]),
+            bytes(&a["seg"]),
             &tracks(&a["tracks"]),
             a["segIndex"].as_u64().unwrap() as u32,
             f(&a["segDuration"]),
@@ -173,7 +173,7 @@ fn run(fn_: &str, a: &Value) -> Result<Value, Mp4Error> {
         "cmafRewrite" => b64(&mp4::cmaf_rewrite(&bytes(&a["buf"]))),
         "isCmafRewritten" => json!(mp4::is_cmaf_rewritten(&bytes(&a["buf"]))),
         "readAndRewriteCmaf" => {
-            mp4::rewrite_cmaf(&bytes(&a["buf"])).map_or(Value::Null, |b| b64(&b))
+            mp4::rewrite_cmaf(bytes(&a["buf"])).map_or(Value::Null, |b| b64(&b))
         }
         "computeSegmentGrid" => {
             let k: Vec<Keyframe> = de(&a["keyframes"]);

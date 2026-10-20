@@ -544,35 +544,45 @@ async fn init_tracks(dir: &Path) -> IdMap<TrackInfo> {
     tracks
 }
 
-/// Wire bytes of a cache file: TS verbatim; fMP4 CMAF-rewritten and anchored on the served
-/// timeline, unless `keyframe_cut` (a remux file, assembled on it already).
+/// Wire body of a cache file and its length: TS streamed verbatim; fMP4 CMAF-rewritten and
+/// anchored on the served timeline, unless `keyframe_cut` (a remux file, assembled on it already).
 /// [ts:modules/streaming/services/segment-packaging.service.ts:30-130]
 async fn package(
     path: &Path,
     name: SegmentName,
     s: &Session,
     keyframe_cut: bool,
-) -> Option<Vec<u8>> {
-    let buf = tokio::fs::read(path).await.ok().filter(|b| !b.is_empty())?;
+) -> Option<(Body, usize)> {
     if path.extension().is_some_and(|e| e == "ts") {
-        return Some(buf);
+        let file = tokio::fs::File::open(path).await.ok()?;
+        let len = usize::try_from(file.metadata().await.ok()?.len()).ok()?;
+        return (len > 0).then(|| (stream_file(file), len));
     }
-    let buf = rewrite_cmaf(&buf)?;
-    let SegmentName::Segment(n) = name else {
-        return Some(buf);
-    };
-    if keyframe_cut {
-        return Some(buf);
+    let mut buf = rewrite_cmaf(tokio::fs::read(path).await.ok()?)?;
+    if let (SegmentName::Segment(n), false) = (name, keyframe_cut) {
+        let tracks = init_tracks(path.parent()?).await;
+        let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
+        let origin = served_origin(s.plan.timeline.origin);
+        buf = match rewrite_segment_tfdt(buf, &tracks, n, seg, origin) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), "tfdt rewrite: {e:?}");
+                rewrite_cmaf(tokio::fs::read(path).await.ok()?)?
+            }
+        };
     }
-    let tracks = init_tracks(path.parent()?).await;
-    let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
-    match rewrite_segment_tfdt(&buf, &tracks, n, seg, served_origin(s.plan.timeline.origin)) {
-        Ok(b) => Some(b),
-        Err(e) => {
-            tracing::warn!(path = %path.display(), "tfdt rewrite: {e:?}");
-            Some(buf)
-        }
-    }
+    let len = buf.len();
+    Some((Body::from(buf), len))
+}
+
+/// A file as a response body, read in chunks instead of held whole in memory.
+fn stream_file(file: tokio::fs::File) -> Body {
+    Body::from_stream(futures_util::stream::try_unfold(file, |mut f| async move {
+        let mut chunk = vec![0; 256 * 1024];
+        let n = f.read(&mut chunk).await?;
+        chunk.truncate(n);
+        Ok::<_, std::io::Error>((n > 0).then(|| (axum::body::Bytes::from(chunk), f)))
+    }))
 }
 
 /// CMCD of a request: `?CMCD=`, else the `CMCD-*` headers.
@@ -608,7 +618,7 @@ async fn respond(
         Fetch::Failed => return text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
     };
     // A restart can remove the file between the wait and the read.
-    let Some(bytes) = package(&path, name, s, remux).await else {
+    let Some((body, len)) = package(&path, name, s, remux).await else {
         return retry();
     };
     if let SegmentName::Segment(index) = name {
@@ -637,8 +647,9 @@ async fn respond(
         [
             (header::CONTENT_TYPE, ct),
             (header::CACHE_CONTROL, "no-store"),
+            (header::CONTENT_LENGTH, &len.to_string()),
         ],
-        bytes,
+        body,
     )
         .into_response()
 }
