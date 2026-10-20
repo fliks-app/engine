@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.3](https://github.com/fliks-app/engine/compare/v0.5.2...v0.5.3) (2026-10-20)
+
+
+### Performance Improvements
+
+* **engine:** use mimalloc on linux ([#77](https://github.com/fliks-app/engine/issues/77)) ([0ecceb5](https://github.com/fliks-app/engine/commit/0ecceb55491ef8f6856a8488df6bf67f98b25e96))
+* **serve:** stream files through one helper that reuses its buffer ([#75](https://github.com/fliks-app/engine/issues/75)) ([59a1b09](https://github.com/fliks-app/engine/commit/59a1b094c17fc710ea5b786d2392d4829e8732c7))
+
 ## [0.5.2](https://github.com/fliks-app/engine/compare/v0.5.1...v0.5.2) (2026-10-20)
 
 
