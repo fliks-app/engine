@@ -3,7 +3,12 @@
 use fliks_engine_core::api::CacheEntry;
 use fliks_engine_core::session::{CACHE_NAMESPACE, cache_path};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Empty file whose mtime records when an entry was last served.
+const ACCESS_MARKER: &str = ".access";
+/// An entry's access mark is renewed at most this often.
+const TOUCH_EVERY: Duration = Duration::from_secs(600);
 
 pub struct Cache {
     pub root: PathBuf,
@@ -139,6 +144,34 @@ impl Cache {
         }
     }
 
+    /// `<owner>/<file>/<hash>` directory holding `path`, when it is under the cache namespace.
+    fn entry_of(&self, path: &Path) -> Option<PathBuf> {
+        let base = self.root.join(CACHE_NAMESPACE);
+        let rel = path.strip_prefix(&base).ok()?;
+        let entry: PathBuf = rel.components().take(3).collect();
+        (entry.components().count() == 3).then(|| base.join(entry))
+    }
+
+    /// Marks the entry serving `path` as used: eviction ranks entries by their newest file, and
+    /// a cached segment is only read.
+    pub async fn touch(&self, path: &Path) {
+        let Some(marker) = self.entry_of(path).map(|e| e.join(ACCESS_MARKER)) else {
+            return;
+        };
+        let age = tokio::fs::metadata(&marker)
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok()?.elapsed().ok());
+        if age.is_some_and(|a| a < TOUCH_EVERY) {
+            return;
+        }
+        // The entry may have just been evicted: the create then fails and is dropped.
+        let _ = tokio::task::spawn_blocking(move || {
+            std::fs::File::create(marker).and_then(|f| f.set_modified(SystemTime::now()))
+        })
+        .await;
+    }
+
     /// The index, rebuilt from disk (blocking).
     pub fn scan(&self) -> Vec<Scanned> {
         let mut out = vec![];
@@ -205,6 +238,34 @@ mod tests {
         );
         assert!(s[1].last_access_ms > 0);
         assert!(valid_owner("a-b_c.1") && !valid_owner("a/b") && !valid_owner(""));
+        remove_dir(&root);
+    }
+
+    #[tokio::test]
+    async fn touch_marks_the_entry_used_at_most_every_ten_minutes() {
+        let root = std::env::temp_dir().join(format!("fliks-touch-test-{}", std::process::id()));
+        let c = Cache { root: root.clone() };
+        let seg = c.rung_dir(None, 3, "abc", "720p").join("seg-0000.m4s");
+        std::fs::create_dir_all(seg.parent().unwrap()).unwrap();
+        std::fs::write(&seg, b"x").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(7200);
+        std::fs::File::options()
+            .write(true)
+            .open(&seg)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let before = c.scan()[0].last_access_ms;
+        c.touch(&seg).await;
+        let after = c.scan()[0].last_access_ms;
+        assert!(after > before + 3_600_000, "{before} -> {after}");
+        let marker = c.entry_dir(None, 3, "abc").join(ACCESS_MARKER);
+        let stamp = std::fs::metadata(&marker).unwrap().modified().unwrap();
+        c.touch(&seg).await;
+        assert_eq!(
+            std::fs::metadata(&marker).unwrap().modified().unwrap(),
+            stamp
+        );
         remove_dir(&root);
     }
 }
