@@ -26,6 +26,18 @@ fn path_ext(path: &str) -> Option<String> {
         .map(|e| e.to_ascii_lowercase())
 }
 
+/// The text format a subtitle path's extension names (`idx` is binary: none).
+pub fn format_of_path(path: &str) -> Option<SubtitleFormat> {
+    Some(match path_ext(path)?.as_str() {
+        "srt" => SubtitleFormat::Srt,
+        "sub" => SubtitleFormat::Sub,
+        "ass" => SubtitleFormat::Ass,
+        "ssa" => SubtitleFormat::Ssa,
+        "vtt" => SubtitleFormat::Vtt,
+        _ => return None,
+    })
+}
+
 pub fn is_subtitle_path(path: &str) -> bool {
     path_ext(path).is_some_and(|e| SUB_EXTS.contains(&e.as_str()))
 }
