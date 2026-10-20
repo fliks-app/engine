@@ -34,6 +34,8 @@ use tokio::time::Instant;
 
 /// Concurrent on-demand ffmpeg runs of the data plane; more wait for a permit.
 const MAX_CAPTURES: usize = 4;
+/// Size of the per-key lock map past which the unused locks are dropped.
+const LOCKS_PRUNE_AT: usize = 256;
 const WATCH_EVERY: Duration = Duration::from_millis(200);
 const THROTTLE_EVERY: Duration = Duration::from_secs(5);
 const SEGMENT_WAIT: Duration = Duration::from_millis(core_session::SEGMENT_WAIT_MS as u64);
@@ -483,6 +485,12 @@ pub enum Fetch {
     Failed,
 }
 
+pub(crate) type InitTracks = (
+    PathBuf,
+    (SystemTime, u64),
+    fliks_engine_core::mp4::IdMap<fliks_engine_core::mp4::TrackInfo>,
+);
+
 pub struct Runtime {
     pub config: Mutex<Option<EngineConfig>>,
     pub hw: Arc<Hw>,
@@ -499,6 +507,8 @@ pub struct Runtime {
     pub capture: tokio::sync::Semaphore,
     pub jobs: crate::jobs::Jobs,
     pub live: crate::live::Live,
+    /// Per rendition directory: its init file, that file's stamp and the tracks it declares.
+    pub(crate) init_tracks: Mutex<HashMap<PathBuf, InitTracks>>,
     reg: Mutex<Reg>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -533,6 +543,7 @@ impl Runtime {
             capture: tokio::sync::Semaphore::new(MAX_CAPTURES),
             jobs: Default::default(),
             live: Default::default(),
+            init_tracks: Mutex::new(HashMap::new()),
             reg: Mutex::new(Reg::default()),
             locks: Mutex::new(HashMap::new()),
         })
@@ -556,12 +567,12 @@ impl Runtime {
     }
 
     pub(crate) fn lock_for(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
-        self.locks
-            .lock()
-            .unwrap()
-            .entry(key.into())
-            .or_default()
-            .clone()
+        let mut locks = self.locks.lock().unwrap();
+        if locks.len() >= LOCKS_PRUNE_AT {
+            // A lock nobody else holds is recreated on demand.
+            locks.retain(|_, l| Arc::strong_count(l) > 1);
+        }
+        locks.entry(key.into()).or_default().clone()
     }
 
     pub(crate) fn pause_capability(&self) -> PauseCapability {
@@ -2116,5 +2127,17 @@ mod tests {
         assert_eq!(left, ["init_0.mp4", "seg-0001.m4s"]);
         assert!(d.join("1").is_dir());
         remove_dir(&d);
+    }
+
+    #[tokio::test]
+    async fn lock_map_drops_the_locks_nobody_holds() {
+        let hw = Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
+        let rt = Runtime::new(hw, Cache::from_env(), "ffmpeg".into());
+        let held = rt.lock_for("held");
+        for i in 0..LOCKS_PRUNE_AT * 2 {
+            rt.lock_for(&i.to_string());
+        }
+        assert!(rt.locks.lock().unwrap().len() <= LOCKS_PRUNE_AT);
+        assert!(Arc::ptr_eq(&held, &rt.lock_for("held")));
     }
 }
