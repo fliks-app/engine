@@ -2553,7 +2553,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Names of the probes that passed; unlisted ones read false. Known names: `tonemapOpencl`,\n`tonemapOpenclCrop`, `tonemapOpenclHdr10`, `qsvOpencl`, `qsvOpenclHdr10`, `vppQsv`,\n`vulkan`, `cuda`, `cudaHdr10`, `opencl`, `openclHdr10`, `amfOpencl`.",
+            "description": "Names of the probes that passed; unlisted ones read false (`tonemapOpencl`, `vppQsv`,\n`vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants).",
             "default": []
           },
           "vaapiWritesHdrMetadata": {

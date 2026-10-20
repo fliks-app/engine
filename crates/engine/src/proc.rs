@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 
@@ -134,6 +134,8 @@ pub fn assign_to_job(child: &Child) {
 pub const STOP_GRACE: Duration = Duration::from_secs(2);
 const RING_LINES: usize = 40;
 const RING_LINE_BYTES: usize = 300;
+/// Longest stretch of stderr read as one line.
+const MAX_LINE: u64 = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Exit {
@@ -211,14 +213,17 @@ impl Ffmpeg {
         let drain = child.stderr.take().map(|err| {
             let (ring, count) = (stderr.clone(), stderr_lines.clone());
             tokio::spawn(async move {
-                let mut lines = BufReader::new(err).lines();
-                while let Ok(Some(l)) = lines.next_line().await {
+                let (mut err, mut buf) = (BufReader::new(err), Vec::new());
+                // A line past MAX_LINE bytes counts as several; invalid UTF-8 must not stop the drain.
+                while let Ok(1..) = (&mut err).take(MAX_LINE).read_until(b'\n', &mut buf).await {
                     count.fetch_add(1, Ordering::Relaxed);
+                    let l = String::from_utf8_lossy(&buf);
                     let mut r = ring.lock().unwrap();
                     if r.len() == RING_LINES {
                         r.pop_front();
                     }
-                    r.push_back(clip(l));
+                    r.push_back(clip(l.trim_end_matches(['\r', '\n']).to_string()));
+                    buf.clear();
                 }
             })
         });
@@ -469,6 +474,27 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(deaf.stop().await.signal);
         assert!(t.elapsed() >= STOP_GRACE);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stderr_drain_survives_invalid_utf8_and_endless_lines() {
+        let script = "printf 'bad \\377 bytes\\n' >&2; head -c 20000 /dev/zero | tr '\\0' x >&2; printf '\\nlast\\n' >&2";
+        let p = Ffmpeg::spawn("sh", &sh(script)).await.unwrap();
+        assert_eq!(p.wait().await.code, Some(0));
+        let tail = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let t = p.stderr_tail();
+                if t.last().is_some_and(|l| l == "last") {
+                    return t;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(tail[0].starts_with("bad ") && tail.len() > 2, "{tail:?}");
+        assert!(tail.iter().all(|l| l.len() <= RING_LINE_BYTES));
     }
 
     #[cfg(target_os = "linux")]

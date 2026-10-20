@@ -226,10 +226,10 @@ async fn access(
     let resolved = match rt.resolver.resolve(host.as_ref(), ask).await {
         Ok(r) => r,
         Err(ResolveError::Denied { .. }) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
-        // Host down: a live session of this file keeps playing.
+        // Host down: a live session of this file keeps playing (callers map the host path).
         Err(ResolveError::Unavailable) => match &session {
             Some(Some(s)) if s.media_file_id == id => Resolved {
-                path: s.path.clone(),
+                path: s.req.decide.media.path.clone(),
                 owner: s.owner.clone(),
                 format: None,
             },

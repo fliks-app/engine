@@ -95,8 +95,7 @@ struct Psi {
 }
 
 /// Follows PAT and PMT, reassembles the PES of the asked PIDs and walks their ADTS frames.
-/// A track is unreadable (`None` at `finish`) when its PID carries something else than ADTS
-/// (PMT stream type, scrambling, no PES header) or no frame at all.
+/// A track that is not ADTS or has no frame is unreadable (`None` at `finish`).
 #[derive(Default)]
 pub struct Demuxer {
     buf: Vec<u8>,
