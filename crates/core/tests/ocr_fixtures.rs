@@ -126,3 +126,21 @@ fn ocr_matches_host() {
         bad.join("\n")
     );
 }
+
+#[test]
+fn the_image_installs_exactly_the_mapped_tesseract_packs() {
+    let dockerfile =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Dockerfile")).unwrap();
+    let mut installed: Vec<String> = dockerfile
+        .split_whitespace()
+        .filter_map(|w| w.strip_prefix("tesseract-ocr-"))
+        .map(|p| p.replace('-', "_"))
+        .collect();
+    let mut mapped: Vec<String> = ocr::TESSERACT_PACKS
+        .iter()
+        .map(|(_, p)| p.to_string())
+        .collect();
+    installed.sort();
+    mapped.sort();
+    assert_eq!(installed, mapped);
+}

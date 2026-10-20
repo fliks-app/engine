@@ -20,43 +20,48 @@ pub fn resolved_language(request: Option<&str>, track_language: &str) -> String 
         .unwrap_or_else(|| "en".into())
 }
 
+/// ISO 639-1 to tesseract pack; the image installs exactly these packs (checked by a test).
+pub const TESSERACT_PACKS: &[(&str, &str)] = &[
+    ("en", "eng"),
+    ("fr", "fra"),
+    ("es", "spa"),
+    ("de", "deu"),
+    ("it", "ita"),
+    ("pt", "por"),
+    ("nl", "nld"),
+    ("sv", "swe"),
+    ("da", "dan"),
+    ("no", "nor"),
+    ("fi", "fin"),
+    ("pl", "pol"),
+    ("cs", "ces"),
+    ("sk", "slk"),
+    ("hu", "hun"),
+    ("ro", "ron"),
+    ("el", "ell"),
+    ("ru", "rus"),
+    ("uk", "ukr"),
+    ("bg", "bul"),
+    ("sr", "srp"),
+    ("hr", "hrv"),
+    ("tr", "tur"),
+    ("ar", "ara"),
+    ("he", "heb"),
+    ("fa", "fas"),
+    ("hi", "hin"),
+    ("th", "tha"),
+    ("vi", "vie"),
+    ("id", "ind"),
+    ("ja", "jpn"),
+    ("ko", "kor"),
+    ("zh", "chi_sim"),
+];
+
 pub fn tesseract_pack(ietf: &str) -> &'static str {
-    match ietf {
-        "en" => "eng",
-        "fr" => "fra",
-        "es" => "spa",
-        "de" => "deu",
-        "it" => "ita",
-        "pt" => "por",
-        "nl" => "nld",
-        "sv" => "swe",
-        "da" => "dan",
-        "no" => "nor",
-        "fi" => "fin",
-        "pl" => "pol",
-        "cs" => "ces",
-        "sk" => "slk",
-        "hu" => "hun",
-        "ro" => "ron",
-        "el" => "ell",
-        "ru" => "rus",
-        "uk" => "ukr",
-        "bg" => "bul",
-        "sr" => "srp",
-        "hr" => "hrv",
-        "tr" => "tur",
-        "ar" => "ara",
-        "he" => "heb",
-        "fa" => "fas",
-        "hi" => "hin",
-        "th" => "tha",
-        "vi" => "vie",
-        "id" => "ind",
-        "ja" => "jpn",
-        "ko" => "kor",
-        "zh" => "chi_sim",
-        _ => "eng",
-    }
+    TESSERACT_PACKS
+        .iter()
+        .find(|(code, _)| *code == ietf)
+        .map_or("eng", |(_, pack)| pack)
 }
 
 pub fn validate_ocr<'a>(

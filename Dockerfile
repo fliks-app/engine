@@ -32,7 +32,14 @@ ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix \
-    python3 python3-pip tesseract-ocr tesseract-ocr-all \
+    python3 python3-pip tesseract-ocr \
+    tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-spa tesseract-ocr-deu tesseract-ocr-ita \
+    tesseract-ocr-por tesseract-ocr-nld tesseract-ocr-swe tesseract-ocr-dan tesseract-ocr-nor \
+    tesseract-ocr-fin tesseract-ocr-pol tesseract-ocr-ces tesseract-ocr-slk tesseract-ocr-hun \
+    tesseract-ocr-ron tesseract-ocr-ell tesseract-ocr-rus tesseract-ocr-ukr tesseract-ocr-bul \
+    tesseract-ocr-srp tesseract-ocr-hrv tesseract-ocr-tur tesseract-ocr-ara tesseract-ocr-heb \
+    tesseract-ocr-fas tesseract-ocr-hin tesseract-ocr-tha tesseract-ocr-vie tesseract-ocr-ind \
+    tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-chi-sim \
   && python3 -m pip install --no-cache-dir --break-system-packages opencv-python-headless \
      appdirs babelfish cleanit click numpy pysrt pytesseract pyyaml setuptools trakit ffsubsync==0.5.1 \
   && python3 -m pip install --no-cache-dir --break-system-packages --no-deps pgsrip \
