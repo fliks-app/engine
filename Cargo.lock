@@ -288,6 +288,7 @@ version = "0.5.2"
 dependencies = [
  "alass-core",
  "axum",
+ "bytes",
  "clap",
  "fliks-engine-core",
  "futures-util",

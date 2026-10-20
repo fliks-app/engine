@@ -21,14 +21,17 @@ use self::subtitles::{
 };
 use crate::resolve::{Ask, Host, ResolveError, Resolved};
 use crate::runtime::{Runtime, Session};
+use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
+use bytes::BytesMut;
 use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, SessionExpired};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 type Q = Query<HashMap<String, String>>;
 type S = State<Arc<Runtime>>;
@@ -81,6 +84,18 @@ async fn cors(mut res: Response) -> Response {
         HeaderValue::from_static("*"),
     );
     res
+}
+
+/// A reader as a response body in `chunk`-byte reads, reusing the buffer once a chunk is sent.
+fn stream_body<R: AsyncRead + Unpin + Send + 'static>(r: R, chunk: usize) -> Body {
+    Body::from_stream(futures_util::stream::try_unfold(
+        (r, BytesMut::new()),
+        move |(mut r, mut buf)| async move {
+            buf.reserve(chunk);
+            let n = r.read_buf(&mut buf).await?;
+            Ok::<_, std::io::Error>((n > 0).then(|| (buf.split().freeze(), (r, buf))))
+        },
+    ))
 }
 
 fn text(status: StatusCode, body: &str) -> Response {

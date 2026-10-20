@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 fliks-engine-core = { path = "../core" }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
