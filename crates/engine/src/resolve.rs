@@ -1,5 +1,6 @@
 //! Data-plane access through the host resolver (`POST {hostUrl}/engine/resolve`), cached per
 //! (credential hash, media, purpose) for the answer's `ttlS`. Spec: `docs/spec/runtime.md` section 6.
+use crate::lock::Locked;
 use axum::body::Bytes;
 use axum::http::{Request, header};
 use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse};
@@ -129,7 +130,7 @@ impl Resolver {
             stream_index: ask.stream_index,
         };
         let stale = {
-            let cache = self.cache.lock().unwrap();
+            let cache = self.cache.locked();
             match cache.get(&key) {
                 Some(e) if e.until > Instant::now() => return granted(&e.res, ask.purpose),
                 Some(e) => Some(e.res.clone()),
@@ -144,7 +145,7 @@ impl Resolver {
                     .unwrap_or(DEFAULT_TTL_S);
                 let out = granted(&res, ask.purpose);
                 let now = Instant::now();
-                let mut cache = self.cache.lock().unwrap();
+                let mut cache = self.cache.locked();
                 make_room(&mut cache, MAX_ENTRIES, now);
                 cache.insert(
                     key,
@@ -205,7 +206,7 @@ impl Resolver {
 
     /// Drops the cached answers matching every given filter (`POST /v1/revoke`, `/v1/invalidate`).
     pub fn purge(&self, owner: Option<&str>, media: &[u32]) {
-        self.cache.lock().unwrap().retain(|k, e| {
+        self.cache.locked().retain(|k, e| {
             let by_owner = owner.is_none_or(|o| e.res.owner_id.as_deref() == Some(o));
             let by_media = media.is_empty()
                 || matches!(&k.media, ResolveMediaId::File(m) if media.contains(m));
