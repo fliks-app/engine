@@ -495,6 +495,7 @@ async fn iframe_seg(
 
 /// stdout of a short playback ffmpeg run, `None` on failure or timeout.
 async fn run_capture(rt: &Runtime, args: &[String], timeout: Duration) -> Option<Vec<u8>> {
+    let _permit = rt.capture.acquire().await.ok()?;
     let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffmpeg);
     cmd.args(args)
@@ -1036,7 +1037,14 @@ fn vtt_response(body: String, download: Option<String>) -> Response {
 async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<String> {
     use crate::jobs::subtitles::{raw_to_vtt, store, vtt_path};
     let dir = rt.cache.subtitles_dir(id);
-    if let Ok(t) = tokio::fs::read_to_string(vtt_path(&dir, idx)).await {
+    let cached = || tokio::fs::read_to_string(vtt_path(&dir, idx));
+    if let Ok(t) = cached().await {
+        return Some(t);
+    }
+    // Concurrent requests for one stream wait for the first extraction, then read its file.
+    let lock = rt.lock_for(&format!("subtitle:{id}:{idx}"));
+    let _held = lock.lock().await;
+    if let Ok(t) = cached().await {
         return Some(t);
     }
     let args = fliks_engine_core::jobs::subtitles::extract_args(media, &[(idx, "pipe:1")]);
