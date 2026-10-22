@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/fliks-app/engine/compare/v0.5.4...v1.0.0) (2026-10-22)
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([#86](https://github.com/fliks-app/engine/issues/86)) ([5678045](https://github.com/fliks-app/engine/commit/5678045bdb6e759d35c86b9f8723387349663cea))
+
 ## [0.5.4](https://github.com/fliks-app/engine/compare/v0.5.3...v0.5.4) (2026-10-22)
 
 
