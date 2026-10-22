@@ -276,12 +276,10 @@ fn prefix(id: u32) -> String {
 }
 
 fn duration_of(s: &Session, q: &HashMap<String, String>) -> f64 {
-    let d = q
-        .get("duration")
+    q.get("duration")
         .and_then(|d| d.parse::<f64>().ok())
         .filter(|d| *d > 0.0)
-        .unwrap_or(s.plan.duration);
-    served_duration(d, &s.plan.timeline)
+        .map_or(s.plan.duration, |d| served_duration(d, &s.plan.timeline))
 }
 
 #[cfg(test)]
