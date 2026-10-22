@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use fliks_engine_core::api::{EngineEvent, SessionKind, Track};
 use fliks_engine_core::args::{IframeArgs, iframe};
 use fliks_engine_core::decide::timeline::{
-    frame_seconds_of, real_segment_seconds, uniform_segment_count,
+    frame_seconds_of, real_segment_seconds, served_duration, uniform_segment_count,
 };
 use fliks_engine_core::hls::{
     Rendition, audio_playlist, iframe_index, iframe_resolution, master_playlist, variant_playlist,
@@ -428,8 +428,8 @@ fn past_end(s: &Session, name: SegmentName, remux: bool) -> bool {
     } else {
         real_segment_seconds(p.segment_duration, p.source_fps)
     };
-    p.duration > 0.0
-        && f64::from(n) >= uniform_segment_count(p.duration, seg, frame_seconds_of(p.source_fps))
+    let d = served_duration(p.duration, &p.timeline);
+    d > 0.0 && f64::from(n) >= uniform_segment_count(d, seg, frame_seconds_of(p.source_fps))
 }
 
 fn seg_name(seg: &str) -> Result<SegmentName, Response> {

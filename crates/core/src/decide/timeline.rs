@@ -52,6 +52,14 @@ pub fn uniform_segment_count(duration: f64, segment: f64, frame: f64) -> f64 {
     (((duration - frame) / segment + 1e-9).floor() + 1.0).max(1.0)
 }
 
+/// Playlist length: `duration` cut to where the video ends, as the encoder writes no later segment.
+pub fn served_duration(duration: f64, t: &crate::mp4::SourceTimeline) -> f64 {
+    match t.end {
+        Some(end) if end > t.origin && duration > 0.0 => duration.min(end - t.origin),
+        _ => duration,
+    }
+}
+
 /// Where a video's picture starts, falling back to its first packet.
 pub fn video_presentation_start(v: Option<&VideoStreamInfo>) -> Option<f64> {
     v.and_then(|v| v.first_frame_seconds.or(v.start_time_seconds))
@@ -105,4 +113,37 @@ pub fn last_video_segment_start(
         VideoCut::Reencode => real_segment_seconds(segment_duration, fps),
     };
     Some(origin + (uniform_segment_count(end - origin, seg, frame_seconds_of(fps)) - 1.0) * seg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mp4::SourceTimeline;
+
+    fn timeline(origin: f64, end: Option<f64>) -> SourceTimeline {
+        SourceTimeline {
+            origin,
+            format_start: 0.0,
+            end,
+            clock_break: None,
+        }
+    }
+
+    #[test]
+    fn audio_outlasting_the_video_adds_no_segment() {
+        let (seg, frame) = (6.006, 1001.0 / 24000.0);
+        // Video ends on a segment boundary, the container 2 frames later.
+        let end = 936.0 * seg;
+        let d = served_duration(end + 2.0 * frame, &timeline(0.0, Some(end)));
+        assert_eq!(uniform_segment_count(end + 2.0 * frame, seg, frame), 937.0);
+        assert_eq!(uniform_segment_count(d, seg, frame), 936.0);
+    }
+
+    #[test]
+    fn served_duration_keeps_the_longer_video_and_unknown_ends() {
+        assert_eq!(served_duration(10.0, &timeline(0.0, Some(12.0))), 10.0);
+        assert_eq!(served_duration(10.0, &timeline(0.0, None)), 10.0);
+        assert_eq!(served_duration(0.0, &timeline(0.0, Some(12.0))), 0.0);
+        assert_eq!(served_duration(10.0, &timeline(2.0, Some(9.0))), 7.0);
+    }
 }

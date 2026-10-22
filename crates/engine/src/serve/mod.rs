@@ -29,6 +29,7 @@ use axum::routing::get;
 use axum::{Router, middleware};
 use bytes::BytesMut;
 use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, SessionExpired};
+use fliks_engine_core::decide::timeline::served_duration;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -275,10 +276,12 @@ fn prefix(id: u32) -> String {
 }
 
 fn duration_of(s: &Session, q: &HashMap<String, String>) -> f64 {
-    q.get("duration")
+    let d = q
+        .get("duration")
         .and_then(|d| d.parse::<f64>().ok())
         .filter(|d| *d > 0.0)
-        .unwrap_or(s.plan.duration)
+        .unwrap_or(s.plan.duration);
+    served_duration(d, &s.plan.timeline)
 }
 
 #[cfg(test)]
