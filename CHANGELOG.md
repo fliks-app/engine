@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/fliks-app/engine/compare/v1.0.0...v1.0.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **deps:** bump rustls-webpki to 0.103.16 ([#88](https://github.com/fliks-app/engine/issues/88)) ([bb29959](https://github.com/fliks-app/engine/commit/bb299595e82628329e12a481cd16c3bc85834cd7))
+
 ## [1.0.0](https://github.com/fliks-app/engine/compare/v0.5.4...v1.0.0) (2026-10-22)
 
 
