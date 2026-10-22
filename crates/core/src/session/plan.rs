@@ -12,7 +12,7 @@ use crate::args::{RemuxArgs, RemuxRun};
 use crate::decide::codec::resolve_encoder;
 use crate::decide::dolby_vision::{dv_standalone_codecs, dv_supplemental_codecs, has_no_base};
 use crate::decide::source::is_mpeg_ts;
-use crate::decide::timeline::{parse_source_fps, real_segment_seconds};
+use crate::decide::timeline::{parse_source_fps, real_segment_seconds, served_duration};
 use crate::hls::{
     AudioStreamMeta, HdrPassThrough, MasterOptions, SubtitleKind, SubtitleRendition,
     copy_source_codec_string,
@@ -37,6 +37,7 @@ pub struct SessionPlan {
     pub source_fps: Option<f64>,
     pub segment_duration: f64,
     pub timeline: SourceTimeline,
+    /// Container duration cut to the video's end: the encoder writes nothing past it.
     pub duration: f64,
     /// Keyframe grid a DirectStream session's remux runs are cut on, frozen at open.
     pub remux_grid: Option<KeyframeGrid>,
@@ -132,8 +133,8 @@ pub fn plan(
             })
             .flatten(),
         probes_seg_zero: req.decide.device.probes_seg_zero.unwrap_or(true),
+        duration: served_duration(info.duration_seconds.unwrap_or(0.0), &timeline),
         timeline,
-        duration: info.duration_seconds.unwrap_or(0.0),
     }
 }
 
