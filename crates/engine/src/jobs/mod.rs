@@ -692,13 +692,13 @@ pub async fn create(State(s): S, Json(req): Json<JobRequest>) -> Response {
     }
 }
 
-#[utoipa::path(get, path = "/v1/jobs", operation_id = "list_jobs", responses((status = 200, body = Vec<JobSnapshot>)))]
+#[utoipa::path(get, path = "/v1/jobs", operation_id = "list_jobs", responses((status = 200, body = Vec<JobSnapshot>, description = "jobs")))]
 pub async fn list(State(s): S) -> Json<Vec<JobSnapshot>> {
     Json(s.rt.jobs.snapshots())
 }
 
 #[utoipa::path(get, path = "/v1/jobs/{id}", operation_id = "get_job", responses(
-    (status = 200, body = JobSnapshot), (status = 404, description = "unknown job")))]
+    (status = 200, body = JobSnapshot, description = "the job"), (status = 404, description = "unknown job")))]
 pub async fn get_one(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     match s.rt.jobs.get(&id) {
         Some(j) => Json(j.snapshot()).into_response(),

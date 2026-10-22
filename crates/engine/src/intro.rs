@@ -13,7 +13,7 @@ use crate::AppState;
 #[utoipa::path(post, path = "/v1/intro-detect", operation_id = "intro_detect",
     request_body = IntroDetectRequest,
     responses(
-        (status = 200, body = IntroDetectResponse),
+        (status = 200, body = IntroDetectResponse, description = "the detected intro"),
         (status = 400, description = "invalid request"),
         (status = 500, description = "worker join failed")))]
 pub async fn detect(

@@ -18,7 +18,7 @@
         "operationId": "get_cache",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the cache summary",
             "content": {
               "application/json": {
                 "schema": {
@@ -80,7 +80,7 @@
         "operationId": "capabilities",
         "responses": {
           "200": {
-            "description": "",
+            "description": "host capabilities",
             "content": {
               "application/json": {
                 "schema": {
@@ -101,7 +101,7 @@
         "operationId": "get_config",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the current engine config",
             "content": {
               "application/json": {
                 "schema": {
@@ -127,7 +127,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the current engine config",
             "content": {
               "application/json": {
                 "schema": {
@@ -158,7 +158,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the playback decision",
             "content": {
               "application/json": {
                 "schema": {
@@ -192,7 +192,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "estimated size per quality",
             "content": {
               "application/json": {
                 "schema": {
@@ -233,7 +233,7 @@
         "operationId": "hello",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the engine greeting",
             "content": {
               "application/json": {
                 "schema": {
@@ -263,7 +263,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the detected intro",
             "content": {
               "application/json": {
                 "schema": {
@@ -299,7 +299,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "what was invalidated",
             "content": {
               "application/json": {
                 "schema": {
@@ -319,7 +319,7 @@
         "operationId": "list_jobs",
         "responses": {
           "200": {
-            "description": "",
+            "description": "jobs",
             "content": {
               "application/json": {
                 "schema": {
@@ -373,7 +373,7 @@
         "operationId": "get_job",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the job",
             "content": {
               "application/json": {
                 "schema": {
@@ -423,7 +423,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "live sessions",
             "content": {
               "application/json": {
                 "schema": {
@@ -454,7 +454,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the opened live session",
             "content": {
               "application/json": {
                 "schema": {
@@ -497,7 +497,7 @@
         "operationId": "get_live",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the live session",
             "content": {
               "application/json": {
                 "schema": {
@@ -530,7 +530,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the probe result",
             "content": {
               "application/json": {
                 "schema": {
@@ -563,7 +563,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "what was revoked",
             "content": {
               "application/json": {
                 "schema": {
@@ -612,7 +612,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "open sessions",
             "content": {
               "application/json": {
                 "schema": {
@@ -643,7 +643,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the opened session",
             "content": {
               "application/json": {
                 "schema": {
@@ -669,7 +669,7 @@
         "operationId": "get_session",
         "responses": {
           "200": {
-            "description": "",
+            "description": "the session",
             "content": {
               "application/json": {
                 "schema": {
@@ -756,7 +756,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "the heartbeat acknowledgement",
             "content": {
               "application/json": {
                 "schema": {
@@ -1403,10 +1403,10 @@
           "hdr": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HdrFormat"
               },
               {
-                "$ref": "#/components/schemas/HdrFormat"
+                "type": "null"
               }
             ]
           }
@@ -1453,10 +1453,10 @@
           "hostCaps": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HostCaps"
               },
               {
-                "$ref": "#/components/schemas/HostCaps"
+                "type": "null"
               }
             ]
           },
@@ -1512,10 +1512,10 @@
           "scan": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/SourceScan"
               },
               {
-                "$ref": "#/components/schemas/SourceScan"
+                "type": "null"
               }
             ]
           },
@@ -1663,10 +1663,10 @@
           "deviceType": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/DeviceType"
               },
               {
-                "$ref": "#/components/schemas/DeviceType"
+                "type": "null"
               }
             ]
           },
@@ -1852,11 +1852,7 @@
             "default": null
           },
           "lifetime": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/LifetimeConfig"
-              }
-            ],
+            "$ref": "#/components/schemas/LifetimeConfig",
             "default": {
               "cacheGcIntervalMs": 300000,
               "jobFallbackTimeoutMs": 1800000,
@@ -1870,11 +1866,7 @@
             }
           },
           "livetv": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/LiveTvConfig"
-              }
-            ],
+            "$ref": "#/components/schemas/LiveTvConfig",
             "default": {
               "channelIdleSeconds": 30,
               "probeSeconds": 3,
@@ -1897,11 +1889,7 @@
             "minimum": 0
           },
           "streaming": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/StreamingConfig"
-              }
-            ],
+            "$ref": "#/components/schemas/StreamingConfig",
             "default": {
               "autoCropEnabled": true,
               "autoQualityMode": "directplay",
@@ -2189,10 +2177,10 @@
               "result": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/JobResult"
                   },
                   {
-                    "$ref": "#/components/schemas/JobResult"
+                    "type": "null"
                   }
                 ]
               },
@@ -2230,10 +2218,10 @@
               "probe": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/LiveProbe"
                   },
                   {
-                    "$ref": "#/components/schemas/LiveProbe"
+                    "type": "null"
                   }
                 ]
               },
@@ -2528,11 +2516,7 @@
             "default": []
           },
           "hwAccel": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/HwAccel"
-              }
-            ],
+            "$ref": "#/components/schemas/HwAccel",
             "default": "none"
           },
           "libfdkAac": {
@@ -2541,11 +2525,7 @@
             "default": false
           },
           "platform": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Platform"
-              }
-            ],
+            "$ref": "#/components/schemas/Platform",
             "default": "linux"
           },
           "probes": {
@@ -2647,10 +2627,10 @@
           "introFingerprint": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/Fingerprint"
               },
               {
-                "$ref": "#/components/schemas/Fingerprint"
+                "type": "null"
               }
             ]
           },
@@ -2662,10 +2642,10 @@
           "outroFingerprint": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/Fingerprint"
               },
               {
-                "$ref": "#/components/schemas/Fingerprint"
+                "type": "null"
               }
             ]
           }
@@ -2979,11 +2959,11 @@
           "priority": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/JobPriority",
                 "description": "Order among queued jobs; playback always comes first. Absent: `normal`."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -3180,10 +3160,10 @@
           "result": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/JobResult"
               },
               {
-                "$ref": "#/components/schemas/JobResult"
+                "type": "null"
               }
             ]
           },
@@ -3835,10 +3815,10 @@
           "probe": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/LiveProbe"
               },
               {
-                "$ref": "#/components/schemas/LiveProbe"
+                "type": "null"
               }
             ]
           },
@@ -3871,10 +3851,10 @@
           "burnIn": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/BurnInSpec"
               },
               {
-                "$ref": "#/components/schemas/BurnInSpec"
+                "type": "null"
               }
             ]
           },
@@ -3969,10 +3949,10 @@
           "qoePipeline": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/QoePipeline"
               },
               {
-                "$ref": "#/components/schemas/QoePipeline"
+                "type": "null"
               }
             ]
           },
@@ -3989,11 +3969,11 @@
           "tonemapCurve": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/TonemapCurve",
                 "description": "The curve that tone-map applies; absent when it takes none."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -4247,11 +4227,11 @@
           "crop": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/CropInfo",
                 "description": "Only when auto-crop is enabled."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -4279,10 +4259,10 @@
           "hdrFormat": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HdrFormat"
               },
               {
-                "$ref": "#/components/schemas/HdrFormat"
+                "type": "null"
               }
             ]
           },
@@ -4375,22 +4355,22 @@
           "info": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/MediaInfo",
                 "description": "Present when ok; on failure the empty error blob the host persists today."
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "moviehash": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/MovieHash",
                 "description": "Absent when the file is under 128 KiB or unreadable."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -4419,10 +4399,10 @@
           "hdr": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HdrFormat"
               },
               {
-                "$ref": "#/components/schemas/HdrFormat"
+                "type": "null"
               }
             ]
           },
@@ -4455,10 +4435,10 @@
           "burnIn": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/BurnInKind"
               },
               {
-                "$ref": "#/components/schemas/BurnInKind"
+                "type": "null"
               }
             ]
           },
@@ -4471,40 +4451,40 @@
           "decode": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/PipelineStage"
               },
               {
-                "$ref": "#/components/schemas/PipelineStage"
+                "type": "null"
               }
             ]
           },
           "encode": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/PipelineStage"
               },
               {
-                "$ref": "#/components/schemas/PipelineStage"
+                "type": "null"
               }
             ]
           },
           "output": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/QoeOutput"
               },
               {
-                "$ref": "#/components/schemas/QoeOutput"
+                "type": "null"
               }
             ]
           },
           "source": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/QoeSource"
               },
               {
-                "$ref": "#/components/schemas/QoeSource"
+                "type": "null"
               }
             ]
           },
@@ -4849,10 +4829,10 @@
           "job": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/JobStats"
               },
               {
-                "$ref": "#/components/schemas/JobStats"
+                "type": "null"
               }
             ]
           },
@@ -5059,11 +5039,7 @@
             "default": true
           },
           "autoQualityMode": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/AutoQualityMode"
-              }
-            ],
+            "$ref": "#/components/schemas/AutoQualityMode",
             "default": "directplay"
           },
           "cacheMaxBytes": {
@@ -5109,11 +5085,7 @@
             "default": null
           },
           "qsvPreset": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/QsvPreset"
-              }
-            ],
+            "$ref": "#/components/schemas/QsvPreset",
             "default": "faster"
           },
           "segmentDuration": {
@@ -5122,11 +5094,7 @@
             "default": 3.0
           },
           "subtitlePrewarm": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/SubtitlePrewarm"
-              }
-            ],
+            "$ref": "#/components/schemas/SubtitlePrewarm",
             "default": "playback"
           },
           "throttleEnabled": {
@@ -5139,19 +5107,11 @@
             "default": 90.0
           },
           "tonemapAlgo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TonemapAlgo"
-              }
-            ],
+            "$ref": "#/components/schemas/TonemapAlgo",
             "default": "auto"
           },
           "tonemapCurve": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TonemapCurve"
-              }
-            ],
+            "$ref": "#/components/schemas/TonemapCurve",
             "default": "mobius"
           }
         }
@@ -5480,10 +5440,10 @@
           "crop": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/CropInfo"
               },
               {
-                "$ref": "#/components/schemas/CropInfo"
+                "type": "null"
               }
             ]
           },
@@ -5564,20 +5524,20 @@
           "hdrFormat": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HdrFormat"
               },
               {
-                "$ref": "#/components/schemas/HdrFormat"
+                "type": "null"
               }
             ]
           },
           "hdrMetadata": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HdrMetadata"
               },
               {
-                "$ref": "#/components/schemas/HdrMetadata"
+                "type": "null"
               }
             ]
           },
