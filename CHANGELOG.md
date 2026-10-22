@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/fliks-app/engine/compare/v0.5.3...v0.5.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **decide:** resolve the requested rung among those that fit the source ([#78](https://github.com/fliks-app/engine/issues/78)) ([1e938c9](https://github.com/fliks-app/engine/commit/1e938c97ed47a734475dbd9a3340b1998248e095))
+
 ## [0.5.3](https://github.com/fliks-app/engine/compare/v0.5.2...v0.5.3) (2026-10-20)
 
 
