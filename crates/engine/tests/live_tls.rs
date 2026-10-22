@@ -3,7 +3,7 @@
 mod runtime_common;
 use fliks_engine_core::api::{EngineEvent, HwAccel};
 use http_body_util::BodyExt;
-use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
 use runtime_common::*;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -16,14 +16,13 @@ use tokio_rustls::rustls::{
 
 /// A CA and a `localhost` certificate it signed: (CA PEM, leaf DER, leaf key DER).
 fn pki() -> (String, CertificateDer<'static>, PrivateKeyDer<'static>) {
-    let ca_key = KeyPair::generate().unwrap();
     let mut ca = CertificateParams::new(vec![]).unwrap();
     ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    let ca = ca.self_signed(&ca_key).unwrap();
+    let ca = CertifiedIssuer::self_signed(ca, KeyPair::generate().unwrap()).unwrap();
     let key = KeyPair::generate().unwrap();
     let leaf = CertificateParams::new(vec!["localhost".into()])
         .unwrap()
-        .signed_by(&key, &ca, &ca_key)
+        .signed_by(&key, &ca)
         .unwrap();
     let der = PrivateKeyDer::try_from(key.serialize_der()).unwrap();
     (ca.pem(), leaf.der().clone(), der)
