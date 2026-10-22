@@ -15,7 +15,9 @@ use crate::api::{
     AudioPlan, AudioTrackPlan, AutoQualityMode, DecideRequest, Decision, HdrFormat, HostCaps,
     HwAccel, MuxFlavour, PlayMethod, PlaybackInfo, StreamingConfig, TranscodeReason,
 };
-use crate::ladder::{Rung, bucket_resolution_height, is_eco, ladder, resolve_rung, top_non_eco};
+use crate::ladder::{
+    Rung, bucket_resolution_height, is_eco, ladder, profile_fits_source, resolve_rung, top_non_eco,
+};
 use audio::{
     AudioContext, ENCODE_SAMPLE_RATE, REMUX_STEREO_BPS, TrackDecision, audio_reason_message,
     decide_audio, lower_codec, output_bitrate_bps,
@@ -208,8 +210,14 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
     let wants_source_rung = matches!(requested, None | Some("auto" | "original"));
     let auto_on_ladder = matches!(requested, None | Some("auto"))
         && config.auto_quality_mode == AutoQualityMode::Abr;
+    // Resolved like the master playlist pin, so a rung above the source names the one served.
+    let fitting: Vec<Rung> = quality_ladder
+        .iter()
+        .filter(|r| profile_fits_source(r, source.width, source.height))
+        .copied()
+        .collect();
     let explicit_rung: Option<&Rung> = match requested {
-        Some(name) if !wants_source_rung => resolve_rung(name, quality_ladder),
+        Some(name) if !wants_source_rung => resolve_rung(name, &fitting),
         _ => None,
     };
     let negotiated_quality = explicit_rung.map_or("auto", |r| r.name);
@@ -302,11 +310,12 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
     }
     if force_ladder
         && !auto_on_ladder
-        && let Some(name) = requested.filter(|n| quality_ladder.iter().any(|r| r.name == *n))
+        && requested.is_some_and(|n| quality_ladder.iter().any(|r| r.name == n))
+        && let Some(r) = explicit_rung
     {
         reasons.push(reason(
             "VideoQualityReduced",
-            format!("Reduced-quality rung selected ({name})"),
+            format!("Reduced-quality rung selected ({})", r.name),
         ));
     }
 
