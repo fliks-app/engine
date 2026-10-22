@@ -43,7 +43,7 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [dev-dependencies]
-tokio-tungstenite = "0.28"
+tokio-tungstenite = "0.30"
 futures-util = "0.3"
 rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
