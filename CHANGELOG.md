@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/fliks-app/engine/compare/v1.0.1...v1.0.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **hls:** never list a segment the transcode can't produce ([#90](https://github.com/fliks-app/engine/issues/90)) ([c97ac9e](https://github.com/fliks-app/engine/commit/c97ac9e19ffd171a824955fb98593477fa4ec7c3))
+* **session:** bound the plan duration to the video end ([#92](https://github.com/fliks-app/engine/issues/92)) ([93a2961](https://github.com/fliks-app/engine/commit/93a2961743384bb83737cd4f3a991ec1af56dda6))
+
 ## [1.0.1](https://github.com/fliks-app/engine/compare/v1.0.0...v1.0.1) (2026-10-22)
 
 
