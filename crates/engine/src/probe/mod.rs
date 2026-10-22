@@ -45,7 +45,7 @@ async fn moviehash(path: &str) -> Option<MovieHash> {
 }
 
 #[utoipa::path(post, path = "/v1/probe", request_body = ProbeRequest,
-    responses((status = 200, body = ProbeResult), (status = 400, description = "path is not absolute")))]
+    responses((status = 200, body = ProbeResult, description = "the probe result"), (status = 400, description = "path is not absolute")))]
 pub async fn probe(
     State(s): State<Arc<AppState>>,
     Json(req): Json<ProbeRequest>,

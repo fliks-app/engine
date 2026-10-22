@@ -19,7 +19,7 @@ use std::sync::Arc;
 type S = State<Arc<AppState>>;
 
 #[utoipa::path(post, path = "/v1/sessions", operation_id = "open_session", request_body = OpenSessionRequest, responses(
-    (status = 200, body = OpenSessionResponse),
+    (status = 200, body = OpenSessionResponse, description = "the opened session"),
     (status = 400, description = "no config set yet, or an invalid ownerId/path"),
     (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
 pub async fn open(State(s): S, Json(req): Json<OpenSessionRequest>) -> Response {
@@ -41,13 +41,13 @@ pub struct ListQuery {
 }
 
 #[utoipa::path(get, path = "/v1/sessions", operation_id = "list_sessions", params(ListQuery),
-    responses((status = 200, body = Vec<SessionSnapshot>)))]
+    responses((status = 200, body = Vec<SessionSnapshot>, description = "open sessions")))]
 pub async fn list(State(s): S, Query(q): Query<ListQuery>) -> Json<Vec<SessionSnapshot>> {
     Json(s.rt.list(q.owner_id.as_deref(), q.media_file_id))
 }
 
 #[utoipa::path(get, path = "/v1/sessions/{sid}", operation_id = "get_session", responses(
-    (status = 200, body = SessionSnapshot), (status = 404, description = "unknown or ended session")))]
+    (status = 200, body = SessionSnapshot, description = "the session"), (status = 404, description = "unknown or ended session")))]
 pub async fn get_one(State(s): S, Path(sid): Path<String>) -> Response {
     match s.rt.peek(&sid) {
         Some(sess) => Json(s.rt.snapshot(&sess)).into_response(),
@@ -77,7 +77,7 @@ pub async fn delete(
 }
 
 #[utoipa::path(post, path = "/v1/sessions/{sid}/heartbeat", operation_id = "heartbeat_session", request_body = HeartbeatRequest, responses(
-    (status = 200, body = HeartbeatResponse), (status = 403, description = "not the session's owner")))]
+    (status = 200, body = HeartbeatResponse, description = "the heartbeat acknowledgement"), (status = 403, description = "not the session's owner")))]
 pub async fn heartbeat(
     State(s): S,
     Path(sid): Path<String>,
@@ -120,7 +120,7 @@ pub async fn command(
 }
 
 #[utoipa::path(post, path = "/v1/revoke", request_body = RevokeRequest, responses(
-    (status = 200, body = RevokeResult), (status = 400, description = "neither ownerId nor mediaFileIds")))]
+    (status = 200, body = RevokeResult, description = "what was revoked"), (status = 400, description = "neither ownerId nor mediaFileIds")))]
 pub async fn revoke(State(s): S, Json(r): Json<RevokeRequest>) -> Response {
     let files = r.media_file_ids.unwrap_or_default();
     if r.owner_id.is_none() && files.is_empty() {
@@ -131,7 +131,7 @@ pub async fn revoke(State(s): S, Json(r): Json<RevokeRequest>) -> Response {
 }
 
 #[utoipa::path(post, path = "/v1/invalidate", request_body = InvalidateRequest,
-    responses((status = 200, body = InvalidateResult)))]
+    responses((status = 200, body = InvalidateResult, description = "what was invalidated")))]
 pub async fn invalidate(State(s): S, Json(r): Json<InvalidateRequest>) -> Json<InvalidateResult> {
     let (jobs, cache_entries) = s.rt.invalidate(r.media_file_id).await;
     Json(InvalidateResult {
@@ -140,7 +140,7 @@ pub async fn invalidate(State(s): S, Json(r): Json<InvalidateRequest>) -> Json<I
     })
 }
 
-#[utoipa::path(get, path = "/v1/cache", operation_id = "get_cache", responses((status = 200, body = CacheSummary)))]
+#[utoipa::path(get, path = "/v1/cache", operation_id = "get_cache", responses((status = 200, body = CacheSummary, description = "the cache summary")))]
 pub async fn cache(State(s): S) -> Json<CacheSummary> {
     Json(s.rt.cache_summary().await)
 }

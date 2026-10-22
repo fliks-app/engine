@@ -156,7 +156,7 @@ async fn auth(
     }
 }
 
-#[utoipa::path(get, path = "/v1/hello", responses((status = 200, body = Hello)))]
+#[utoipa::path(get, path = "/v1/hello", responses((status = 200, body = Hello, description = "the engine greeting")))]
 async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     Json(Hello {
         engine_version: env!("CARGO_PKG_VERSION").into(),
@@ -194,7 +194,7 @@ fn detecting() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {
 }
 
 #[utoipa::path(get, path = "/v1/capabilities", responses(
-    (status = 200, body = CapabilitiesResponse),
+    (status = 200, body = CapabilitiesResponse, description = "host capabilities"),
     (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
 async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
     match s.hw.snapshot() {
@@ -207,13 +207,13 @@ async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
     }
 }
 
-#[utoipa::path(get, path = "/v1/config", responses((status = 200, body = EngineConfig)))]
+#[utoipa::path(get, path = "/v1/config", responses((status = 200, body = EngineConfig, description = "the current engine config")))]
 async fn get_config(State(s): State<Arc<AppState>>) -> Json<EngineConfig> {
     Json(EngineConfig::clone(&s.rt.current_config()))
 }
 
 #[utoipa::path(put, path = "/v1/config", request_body = EngineConfig,
-    responses((status = 200, body = EngineConfig), (status = 409, description = "revision lower than current")))]
+    responses((status = 200, body = EngineConfig, description = "the current engine config"), (status = 409, description = "revision lower than current")))]
 async fn put_config(
     State(s): State<Arc<AppState>>,
     Json(new): Json<EngineConfig>,
@@ -229,7 +229,7 @@ async fn put_config(
 }
 
 #[utoipa::path(post, path = "/v1/decide", request_body = DecideBody,
-    responses((status = 200, body = Decision), (status = 400, description = "no config set yet"),
+    responses((status = 200, body = Decision, description = "the playback decision"), (status = 400, description = "no config set yet"),
     (status = 503, description = "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
 async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) -> Response {
     let Some(config) = s.rt.config.locked().clone() else {
@@ -249,7 +249,7 @@ async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) ->
 }
 
 #[utoipa::path(post, path = "/v1/estimate-sizes", request_body = EstimateSizesRequest,
-    responses((status = 200, body = Vec<QualityEstimate>)))]
+    responses((status = 200, body = Vec<QualityEstimate>, description = "estimated size per quality")))]
 async fn estimate_sizes(Json(req): Json<EstimateSizesRequest>) -> Json<Vec<QualityEstimate>> {
     Json(fliks_engine_core::decide::estimate_sizes(&req))
 }

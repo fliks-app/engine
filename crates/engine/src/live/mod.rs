@@ -293,7 +293,7 @@ fn refused(status: StatusCode, code: &str) -> Response {
 }
 
 #[utoipa::path(post, path = "/v1/live", operation_id = "open_live", request_body = OpenLiveRequest, responses(
-    (status = 200, body = OpenLiveResponse),
+    (status = 200, body = OpenLiveResponse, description = "the opened live session"),
     (status = 400, description = "no config set yet, or an invalid request"),
     (status = 409, body = LiveError, description = "`live_at_capacity`: a new upstream is needed and `atCapacity` is set"),
     (status = 503, body = LiveError, description = "`live_unavailable`: every upstream failed; or, without a body, hardware detection has not finished (Retry-After: 1)")))]
@@ -321,13 +321,13 @@ pub struct ListQuery {
 }
 
 #[utoipa::path(get, path = "/v1/live", operation_id = "list_live", params(ListQuery),
-    responses((status = 200, body = Vec<LiveSnapshot>)))]
+    responses((status = 200, body = Vec<LiveSnapshot>, description = "live sessions")))]
 pub async fn list_handler(State(s): S, Query(q): Query<ListQuery>) -> Json<Vec<LiveSnapshot>> {
     Json(s.rt.live.list(q.owner_id.as_deref()))
 }
 
 #[utoipa::path(get, path = "/v1/live/{sid}", operation_id = "get_live", responses(
-    (status = 200, body = LiveSnapshot), (status = 404, description = "unknown or ended viewer")))]
+    (status = 200, body = LiveSnapshot, description = "the live session"), (status = 404, description = "unknown or ended viewer")))]
 pub async fn get_handler(State(s): S, UrlPath(sid): UrlPath<String>) -> Response {
     match s.rt.live.snapshot(&sid) {
         Some(snap) => Json(snap).into_response(),
