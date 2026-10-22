@@ -20,7 +20,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "json",
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false }
-getrandom = "0.3"
+getrandom = "0.4"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
