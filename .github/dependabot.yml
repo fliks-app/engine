@@ -6,3 +6,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: "ci"
+
+  # Minor and patch bumps land as one PR; majors stay separate.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore"
+      include: scope
