@@ -101,6 +101,8 @@ pub struct Runtime {
     /// Per rendition directory: its init file, that file's stamp and the tracks it declares.
     pub(crate) init_tracks: Mutex<HashMap<PathBuf, InitTracks>>,
     reg: Mutex<Reg>,
+    /// The detected accelerator a hardware run failed on: later runs go straight to the CPU.
+    hw_failed: Mutex<Option<HwAccel>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
@@ -136,6 +138,7 @@ impl Runtime {
             live: Default::default(),
             init_tracks: Mutex::new(HashMap::new()),
             reg: Mutex::new(Reg::default()),
+            hw_failed: Mutex::new(None),
             locks: Mutex::new(HashMap::new()),
         })
     }
@@ -177,6 +180,13 @@ impl Runtime {
 
     fn detected_hw(&self) -> HwAccel {
         self.caps().map_or(HwAccel::None, |c| c.hw_accel)
+    }
+
+    /// (accelerator to run on, accelerator requested): the CPU once hardware failed.
+    fn start_hw(&self) -> (HwAccel, HwAccel) {
+        let detected = self.detected_hw();
+        let failed = *self.hw_failed.locked() == Some(detected);
+        (if failed { HwAccel::None } else { detected }, detected)
     }
 
     pub(crate) fn device(&self, caps: &HostCaps) -> fliks_engine_core::hw::Device {
