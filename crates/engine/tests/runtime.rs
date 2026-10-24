@@ -682,3 +682,29 @@ async fn a_revivable_expired_sid_keeps_serving() {
         .await;
     assert_eq!(m.status, 200);
 }
+
+#[tokio::test]
+async fn a_playback_run_below_the_free_space_floor_answers_503_and_spawns_nothing() {
+    let (e, file) = setup().await;
+    let mut config = e.control("GET", "/v1/config", None).await.json();
+    config["revision"] = json!(2);
+    config["streaming"]["jobMinFreeBytes"] = json!(1e18);
+    assert_eq!(
+        e.control("PUT", "/v1/config", Some(config)).await.status,
+        200
+    );
+    let sid = open(&e, &file, "alice").await["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let r = e
+        .get(
+            &format!("/api/stream/7/720p/init.mp4?sid={sid}"),
+            "alice-jwt",
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, 503, "{}", r.text());
+    assert!(r.text().contains("not enough disk space"), "{}", r.text());
+    assert!(e.ffmpeg_pids().is_empty());
+}
