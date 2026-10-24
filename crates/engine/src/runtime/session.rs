@@ -290,8 +290,7 @@ impl Runtime {
             let lock = rt.lock_for(&key);
             let _g = lock.lock().await;
             if rt.job(&key).is_none_or(|j| !j.producing()) {
-                let hw = rt.detected_hw();
-                rt.spawn_job(&s, &quality, start, (hw, hw), 0, JobKind::Main)
+                rt.spawn_job(&s, &quality, start, rt.start_hw(), 0, JobKind::Main)
                     .await;
             }
         });
