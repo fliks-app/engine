@@ -342,3 +342,25 @@ async fn a_process_deaf_to_stop_is_killed_after_the_grace() {
     assert!(cpu.is_some());
     drop(p);
 }
+
+#[tokio::test]
+async fn a_session_starting_at_zero_spawns_one_run_not_an_early_companion_first() {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let sid = open(&e, &file, json!({})).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let get = |name: &str| format!("/api/stream/7/720p/{name}?sid={sid}");
+    let wait = Duration::from_millis(500);
+    let _ = tokio::time::timeout(wait, e.get(&get("init.mp4"), "alice-jwt", &[])).await;
+    assert!(
+        e.rt.job(&s.key(JobKind::Early)).is_none(),
+        "no early companion at 0"
+    );
+    assert_eq!(
+        e.ffmpeg_pids().len(),
+        1,
+        "the init request starts the main run"
+    );
+    let _ = tokio::time::timeout(wait, e.get(&get("seg-0.m4s"), "alice-jwt", &[])).await;
+    assert_eq!(e.ffmpeg_pids().len(), 1, "seg-0 reuses it");
+    e.rt.shutdown().await;
+}

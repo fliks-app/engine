@@ -214,9 +214,10 @@ impl Runtime {
         // relocating the main. [ts:modules/streaming/streaming.controller.ts:2409-2480]
         let floor = s.resume_floor(existing.as_deref());
         let probe = s.plan.probes_seg_zero
+            && floor > EARLY_PROBE_SEGMENTS
             && match name {
                 SegmentName::Init(_) => same.is_none(),
-                SegmentName::Segment(n) => floor > EARLY_PROBE_SEGMENTS && n < EARLY_PROBE_SEGMENTS,
+                SegmentName::Segment(n) => n < EARLY_PROBE_SEGMENTS,
             };
         if probe {
             let early = match early {
