@@ -66,7 +66,7 @@ impl Runtime {
             // Another rung: start where this request is (an init already asks for the resume floor).
             if !quality_match {
                 if e.producing() {
-                    e.kill().await;
+                    e.kill_now().await;
                 }
             } else {
                 let input = ResolveInput {
@@ -77,11 +77,12 @@ impl Runtime {
                 };
                 match core_session::resolve_existing(&input) {
                     ResumeAction::Serve | ResumeAction::Wait => {
+                        self.resume_for_waiter(&e).await;
                         return Some(e);
                     }
                     ResumeAction::Respawn(r) => {
                         if r.kill {
-                            e.kill().await;
+                            e.kill_now().await;
                         }
                         if r.purge_cache {
                             let dir = e.dir.clone();
@@ -94,6 +95,13 @@ impl Runtime {
         }
         self.spawn_job(s, quality, requested, hw, restarts, JobKind::Main)
             .await
+    }
+
+    /// A request waits on a throttled run: wake it now, the next tick re-pauses it if still ahead.
+    async fn resume_for_waiter(&self, e: &Job) {
+        if e.m.locked().paused {
+            e.pause(self.pause_capability(), false).await;
+        }
     }
 
     /// The session's remux run for a request at `requested` (`audio`: the 1-based rendition),
@@ -119,11 +127,12 @@ impl Runtime {
             };
             match core_session::resolve_existing(&input) {
                 ResumeAction::Serve | ResumeAction::Wait => {
+                    self.resume_for_waiter(&e).await;
                     return Some(e);
                 }
                 ResumeAction::Respawn(r) => {
                     if r.kill {
-                        e.kill().await;
+                        e.kill_now().await;
                     }
                     requested = r.start_segment.unwrap_or(e.start_segment);
                 }
@@ -148,7 +157,7 @@ impl Runtime {
                 return Some(e);
             }
             self.unregister(&e);
-            e.kill().await;
+            e.kill_now().await;
             let dir = e.dir.clone();
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         }
