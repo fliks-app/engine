@@ -567,7 +567,7 @@ mod tests {
                 "-ar",
                 "48000",
                 "-filter:a",
-                "asetpts=PTS-0/TB,aresample=async=1:first_pts=0,asetpts=PTS+0/TB",
+                "asetpts=PTS-0/TB,aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo,asetpts=PTS+0/TB",
                 "-f",
                 "mp4",
                 "-movflags",
