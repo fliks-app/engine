@@ -381,6 +381,10 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 dv_rpu_present: Some(flag("rpu_present_flag")),
                 dv_bl_present: Some(flag("bl_present_flag")),
                 dv_el_present: Some(flag("el_present_flag")),
+                field_order: s
+                    .field_order
+                    .clone()
+                    .filter(|f| matches!(f.as_str(), "tt" | "bb" | "tb" | "bt")),
                 ..VideoStreamInfo::default()
             }
         })

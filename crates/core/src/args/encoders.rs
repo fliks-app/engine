@@ -629,10 +629,13 @@ fn nvenc_filter(i: &EncoderInput, ten: bool) -> String {
         };
         format!("{down}{crop}{}scale={w}:{}", f.tonemap_cpu, even_height(&w))
     } else if i.input_surface == Surface::Cuda {
-        let crop = if i.has_crop {
-            format!("hwdownload,format={fmt},{},hwupload_cuda,", f.crop_str)
-        } else {
+        let crop = if f.cpu_crop_prefix.is_empty() {
             String::new()
+        } else {
+            format!(
+                "hwdownload,format={fmt},{}hwupload_cuda,",
+                f.cpu_crop_prefix
+            )
         };
         format!("{crop}scale_cuda=w={w}:h=-2:format={fmt}")
     } else {
