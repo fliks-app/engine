@@ -425,6 +425,7 @@ impl Runtime {
             return;
         }
         tracing::warn!(key = job.key, from = ?job.hw, "hardware run failed, CPU fallback");
+        *self.hw_failed.locked() = Some(self.detected_hw());
         self.events.emit(EngineEvent::HwFallback {
             job_key: job.key.clone(),
             from: job.hw,
