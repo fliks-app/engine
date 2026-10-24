@@ -81,6 +81,9 @@ pub struct VodArgs {
     pub source_video_codec: Option<String>,
     #[serde(default)]
     pub source_bit_depth: Option<u32>,
+    /// Interlaced source: deinterlaced on the CPU before scaling.
+    #[serde(default)]
+    pub source_interlaced: bool,
     #[serde(default)]
     pub source_width: Option<u32>,
     #[serde(default)]

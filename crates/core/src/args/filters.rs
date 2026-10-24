@@ -38,7 +38,11 @@ pub fn crop_filter(c: &CropInfo) -> String {
     format!("crop={}:{}:{}:{}", c.width, c.height, c.x, c.y)
 }
 
+/// One output frame per frame (the frame rate is kept); progressive frames pass untouched.
+const DEINTERLACE: &str = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
+
 pub struct FilterContext<'a> {
+    pub deinterlace: bool,
     pub crop: Option<&'a CropInfo>,
     /// `burnIn.filter`: a text track's libass step.
     pub burn_in_filter: Option<&'a str>,
@@ -106,16 +110,25 @@ pub fn video_filters(c: &FilterContext) -> Filters {
     } else {
         "nv12"
     };
-    Filters {
-        cpu_crop_prefix: if crop_str.is_empty() {
+    let cpu_prefix = format!(
+        "{}{}",
+        if c.deinterlace {
+            format!("{DEINTERLACE},")
+        } else {
+            String::new()
+        },
+        if crop_str.is_empty() {
             String::new()
         } else {
             format!("{crop_str},")
-        },
-        hw_crop_prefix: if crop_str.is_empty() {
+        }
+    );
+    Filters {
+        cpu_crop_prefix: cpu_prefix.clone(),
+        hw_crop_prefix: if cpu_prefix.is_empty() {
             String::new()
         } else {
-            format!("hwdownload,format={crop_fmt},{crop_str},hwupload=derive_device=vaapi,")
+            format!("hwdownload,format={crop_fmt},{cpu_prefix}hwupload=derive_device=vaapi,")
         },
         burn_in_filter: text.map_or(String::new(), |f| format!(",{f}")),
         tonemap_vaapi: if c.use_vaapi_tonemap {

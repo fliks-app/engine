@@ -311,6 +311,9 @@ pub struct VideoStreamInfo {
     pub hdr10_plus: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop: Option<CropInfo>,
+    /// ffprobe `field_order` (`tt`, `bb`, `tb`, `bt`), set only when the stream is interlaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_order: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
