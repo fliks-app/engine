@@ -33,14 +33,23 @@ pub fn video_map(index: Option<u32>) -> String {
 }
 
 /// Pads or trims the audio to start on the video's first frame and pads it to `end`.
-fn align_filter(start: f64, end: Option<f64>) -> String {
+/// `stereo` downmixes here, unnormalised: swresample's default scales the whole matrix down
+/// (the centre ends up 10 dB under the source), `rematrix_maxval` keeps ATSC's -3 dB.
+fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
     let st = seconds(start.abs());
     let (to, back) = if start < 0.0 { ("+", "-") } else { ("-", "+") };
     let pad = match end {
         Some(e) if e > start => format!(",apad=whole_dur={}", seconds(e - start)),
         _ => String::new(),
     };
-    format!("asetpts=PTS{to}{st}/TB,aresample=async=1:first_pts=0{pad},asetpts=PTS{back}{st}/TB")
+    let down = if stereo {
+        ":rematrix_maxval=3,aformat=channel_layouts=stereo"
+    } else {
+        ""
+    };
+    format!(
+        "asetpts=PTS{to}{st}/TB,aresample=async=1:first_pts=0{down}{pad},asetpts=PTS{back}{st}/TB"
+    )
 }
 
 /// MP4 carries AAC raw, MPEG-TS as ADTS. [ts:backend/src/modules/streaming/transcoding/audio-encode.ts:217-225]
@@ -91,8 +100,37 @@ pub fn audio_stream_args(spec: &str, plan: &AudioPlan, a: &AudioEnc) -> Vec<Stri
             let bps = output_bitrate_bps(plan, a.stereo_bps);
             let mut v = audio_encode_args(spec, *codec, *channels, bps, a.libfdk_aac);
             v.push(format!("-filter:a{spec}"));
-            v.push(align_filter(a.align_start, a.end));
+            v.push(align_filter(a.align_start, a.end, *channels == 2));
             v
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn filter(channels: u32) -> String {
+        let a = AudioEnc {
+            stereo_bps: 128_000.0,
+            align_start: 0.0,
+            end: None,
+            use_ts: false,
+            libfdk_aac: false,
+        };
+        let plan = AudioPlan::Transcode {
+            codec: AudioCodec::Aac,
+            channels,
+        };
+        audio_stream_args("", &plan, &a).pop().unwrap()
+    }
+
+    #[test]
+    fn only_a_stereo_target_downmixes_unnormalised() {
+        let f = filter(2);
+        assert!(f.contains(
+            "aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo"
+        ));
+        assert!(!filter(6).contains("rematrix_maxval"));
     }
 }
