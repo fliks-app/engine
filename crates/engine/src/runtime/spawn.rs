@@ -86,7 +86,7 @@ impl Runtime {
                 start_segment: start,
                 hw,
                 early: kind == JobKind::Early,
-                encode_threads: crate::slots::cpu_quota() as u32,
+                encode_threads: self.slots.encode_threads(),
             });
             fliks_engine_core::args::vod(&args, &caps, &dev)
         };
@@ -171,7 +171,7 @@ impl Runtime {
                 start_segment: start,
                 hw: HwAccel::None,
                 early: false,
-                encode_threads: crate::slots::cpu_quota() as u32,
+                encode_threads: self.slots.encode_threads(),
             },
             &run,
         );

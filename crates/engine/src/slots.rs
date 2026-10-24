@@ -73,6 +73,13 @@ impl Slots {
         st.playback + st.gpu
     }
 
+    /// `-threads` for a run about to start: the cores split with the software runs already going
+    /// (floor of 2), so concurrent transcodes share the CPU instead of each taking all of it.
+    pub fn encode_threads(&self) -> u32 {
+        let quota = cpu_quota();
+        (quota / (self.st.locked().playback + 1)).max(2.min(quota)) as u32
+    }
+
     /// Background runs queued for a slot.
     pub fn waiting(&self) -> usize {
         self.st.locked().queue.len()
@@ -214,6 +221,18 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(20), f)
             .await
             .ok()
+    }
+
+    #[test]
+    fn encode_threads_split_the_cores_between_software_runs() {
+        let s = Slots::new(1);
+        let quota = cpu_quota();
+        assert_eq!(s.encode_threads() as usize, quota);
+        let held: Vec<_> = (0..quota * 2).map(|_| s.playback(true)).collect();
+        assert_eq!(s.encode_threads() as usize, 2.min(quota));
+        let _gpu = s.playback(false);
+        drop(held);
+        assert_eq!(s.encode_threads() as usize, quota);
     }
 
     #[tokio::test]

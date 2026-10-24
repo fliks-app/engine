@@ -156,7 +156,7 @@ async fn spawn_packaged(
             audio_codec: audio,
             append,
             probe_seconds: Some(pipe.probe_seconds),
-            encode_threads: crate::slots::cpu_quota() as u32,
+            encode_threads: rt.slots.encode_threads(),
         },
         &caps,
         &rt.device(&caps),
