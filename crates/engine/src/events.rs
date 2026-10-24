@@ -39,22 +39,41 @@ impl Events {
         self.0.subscribe()
     }
 
-    /// A lagging subscriber skips what it missed; the host resyncs with `GET /v1/sessions`.
+    /// A subscriber that lagged is cut: the host's reconnect resyncs it, where skipping would not.
     pub fn sse(&self) -> Sse<impl Stream<Item = Result<Event, Infallible>> + use<>> {
         let stream = futures_util::stream::unfold(self.subscribe(), |mut rx| async move {
-            loop {
-                match rx.recv().await {
-                    Ok(e) => {
-                        let ev = Event::default()
-                            .event(name(&e))
-                            .data(serde_json::to_string(&e).unwrap_or_default());
-                        return Some((Ok(ev), rx));
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => return None,
-                }
-            }
+            let e = rx.recv().await.ok()?;
+            let ev = Event::default()
+                .event(name(&e))
+                .data(serde_json::to_string(&e).unwrap_or_default());
+            Some((Ok(ev), rx))
         });
         Sse::new(stream).keep_alive(KeepAlive::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+    use std::time::Duration;
+
+    fn ev(i: usize) -> EngineEvent {
+        EngineEvent::BgJobProgress {
+            job_id: i.to_string(),
+            pct: 1.0,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_lagged_subscriber_stream_ends() {
+        let events = Events::default();
+        let res = events.sse().into_response();
+        for i in 0..2000 {
+            events.emit(ev(i));
+        }
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX);
+        let out = tokio::time::timeout(Duration::from_secs(5), body).await;
+        assert!(out.is_ok(), "the stream must end on lag, not stay open");
     }
 }

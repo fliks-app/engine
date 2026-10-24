@@ -83,7 +83,7 @@ Routes are the host's, byte for byte (`/api/stream/...`, plan section 16), `GET`
 
 ## 7. Events
 
-`GET /v1/events`: SSE, one `EngineEvent` JSON per `data:` line, event name = `type`. `SessionOpened`, `SessionEnded{reason}` (`stopped`, `expired`, `evicted`, `revoked`), `PipelineChanged` (a session's served rung or hw changed), `SegmentServed{track, rung, index, waitedMs, cacheHit, cmcdRaw}` (`cmcdRaw` = `?CMCD=` else the `CMCD-*` headers joined by `,`), `JobStarted`, `JobEnded{state, exitCode?, reason?}` (`reason` only when the watchdog ended the run), `HwFallback`. A lagging subscriber loses events; on reconnect the host lists `GET /v1/sessions`. [ts:ctl:529-547] (plan section 6)
+`GET /v1/events`: SSE, one `EngineEvent` JSON per `data:` line, event name = `type`. `SessionOpened`, `SessionEnded{reason}` (`stopped`, `expired`, `evicted`, `revoked`), `PipelineChanged` (a session's served rung or hw changed), `SegmentServed{track, rung, index, waitedMs, cacheHit, cmcdRaw}` (`cmcdRaw` = `?CMCD=` else the `CMCD-*` headers joined by `,`), `JobStarted`, `JobEnded{state, exitCode?, reason?}` (`reason` only when the watchdog ended the run), `HwFallback`. A lagging subscriber has its stream closed; on reconnect the host lists `GET /v1/sessions`. [ts:ctl:529-547] (plan section 6)
 
 ## 8. Deviations
 
