@@ -219,6 +219,14 @@ impl Runtime {
         argv: &[String],
     ) -> Option<Arc<Job>> {
         let key = r.key;
+        // Between GC ticks a few rungs can fill the disk: free what is idle once, then refuse.
+        if self.check_disk(&r.dir).await.is_err() {
+            self.cache_gc().await;
+            if let Err(e) = self.check_disk(&r.dir).await {
+                tracing::error!(key, "{e}");
+                return None;
+            }
+        }
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
         let slot = self.slots.playback(r.hw.0 == HwAccel::None);
