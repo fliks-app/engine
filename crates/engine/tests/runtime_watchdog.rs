@@ -342,3 +342,17 @@ async fn a_process_deaf_to_stop_is_killed_after_the_grace() {
     assert!(cpu.is_some());
     drop(p);
 }
+
+#[tokio::test]
+async fn a_request_waiting_on_a_throttled_run_resumes_it() {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let pinned = json!({ "selection": { "requestedQuality": "720p" } });
+    let sid = open(&e, &file, pinned).await;
+    let job = primary(&e, &sid).await;
+    assert!(e.rt.pause_job(&e.rt.peek(&sid).unwrap(), true).await);
+    assert!(job.stats().throttled);
+    let path = format!("/api/stream/7/720p/seg-3.m4s?sid={sid}");
+    let _ = tokio::time::timeout(Duration::from_secs(1), e.get(&path, "alice-jwt", &[])).await;
+    assert!(!job.stats().throttled, "the waiter must wake the run");
+    e.rt.shutdown().await;
+}

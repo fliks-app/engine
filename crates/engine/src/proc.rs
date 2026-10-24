@@ -477,6 +477,16 @@ mod tests {
         assert!(t.elapsed() >= STOP_GRACE);
     }
 
+    #[tokio::test]
+    async fn kill_does_not_wait_for_a_deaf_process() {
+        let deaf = Ffmpeg::spawn("sh", &sh("trap '' TERM; while :; do sleep 0.1; done"))
+            .await
+            .unwrap();
+        let t = std::time::Instant::now();
+        assert!(deaf.kill().await.signal);
+        assert!(t.elapsed() < STOP_GRACE);
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn stderr_drain_survives_invalid_utf8_and_endless_lines() {
