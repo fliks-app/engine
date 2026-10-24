@@ -602,6 +602,27 @@ async fn concurrent_embedded_requests_extract_once() {
 }
 
 #[tokio::test]
+async fn one_embedded_request_extracts_every_text_track() {
+    let (e, file) = engine_of("slowsub", json!({})).await;
+    for idx in [2, 3] {
+        let r = e
+            .get(
+                &format!("/api/stream/7/subtitles/embedded/{idx}"),
+                "alice-jwt",
+                &[],
+            )
+            .await;
+        assert_eq!(r.status, 200, "track {idx}");
+    }
+    let runs = std::fs::read_to_string(format!("{}.runs", file.display())).unwrap();
+    assert_eq!(runs.lines().count(), 1, "one ffmpeg run for two tracks");
+    let r = e
+        .get("/api/stream/7/subtitles/embedded/4", "alice-jwt", &[])
+        .await;
+    assert_eq!(r.status, 404, "a bitmap track is not extracted");
+}
+
+#[tokio::test]
 async fn subtitle_job_skips_cached_tracks_fails_and_cancels() {
     // `failsub` fails any ffmpeg run: a cached track needs none.
     let (e, file) = engine_of("failsub", json!({})).await;

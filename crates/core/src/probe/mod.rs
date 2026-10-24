@@ -10,6 +10,7 @@ pub mod moviehash;
 
 pub use build::{apply_late_audio, build, first_frame_stream, measure_fps, parse_main};
 pub use ffjson::Frame;
+pub(crate) use lang::is_image_based;
 pub use moviehash::moviehash;
 
 #[cfg(test)]
