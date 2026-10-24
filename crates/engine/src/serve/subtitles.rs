@@ -58,25 +58,68 @@ fn vtt_response(body: String, download: Option<String>) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// Embedded text track as WebVTT, extracted once per (file, stream) the way the job does.
+/// Embedded text track as WebVTT: the first request extracts every text track of the file in one
+/// pass, as the job does, so each later track is a cache read.
 async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<String> {
-    use crate::jobs::subtitles::{raw_to_vtt, store, vtt_path};
+    use crate::jobs::subtitles::vtt_path;
     let dir = rt.cache.subtitles_dir(id);
     let cached = || tokio::fs::read_to_string(vtt_path(&dir, idx));
     if let Ok(t) = cached().await {
         return Some(t);
     }
-    // Concurrent requests for one stream wait for the first extraction, then read its file.
-    let lock = rt.lock_for(&format!("subtitle:{id}:{idx}"));
+    // Concurrent requests for a file wait for the first extraction, then read its files.
+    let lock = rt.lock_for(&format!("subtitle:{id}"));
     let _held = lock.lock().await;
     if let Ok(t) = cached().await {
         return Some(t);
     }
-    let args = fliks_engine_core::jobs::subtitles::extract_args(media, &[(idx, "pipe:1")]);
-    let out = run_capture(rt, &args, Duration::from_secs(300)).await?;
-    let vtt = raw_to_vtt(&out, "pipe:1").ok()?;
-    let _ = store(&dir, idx, &vtt).await;
-    Some(vtt)
+    extract_all(rt, &dir, media, idx).await?;
+    cached().await.ok()
+}
+
+/// One ffmpeg run writing every uncached text track; `None` when `idx` is not one of them.
+async fn extract_all(rt: &Runtime, dir: &Path, media: &str, idx: u32) -> Option<()> {
+    use crate::jobs::subtitles::{raw_to_vtt, store, vtt_path};
+    use fliks_engine_core::jobs::subtitles::{extract_args, list_args, parse_text_streams};
+    let listing = run_capture(rt, &list_args(media), Duration::from_secs(30), &rt.ffprobe).await?;
+    let all = parse_text_streams(&String::from_utf8_lossy(&listing));
+    if !all.contains(&idx) {
+        return None;
+    }
+    let tag = crate::random_hex(4);
+    tokio::fs::create_dir_all(dir).await.ok()?;
+    let raws: Vec<(u32, String)> = all
+        .into_iter()
+        .filter(|s| !vtt_path(dir, *s).exists())
+        .map(|s| {
+            (
+                s,
+                dir.join(format!("{s}.ass.{tag}"))
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        })
+        .collect();
+    let outputs: Vec<(u32, &str)> = raws.iter().map(|(s, r)| (*s, r.as_str())).collect();
+    let ran = run_capture(
+        rt,
+        &extract_args(media, &outputs),
+        Duration::from_secs(300),
+        &rt.ffmpeg,
+    )
+    .await;
+    for (stream, raw) in &raws {
+        if ran.is_some()
+            && let Ok(vtt) = tokio::fs::read(raw)
+                .await
+                .map_err(|_| ())
+                .and_then(|b| raw_to_vtt(&b, raw).map_err(|_| ()))
+        {
+            let _ = store(dir, *stream, &vtt).await;
+        }
+        let _ = tokio::fs::remove_file(raw).await;
+    }
+    ran.map(|_| ())
 }
 
 async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option<String> {
@@ -92,7 +135,7 @@ async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option
             .map(|t| normalize_vtt(&t));
     }
     let args = fliks_engine_core::jobs::subtitles::webvtt_args(path);
-    run_capture(rt, &args, Duration::from_secs(60))
+    run_capture(rt, &args, Duration::from_secs(60), &rt.ffmpeg)
         .await
         .map(|o| String::from_utf8_lossy(&o).into_owned())
 }

@@ -86,6 +86,10 @@ fn drain_stdin() {
 
 /// ffprobe: the PIDs, the reorder lead, or the packets of a 120 s file (keyframes at 0 and 0.125 s).
 fn probe(mode: &str, args: &[String]) {
+    if args.iter().any(|a| a == "stream=index,codec_name") {
+        println!("2,subrip\n3,ass\n4,hdmv_pgs_subtitle");
+        return;
+    }
     if args.iter().any(|a| a == "stream=index,id") {
         println!("index=0|id=0x100\nindex=1|id=0x101");
         return;

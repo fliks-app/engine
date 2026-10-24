@@ -33,6 +33,35 @@ pub fn extract_args(path: &str, outputs: &[(u32, &str)]) -> Vec<String> {
     a
 }
 
+/// ffprobe listing the subtitle streams as `index,codec` lines (a header read, no demux).
+pub fn list_args(path: &str) -> Vec<String> {
+    let mut a = strs(&[
+        "-v",
+        "error",
+        "-select_streams",
+        "s",
+        "-show_entries",
+        "stream=index,codec_name",
+        "-of",
+        "csv=p=0",
+    ]);
+    a.push(path.into());
+    a
+}
+
+/// The text (non-bitmap) stream indices of a [`list_args`] output.
+pub fn parse_text_streams(out: &str) -> Vec<u32> {
+    out.lines()
+        .filter_map(|l| {
+            let (idx, codec) = l.trim().split_once(',')?;
+            let codec = Some(codec.trim()).filter(|c| !c.is_empty());
+            (!crate::probe::is_image_based(codec))
+                .then(|| idx.trim().parse().ok())
+                .flatten()
+        })
+        .collect()
+}
+
 /// ffmpeg converting an external subtitle file to WebVTT on stdout.
 pub fn webvtt_args(path: &str) -> Vec<String> {
     let mut a = strs(&["-hide_banner", "-loglevel", "error", "-i"]);
@@ -425,6 +454,12 @@ mod tests {
             check_extracted(0, "/t/r").unwrap_err(),
             "ffmpeg wrote an empty subtitle file: \"/t/r\""
         );
+    }
+
+    #[test]
+    fn the_listing_keeps_text_streams_only() {
+        let out = "2,subrip\n3,hdmv_pgs_subtitle\n4,ass\n5,dvd_subtitle\n6,\nx,srt\n";
+        assert_eq!(parse_text_streams(out), vec![2, 4, 6]);
     }
 
     #[test]
