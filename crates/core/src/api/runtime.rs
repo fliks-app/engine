@@ -40,6 +40,10 @@ pub struct BurnInSpec {
     /// Stream index of an image track, overlaid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_index: Option<u32>,
+    /// Absolute path of an external image subtitle (`.sup`, or the `.idx` of a VobSub pair),
+    /// overlaid when `streamIndex` is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 /// `POST /v1/sessions`: decide, open the session and prewarm its job, atomically.

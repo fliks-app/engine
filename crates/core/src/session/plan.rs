@@ -324,6 +324,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         burn_in: req.burn_in.as_ref().map(|b| BurnIn {
             filter: b.filter.clone(),
             stream_index: b.stream_index,
+            path: b.path.clone(),
             kind: match b.kind {
                 BurnInKind::Text => args::BurnInKind::Text,
                 BurnInKind::Image => args::BurnInKind::Image,

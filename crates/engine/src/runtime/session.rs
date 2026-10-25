@@ -131,7 +131,7 @@ impl Session {
 impl Runtime {
     pub fn open(
         self: &Arc<Self>,
-        req: OpenSessionRequest,
+        mut req: OpenSessionRequest,
     ) -> Result<OpenSessionResponse, OpenError> {
         let config = self.config.locked().clone().ok_or(OpenError::NoConfig)?;
         let caps = self.caps().ok_or(OpenError::Detecting)?;
@@ -142,6 +142,14 @@ impl Runtime {
         }
         if !Path::new(&req.decide.media.path).is_absolute() {
             return Err(OpenError::BadRequest("media.path must be absolute".into()));
+        }
+        if let Some(b) = req.burn_in.as_mut()
+            && let Some(p) = b.path.as_mut()
+        {
+            if !Path::new(p.as_str()).is_absolute() {
+                return Err(OpenError::BadRequest("burnIn.path must be absolute".into()));
+            }
+            *p = self.map_media_path(p);
         }
         let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);
