@@ -128,6 +128,10 @@ async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
         .get("/api/stream/7/thumbnails/sprite.jpg", "alice-jwt", &[])
         .await;
     assert_eq!(jpg.header("content-type").as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        jpg.header("cache-control").as_deref(),
+        Some("private, max-age=86400")
+    );
     assert_eq!(&jpg.body[..2], &[0xFF, 0xD8]);
     let dir = e.root.join("sprites/v1/7");
     let left: Vec<_> = std::fs::read_dir(&dir)
