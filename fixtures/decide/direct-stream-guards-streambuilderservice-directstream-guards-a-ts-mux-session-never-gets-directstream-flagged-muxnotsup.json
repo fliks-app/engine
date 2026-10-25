@@ -44,15 +44,15 @@
       "outputAudioCodec": "aac",
       "outputContainer": "hls",
       "outputVideoCodec": "h264",
-      "playMethod": "Transcode",
-      "playUrl": "/api/stream/1/master.m3u8tok",
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/1/master.m3u8tok&remux=1",
       "qualities": [
         {
           "height": 1080,
-          "id": "1080p",
-          "isRemux": false,
+          "id": "original",
+          "isRemux": true,
           "label": "1080p",
-          "totalBitrateBps": 8192000,
+          "totalBitrateBps": 8128000,
           "width": 1920
         },
         {
@@ -114,7 +114,8 @@
           "width": 256
         }
       ],
-      "quality": "auto",
+      "quality": "original",
+      "remuxMasterBandwidthBps": 8128000,
       "source": {
         "audioBitRate": 128000,
         "audioChannels": 2,
@@ -185,13 +186,9 @@
         {
           "flag": "ContainerNotSupported",
           "message": "Container \"mkv\" not supported"
-        },
-        {
-          "flag": "MuxNotSupported",
-          "message": "MPEG-TS packaging can't carry a copied video stream"
         }
       ],
-      "videoCopyStream": false
+      "videoCopyStream": true
     },
     "transcodeTonemapping": false,
     "useHdrLadder": false,

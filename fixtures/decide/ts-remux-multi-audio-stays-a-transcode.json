@@ -239,7 +239,6 @@
     }
    ],
    "maxAudioChannels": 6,
-   "supportsTsRemux": true,
    "useTs": true
   },
   "info": {

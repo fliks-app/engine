@@ -1174,7 +1174,6 @@ async fn ts_remux_seek_keeps_the_timeline_of_every_segment() {
     let p = play(h264_clip(120)).await;
     let mut client = copy_client(&p.file);
     client["device"]["useTsOnSingleAudio"] = json!(true);
-    client["device"]["supportsTsRemux"] = json!(true);
     let s = p.e.open(1, &p.file, &p.info, "alice", client).await;
     assert_eq!(s["decision"]["response"]["playMethod"], "DirectStream");
     assert_eq!(s["decision"]["muxFlavour"], "ts");

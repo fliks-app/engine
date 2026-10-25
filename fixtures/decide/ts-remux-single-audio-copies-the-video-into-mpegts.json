@@ -220,7 +220,6 @@
     }
    ],
    "maxAudioChannels": 6,
-   "supportsTsRemux": true,
    "useTsOnSingleAudio": true
   },
   "info": {
@@ -260,6 +259,6 @@
    "tokenParam": ""
   }
  },
- "name": "ts remux: a single-audio source behind useTsOnSingleAudio copies the video into MPEG-TS when the client accepts it",
+ "name": "ts remux: a single-audio source behind useTsOnSingleAudio copies the video into MPEG-TS",
  "source": "engine"
 }

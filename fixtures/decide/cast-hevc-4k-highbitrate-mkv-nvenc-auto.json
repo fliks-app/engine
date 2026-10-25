@@ -43,15 +43,15 @@
       "outputAudioCodec": "eac3",
       "outputContainer": "hls",
       "outputVideoCodec": "hevc",
-      "playMethod": "Transcode",
-      "playUrl": "/api/stream/1/master.m3u8?token=t",
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/1/master.m3u8?token=t&remux=1",
       "qualities": [
         {
           "height": 2160,
-          "id": "2160p",
-          "isRemux": false,
+          "id": "original",
+          "isRemux": true,
           "label": "4K",
-          "totalBitrateBps": 20192000,
+          "totalBitrateBps": 82000000,
           "width": 3840
         },
         {
@@ -130,7 +130,8 @@
           "width": 256
         }
       ],
-      "quality": "auto",
+      "quality": "original",
+      "remuxMasterBandwidthBps": 78576000,
       "source": {
         "audioBitRate": 1509000,
         "audioChannelLayout": "5.1(side)",
@@ -210,13 +211,9 @@
         {
           "flag": "ContainerNotSupported",
           "message": "Container \"mkv\" not supported"
-        },
-        {
-          "flag": "MuxNotSupported",
-          "message": "MPEG-TS packaging can't carry a copied video stream"
         }
       ],
-      "videoCopyStream": false
+      "videoCopyStream": true
     },
     "transcodeTonemapping": false,
     "useHdrLadder": false,
