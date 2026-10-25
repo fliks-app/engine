@@ -1766,6 +1766,13 @@
               "null"
             ]
           },
+          "supportsTsRemux": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "A single-audio source may keep its video copied into MPEG-TS segments (only the audio is\nre-encoded) instead of falling back to a full transcode."
+          },
           "switchesDirectPlayAudio": {
             "type": [
               "boolean",

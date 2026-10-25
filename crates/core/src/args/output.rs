@@ -217,7 +217,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
         stereo_bps: REMUX_STEREO_BPS,
         align_start: o.run.audio_start_seconds,
         end: o.source_end_seconds,
-        use_ts: false,
+        use_ts: o.use_ts,
         libfdk_aac: caps.libfdk_aac,
     };
     let plan = o.audio_plan.as_ref().unwrap_or(&DEFAULT_AUDIO_PLAN);
@@ -286,8 +286,9 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
     }
     a.extend(video);
     let dir = o.output_dir.as_str();
+    let ext = if o.use_ts { "ts" } else { "m4s" };
     a.extend(hls_muxer(Muxer {
-        use_ts: false,
+        use_ts: o.use_ts,
         hls_time: if o.grid.is_some() {
             "0".into()
         } else {
@@ -297,10 +298,10 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
         output_seek: o.run.seek_seconds.unwrap_or(0.0),
         init: "init.mp4",
         var_stream_map: None,
-        segment: out_path(&[dir, "gop-%d.m4s"]),
+        segment: out_path(&[dir, &format!("gop-%d.{ext}")]),
         index: out_path(&[dir, "index.m3u8"]),
         origin: 0.0,
-        source_timestamps: true,
+        source_timestamps: !o.use_ts,
         list_size: 1,
         dolby_vision: o.dolby_vision,
     }));

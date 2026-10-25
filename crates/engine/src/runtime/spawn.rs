@@ -187,7 +187,7 @@ impl Runtime {
         } else {
             0
         };
-        let asm_plan = remux_assembly_plan(
+        let mut asm_plan = remux_assembly_plan(
             grid,
             start as usize,
             &run,
@@ -195,6 +195,7 @@ impl Runtime {
             Some(seg),
             Some(renditions as u32),
         );
+        asm_plan.use_ts = plan.use_ts;
         let run = Run {
             key,
             kind: JobKind::Remux,
@@ -202,7 +203,7 @@ impl Runtime {
             dir: dir.clone(),
             var_stream_map: false,
             tracks: renditions + 1,
-            ext: "m4s",
+            ext: if plan.use_ts { "ts" } else { "m4s" },
             start,
             hw: (HwAccel::None, HwAccel::None),
             restarts: 0,

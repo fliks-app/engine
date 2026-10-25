@@ -131,6 +131,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
     } else {
         MuxFlavour::Fmp4
     };
+    let ts_remux =
+        mux == MuxFlavour::Ts && device.supports_ts_remux == Some(true) && audio_streams.len() <= 1;
     let needs_burn_in = sel.burn_in_subtitle_id.is_some_and(|id| id != 0);
     let needs_crop = source.crop.is_some();
     let client_crops_black_bars = device.crops_black_bars_locally == Some(true);
@@ -241,7 +243,7 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
     let copyable_ignoring_gates = source_copyable && !force_ladder;
     let copy_gates = [
         (
-            mux == MuxFlavour::Ts,
+            mux == MuxFlavour::Ts && !ts_remux,
             "MuxNotSupported",
             "MPEG-TS packaging can't carry a copied video stream",
         ),

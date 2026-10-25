@@ -504,6 +504,10 @@ pub struct DeviceProfile {
     pub use_ts: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_ts_on_single_audio: Option<bool>,
+    /// A single-audio source may keep its video copied into MPEG-TS segments (only the audio is
+    /// re-encoded) instead of falling back to a full transcode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_ts_remux: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_abr: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

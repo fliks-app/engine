@@ -1,0 +1,84 @@
+{
+ "env": {
+  "openclDevice": null,
+  "renderNode": "/dev/dri/renderD128"
+ },
+ "expected": {
+  "argv": [
+   "-hide_banner",
+   "-loglevel",
+   "warning",
+   "-analyzeduration",
+   "0",
+   "-probesize",
+   "5000000",
+   "-i",
+   "/media/in.mkv",
+   "-copyts",
+   "-muxdelay",
+   "0",
+   "-muxpreload",
+   "0",
+   "-map",
+   "0:v:0",
+   "-map",
+   "0:a:0?",
+   "-c:v",
+   "copy",
+   "-c:a",
+   "copy",
+   "-tag:v",
+   "hvc1",
+   "-bsf:v",
+   "hevc_mp4toannexb",
+   "-max_muxing_queue_size",
+   "2048",
+   "-output_ts_offset",
+   "1",
+   "-f",
+   "hls",
+   "-hls_time",
+   "3",
+   "-hls_list_size",
+   "1",
+   "-start_number",
+   "0",
+   "-hls_segment_type",
+   "mpegts",
+   "-hls_flags",
+   "independent_segments+temp_file",
+   "-hls_segment_filename",
+   "/cache/out/gop-%d.ts",
+   "/cache/out/index.m3u8"
+  ]
+ },
+ "hostCaps": {
+  "disabledDecoders": [],
+  "disabledEncoders": [],
+  "hwAccel": "none",
+  "libfdkAac": false,
+  "platform": "linux",
+  "probes": [],
+  "vaapiWritesHdrMetadata": false
+ },
+ "input": {
+  "audioPlan": {
+   "codec": "aac",
+   "mode": "copy"
+  },
+  "inputPath": "/media/in.mkv",
+  "outputDir": "/cache/out",
+  "run": {
+   "audioStartSeconds": 0,
+   "seekSeconds": null,
+   "startNumber": 0
+  },
+  "sourceVideoCodec": "hevc",
+  "startSegment": 0,
+  "trustedStreamInfo": true,
+  "useTs": true
+ },
+ "kind": "remux",
+ "name": "ts remux: a run from the start on the uniform grid copies AAC as ADTS and sets no seek",
+ "source": "engine"
+}
