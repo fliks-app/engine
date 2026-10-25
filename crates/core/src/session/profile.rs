@@ -42,6 +42,8 @@ pub struct PlaybackProfile {
     pub dovi_el_strip: bool,
     /// Only for an SDR-output tone-map: a copy or an HDR10 reshape runs no curve.
     pub tonemap_curve: Option<TonemapCurve>,
+    /// The burned-in subtitle (`kind|filter|stream|path`): its frames are in the video bytes.
+    pub burn_in: Option<String>,
 }
 
 fn name<T: Serialize>(v: &T) -> String {
@@ -76,7 +78,7 @@ impl PlaybackProfile {
         } else {
             String::new()
         };
-        [
+        let mut keys = vec![
             super::CACHE_NAMESPACE.to_string(),
             format!("v={}", name(&self.video_codec)),
             format!("vd={}", self.video_bit_depth),
@@ -110,8 +112,12 @@ impl PlaybackProfile {
                 "tc={}",
                 self.tonemap_curve.map_or(String::new(), |c| name(&c))
             ),
-        ]
-        .join("|")
+        ];
+        // Appended only when set: a session without burn-in keeps its pre-existing hash.
+        if let Some(b) = &self.burn_in {
+            keys.push(format!("bi={b}"));
+        }
+        keys.join("|")
     }
 }
 
@@ -153,6 +159,7 @@ pub struct SessionLayout {
     pub source_dv_profile: Option<u32>,
     pub source_dv_bl_signal_compat_id: Option<u32>,
     pub source_hdr10_plus: bool,
+    pub burn_in: Option<String>,
 }
 
 /// [ts:transcoding/profile-hash.ts:140-186]; a source with several audio tracks is a
@@ -201,6 +208,7 @@ pub fn profile_from_layout(l: &SessionLayout, segment_duration_ms: u32) -> Playb
         dovi_el_strip: l.source_dv_profile == Some(7) && !l.dolby_vision,
         tonemap_curve: (l.tonemapping && v.is_none_or(|v| v.hdr.is_none()))
             .then_some(l.tonemap_curve),
+        burn_in: l.burn_in.clone(),
     }
 }
 
@@ -233,6 +241,7 @@ mod tests {
             source_dv_profile: None,
             source_dv_bl_signal_compat_id: None,
             source_hdr10_plus: false,
+            burn_in: None,
         }
     }
 
@@ -292,6 +301,8 @@ mod tests {
             |p| p.hdr10_plus_strip = true,
             |p| p.dovi_el_strip = true,
             |p| p.tonemap_curve = Some(TonemapCurve::Hable),
+            |p| p.burn_in = Some("text|f||".into()),
+            |p| p.burn_in = Some("text|g||".into()),
         ];
         for e in edits {
             let mut p = base.clone();

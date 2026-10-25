@@ -397,3 +397,83 @@ async fn a_session_starting_at_zero_spawns_one_run_not_an_early_companion_first(
     assert_eq!(e.ffmpeg_pids().len(), 1, "seg-0 reuses it");
     e.rt.shutdown().await;
 }
+
+#[cfg(unix)]
+fn burn() -> Value {
+    json!({
+        "selection": { "requestedQuality": "720p", "burnInSubtitleId": 2, "burnInIsText": true },
+        "burnIn": { "type": "text", "filter": "subtitles='/s/fr.srt'" },
+    })
+}
+
+#[cfg(unix)]
+fn main_cmd(e: &Engine) -> Vec<String> {
+    e.ffmpeg_procs().into_iter().map(|p| p.2).collect()
+}
+
+#[cfg(unix)]
+async fn soft_then_burn(replace: bool) -> (Engine, Value, Value) {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let info = serde_json::from_value(info()).unwrap();
+    let soft = e
+        .open(
+            7,
+            &file,
+            &info,
+            "alice",
+            json!({ "selection": { "requestedQuality": "720p" } }),
+        )
+        .await;
+    let soft_s = e.rt.peek(soft["sessionId"].as_str().unwrap()).unwrap();
+    until("the soft run", 30, || {
+        e.rt.job(&soft_s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+    assert!(main_cmd(&e).iter().all(|c| !c.contains("subtitles=")));
+    let mut extra = burn();
+    if replace {
+        extra["replaces"] = soft["sessionId"].clone();
+    }
+    let hard = e.open(7, &file, &info, "alice", extra).await;
+    (e, soft, hard)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_burn_in_session_replacing_a_soft_one_gets_its_own_hash_and_job() {
+    let (e, soft, hard) = soft_then_burn(true).await;
+    assert_ne!(soft["profileHash"], hard["profileHash"]);
+    let s = e.rt.peek(hard["sessionId"].as_str().unwrap()).unwrap();
+    until("the burn-in run", 30, || {
+        e.rt.job(&s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+    // The soft run serves nobody any more: only the burn-in runs are left.
+    until("the soft run stopped", 30, || {
+        let c = main_cmd(&e);
+        !c.is_empty() && c.iter().all(|c| c.contains("subtitles="))
+    })
+    .await;
+    let soft_key = e.rt.peek(soft["sessionId"].as_str().unwrap());
+    assert!(soft_key.is_none(), "the replaced session is retired");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_burn_in_session_beside_a_soft_one_gets_its_own_hash_and_job() {
+    let (e, soft, hard) = soft_then_burn(false).await;
+    assert_ne!(soft["profileHash"], hard["profileHash"]);
+    // The soft one is a different session with a different hash: no instance suffix is needed.
+    assert!(!hard["profileHash"].as_str().unwrap().contains("~i"));
+    let s = e.rt.peek(hard["sessionId"].as_str().unwrap()).unwrap();
+    until("both runs", 30, || {
+        let c = main_cmd(&e);
+        e.rt.job(&s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+            && c.iter().any(|c| c.contains("subtitles="))
+            && c.iter().any(|c| !c.contains("subtitles="))
+    })
+    .await;
+}

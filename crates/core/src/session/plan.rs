@@ -113,6 +113,18 @@ pub fn plan(
         source_dv_profile: v.and_then(|v| v.dv_profile),
         source_dv_bl_signal_compat_id: v.and_then(|v| v.dv_bl_signal_compat_id),
         source_hdr10_plus: v.and_then(|v| v.hdr10_plus).unwrap_or(false),
+        burn_in: req.burn_in.as_ref().map(|b| {
+            let kind = match b.kind {
+                BurnInKind::Text => "text",
+                BurnInKind::Image => "image",
+            };
+            format!(
+                "{kind}|{}|{}|{}",
+                b.filter.as_deref().unwrap_or_default(),
+                b.stream_index.map_or(String::new(), |i| i.to_string()),
+                b.path.as_deref().unwrap_or_default()
+            )
+        }),
     };
     let ms = (streaming.segment_duration * 1000.0).round() as u32;
     SessionPlan {
