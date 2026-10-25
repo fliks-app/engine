@@ -375,6 +375,8 @@ fn main() {
             hang()
         }
         "talk" => talk(),
+        // Dies on a VAAPI command line, hangs on the CPU one.
+        "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),

@@ -3,6 +3,7 @@
 use super::{Fetch, Job, JobKind, Runtime, SEGMENT_WAIT, Session, layout_path};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
+use fliks_engine_core::api::HwAccel;
 use fliks_engine_core::mp4::grid_segment_index;
 use fliks_engine_core::session::{
     self as core_session, EARLY_PROBE_SEGMENTS, EARLY_WAIT_MS, ResolveInput, ResumeAction,
@@ -56,12 +57,13 @@ impl Runtime {
         let lock = self.lock_for(&key);
         let _g = lock.lock().await;
         let mut restarts = 0;
-        let detected = self.detected_hw();
-        let mut hw = (detected, detected);
+        let mut hw = self.start_hw();
         if let Some(e) = self.job(&key) {
             restarts = e.restarts + 1;
             // A run that fell back stays on the CPU.
-            hw = (e.hw, e.requested_hw);
+            if hw.0 != HwAccel::None {
+                hw.0 = e.hw;
+            }
             let quality_match = e.quality == quality;
             // Another rung: start where this request is (an init already asks for the resume floor).
             if !quality_match {
@@ -161,8 +163,7 @@ impl Runtime {
             let dir = e.dir.clone();
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         }
-        let hw = self.detected_hw();
-        self.spawn_job(s, quality, 0, (hw, hw), 0, JobKind::Early)
+        self.spawn_job(s, quality, 0, self.start_hw(), 0, JobKind::Early)
             .await
     }
 

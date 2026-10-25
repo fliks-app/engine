@@ -356,3 +356,29 @@ async fn a_request_waiting_on_a_throttled_run_resumes_it() {
     assert!(!job.stats().throttled, "the waiter must wake the run");
     e.rt.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_hardware_failure_sends_every_later_run_straight_to_the_cpu() {
+    let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = engine_with(hw, &fake("hwfail"), json!({})).await;
+    let file = e.root.join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    let mut ev = e.rt.events.subscribe();
+    let pinned = || json!({ "selection": { "requestedQuality": "720p" } });
+    let first = open(&e, &file, pinned()).await;
+    event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
+    let second = open(&e, &file, pinned()).await;
+    let job = primary(&e, &second).await;
+    let (requested, actual) = (job.stats().requested_hw, job.stats().actual_hw);
+    assert_eq!((requested, actual), (HwAccel::Vaapi, HwAccel::None));
+    while let Ok(x) = ev.try_recv() {
+        assert!(
+            !matches!(x, EngineEvent::HwFallback { .. }),
+            "second GPU try"
+        );
+    }
+    e.rt.stop(&first, "stopped").await;
+    e.rt.shutdown().await;
+}
