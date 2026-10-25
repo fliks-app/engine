@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/fliks-app/engine/compare/v1.6.0...v1.6.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **session:** hash the burn-in subtitle into the profile hash ([#128](https://github.com/fliks-app/engine/issues/128)) ([a758a29](https://github.com/fliks-app/engine/commit/a758a29ed2d9e83c0fb13eec2aba62ed5918b72e))
+
 ## [1.6.0](https://github.com/fliks-app/engine/compare/v1.5.0...v1.6.0) (2026-10-25)
 
 
