@@ -142,11 +142,21 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     let dv_no_base_hdr10 = dv_no_base && variant.hdr == Some(HdrFormat::Hdr10);
     let text_filter = o.burn_in.as_ref().and_then(|b| b.filter.as_deref());
     let text_burn_in = text_filter.is_some_and(|f| !f.is_empty());
+    let image_file = o
+        .burn_in
+        .as_ref()
+        .filter(|b| b.kind == BurnInKind::Image && b.stream_index.is_none())
+        .and_then(|b| b.path.as_deref());
     let image_stream = o.burn_in.as_ref().and_then(|b| {
         (b.kind == BurnInKind::Image)
             .then_some(b.stream_index)
             .flatten()
     });
+    let image_pad = match (image_stream, image_file) {
+        (Some(i), _) => Some(format!("0:{i}")),
+        (None, Some(_)) => Some("1:0".to_string()),
+        _ => None,
+    };
     let any_burn_in = o.burn_in.is_some();
     let source_bit_depth = o.source_bit_depth.unwrap_or(8);
     let deinterlace = o.source_interlaced;
@@ -237,6 +247,10 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     let threads = o.encode_threads.max(1).to_string();
     args.extend(["-threads".into(), threads]);
     args.extend(["-i".into(), o.input_path.clone()]);
+    // No -ss on the sidecar: a seek on a raw sup/idx drops its cues, and it is tiny to read whole.
+    if let Some(p) = image_file {
+        args.extend(["-i".into(), p.into()]);
+    }
     args.extend(strs(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
     if output_seek != 0.0 {
         args.extend(["-ss".into(), seconds(align)]);
@@ -303,10 +317,10 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         .iter()
         .position(|a| a == "-vf")
         .map(|k| k + video_start);
-    if let (Some(step), None, Some(k)) = (&sdr_step, image_stream, vf) {
+    if let (Some(step), None, Some(k)) = (&sdr_step, &image_pad, vf) {
         args[k + 1] = format!("{},{step}", args[k + 1]);
     }
-    if let Some(stream_index) = image_stream {
+    if let Some(sub_pad) = &image_pad {
         let chain = vf.map(|k| args.drain(k..k + 2).nth(1).unwrap());
         let frames_on_gpu = match hw {
             HwAccel::Nvenc => nvenc_ends_on_gpu(&input),
@@ -316,7 +330,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         let graph = image_burn_in(&Overlay {
             hw,
             video_filter: chain.as_deref().unwrap_or(""),
-            stream_index,
+            sub_pad,
             video_stream_index: o.video_stream_index,
             width: &ws,
             height: &hs,
@@ -336,7 +350,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     }
     Ok(Encoded {
         args,
-        video_map: if image_stream.is_some() {
+        video_map: if image_pad.is_some() {
             "[vout]".into()
         } else {
             video_map(o.video_stream_index)

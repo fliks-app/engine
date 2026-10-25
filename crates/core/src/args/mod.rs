@@ -41,6 +41,9 @@ pub struct BurnIn {
     pub filter: Option<String>,
     #[serde(default)]
     pub stream_index: Option<u32>,
+    /// External image subtitle file, a second input.
+    #[serde(default)]
+    pub path: Option<String>,
     #[serde(rename = "type")]
     pub kind: BurnInKind,
 }

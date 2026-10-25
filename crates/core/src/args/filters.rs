@@ -154,7 +154,8 @@ pub fn video_filters(c: &FilterContext) -> Filters {
 pub struct Overlay<'a> {
     pub hw: HwAccel,
     pub video_filter: &'a str,
-    pub stream_index: u32,
+    /// The bitmap input pad: `0:<idx>` of an embedded track, `1:0` of an external file.
+    pub sub_pad: &'a str,
     pub video_stream_index: Option<u32>,
     pub width: &'a str,
     pub height: &'a str,
@@ -187,8 +188,8 @@ pub fn image_burn_in(o: &Overlay) -> String {
         .crop
         .map_or(String::new(), |c| format!("{},", crop_filter(c)));
     let sub = format!(
-        "[0:{}]{sub_crop}scale={}:{}:flags=lanczos,format=rgba{whiten}[s]",
-        o.stream_index, o.width, o.height
+        "[{}]{sub_crop}scale={}:{}:flags=lanczos,format=rgba{whiten}[s]",
+        o.sub_pad, o.width, o.height
     );
     let hw_fmt = if ten { "p010le" } else { "nv12" };
     if matches!(o.hw, HwAccel::None | HwAccel::Videotoolbox) || !o.frames_on_gpu {

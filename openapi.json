@@ -1119,6 +1119,13 @@
             ],
             "description": "The libass `-vf` step (`subtitles='...'`) of a text track."
           },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of an external image subtitle (`.sup`, or the `.idx` of a VobSub pair),\noverlaid when `streamIndex` is absent."
+          },
           "streamIndex": {
             "type": [
               "integer",
