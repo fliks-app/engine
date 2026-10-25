@@ -2133,6 +2133,31 @@
       "exit": 0,
       "stderr": "",
       "timeoutMs": 15000
+    },
+    {
+      "args": [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-init_hw_device",
+        "qsv=qs",
+        "-filter_hw_device",
+        "qs",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=size=320x180:rate=30",
+        "-frames:v",
+        "2",
+        "-vf",
+        "format=nv12,setfield=tff,hwupload=extra_hw_frames=16,vpp_qsv=deinterlace=advanced:rate=frame:format=nv12,hwdownload,format=nv12",
+        "-f",
+        "null",
+        "-"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "timeoutMs": 10000
     }
   ],
   "env": {
@@ -3287,6 +3312,29 @@
           "-f",
           "lavfi",
           "-i",
+          "nullsrc=size=320x180:rate=30",
+          "-frames:v",
+          "2",
+          "-vf",
+          "format=nv12,setfield=tff,hwupload=extra_hw_frames=16,vpp_qsv=deinterlace=advanced:rate=frame:format=nv12,hwdownload,format=nv12",
+          "-f",
+          "null",
+          "-"
+        ],
+        "timeoutMs": 10000
+      },
+      {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-init_hw_device",
+          "qsv=qs",
+          "-filter_hw_device",
+          "qs",
+          "-f",
+          "lavfi",
+          "-i",
           "nullsrc=size=320x180:rate=30,format=yuv420p",
           "-frames:v",
           "1",
@@ -4257,7 +4305,8 @@
       "probes": [
         "qsvOpencl",
         "qsvOpenclHdr10",
-        "vppQsv"
+        "vppQsv",
+        "deinterlaceQsv"
       ],
       "vaapiWritesHdrMetadata": false
     }

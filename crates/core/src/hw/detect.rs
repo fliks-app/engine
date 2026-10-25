@@ -1,5 +1,6 @@
 //! The boot probe chain: pick a backend, then probe decoders, encoders and tone-map paths.
 //! [ts:backend/src/modules/streaming/transcoding/transcoding.service.ts:140-170,297-375]
+use super::GpuDeint;
 use super::decoders::{DECODERS, DecodeCodec};
 use super::device::Device;
 use super::encoders::ENCODERS;
@@ -57,6 +58,10 @@ struct Flags {
     opencl: bool,
     opencl_hdr10: bool,
     amf_opencl: bool,
+    deinterlace_vaapi: bool,
+    deinterlace_qsv: bool,
+    bwdif_cuda: bool,
+    bwdif_videotoolbox: bool,
 }
 
 /// Runs the whole chain. Failures only turn a flag off; nothing here aborts. Serial where the TS
@@ -74,7 +79,8 @@ pub async fn detect<R: Runner>(dev: &Device, tmp_dir: &str, pid: u32, r: &R) -> 
     let libfdk_aac = has_libfdk(r).await;
     let decoders = probe_decoders(dev, tmp_dir, pid, r).await;
     let (encoders, ihd) = probe_encoders(dev, hw_accel, r).await;
-    let f = probe_tonemap(dev, hw_accel, tmp_dir, pid, r).await;
+    let mut f = probe_tonemap(dev, hw_accel, tmp_dir, pid, r).await;
+    probe_deinterlace(dev, hw_accel, &mut f, r).await;
 
     let ok_decoders: Vec<&str> = DECODERS
         .iter()
@@ -112,6 +118,10 @@ pub async fn detect<R: Runner>(dev: &Device, tmp_dir: &str, pid: u32, r: &R) -> 
         ("opencl", f.opencl),
         ("openclHdr10", f.opencl_hdr10),
         ("amfOpencl", f.amf_opencl),
+        (GpuDeint::Vaapi.probe_name(), f.deinterlace_vaapi),
+        (GpuDeint::Qsv.probe_name(), f.deinterlace_qsv),
+        (GpuDeint::Cuda.probe_name(), f.bwdif_cuda),
+        (GpuDeint::Videotoolbox.probe_name(), f.bwdif_videotoolbox),
     ];
     Detected {
         hw_accel,
@@ -265,6 +275,23 @@ async fn probe_tonemap<R: Runner>(dev: &Device, hw: HwAccel, tmp: &str, pid: u32
         r.remove(&p).await;
     }
     f
+}
+
+/// The hardware deinterlacer of the detected backend, each one filter run on interlaced frames.
+async fn probe_deinterlace<R: Runner>(dev: &Device, hw: HwAccel, f: &mut Flags, r: &R) {
+    let run = async |g: GpuDeint| r.run(&probe::deinterlace_cmd(g, dev)).await.ok;
+    if hw == HwAccel::Vaapi || (hw == HwAccel::Qsv && dev.platform != Platform::Win32) {
+        f.deinterlace_vaapi = run(GpuDeint::Vaapi).await;
+    }
+    if hw == HwAccel::Qsv {
+        f.deinterlace_qsv = run(GpuDeint::Qsv).await;
+    }
+    if hw == HwAccel::Nvenc {
+        f.bwdif_cuda = run(GpuDeint::Cuda).await;
+    }
+    if hw == HwAccel::Videotoolbox {
+        f.bwdif_videotoolbox = run(GpuDeint::Videotoolbox).await;
+    }
 }
 
 impl Detected {

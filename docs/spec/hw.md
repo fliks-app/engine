@@ -75,6 +75,15 @@ Run after decoders and encoders, serial; the HDR sample (`libx265`, 8 frames of 
 | nvenc | `cuda` then `cudaHdr10` (only if the first passed), 15 s |
 | amf | `amfOpencl`: the SDR tone-map run and the 10-bit scale run must both pass, 15 s |
 
+Deinterlace probes `[new]`, run last, one 10 s run each on 320x180 frames flagged top-field-first, through the filter a session uses (`core/src/hw/deint.rs`):
+
+| Backend | Probe name |
+|---|---|
+| vaapi, or qsv not win32 | `deinterlaceVaapi` (`deinterlace_vaapi=mode=default:rate=frame:auto=1`) |
+| qsv | `deinterlaceQsv` (`vpp_qsv=deinterlace=advanced:rate=frame`) |
+| nvenc | `bwdifCuda` (`bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced`) |
+| videotoolbox | `bwdifVideotoolbox` (same options) |
+
 Exact argv: `core/src/hw/probe.rs`; the fixtures pin every argv and timeout (as a set: the TS runs CPU probes in parallel, the port serially).
 
 ## 8. Pause capability `[ts:T/ffmpeg-pause.ts:44-117]`

@@ -36,7 +36,8 @@ pub struct HostCaps {
     pub libfdk_aac: bool,
     pub vaapi_writes_hdr_metadata: bool,
     /// Names of the probes that passed; unlisted ones read false (`tonemapOpencl`, `vppQsv`,
-    /// `vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants).
+    /// `vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants, plus the
+    /// deinterlacers `deinterlaceVaapi`, `deinterlaceQsv`, `bwdifCuda`, `bwdifVideotoolbox`).
     pub probes: Vec<String>,
     /// Encoder descriptor ids the boot probe blacklisted (`hevc_qsv_main10`, `libx265`, ...).
     pub disabled_encoders: Vec<String>,

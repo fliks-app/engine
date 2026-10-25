@@ -207,7 +207,7 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
                 a.extend(strs(&["-pix_fmt", "p010le"]));
             }
             let vf = match (ten, metal) {
-                (true, true) => format!("scale_vt=w={w}:h=-2"),
+                (true, true) => format!("{}scale_vt=w={w}:h=-2", i.filters.deint_gpu),
                 (true, false) => cpu_chain(&i.filters, &w, false, "p010le"),
                 (false, true) => vt_tonemap_filter(i),
                 (false, false) => cpu_chain(&i.filters, &w, true, "yuv420p"),
@@ -448,7 +448,8 @@ fn qsv_native_opencl(i: &EncoderInput, w: &str, h: &str, hdr10: bool) -> String 
         ":mode=read"
     };
     format!(
-        "{QSV_HWMAP}vpp_qsv={}w={w}:h={h}:format=p010le,hwmap=derive_device=opencl{read},tonemap_opencl={opts},hwmap=derive_device=qsv:mode=write:reverse=1:extra_hw_frames=16,format=qsv",
+        "{QSV_HWMAP}vpp_qsv={}{}w={w}:h={h}:format=p010le,hwmap=derive_device=opencl{read},tonemap_opencl={opts},hwmap=derive_device=qsv:mode=write:reverse=1:extra_hw_frames=16,format=qsv",
+        i.filters.qsv_deint,
         qsv_crop_opts(i)
     )
 }
@@ -462,7 +463,8 @@ fn qsv_8bit(i: &EncoderInput) -> String {
         }
         let tm = if i.tonemap { "tonemap=1:" } else { "" };
         return format!(
-            "{QSV_HWMAP}vpp_qsv={tm}{}w={w}:h={h}:format=nv12",
+            "{QSV_HWMAP}vpp_qsv={tm}{}{}w={w}:h={h}:format=nv12",
+            f.qsv_deint,
             qsv_crop_opts(i)
         );
     }
@@ -523,7 +525,8 @@ fn qsv_10bit(i: &EncoderInput) -> Result<String, String> {
             return Err("qsvScaleFilter10bit: tonemap requested with no opencl chain on a qsv-native surface".into());
         }
         return Ok(format!(
-            "{QSV_HWMAP}vpp_qsv={}w={w}:h={h}:format=p010le",
+            "{QSV_HWMAP}vpp_qsv={}{}w={w}:h={h}:format=p010le",
+            f.qsv_deint,
             qsv_crop_opts(i)
         ));
     }
@@ -619,11 +622,16 @@ fn nvenc_filter(i: &EncoderInput, ten: bool) -> String {
     let fmt = if ten { "p010le" } else { "nv12" };
     let sw = if ten { "p010le" } else { "yuv420p" };
     let crop = &f.cpu_crop_prefix;
+    let deint = if i.input_surface == Surface::Cuda {
+        f.deint_gpu.as_str()
+    } else {
+        ""
+    };
     let vf = if i.tonemap && !f.tonemap_cuda.is_empty() {
         let upload = match i.input_surface {
-            Surface::Cuda if !i.has_crop => String::new(),
+            Surface::Cuda if !i.has_crop && !f.cpu_deinterlace => deint.to_string(),
             Surface::Cpu => format!("{crop}format=p010le,hwupload_cuda,"),
-            _ => format!("hwdownload,format=p010le,{crop}hwupload_cuda,"),
+            _ => format!("{deint}hwdownload,format=p010le,{crop}hwupload_cuda,"),
         };
         format!(
             "{upload}scale_cuda=w={w}:h=-2:format=p010le{}",
@@ -635,7 +643,11 @@ fn nvenc_filter(i: &EncoderInput, ten: bool) -> String {
         } else {
             "hwdownload,format=p010le,"
         };
-        format!("{down}{crop}{}scale={w}:{}", f.tonemap_cpu, even_height(&w))
+        format!(
+            "{deint}{down}{crop}{}scale={w}:{}",
+            f.tonemap_cpu,
+            even_height(&w)
+        )
     } else if i.input_surface == Surface::Cuda {
         let crop = if f.cpu_crop_prefix.is_empty() {
             String::new()
@@ -645,7 +657,7 @@ fn nvenc_filter(i: &EncoderInput, ten: bool) -> String {
                 f.cpu_crop_prefix
             )
         };
-        format!("{crop}scale_cuda=w={w}:h=-2:format={fmt}")
+        format!("{deint}{crop}scale_cuda=w={w}:h=-2:format={fmt}")
     } else {
         let down = if i.input_surface == Surface::Cpu {
             String::new()
@@ -670,14 +682,14 @@ fn nvenc_filter(i: &EncoderInput, ten: bool) -> String {
 
 /// Whether the AMF chain ends on a D3D11 surface. [ts:backend/src/modules/streaming/transcoding/codec/encoders/helpers/amf-filters.ts:11-12]
 pub(crate) fn amf_ends_on_gpu(i: &EncoderInput) -> bool {
-    i.input_surface == Surface::D3d11 && !i.has_burn_in
+    i.input_surface == Surface::D3d11 && !i.has_burn_in && !i.filters.cpu_deinterlace
 }
 
 /// [ts:backend/src/modules/streaming/transcoding/codec/encoders/helpers/amf-filters.ts:17-85]
 fn amf_filter(i: &EncoderInput, ten: bool) -> String {
     let (w, f) = (js(i.target.width), &i.filters);
     let fmt = if ten { "p010le" } else { "nv12" };
-    if i.input_surface == Surface::D3d11 {
+    if i.input_surface == Surface::D3d11 && !f.cpu_deinterlace {
         let crop = if f.crop_str.is_empty() {
             String::new()
         } else {
@@ -728,6 +740,7 @@ fn amf_filter(i: &EncoderInput, ten: bool) -> String {
 /// The VideoToolbox Metal path. [ts:backend/src/modules/streaming/transcoding/codec/encoders/helpers/vt-filters.ts:8-22]
 fn vt_tonemap_filter(i: &EncoderInput) -> String {
     let w = js(i.target.width);
+    let deint = &i.filters.deint_gpu;
     let tm = format!(
         "tonemap_videotoolbox=tonemap={}:t=bt709:m=bt709:p=bt709:range=tv:{}",
         curve_name(i.tonemap_curve),
@@ -735,14 +748,16 @@ fn vt_tonemap_filter(i: &EncoderInput) -> String {
     );
     if i.has_crop {
         return format!(
-            "{tm},hwdownload,format=p010le,{}scale={w}:{}:flags=lanczos,format=yuv420p",
+            "{deint}{tm},hwdownload,format=p010le,{}scale={w}:{}:flags=lanczos,format=yuv420p",
             i.filters.cpu_crop_prefix,
             even_height(&w)
         );
     }
     if i.dv_apply_rpu {
-        format!("scale_vt=w={w}:h=-2,{tm}:format=nv12")
+        format!("{deint}scale_vt=w={w}:h=-2,{tm}:format=nv12")
     } else {
-        format!("scale_vt=w={w}:h=-2:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709")
+        format!(
+            "{deint}scale_vt=w={w}:h=-2:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709"
+        )
     }
 }

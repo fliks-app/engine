@@ -1509,6 +1509,27 @@
       "exit": 0,
       "stderr": "",
       "timeoutMs": 15000
+    },
+    {
+      "args": [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=size=320x180:rate=30",
+        "-frames:v",
+        "2",
+        "-vf",
+        "format=nv12,setfield=tff,hwupload_cuda,bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced,hwdownload,format=nv12",
+        "-f",
+        "null",
+        "-"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "timeoutMs": 10000
     }
   ],
   "env": {
@@ -1578,6 +1599,25 @@
         "args": [
           "-hide_banner",
           "-encoders"
+        ],
+        "timeoutMs": 10000
+      },
+      {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          "nullsrc=size=320x180:rate=30",
+          "-frames:v",
+          "2",
+          "-vf",
+          "format=nv12,setfield=tff,hwupload_cuda,bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced,hwdownload,format=nv12",
+          "-f",
+          "null",
+          "-"
         ],
         "timeoutMs": 10000
       },
@@ -3059,7 +3099,8 @@
       "probes": [
         "cuda",
         "cudaHdr10",
-        "opencl"
+        "opencl",
+        "bwdifCuda"
       ],
       "vaapiWritesHdrMetadata": false
     }

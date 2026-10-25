@@ -1270,6 +1270,31 @@
       "exit": 0,
       "stderr": "",
       "timeoutMs": 10000
+    },
+    {
+      "args": [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-init_hw_device",
+        "videotoolbox=vt",
+        "-filter_hw_device",
+        "vt",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=size=320x180:rate=30",
+        "-frames:v",
+        "2",
+        "-vf",
+        "format=nv12,setfield=tff,hwupload,bwdif_videotoolbox=mode=send_frame:parity=auto:deint=interlaced,hwdownload,format=nv12",
+        "-f",
+        "null",
+        "-"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "timeoutMs": 10000
     }
   ],
   "env": {
@@ -2401,6 +2426,29 @@
           "-hide_banner",
           "-loglevel",
           "error",
+          "-init_hw_device",
+          "videotoolbox=vt",
+          "-filter_hw_device",
+          "vt",
+          "-f",
+          "lavfi",
+          "-i",
+          "nullsrc=size=320x180:rate=30",
+          "-frames:v",
+          "2",
+          "-vf",
+          "format=nv12,setfield=tff,hwupload,bwdif_videotoolbox=mode=send_frame:parity=auto:deint=interlaced,hwdownload,format=nv12",
+          "-f",
+          "null",
+          "-"
+        ],
+        "timeoutMs": 10000
+      },
+      {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "error",
           "-y",
           "-f",
           "lavfi",
@@ -2568,7 +2616,9 @@
       "hwAccel": "videotoolbox",
       "libfdkAac": false,
       "platform": "darwin",
-      "probes": [],
+      "probes": [
+        "bwdifVideotoolbox"
+      ],
       "vaapiWritesHdrMetadata": false
     }
   },
