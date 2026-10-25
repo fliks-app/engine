@@ -70,6 +70,9 @@ pub struct OpenSessionRequest {
     /// text tracks of `info`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtitle_renditions: Option<Vec<SubtitleTrack>>,
+    /// Session of the same `ownerId` retired by this open; unknown, expired or another owner's: ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

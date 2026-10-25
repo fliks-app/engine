@@ -3879,6 +3879,13 @@
             "type": "boolean",
             "description": "Offline download: the session lives on the pinned TTL and is never throttled."
           },
+          "replaces": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session of the same `ownerId` retired by this open; unknown, expired or another owner's: ignored."
+          },
           "sourceVersion": {
             "type": [
               "string",
