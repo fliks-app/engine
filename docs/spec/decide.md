@@ -151,7 +151,7 @@ Gates 4 to 10 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (se
 
 ### 7.2 Requested quality `[ts:backend/src/modules/streaming/stream-builder.service.ts:555-596]`
 
-- `wantsSourceRung` = `requestedQuality` absent, `auto` or `original`.
+- `wantsSourceRung` = `requestedQuality` absent, `auto` or `original`. `best` names the top full rung the source fits (`ladder::BEST_RUNG`, resolved by `resolve_rung`, no `-hdr` suffix), so a host can persist "the best quality" without knowing the ladder.
 - `autoOnLadder` = (absent or `auto`) and `config.autoQualityMode == abr`.
 - `explicitRung` (only when not `wantsSourceRung`) = `resolveLadderRung(name, qualityLadder)`: exact name; else tier `N` from `(\d+)p` (no digit: undefined); among rungs of the same class (eco vs full) sorted by `maxHeight` desc, the first with `maxHeight <= N`, else the last. `[ts:backend/src/modules/streaming/transcoding/profiles.ts:241-257]`
 - `negotiatedQuality = explicitRung?.name ?? "auto"` (the output `quality` on Transcode).

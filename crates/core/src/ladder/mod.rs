@@ -62,8 +62,14 @@ pub fn is_eco(name: &str) -> bool {
     name.starts_with("eco-")
 }
 
-/// Exact name, else the nearest rung of the same class (full vs `eco-`) that does not step up.
+/// Rung name asking for the top full rung of whatever ladder the source fits.
+pub const BEST_RUNG: &str = "best";
+
+/// `best`, else the exact name, else the nearest rung of the same class (full vs `eco-`) that does not step up.
 pub fn resolve_rung<'a>(name: &str, ladder: &'a [Rung]) -> Option<&'a Rung> {
+    if name == BEST_RUNG {
+        return ladder.iter().find(|r| !is_eco(r.name));
+    }
     if let Some(r) = ladder.iter().find(|r| r.name == name) {
         return Some(r);
     }
@@ -101,4 +107,21 @@ pub fn top_non_eco(ladder: &[Rung]) -> &Rung {
         .iter()
         .find(|r| !is_eco(r.name))
         .unwrap_or(&ladder[0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn best_is_the_top_full_rung_of_the_given_ladder() {
+        assert_eq!(resolve_rung("best", SDR_LADDER).unwrap().name, "2160p");
+        let fits_720: Vec<Rung> = SDR_LADDER
+            .iter()
+            .filter(|r| r.max_height <= 720)
+            .copied()
+            .collect();
+        assert_eq!(resolve_rung("best", &fits_720).unwrap().name, "720p");
+        assert_eq!(resolve_rung("best", HDR_LADDER).unwrap().name, "2160p-hdr");
+    }
 }

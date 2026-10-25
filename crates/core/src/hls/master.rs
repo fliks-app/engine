@@ -312,7 +312,7 @@ fn top_fitting<'a>(ladder: &[&'a Rung], w: u32, h: u32) -> Option<&'a Rung> {
 
 /// HDR ladder rungs carry `-hdr`.
 fn hdr_rung_name(q: &str, hdr: bool) -> String {
-    if hdr && !q.ends_with("-hdr") {
+    if hdr && q != crate::ladder::BEST_RUNG && !q.ends_with("-hdr") {
         format!("{q}-hdr")
     } else {
         q.to_string()
