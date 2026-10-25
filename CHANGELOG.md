@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/fliks-app/engine/compare/v1.1.1...v1.2.0) (2026-10-25)
+
+
+### Features
+
+* **auth:** resolve the control token from env, then a conf file ([#114](https://github.com/fliks-app/engine/issues/114)) ([af7a872](https://github.com/fliks-app/engine/commit/af7a872d969e8ed1a5c3a562340b3541fedebf3b))
+
+
+### Bug Fixes
+
+* **runtime:** retry the gpu on every run instead of remembering a failure ([#110](https://github.com/fliks-app/engine/issues/110)) ([3b93210](https://github.com/fliks-app/engine/commit/3b93210c8e14d69344e72c9edbf27f1eba9bf3c4))
+* **serve:** mark thumbnail sprites private in the cache header ([#113](https://github.com/fliks-app/engine/issues/113)) ([b043acb](https://github.com/fliks-app/engine/commit/b043acb06771b407c7eaca2ea88980e7235ecad7))
+
 ## [1.1.1](https://github.com/fliks-app/engine/compare/v1.1.0...v1.1.1) (2026-10-25)
 
 
