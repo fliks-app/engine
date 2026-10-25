@@ -358,7 +358,7 @@ async fn a_request_waiting_on_a_throttled_run_resumes_it() {
 }
 
 #[tokio::test]
-async fn a_hardware_failure_sends_every_later_run_straight_to_the_cpu() {
+async fn a_hardware_failure_does_not_stop_the_next_run_from_trying_the_gpu() {
     let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
     let e = engine_with(hw, &fake("hwfail"), json!({})).await;
     let file = e.root.join("movie.mkv");
@@ -370,16 +370,9 @@ async fn a_hardware_failure_sends_every_later_run_straight_to_the_cpu() {
     let first = open(&e, &file, pinned()).await;
     event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
     let second = open(&e, &file, pinned()).await;
-    let job = primary(&e, &second).await;
-    let (requested, actual) = (job.stats().requested_hw, job.stats().actual_hw);
-    assert_eq!((requested, actual), (HwAccel::Vaapi, HwAccel::None));
-    while let Ok(x) = ev.try_recv() {
-        assert!(
-            !matches!(x, EngineEvent::HwFallback { .. }),
-            "second GPU try"
-        );
-    }
+    event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
     e.rt.stop(&first, "stopped").await;
+    e.rt.stop(&second, "stopped").await;
     e.rt.shutdown().await;
 }
 
