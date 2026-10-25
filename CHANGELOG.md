@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0](https://github.com/fliks-app/engine/compare/v1.4.0...v1.5.0) (2026-10-25)
+
+
+### Features
+
+* **args:** deinterlace on the GPU when the backend has a deinterlacer ([#125](https://github.com/fliks-app/engine/issues/125)) ([b6f4869](https://github.com/fliks-app/engine/commit/b6f486932b689ed09b0732a0a971ac98514848d4))
+* **hw:** decode VC-1 on the GPU ([#124](https://github.com/fliks-app/engine/issues/124)) ([79655f2](https://github.com/fliks-app/engine/commit/79655f2fafca89fc3877361b889306cd9299825d))
+* **hw:** decode VP9 and MPEG-2 on the GPU ([#121](https://github.com/fliks-app/engine/issues/121)) ([8e29264](https://github.com/fliks-app/engine/commit/8e29264609155e9bb46c30207d7f184eb81e6aef))
+
 ## [1.4.0](https://github.com/fliks-app/engine/compare/v1.3.0...v1.4.0) (2026-10-25)
 
 
