@@ -2207,37 +2207,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx264"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -3151,37 +3137,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx264"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4387,37 +4359,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": "cpu",
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": "cpu",
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4425,37 +4383,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": "cuda",
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_cuda_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_nvenc_main10"
-     },
-     "tonemap": "cuda",
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4463,37 +4407,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": "opencl",
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_main10"
-     },
-     "tonemap": "opencl",
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4501,37 +4431,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": "videotoolbox",
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox"
-     },
-     "tonemap": "videotoolbox",
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4729,37 +4645,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4767,37 +4669,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "original",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4805,37 +4693,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_cuda_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_nvenc_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4881,37 +4755,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -4919,37 +4779,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
+      "hdr": "DV",
       "height": 2160,
-      "hdr": "DV"
+      "width": 3840
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5033,37 +4879,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx264"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5147,37 +4979,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "original",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx264"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5185,37 +5003,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "h264_cuda_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "h264_nvenc"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5299,37 +5103,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "h264_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "h264_vaapi"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5337,37 +5127,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "h264_videotoolbox_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "h264_videotoolbox"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5375,37 +5151,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 1920,
-      "height": 1080,
-      "hdr": "HLG"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HLG",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_hlg"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5413,37 +5175,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 1920,
-      "height": 1080,
-      "hdr": "HLG"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HLG",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_hlg"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5489,37 +5237,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": true,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": null
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": true
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5527,37 +5261,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": true,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": null
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": null,
-      "quality": null,
-      "requested": "original",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": true
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5565,37 +5285,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": true,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": null
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_cuda_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_nvenc"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": true
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5603,37 +5309,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": true,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": null
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": true
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5641,37 +5333,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": true,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": null
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": true
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5755,37 +5433,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": "HDR10"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5831,37 +5495,23 @@
    "tonemapCurve": "reinhard",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": "HDR10"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HDR10",
-      "quality": null,
-      "requested": "original",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5869,37 +5519,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": "HDR10"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_cuda_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "nvenc",
-      "name": "hevc_nvenc_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -5983,37 +5619,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": "HDR10"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "vaapi",
-      "name": "hevc_vaapi_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -6021,37 +5643,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 3840,
-      "height": 2160,
-      "hdr": "HDR10"
-     },
-     "output": {
-      "codec": "hevc",
       "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 2160,
+      "width": 3840
      },
-     "decode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_decode"
-     },
-     "encode": {
-      "hw": true,
-      "kind": "videotoolbox",
-      "name": "hevc_videotoolbox_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -7365,37 +6973,23 @@
    "tonemapCurve": "hable",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "h264",
-      "width": 1920,
-      "height": 1080,
-      "hdr": null
-     },
-     "output": {
-      "codec": "h264",
       "hdr": null,
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
+      "height": 1080,
+      "width": 1920
      },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx264"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
@@ -8143,37 +7737,23 @@
    "tonemapCurve": "mobius",
    "expected": {
     "playbackClockOffsetS": 0,
-    "tonemapAlgo": null,
-    "tonemapCurve": null,
     "qoePipeline": {
+     "audioTranscode": false,
+     "burnIn": null,
+     "crop": null,
+     "decode": null,
+     "encode": null,
+     "output": null,
      "source": {
       "codec": "hevc",
-      "width": 1920,
+      "hdr": "DV",
       "height": 1080,
-      "hdr": "DV"
+      "width": 1920
      },
-     "output": {
-      "codec": "hevc",
-      "hdr": "HDR10",
-      "quality": null,
-      "requested": "auto",
-      "bitrate": null
-     },
-     "decode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "cpu"
-     },
-     "encode": {
-      "hw": false,
-      "kind": "cpu",
-      "name": "libx265_main10"
-     },
-     "tonemap": null,
-     "burnIn": null,
-     "crop": false,
-     "audioTranscode": false
-    }
+     "tonemap": null
+    },
+    "tonemapAlgo": null,
+    "tonemapCurve": null
    }
   },
   {
