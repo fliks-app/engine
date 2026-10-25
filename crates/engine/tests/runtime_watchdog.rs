@@ -398,6 +398,7 @@ async fn a_session_starting_at_zero_spawns_one_run_not_an_early_companion_first(
     e.rt.shutdown().await;
 }
 
+#[cfg(unix)]
 fn burn() -> Value {
     json!({
         "selection": { "requestedQuality": "720p", "burnInSubtitleId": 2, "burnInIsText": true },
@@ -405,10 +406,12 @@ fn burn() -> Value {
     })
 }
 
+#[cfg(unix)]
 fn main_cmd(e: &Engine) -> Vec<String> {
     e.ffmpeg_procs().into_iter().map(|p| p.2).collect()
 }
 
+#[cfg(unix)]
 async fn soft_then_burn(replace: bool) -> (Engine, Value, Value) {
     let (e, file) = engine_of(&fake("hang"), json!({})).await;
     let info = serde_json::from_value(info()).unwrap();
@@ -436,6 +439,7 @@ async fn soft_then_burn(replace: bool) -> (Engine, Value, Value) {
     (e, soft, hard)
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_burn_in_session_replacing_a_soft_one_gets_its_own_hash_and_job() {
     let (e, soft, hard) = soft_then_burn(true).await;
@@ -456,6 +460,7 @@ async fn a_burn_in_session_replacing_a_soft_one_gets_its_own_hash_and_job() {
     assert!(soft_key.is_none(), "the replaced session is retired");
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_burn_in_session_beside_a_soft_one_gets_its_own_hash_and_job() {
     let (e, soft, hard) = soft_then_burn(false).await;
