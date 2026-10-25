@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/fliks-app/engine/compare/v1.2.0...v1.3.0) (2026-10-25)
+
+
+### Features
+
+* **remux:** copy the video into MPEG-TS for TS clients ([#119](https://github.com/fliks-app/engine/issues/119)) ([085c443](https://github.com/fliks-app/engine/commit/085c443002e371bf2753c004f1c2bcb9eb033f09))
+
+
+### Bug Fixes
+
+* **audio:** limit the unnormalised stereo downmix at full scale ([#115](https://github.com/fliks-app/engine/issues/115)) ([45284eb](https://github.com/fliks-app/engine/commit/45284eb0234469d79bb90a020b267aaf134181a5))
+
 ## [1.2.0](https://github.com/fliks-app/engine/compare/v1.1.1...v1.2.0) (2026-10-25)
 
 
