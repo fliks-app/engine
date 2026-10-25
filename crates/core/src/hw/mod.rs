@@ -1,6 +1,7 @@
 //! Host capability detection: the ffmpeg commands to run, how to read their results, and the
 //! `HostCaps`/`Capabilities` they add up to. IO is injected through [`Runner`]; see `docs/spec/hw.md`.
 pub(crate) mod decoders;
+mod deint;
 mod detect;
 mod device;
 mod encoders;
@@ -9,6 +10,7 @@ mod parse;
 mod pause;
 mod probe;
 
+pub(crate) use deint::GpuDeint;
 pub use detect::{Detected, Outcome, Runner, detect};
 pub use device::{DEFAULT_RENDER_NODE, Device, selected_render_node};
 pub use gpu::{GpuInfo, GpuKind, GpuRaw, describe_gpu};

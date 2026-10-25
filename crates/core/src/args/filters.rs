@@ -2,6 +2,7 @@
 //! [ts:backend/src/modules/streaming/transcoding/ffmpeg-filter-graph.ts:1-176]
 use super::Filters;
 use crate::api::{CropInfo, HwAccel, TonemapCurve};
+use crate::hw::GpuDeint;
 
 /// The bare zscale chain leaks HDR10 static side data into SDR output.
 const HDR_STATIC_SIDEDATA_DELETE: &str = "sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS";
@@ -43,6 +44,8 @@ const DEINTERLACE: &str = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
 
 pub struct FilterContext<'a> {
     pub deinterlace: bool,
+    /// The GPU deinterlacer of the chain's surface, when the host has one.
+    pub gpu_deint: Option<GpuDeint>,
     pub crop: Option<&'a CropInfo>,
     /// `burnIn.filter`: a text track's libass step.
     pub burn_in_filter: Option<&'a str>,
@@ -74,10 +77,25 @@ pub fn video_filters(c: &FilterContext) -> Filters {
     } else {
         String::new()
     };
+    let crop_fmt = if c.source_bit_depth == 10 {
+        "p010le"
+    } else {
+        "nv12"
+    };
+    let cpu_deint = c.deinterlace && c.gpu_deint.is_none();
+    let deint_gpu = c
+        .gpu_deint
+        .and_then(GpuDeint::filter)
+        .map_or(String::new(), |f| format!("{f},"));
+    let vulkan_deint = match c.gpu_deint {
+        _ if !c.deinterlace => String::new(),
+        Some(_) => deint_gpu.clone(),
+        None => format!("hwdownload,format={crop_fmt},{DEINTERLACE},hwupload=derive_device=vaapi,"),
+    };
     let tonemap_vulkan = match c.crop {
         _ if !c.use_vulkan_tonemap || text.is_some() => String::new(),
         crop => format!(
-            "hwmap=derive_device=drm,format=drm_prime,libplacebo={}w={w}:h={}:upscaler=none:downscaler=none:format=bgra:tonemapping={curve}:peak_detect=0:color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=pc:apply_dolbyvision={},format=vulkan,hwmap=derive_device=vaapi,format=vaapi,scale_vaapi=format=nv12:out_range=tv",
+            "{vulkan_deint}hwmap=derive_device=drm,format=drm_prime,libplacebo={}w={w}:h={}:upscaler=none:downscaler=none:format=bgra:tonemapping={curve}:peak_detect=0:color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=pc:apply_dolbyvision={},format=vulkan,hwmap=derive_device=vaapi,format=vaapi,scale_vaapi=format=nv12:out_range=tv",
             crop.map_or(String::new(), |k| format!(
                 "crop_w={}:crop_h={}:crop_x={}:crop_y={}:",
                 k.width, k.height, k.x, k.y
@@ -105,14 +123,9 @@ pub fn video_filters(c: &FilterContext) -> Filters {
             "zscale=w={w}:h=-2:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap={curve}:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,{HDR_STATIC_SIDEDATA_DELETE},"
         ),
     };
-    let crop_fmt = if c.source_bit_depth == 10 {
-        "p010le"
-    } else {
-        "nv12"
-    };
     let cpu_prefix = format!(
         "{}{}",
-        if c.deinterlace {
+        if cpu_deint {
             format!("{DEINTERLACE},")
         } else {
             String::new()
@@ -125,11 +138,22 @@ pub fn video_filters(c: &FilterContext) -> Filters {
     );
     Filters {
         cpu_crop_prefix: cpu_prefix.clone(),
-        hw_crop_prefix: if cpu_prefix.is_empty() {
-            String::new()
-        } else {
-            format!("hwdownload,format={crop_fmt},{cpu_prefix}hwupload=derive_device=vaapi,")
-        },
+        hw_crop_prefix: format!(
+            "{}{}",
+            if c.gpu_deint == Some(GpuDeint::Vaapi) {
+                deint_gpu.as_str()
+            } else {
+                ""
+            },
+            if cpu_prefix.is_empty() {
+                String::new()
+            } else {
+                format!("hwdownload,format={crop_fmt},{cpu_prefix}hwupload=derive_device=vaapi,")
+            }
+        ),
+        deint_gpu,
+        qsv_deint: c.gpu_deint.map_or("", GpuDeint::vpp_opts).into(),
+        cpu_deinterlace: cpu_deint,
         burn_in_filter: text.map_or(String::new(), |f| format!(",{f}")),
         tonemap_vaapi: if c.use_vaapi_tonemap {
             ",tonemap_vaapi=format=nv12:t=bt709:p=bt709:m=bt709".into()

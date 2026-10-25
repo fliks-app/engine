@@ -5,6 +5,7 @@ use crate::api::{CodecVariant, HdrFormat, HostCaps, HwAccel, Platform};
 use crate::decide::codec::codec_name;
 use crate::decide::tonemap::{Pipeline, TonemapPath};
 use crate::hw::Device;
+use crate::hw::GpuDeint;
 use crate::hw::decoders::{DECODERS, DecodeCodec, Decoder, Surface, find};
 use crate::strs;
 
@@ -116,10 +117,30 @@ fn resolve_decoder(
         .unwrap_or_else(|| find("cpu"))
 }
 
-fn vt_surface_decodable(codec: Option<DecodeCodec>, caps: &HostCaps) -> bool {
-    codec.is_some_and(|c| {
-        resolve_decoder(c, 10, HwAccel::Videotoolbox, caps).hw() == HwAccel::Videotoolbox
-    })
+/// VideoToolbox frames stay on the GPU only if its decoder is there and, for an interlaced source,
+/// so is its deinterlacer.
+fn vt_surface_decodable(codec: Option<DecodeCodec>, interlaced: bool, caps: &HostCaps) -> bool {
+    (!interlaced || caps.probe(GpuDeint::Videotoolbox.probe_name()))
+        && codec.is_some_and(|c| {
+            resolve_decoder(c, 10, HwAccel::Videotoolbox, caps).hw() == HwAccel::Videotoolbox
+        })
+}
+
+/// The GPU deinterlacer of the surface the chain runs on, if the host probed it.
+pub(super) fn gpu_deint(
+    p: &Pipeline,
+    surface: Surface,
+    interlaced: bool,
+    caps: &HostCaps,
+) -> Option<GpuDeint> {
+    let g = match (p.effective, surface) {
+        (HwAccel::Qsv, _) if p.qsv_native => GpuDeint::Qsv,
+        (HwAccel::Vaapi | HwAccel::Qsv, Surface::Vaapi) => GpuDeint::Vaapi,
+        (HwAccel::Nvenc, Surface::Cuda) => GpuDeint::Cuda,
+        (HwAccel::Videotoolbox, Surface::Videotoolbox) => GpuDeint::Videotoolbox,
+        _ => return None,
+    };
+    (interlaced && caps.probe(g.probe_name())).then_some(g)
 }
 
 pub(super) struct DecodeStage {
@@ -138,6 +159,7 @@ pub(super) struct DecodeNeeds<'a> {
     pub(super) burn_in: bool,
     pub(super) crop: bool,
     pub(super) opencl_tonemap: bool,
+    pub(super) interlaced: bool,
 }
 
 /// The decoder a resolved pipeline reads the source with. [ts:backend/src/modules/streaming/transcoding/ffmpeg-args.ts:660-705]
@@ -215,6 +237,7 @@ pub(crate) struct ReportNeeds<'a> {
     pub source_bit_depth: u32,
     /// No-base DV reshaped to HDR10: `apply_dovi` runs no curve.
     pub hdr10_target: bool,
+    pub interlaced: bool,
 }
 
 pub(crate) fn stage_report(p: &Pipeline, n: &ReportNeeds, caps: &HostCaps) -> StageReport {
@@ -231,7 +254,9 @@ pub(crate) fn stage_report(p: &Pipeline, n: &ReportNeeds, caps: &HostCaps) -> St
         },
         _ if cuda => "cuda",
         _ if opencl || (hw == HwAccel::Amf && p.amf_opencl_available) => "opencl",
-        HwAccel::Videotoolbox if !n.burn_in && vt_surface_decodable(codec, caps) => "videotoolbox",
+        HwAccel::Videotoolbox if !n.burn_in && vt_surface_decodable(codec, n.interlaced, caps) => {
+            "videotoolbox"
+        }
         _ => "cpu",
     });
     let decoder = pick_decoder(p, n.source_video_codec, n.source_bit_depth, caps);
@@ -275,13 +300,15 @@ pub(super) fn decode_stage(
         args = dev.vulkan_init();
         args.extend(tail);
     }
-    let vt_eligible =
-        n.tonemap && hw == HwAccel::Videotoolbox && !n.burn_in && vt_surface_decodable(codec, caps);
+    let vt_eligible = n.tonemap
+        && hw == HwAccel::Videotoolbox
+        && !n.burn_in
+        && vt_surface_decodable(codec, n.interlaced, caps);
     let vt_passthrough = n.hdr_output
         && hw == HwAccel::Videotoolbox
         && !n.burn_in
         && !n.crop
-        && vt_surface_decodable(codec, caps);
+        && vt_surface_decodable(codec, n.interlaced, caps);
     let vt_surface = vt_eligible || vt_passthrough;
     if vt_surface {
         args.extend(strs(&["-hwaccel_output_format", "videotoolbox_vld"]));

@@ -13,7 +13,8 @@ pub(crate) use self::decode::{ReportNeeds, stage_report};
 pub use self::live::{live_h264_encoder, live_input, live_video, parse_bitrate};
 
 use self::decode::{
-    DecodeNeeds, color_args, decode_stage, hw_name, sdr_tags, tonemap_bounces, variant_json,
+    DecodeNeeds, color_args, decode_stage, gpu_deint, hw_name, sdr_tags, tonemap_bounces,
+    variant_json,
 };
 use super::encoders::{amf_ends_on_gpu, build, nvenc_ends_on_gpu};
 use super::filters::{FilterContext, Overlay, image_burn_in, video_filters};
@@ -162,6 +163,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
             dv_no_base,
             dv_apply_rpu,
             source_bit_depth,
+            interlaced: deinterlace,
         },
         caps,
     );
@@ -213,11 +215,18 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
             burn_in: any_burn_in,
             crop: o.crop.is_some(),
             opencl_tonemap: opencl,
+            interlaced: deinterlace,
         },
         caps,
         dev,
     );
     args.extend(d.args);
+    let surface = if d.vt_surface {
+        Surface::Videotoolbox
+    } else {
+        d.decoder.surface()
+    };
+    let gpu_deint = gpu_deint(&p, surface, deinterlace, caps);
 
     let sdr = sdr_tags(o);
     if !hdr_output && !d.vt_metal && !o.tonemap {
@@ -260,6 +269,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         libx264_bufsize_mb: x264_bufsize,
         filters: video_filters(&FilterContext {
             deinterlace,
+            gpu_deint,
             crop: o.crop.as_ref(),
             burn_in_filter: text_filter,
             tonemap: o.tonemap,
@@ -282,11 +292,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         dv_apply_rpu,
         has_burn_in: text_burn_in,
         has_crop: o.crop.is_some(),
-        input_surface: if d.vt_surface {
-            Surface::Videotoolbox
-        } else {
-            d.decoder.surface()
-        },
+        input_surface: surface,
         qsv_native: Some(p.qsv_native),
         hdr_metadata: o.source_hdr_metadata.clone(),
     };

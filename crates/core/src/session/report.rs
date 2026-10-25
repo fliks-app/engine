@@ -60,6 +60,7 @@ pub fn open_report(
         8
     };
     let crop = streaming.auto_crop_enabled && v.and_then(|v| v.crop.as_ref()).is_some();
+    let interlaced = v.is_some_and(|v| v.field_order.is_some());
     let ctx = |tonemap| EncodeContext {
         crop,
         burn_in: burn_in == Some(BurnInKind::Text),
@@ -69,6 +70,7 @@ pub fn open_report(
         dv_no_base,
         dv_apply_rpu,
         source_bit_depth: depth,
+        interlaced,
     };
     let needs = |tonemap| ReportNeeds {
         tonemap,
@@ -78,6 +80,7 @@ pub fn open_report(
         source_video_codec: codec.as_deref(),
         source_bit_depth: depth,
         hdr10_target: dv_no_base && d.video_variant.hdr == Some(crate::api::HdrFormat::Hdr10),
+        interlaced,
     };
     let variant = &d.video_variant;
     let tonemap = r.tonemapping.then(|| {

@@ -1,5 +1,6 @@
 //! The ffmpeg commands of the boot detection, with the timeouts the TS gives each.
 use super::Encoder;
+use super::GpuDeint;
 use super::decoders::{self, DecodeCodec, Decoder};
 use super::device::Device;
 use crate::api::{HwAccel, Platform};
@@ -486,4 +487,51 @@ pub fn amf_opencl_cmds(sample: &str) -> [Cmd; 2] {
             &["hevc_amf", "-profile:v", "main10"],
         ),
     ]
+}
+
+/// One deinterlace of interlaced-flagged frames through each backend's filter, as a session runs it.
+pub fn deinterlace_cmd(g: GpuDeint, d: &Device) -> Cmd {
+    let lavfi = strs(&["-f", "lavfi", "-i", "nullsrc=size=320x180:rate=30"]);
+    let up = "format=nv12,setfield=tff,";
+    let down = "hwdownload,format=nv12";
+    let (init, dev, vf) = match g {
+        GpuDeint::Vaapi => (
+            d.vaapi_init(),
+            "va",
+            format!("{up}hwupload,{},{down}", g.filter().unwrap()),
+        ),
+        GpuDeint::Qsv => (
+            d.qsv_init(),
+            "qs",
+            format!(
+                "{up}hwupload=extra_hw_frames=16,vpp_qsv={}format=nv12,{down}",
+                g.vpp_opts()
+            ),
+        ),
+        GpuDeint::Cuda => (
+            vec![],
+            "",
+            format!("{up}hwupload_cuda,{},{down}", g.filter().unwrap()),
+        ),
+        GpuDeint::Videotoolbox => (
+            strs(&["-init_hw_device", "videotoolbox=vt"]),
+            "vt",
+            format!("{up}hwupload,{},{down}", g.filter().unwrap()),
+        ),
+    };
+    let filter_dev = if dev.is_empty() {
+        vec![]
+    } else {
+        strs(&["-filter_hw_device", dev])
+    };
+    cmd(
+        cat(&[
+            &strs(QUIET),
+            &init,
+            &filter_dev,
+            &lavfi,
+            &strs(&["-frames:v", "2", "-vf", &vf, "-f", "null", "-"]),
+        ]),
+        10_000,
+    )
 }

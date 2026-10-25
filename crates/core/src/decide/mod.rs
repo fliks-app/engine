@@ -529,6 +529,7 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
             dv_no_base: no_base,
             dv_apply_rpu: dolby_vision::applies_rpu(dv.profile, dv.compat_id),
             source_bit_depth: 8,
+            interlaced: v.is_some_and(|v| v.field_order.is_some()),
         },
         caps,
     )
