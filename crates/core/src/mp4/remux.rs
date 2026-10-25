@@ -112,6 +112,9 @@ pub struct RemuxAssemblyPlan {
     pub segment_duration: f64,
     /// Audio-only renditions sharing the run (0 for the inline layout).
     pub audio_renditions: u32,
+    /// The run writes MPEG-TS GOP files, joined as they are.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub use_ts: bool,
 }
 
 pub fn remux_assembly_plan(
@@ -134,6 +137,7 @@ pub fn remux_assembly_plan(
         boundaries: grid.map(|g| g.boundaries.clone()),
         segment_duration: segment_duration.unwrap_or(3.0),
         audio_renditions: audio_renditions.unwrap_or(0),
+        use_ts: false,
     }
 }
 
@@ -160,8 +164,8 @@ pub fn gops_of(plan: &RemuxAssemblyPlan, segment: usize) -> Option<Vec<usize>> {
 }
 
 /// Served segment file name.
-pub fn seg_name(n: usize) -> String {
-    format!("seg-{n:04}.m4s")
+pub fn seg_name(n: usize, ts: bool) -> String {
+    format!("seg-{n:04}.{}", if ts { "ts" } else { "m4s" })
 }
 
 /// One audio frame of a growing `frag_every_frame` file.
