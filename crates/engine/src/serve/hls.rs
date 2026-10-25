@@ -230,7 +230,7 @@ pub(super) async fn iframe_seg(
         crop,
         timeline_offset_seconds: Some((1.0 - t.origin).max(0.0)),
     });
-    match run_capture(&rt, &args, Duration::from_secs(20)).await {
+    match run_capture(&rt, &args, Duration::from_secs(20), &rt.ffmpeg).await {
         Some(out) if !out.is_empty() => (
             [
                 (header::CONTENT_TYPE, "video/mp2t"),
@@ -249,10 +249,11 @@ pub(super) async fn run_capture(
     rt: &Runtime,
     args: &[String],
     timeout: Duration,
+    tool: &str,
 ) -> Option<Vec<u8>> {
     let _permit = rt.capture.acquire().await.ok()?;
     let _slot = rt.slots.playback(true);
-    let mut cmd = tokio::process::Command::new(&rt.ffmpeg);
+    let mut cmd = tokio::process::Command::new(tool);
     cmd.args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
