@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.1.0](https://github.com/fliks-app/engine/compare/v1.0.2...v1.1.0) (2026-10-25)
+
+
+### Features
+
+* **args:** deinterlace interlaced sources when transcoding ([c5dc6c3](https://github.com/fliks-app/engine/commit/c5dc6c3edec52a18a8ed579a092beb8bccd785f8))
+
+
+### Bug Fixes
+
+* **args:** keep dialogue level when downmixing to stereo ([9dfa941](https://github.com/fliks-app/engine/commit/9dfa941a8afd17852382cccd8447404b7b50c461))
+* **events:** close the stream of a subscriber that lagged ([e8657b3](https://github.com/fliks-app/engine/commit/e8657b3e44a64312fcb6851640bfd20eff1fe9e3))
+* **runtime:** refuse a playback run below the free-space floor ([b775f6b](https://github.com/fliks-app/engine/commit/b775f6b09d82e3f814a7a7606a68c3c2488160e1))
+* **runtime:** remember a hardware encoder failure for the whole process ([#105](https://github.com/fliks-app/engine/issues/105)) ([be274da](https://github.com/fliks-app/engine/commit/be274dab7a307309ee67f4e3de8b123909d2e586))
+
+
+### Performance Improvements
+
+* **runtime:** kill ffmpeg at once on seek and switch, wake a throttled run for a waiter ([#93](https://github.com/fliks-app/engine/issues/93)) ([78c5853](https://github.com/fliks-app/engine/commit/78c5853c5319f159582d7614eac826535fd8a9c5))
+* **runtime:** no early companion for a session that starts at the beginning ([#107](https://github.com/fliks-app/engine/issues/107)) ([1f1e123](https://github.com/fliks-app/engine/commit/1f1e1231a9b39587e68b4985760c3e05d59f9e80))
+* **runtime:** split the cores between concurrent software encodes ([#95](https://github.com/fliks-app/engine/issues/95)) ([3fbc327](https://github.com/fliks-app/engine/commit/3fbc327617ae5afe0895982d17541f49e7e1d6d5))
+* **subtitles:** extract every text track of a file in one pass ([a384c86](https://github.com/fliks-app/engine/commit/a384c869bd2b468b0830a79b9efd0a095e7b6706))
+
 ## [1.0.2](https://github.com/fliks-app/engine/compare/v1.0.1...v1.0.2) (2026-10-22)
 
 
