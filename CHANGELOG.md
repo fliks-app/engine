@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/fliks-app/engine/compare/v1.1.0...v1.1.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **live:** refuse internal addresses for vetted upstreams ([#108](https://github.com/fliks-app/engine/issues/108)) ([dd579e0](https://github.com/fliks-app/engine/commit/dd579e06a5f6600f5066d2fa7b501767c7c940a9))
+
 ## [1.1.0](https://github.com/fliks-app/engine/compare/v1.0.2...v1.1.0) (2026-10-25)
 
 
