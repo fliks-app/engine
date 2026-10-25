@@ -41,7 +41,7 @@
       "-ar",
       "48000",
       "-filter:a",
-      "asetpts=PTS-2.8/TB,aresample=async=1:first_pts=0,asetpts=PTS+2.8/TB",
+      "asetpts=PTS-2.8/TB,aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo,asetpts=PTS+2.8/TB",
       "-movflags",
       "+cmaf",
       "-avoid_negative_ts",
