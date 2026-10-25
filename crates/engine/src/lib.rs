@@ -16,6 +16,7 @@ pub mod serve;
 pub mod sessions;
 pub mod slots;
 pub mod supervise;
+pub mod token;
 
 use crate::lock::Locked;
 use axum::{
