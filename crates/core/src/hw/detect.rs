@@ -21,6 +21,8 @@ pub struct Outcome {
 pub trait Runner: Sync {
     fn run(&self, cmd: &Cmd) -> impl Future<Output = Outcome> + Send;
     fn remove(&self, path: &str) -> impl Future<Output = ()> + Send;
+    /// Writes a bundled probe sample; false when it cannot.
+    fn write(&self, path: &str, bytes: &[u8]) -> impl Future<Output = bool> + Send;
 }
 
 /// The probe results, as `HostCaps` reads them plus the lists `Capabilities` reports.
@@ -142,7 +144,10 @@ async fn probe_decoders<R: Runner>(dev: &Device, tmp: &str, pid: u32, r: &R) -> 
             continue;
         }
         let path = sample_path(tmp, &probe::decoder_sample_name(c, pid));
-        let made = r.run(&probe::decoder_sample_cmd(c, &path)).await.ok;
+        let made = match probe::decoder_sample_file(c) {
+            Some(bytes) => r.write(&path, bytes).await,
+            None => r.run(&probe::decoder_sample_cmd(c, &path)).await.ok,
+        };
         if !made {
             r.remove(&path).await;
         }
