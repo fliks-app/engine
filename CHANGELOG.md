@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/fliks-app/engine/compare/v1.5.0...v1.6.0) (2026-10-25)
+
+
+### Features
+
+* **args:** burn in an external image subtitle file ([#126](https://github.com/fliks-app/engine/issues/126)) ([ee3a858](https://github.com/fliks-app/engine/commit/ee3a85876ede8c432b13ae35b9b6795af5701f2b))
+
 ## [1.5.0](https://github.com/fliks-app/engine/compare/v1.4.0...v1.5.0) (2026-10-25)
 
 
