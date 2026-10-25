@@ -1,11 +1,11 @@
 //! Decoder choice, tonemap bounces and the per-stage report.
 
 use super::super::VodArgs;
-use crate::api::{CodecVariant, HdrFormat, HostCaps, HwAccel, Platform, VideoCodec};
-use crate::decide::codec::{codec_name, normalise_source_codec};
+use crate::api::{CodecVariant, HdrFormat, HostCaps, HwAccel, Platform};
+use crate::decide::codec::codec_name;
 use crate::decide::tonemap::{Pipeline, TonemapPath};
 use crate::hw::Device;
-use crate::hw::decoders::{DECODERS, Decoder, Surface, find};
+use crate::hw::decoders::{DECODERS, DecodeCodec, Decoder, Surface, find};
 use crate::strs;
 
 pub(super) struct Sdr {
@@ -88,7 +88,7 @@ pub(super) fn hw_name(h: HwAccel) -> &'static str {
 /// Decoder registry: same backend, then any other HW one, then CPU.
 /// [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:66-103]
 fn resolve_decoder(
-    codec: VideoCodec,
+    codec: DecodeCodec,
     depth: u32,
     preferred: HwAccel,
     caps: &HostCaps,
@@ -116,7 +116,7 @@ fn resolve_decoder(
         .unwrap_or_else(|| find("cpu"))
 }
 
-fn vt_surface_decodable(codec: Option<VideoCodec>, caps: &HostCaps) -> bool {
+fn vt_surface_decodable(codec: Option<DecodeCodec>, caps: &HostCaps) -> bool {
     codec.is_some_and(|c| {
         resolve_decoder(c, 10, HwAccel::Videotoolbox, caps).hw() == HwAccel::Videotoolbox
     })
@@ -148,12 +148,12 @@ fn pick_decoder(
     caps: &HostCaps,
 ) -> &'static Decoder {
     let hw = p.effective;
-    let codec = source_video_codec.and_then(normalise_source_codec);
+    let codec = source_video_codec.and_then(DecodeCodec::from_source);
     let reported = source_video_codec.is_some_and(|c| !c.is_empty());
     match codec {
         Some(c) if p.qsv_native => find(&format!(
             "{}{}",
-            codec_name(c),
+            c.name(),
             if caps.platform == Platform::Win32 {
                 "_qsv_d3d11_decode"
             } else {
@@ -161,11 +161,11 @@ fn pick_decoder(
             }
         )),
         Some(c) if p.amf_opencl_available && hw == HwAccel::Amf => {
-            find(&format!("{}_d3d11va_native_decode", codec_name(c)))
+            find(&format!("{}_d3d11va_native_decode", c.name()))
         }
         // A reported codec without a HW decoder here decodes on the CPU.
         _ => resolve_decoder(
-            codec.unwrap_or(VideoCodec::H264),
+            codec.unwrap_or(DecodeCodec::H264),
             depth,
             if reported && codec.is_none() {
                 HwAccel::None
@@ -220,7 +220,7 @@ pub(crate) struct ReportNeeds<'a> {
 pub(crate) fn stage_report(p: &Pipeline, n: &ReportNeeds, caps: &HostCaps) -> StageReport {
     let hw = p.effective;
     let (cuda, opencl) = tonemap_bounces(n.tonemap, hw, n.dv_no_base, n.dv_apply_rpu, caps);
-    let codec = n.source_video_codec.and_then(normalise_source_codec);
+    let codec = n.source_video_codec.and_then(DecodeCodec::from_source);
     let tonemap = n.tonemap.then(|| match hw {
         HwAccel::Qsv | HwAccel::Vaapi if p.use_vaapi_tonemap => "vaapi",
         HwAccel::Qsv | HwAccel::Vaapi => match p.path {
@@ -253,15 +253,19 @@ pub(super) fn decode_stage(
     dev: &Device,
 ) -> DecodeStage {
     let hw = p.effective;
-    let codec = n.source_video_codec.and_then(normalise_source_codec);
+    let codec = n.source_video_codec.and_then(DecodeCodec::from_source);
     let amf_native = p.amf_opencl_available && hw == HwAccel::Amf;
     let decoder = pick_decoder(p, n.source_video_codec, n.source_bit_depth, caps);
     let surface = decoder.surface();
     let mut args = decoder.input_args(dev);
-    // A CPU decoder inits no device, yet the qsv encoder's filters need one.
+    // A CPU decoder inits no device, yet the GPU encoder's filters need one.
     if surface == Surface::Cpu && hw == HwAccel::Qsv {
         args.extend(dev.qsv_init());
         args.extend(strs(&["-filter_hw_device", "qs"]));
+    }
+    if surface == Surface::Cpu && hw == HwAccel::Vaapi {
+        args.extend(dev.vaapi_init());
+        args.extend(strs(&["-filter_hw_device", "va"]));
     }
     let vulkan = p.path == TonemapPath::Vulkan && surface == Surface::Vaapi && hw == HwAccel::Vaapi;
     if let Some(k) = args.iter().position(|a| a == "-filter_hw_device")

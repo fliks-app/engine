@@ -1,11 +1,11 @@
 //! The boot probe chain: pick a backend, then probe decoders, encoders and tone-map paths.
 //! [ts:backend/src/modules/streaming/transcoding/transcoding.service.ts:140-170,297-375]
-use super::decoders::DECODERS;
+use super::decoders::{DECODERS, DecodeCodec};
 use super::device::Device;
 use super::encoders::ENCODERS;
 use super::parse;
 use super::probe::{self, Cmd};
-use crate::api::{Capabilities, Gpu, HostCaps, HwAccel, Platform, VideoCodec};
+use crate::api::{Capabilities, Gpu, HostCaps, HwAccel, Platform};
 use std::future::Future;
 use std::path::Path;
 
@@ -135,7 +135,7 @@ async fn has_libfdk<R: Runner>(r: &R) -> bool {
 
 /// One flag per decoder, in `DECODERS` order. [ts:backend/src/modules/streaming/transcoding/codec/decoder-probe.ts:33-100]
 async fn probe_decoders<R: Runner>(dev: &Device, tmp: &str, pid: u32, r: &R) -> Vec<bool> {
-    let mut samples: Vec<(VideoCodec, Option<String>)> = vec![];
+    let mut samples: Vec<(DecodeCodec, Option<String>)> = vec![];
     for d in DECODERS {
         let Some(c) = d.codec else { continue };
         if samples.iter().any(|(k, _)| *k == c) {
@@ -148,7 +148,7 @@ async fn probe_decoders<R: Runner>(dev: &Device, tmp: &str, pid: u32, r: &R) -> 
         }
         samples.push((c, made.then_some(path)));
     }
-    let sample = |c: VideoCodec| {
+    let sample = |c: DecodeCodec| {
         samples
             .iter()
             .find(|(k, _)| *k == c)
@@ -156,7 +156,7 @@ async fn probe_decoders<R: Runner>(dev: &Device, tmp: &str, pid: u32, r: &R) -> 
     };
     let mut out = vec![];
     for d in DECODERS {
-        let path = sample(d.codec.unwrap_or(VideoCodec::H264));
+        let path = sample(d.codec.unwrap_or(DecodeCodec::H264));
         let ok = match (d.supported(dev.platform), path) {
             (true, Some(p)) => r.run(&probe::decoder_cmd(d, dev, &p)).await.ok,
             _ => false,

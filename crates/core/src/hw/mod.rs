@@ -16,7 +16,7 @@ pub use parse::{has_libfdk_aac, vaapi_driver_is_intel_ihd};
 pub use pause::{PROBE_ARGS, PauseVerdict, pause_capability, pause_step};
 pub use probe::{Cmd, encoders_listing};
 
-use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::api::{HwAccel, Platform};
 
 /// One compiled-in encoder, in registry order. `args` is the probe argv from `encoders.rs`.
 pub(crate) struct Encoder {
@@ -37,14 +37,6 @@ impl Encoder {
 #[cfg(test)]
 pub(crate) fn encoder_ids() -> Vec<&'static str> {
     encoders::ENCODERS.iter().map(|e| e.id).collect()
-}
-
-pub(crate) fn codec_str(c: VideoCodec) -> &'static str {
-    match c {
-        VideoCodec::H264 => "h264",
-        VideoCodec::Hevc => "hevc",
-        VideoCodec::Av1 => "av1",
-    }
 }
 
 /// `std::env::consts::OS` as the wire platform; anything unknown probes like Linux, as the TS does.
