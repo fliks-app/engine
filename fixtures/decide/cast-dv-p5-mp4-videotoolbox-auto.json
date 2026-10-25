@@ -39,21 +39,21 @@
       ],
       "clientTonemap": false,
       "contentType": "application/vnd.apple.mpegurl",
-      "dolbyVision": false,
+      "dolbyVision": true,
       "hwAccel": "videotoolbox",
       "mediaFileId": 1,
       "outputAudioCodec": "eac3",
       "outputContainer": "hls",
       "outputVideoCodec": "hevc",
-      "playMethod": "Transcode",
-      "playUrl": "/api/stream/1/master.m3u8?token=t",
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/1/master.m3u8?token=t&remux=1",
       "qualities": [
         {
           "height": 2160,
-          "id": "2160p",
-          "isRemux": false,
+          "id": "original",
+          "isRemux": true,
           "label": "4K",
-          "totalBitrateBps": 20192000,
+          "totalBitrateBps": 25000000,
           "width": 3840
         },
         {
@@ -132,7 +132,8 @@
           "width": 256
         }
       ],
-      "quality": "auto",
+      "quality": "original",
+      "remuxMasterBandwidthBps": 24640000,
       "source": {
         "audioBitRate": 640000,
         "audioChannels": 6,
@@ -151,7 +152,7 @@
         "videoProfile": "main 10",
         "width": 3840
       },
-      "tonemapping": true,
+      "tonemapping": false,
       "transcodeBitrateByQuality": {
         "1080p": {
           "audioBitrateBps": 640000,
@@ -208,17 +209,9 @@
         {
           "flag": "ClientNeedsHlsSubtitles",
           "message": "Client needs HLS subtitle renditions (no sideload into a raw file)"
-        },
-        {
-          "flag": "MuxNotSupported",
-          "message": "MPEG-TS packaging can't carry a copied video stream"
-        },
-        {
-          "flag": "VideoHdrNotSupported",
-          "message": "HDR → SDR (tone mapping Dolby Vision P5)"
         }
       ],
-      "videoCopyStream": false
+      "videoCopyStream": true
     },
     "transcodeTonemapping": true,
     "useHdrLadder": false,

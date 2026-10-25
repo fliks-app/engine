@@ -226,8 +226,9 @@ impl Assembler {
 
     fn gop_path(&self, gop: usize) -> PathBuf {
         let offset = self.run.as_ref().map_or(0, |r| r.gop_offset);
+        let ext = if self.plan.use_ts { "ts" } else { "m4s" };
         self.gop_dir
-            .join(format!("gop-{}.m4s", gop as i64 - offset))
+            .join(format!("gop-{}.{ext}", gop as i64 - offset))
     }
 
     fn is_complete(&self, gop: usize) -> Result<bool, String> {
@@ -290,8 +291,43 @@ impl Assembler {
             .collect()
     }
 
+    /// MPEG-TS: a GOP file is whole once it exists (ffmpeg renames it when closed), and files
+    /// concatenate into a segment. False until the run's first GOP is out.
+    fn pump_video_ts(&mut self) -> Result<bool, String> {
+        if self.opened_at.is_none() {
+            if !exists(&self.gop_path(self.plan.start_number)) {
+                return Ok(false);
+            }
+            std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+            self.open_start = self.plan.start_segment;
+            self.opened_at = Some(Instant::now());
+        }
+        while let Some(gops) = gops_of(&self.plan, self.next) {
+            if !exists(&self.gop_path(*gops.last().unwrap_or(&self.next))) {
+                break;
+            }
+            write_new(&self.dir.join(seg_name(self.next, true)), |out| {
+                gops.iter().try_for_each(|g| {
+                    let mut f = File::open(self.gop_path(*g)).map_err(|e| e.to_string())?;
+                    std::io::copy(&mut f, out)
+                        .map(drop)
+                        .map_err(|e| e.to_string())
+                })
+            })?;
+            for g in &gops {
+                let _ = std::fs::remove_file(self.gop_path(*g));
+            }
+            self.next += 1;
+            self.failures = 0;
+        }
+        Ok(true)
+    }
+
     /// False until the run opened.
     fn pump_video(&mut self) -> Result<bool, String> {
+        if self.plan.use_ts {
+            return self.pump_video_ts();
+        }
         if self.run.is_none() && !self.open()? {
             return Ok(false);
         }
@@ -336,7 +372,7 @@ impl Assembler {
     }
 
     fn assemble(&self, segment: usize, gops: &[usize]) -> Result<(), String> {
-        write_new(&self.dir.join(seg_name(segment)), |out| {
+        write_new(&self.dir.join(seg_name(segment, false)), |out| {
             gops.iter().try_for_each(|g| self.append_gop(out, *g))
         })?;
         for g in gops {
@@ -396,7 +432,10 @@ impl Assembler {
     fn publish(&self) {
         let mut st = self.view.st.locked();
         st.next = self.next;
-        st.run_next = self.run.as_ref().map(|r| r.next);
+        st.run_next = match &self.run {
+            Some(r) => Some(r.next),
+            None => self.opened_at.map(|_| self.open_start),
+        };
         st.open_start = self.open_start;
         st.opened_at = self.opened_at;
         st.served = self.audio_served();
@@ -498,7 +537,7 @@ impl Assembler {
                 break;
             };
             for (seg, bytes) in closed {
-                write_new(&a.dir.join(seg_name(seg)), |f| {
+                write_new(&a.dir.join(seg_name(seg, false)), |f| {
                     f.write_all(&bytes).map_err(|e| e.to_string())
                 })?;
             }
@@ -517,7 +556,7 @@ impl Assembler {
             return Ok(());
         };
         if let Some((seg, bytes)) = group.flush().map_err(|e| e.to_string())? {
-            write_new(&a.dir.join(seg_name(seg)), |f| {
+            write_new(&a.dir.join(seg_name(seg, false)), |f| {
                 f.write_all(&bytes).map_err(|e| e.to_string())
             })?;
         }

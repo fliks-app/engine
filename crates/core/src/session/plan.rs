@@ -290,6 +290,7 @@ pub fn remux_args(r: &RunInput, run: &RemuxRunStart) -> RemuxArgs {
         source_dv_profile: v.and_then(|v| v.dv_profile),
         source_dv_bl_signal_compat_id: v.and_then(|v| v.dv_bl_signal_compat_id),
         hdr10_plus: v.and_then(|v| v.hdr10_plus).unwrap_or(false),
+        use_ts: plan.use_ts,
     }
 }
 

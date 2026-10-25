@@ -194,6 +194,9 @@ pub struct RemuxArgs {
     pub source_dv_bl_signal_compat_id: Option<u32>,
     #[serde(default)]
     pub hdr10_plus: bool,
+    /// MPEG-TS GOP files instead of fMP4 ones (single audio only).
+    #[serde(default)]
+    pub use_ts: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

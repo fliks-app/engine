@@ -330,7 +330,8 @@ impl Runtime {
             &s.cache_hash(JobKind::Remux),
             "remux",
         );
-        let path = layout_path(&dir, track > 0, track, "m4s", name);
+        let ext = if s.plan.use_ts { "ts" } else { "m4s" };
+        let path = layout_path(&dir, track > 0, track, ext, name);
         let existing = self.job(&s.key(JobKind::Remux));
         if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > 0) {
             return ready(path, existing, 0.0, true);

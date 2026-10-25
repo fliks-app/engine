@@ -241,7 +241,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
     let copyable_ignoring_gates = source_copyable && !force_ladder;
     let copy_gates = [
         (
-            mux == MuxFlavour::Ts,
+            // MPEG-TS carries a copied video for a single audio track only.
+            mux == MuxFlavour::Ts && audio_streams.len() > 1,
             "MuxNotSupported",
             "MPEG-TS packaging can't carry a copied video stream",
         ),

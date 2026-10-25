@@ -81,6 +81,7 @@ Golden vectors: `fixtures/decide/*.json` (`input`, `hostCaps`, `config`, `expect
 - `dvNoBaseHdr10 = noBase && selectedVariant.hdr == "HDR10"`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:400]`
 - `transcodeTonemaps = (isSourceHdr || noBase) && !useHdrLadder`; `runsTonemapFilter = transcodeTonemaps || dvNoBaseHdr10` (this is `transcodeTonemapping` in the output and `tonemapping` on Transcode). `[ts:backend/src/modules/streaming/stream-builder.service.ts:406-409]`
 - `muxFlavour = useTs || (useTsOnSingleAudio && audio.len <= 1) ? ts : fmp4`. `[ts:backend/src/modules/streaming/transcoding/audio-layout.ts:1-10]`
+- [new] With `muxFlavour == ts` and at most one audio track the copy gate below stays open, so a source whose only problem is the audio is a DirectStream of MPEG-TS GOP files (runtime.md section 9). `rejectCopy` still closes it.
 
 ## 5. tryDirectPlay (reasons in this exact order) `[ts:backend/src/modules/streaming/stream-builder.service.ts:1289-1429]`
 
@@ -168,7 +169,7 @@ Gates 4 to 10 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (se
 
 | Flag | Active when |
 |---|---|
-| `MuxNotSupported` | `muxFlavour == ts`. Message `MPEG-TS packaging can't carry a copied video stream`. |
+| `MuxNotSupported` | `muxFlavour == ts` unless there is at most one audio track. Message `MPEG-TS packaging can't carry a copied video stream`. |
 | `ClientRejectedCopy` | `rejectCopy == true`. |
 
 ## 8. Audio plan `[ts:backend/src/modules/streaming/stream-builder.service.ts:1158-1287]`

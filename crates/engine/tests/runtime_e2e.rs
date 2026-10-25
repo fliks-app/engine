@@ -1150,6 +1150,61 @@ async fn remux_seek_restarts_on_the_grid_and_keeps_the_timeline() {
     assert!(p.e.ffmpeg_pids().is_empty());
 }
 
+/// First video PTS of a TS segment, in seconds.
+fn ts_first_video_pts(body: &[u8]) -> f64 {
+    let f = std::env::temp_dir().join(format!("fliks-ts-seg-{}.ts", std::process::id()));
+    std::fs::write(&f, body).unwrap();
+    let ffprobe = std::env::var("FFPROBE_PATH").unwrap_or_else(|_| "ffprobe".into());
+    let out = std::process::Command::new(ffprobe)
+        .args(["-v", "error", "-select_streams", "v:0"])
+        .args(["-show_entries", "packet=pts_time", "-of", "csv=p=0"])
+        .arg(&f)
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_file(&f);
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().trim_end_matches(',').parse::<f64>().ok())
+        .fold(f64::MAX, f64::min)
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn ts_remux_seek_keeps_the_timeline_of_every_segment() {
+    let p = play(h264_clip(120)).await;
+    let mut client = copy_client(&p.file);
+    client["device"]["useTsOnSingleAudio"] = json!(true);
+    let s = p.e.open(1, &p.file, &p.info, "alice", client).await;
+    assert_eq!(s["decision"]["response"]["playMethod"], "DirectStream");
+    assert_eq!(s["decision"]["muxFlavour"], "ts");
+    let sid = s["sessionId"].as_str().unwrap().to_string();
+    let list = p
+        .text(&format!("/api/stream/1/remux/index.m3u8?sid={sid}"))
+        .await;
+    assert!(
+        !list.contains("EXT-X-MAP") && list.contains(".ts"),
+        "{list}"
+    );
+    let at = starts(&extinf(&list));
+    let far = 25;
+    for (n, start) in [(far, far), (far + 1, far), (0, 0), (1, 0)] {
+        let s = p
+            .seg(&sid, "alice-jwt", "remux", &format!("seg-{n:04}.ts"))
+            .await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        assert_eq!(p.job(&sid).await["startSegment"], start, "seg {n}");
+        // Every run puts a segment at its source time plus the 1 s headroom.
+        let pts = ts_first_video_pts(&s.body);
+        assert!(
+            (pts - (at[n] + 1.0)).abs() < 0.1,
+            "seg {n} pts {pts}, want {}",
+            at[n] + 1.0
+        );
+    }
+    p.e.rt.shutdown().await;
+    assert!(p.e.ffmpeg_pids().is_empty());
+}
+
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn resume_seg_zero_probe_is_served_by_the_early_companion() {
