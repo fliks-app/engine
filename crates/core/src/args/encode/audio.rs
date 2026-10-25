@@ -34,7 +34,8 @@ pub fn video_map(index: Option<u32>) -> String {
 
 /// Pads or trims the audio to start on the video's first frame and pads it to `end`.
 /// `stereo` downmixes here, unnormalised: swresample's default scales the whole matrix down
-/// (the centre ends up 10 dB under the source), `rematrix_maxval` keeps ATSC's -3 dB.
+/// (the centre ends up 10 dB under the source), `rematrix_maxval` keeps ATSC's -3 dB;
+/// `alimiter` only catches the rare sum over full scale.
 fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
     let st = seconds(start.abs());
     let (to, back) = if start < 0.0 { ("+", "-") } else { ("-", "+") };
@@ -43,7 +44,8 @@ fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
         _ => String::new(),
     };
     let down = if stereo {
-        ":rematrix_maxval=3,aformat=channel_layouts=stereo"
+        ":rematrix_maxval=3,aformat=channel_layouts=stereo,\
+         alimiter=limit=0.977:attack=5:release=50:level=disabled:latency=1"
     } else {
         ""
     };
@@ -129,7 +131,8 @@ mod tests {
     fn only_a_stereo_target_downmixes_unnormalised() {
         let f = filter(2);
         assert!(f.contains(
-            "aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo"
+            "aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo,\
+             alimiter=limit=0.977:attack=5:release=50:level=disabled:latency=1"
         ));
         assert!(!filter(6).contains("rematrix_maxval"));
     }

@@ -95,7 +95,7 @@
       "-ar",
       "48000",
       "-filter:a",
-      "asetpts=PTS-0/TB,aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo,asetpts=PTS+0/TB",
+      "asetpts=PTS-0/TB,aresample=async=1:first_pts=0:rematrix_maxval=3,aformat=channel_layouts=stereo,alimiter=limit=0.977:attack=5:release=50:level=disabled:latency=1,asetpts=PTS+0/TB",
       "-movflags",
       "+cmaf",
       "-avoid_negative_ts",
