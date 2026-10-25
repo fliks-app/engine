@@ -339,6 +339,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         video_variant: Some(d.video_variant),
         source_video_codec: v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty()),
         source_bit_depth: Some(if hdr || dv_no_base { 10 } else { 8 }),
+        source_interlaced: v.is_some_and(|v| v.field_order.is_some()),
         source_width: v.and_then(|v| v.width),
         source_height: v.and_then(|v| v.height),
         source_video_bitrate_bps: source_video_bps(info),

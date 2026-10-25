@@ -107,6 +107,8 @@ pub struct Stream {
     #[serde(default, deserialize_with = "string")]
     pub pix_fmt: Option<String>,
     #[serde(default, deserialize_with = "string")]
+    pub field_order: Option<String>,
+    #[serde(default, deserialize_with = "string")]
     pub r_frame_rate: Option<String>,
     #[serde(default, deserialize_with = "string")]
     pub avg_frame_rate: Option<String>,

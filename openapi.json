@@ -5502,6 +5502,13 @@
             ],
             "format": "double"
           },
+          "fieldOrder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ffprobe `field_order` (`tt`, `bb`, `tb`, `bt`), set only when the stream is interlaced."
+          },
           "firstFrameSeconds": {
             "type": [
               "number",

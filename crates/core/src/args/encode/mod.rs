@@ -149,6 +149,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     });
     let any_burn_in = o.burn_in.is_some();
     let source_bit_depth = o.source_bit_depth.unwrap_or(8);
+    let deinterlace = o.source_interlaced;
 
     let p = resolve_pipeline(
         &variant,
@@ -258,6 +259,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         qsv,
         libx264_bufsize_mb: x264_bufsize,
         filters: video_filters(&FilterContext {
+            deinterlace,
             crop: o.crop.as_ref(),
             burn_in_filter: text_filter,
             tonemap: o.tonemap,
