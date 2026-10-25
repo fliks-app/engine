@@ -297,6 +297,7 @@ Context: `hwAccel = hostCaps.hwAccel`, `crop = needsCrop` (the raw `source.crop`
 | `qsvOpencl`, `qsvOpenclHdr10` | `isQsvOpenclTonemapEnabled`, `...Hdr10Enabled` (win32 bridge) |
 | `vppQsv`, `vulkan` | `isVppQsvTonemapEnabled`, `isVulkanTonemapEnabled` |
 | `cuda`, `cudaHdr10`, `opencl`, `openclHdr10`, `amfOpencl` | `isCuda*`, `isOpencl*`, `isAmfOpenclEnabled` |
+| `deinterlaceVaapi`, `deinterlaceQsv`, `bwdifCuda`, `bwdifVideotoolbox` | `[new]` hardware deinterlacers (`hw.md` section 7); `deinterlaceQsv` also gates `qsvNativeAvailable` for an interlaced source |
 
 - Encoder descriptors `[ts:backend/src/modules/streaming/transcoding/codec/encoders/index.ts:30-72]`; ids are `{codec}_{backend}[_hdr10|_hlg]` `[assumed]` (read `id:` in each descriptor file). Variants per backend:
   - `h264` (8, SDR): qsv, vaapi, nvenc, amf, videotoolbox, cpu.

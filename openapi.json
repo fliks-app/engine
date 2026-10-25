@@ -2533,7 +2533,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Names of the probes that passed; unlisted ones read false (`tonemapOpencl`, `vppQsv`,\n`vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants).",
+            "description": "Names of the probes that passed; unlisted ones read false (`tonemapOpencl`, `vppQsv`,\n`vulkan`, `cuda`, `opencl`, `amfOpencl` and their `Crop`/`Hdr10` variants, plus the\ndeinterlacers `deinterlaceVaapi`, `deinterlaceQsv`, `bwdifCuda`, `bwdifVideotoolbox`).",
             "default": []
           },
           "vaapiWritesHdrMetadata": {

@@ -300,6 +300,15 @@ pub struct Filters {
     pub tonemap_opencl: String,
     pub tonemap_cuda: String,
     pub tonemap_cpu: String,
+    /// The GPU deinterlacer's own filter, trailing comma, for a chain that stays on that surface.
+    #[serde(default)]
+    pub deint_gpu: String,
+    /// `vpp_qsv` options that deinterlace (trailing colon).
+    #[serde(default)]
+    pub qsv_deint: String,
+    /// The frames are deinterlaced on the CPU (already in `cpu_crop_prefix`).
+    #[serde(default)]
+    pub cpu_deinterlace: bool,
 }
 
 /// Per-spawn inputs of an encoder descriptor. [ts:backend/src/modules/streaming/transcoding/codec/types.ts:62-137]

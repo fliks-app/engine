@@ -1,6 +1,7 @@
 //! Tone-map path resolution and the effective encoder backend of a transcode.
 use super::codec::{Encoder, resolve_descriptor};
 use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo};
+use crate::hw::GpuDeint;
 use crate::hw::decoders::DecodeCodec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -90,6 +91,8 @@ pub struct EncodeContext<'a> {
     pub dv_apply_rpu: bool,
     /// Gates the AMF zero-copy decoder (H.264 Hi10P exceeds its 8-bit max).
     pub source_bit_depth: u32,
+    /// An interlaced source needs the host's hardware deinterlacer on the QSV-native chain.
+    pub interlaced: bool,
 }
 
 /// The encode pipeline a frozen variant runs on this host, shared by the decision and the argv.
@@ -143,6 +146,7 @@ pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCa
         c.dv_no_base && c.tonemap && path != TonemapPath::Opencl && !vulkan_usable;
     let qsv_native_available = !dv_no_base_needs_cpu
         && qsv_decoder_usable
+        && (!c.interlaced || caps.probe(GpuDeint::Qsv.probe_name()))
         && (!caps.has_vaapi() || c.crop || matches!(path, TonemapPath::Qsv | TonemapPath::Opencl))
         && (!c.tonemap
             || (path == TonemapPath::Qsv && caps.probe("vppQsv"))
