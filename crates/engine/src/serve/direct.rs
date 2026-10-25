@@ -204,7 +204,7 @@ pub(super) async fn sprite(
         Ok(b) => (
             [
                 (header::CONTENT_TYPE, ct),
-                (header::CACHE_CONTROL, "public, max-age=86400"),
+                (header::CACHE_CONTROL, "private, max-age=86400"),
             ],
             b,
         )
