@@ -44,15 +44,15 @@
       "outputAudioCodec": "aac",
       "outputContainer": "hls",
       "outputVideoCodec": "hevc",
-      "playMethod": "Transcode",
-      "playUrl": "/api/stream/1/master.m3u8tok",
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/1/master.m3u8tok&remux=1",
       "qualities": [
         {
           "height": 1080,
-          "id": "1080p-hdr",
-          "isRemux": false,
+          "id": "original",
+          "isRemux": true,
           "label": "1080p",
-          "totalBitrateBps": 5692000,
+          "totalBitrateBps": 8128000,
           "width": 1920
         },
         {
@@ -81,7 +81,8 @@
           "width": 854
         }
       ],
-      "quality": "auto",
+      "quality": "original",
+      "remuxMasterBandwidthBps": 8128000,
       "source": {
         "audioBitRate": 128000,
         "audioChannels": 2,
@@ -139,13 +140,9 @@
         {
           "flag": "VideoDolbyVisionP7NotSupported",
           "message": "Dolby Vision profile 7 (dual layer) is not supported by this client"
-        },
-        {
-          "flag": "MuxNotSupported",
-          "message": "MPEG-TS packaging can't carry a copied video stream"
         }
       ],
-      "videoCopyStream": false
+      "videoCopyStream": true
     },
     "transcodeTonemapping": false,
     "useHdrLadder": true,
