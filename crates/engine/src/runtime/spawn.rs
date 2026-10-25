@@ -49,7 +49,7 @@ impl Runtime {
         if let Some(old) = self.job(&key)
             && old.producing()
         {
-            old.kill().await;
+            old.kill_now().await;
         }
         let dir = self.cache.rung_dir(
             s.owner.as_deref(),
@@ -128,7 +128,7 @@ impl Runtime {
         if let Some(old) = self.job(&key)
             && old.producing()
         {
-            old.kill().await;
+            old.kill_now().await;
         }
         let caps = self.caps().unwrap_or_default();
         let plan = &s.plan;
