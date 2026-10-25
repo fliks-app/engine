@@ -50,8 +50,7 @@ async fn main() -> std::process::ExitCode {
     if cli.engine_upstream.is_some() {
         return run_remote_gateway(cli).await;
     }
-    let token =
-        std::env::var("FLIKS_ENGINE_TOKEN").unwrap_or_else(|_| fliks_engine::random_hex(32));
+    let token = fliks_engine::token::resolve();
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await
         .expect("bind");
