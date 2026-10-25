@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/fliks-app/engine/compare/v1.3.0...v1.4.0) (2026-10-25)
+
+
+### Features
+
+* **sessions:** let an open retire the session it replaces ([#118](https://github.com/fliks-app/engine/issues/118)) ([4f06d9a](https://github.com/fliks-app/engine/commit/4f06d9a3e778b48f9a2f4fd8ecd2a4eaf423538a))
+
 ## [1.3.0](https://github.com/fliks-app/engine/compare/v1.2.0...v1.3.0) (2026-10-25)
 
 
