@@ -386,7 +386,7 @@ impl Engine {
         if let Some(v) = extra.get("scan") {
             req["decide"]["scan"] = v.clone();
         }
-        for k in ["startAtS", "pinned", "tags"] {
+        for k in ["startAtS", "pinned", "tags", "replaces"] {
             if let Some(v) = extra.get(k) {
                 req[k] = v.clone();
             }

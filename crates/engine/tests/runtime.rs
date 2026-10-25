@@ -708,3 +708,71 @@ async fn a_playback_run_below_the_free_space_floor_answers_503_and_spawns_nothin
     assert!(r.text().contains("not enough disk space"), "{}", r.text());
     assert!(e.ffmpeg_pids().is_empty());
 }
+
+async fn replacing(e: &Engine, file: &std::path::Path, owner: &str, old: &str) -> Value {
+    let info = serde_json::from_value(info()).unwrap();
+    e.open(7, file, &info, owner, json!({ "replaces": old }))
+        .await
+}
+
+async fn beat(e: &Engine, sid: &str, owner: &str) -> Value {
+    let hb = json!({ "ownerId": owner, "positionS": 1.0, "state": "playing" });
+    e.control("POST", &format!("/v1/sessions/{sid}/heartbeat"), Some(hb))
+        .await
+        .json()
+}
+
+#[tokio::test]
+async fn replaces_retires_the_old_session_and_keeps_the_hash() {
+    let (e, file) = setup().await;
+    let old = open(&e, &file, "alice").await;
+    let old_sid = old["sessionId"].as_str().unwrap();
+    let sibling = open(&e, &file, "alice").await;
+    assert!(sibling["profileHash"].as_str().unwrap().contains("~i"));
+    e.control(
+        "DELETE",
+        &format!("/v1/sessions/{}", sibling["sessionId"].as_str().unwrap()),
+        None,
+    )
+    .await;
+    let new = replacing(&e, &file, "alice", old_sid).await;
+    assert_eq!(new["profileHash"], old["profileHash"]);
+    assert!(e.rt.peek(old_sid).is_none());
+    assert!(e.rt.peek(new["sessionId"].as_str().unwrap()).is_some());
+    assert_eq!(beat(&e, old_sid, "alice").await["sessionLost"], true);
+}
+
+#[tokio::test]
+async fn replaces_an_unknown_sid_is_a_plain_open() {
+    let (e, file) = setup().await;
+    let s = replacing(&e, &file, "alice", "deadbeef").await;
+    assert!(e.rt.peek(s["sessionId"].as_str().unwrap()).is_some());
+}
+
+#[tokio::test]
+async fn replaces_another_owners_sid_leaves_it_alone() {
+    let (e, file) = setup().await;
+    let bob = open(&e, &file, "bob").await;
+    let bob_sid = bob["sessionId"].as_str().unwrap();
+    let s = replacing(&e, &file, "alice", bob_sid).await;
+    assert!(e.rt.peek(bob_sid).is_some());
+    assert!(e.rt.peek(s["sessionId"].as_str().unwrap()).is_some());
+    assert_eq!(beat(&e, bob_sid, "bob").await["sessionLost"], false);
+}
+
+#[tokio::test]
+async fn a_heartbeat_racing_a_replace_never_revives_the_old_sid() {
+    let (e, file) = setup().await;
+    for _ in 0..10 {
+        let old = open(&e, &file, "alice").await;
+        let old_sid = old["sessionId"].as_str().unwrap();
+        let (_, new) = tokio::join!(
+            beat(&e, old_sid, "alice"),
+            replacing(&e, &file, "alice", old_sid)
+        );
+        assert_eq!(beat(&e, old_sid, "alice").await["sessionLost"], true);
+        assert!(e.rt.peek(new["sessionId"].as_str().unwrap()).is_some());
+        e.control("POST", "/v1/revoke", Some(json!({ "ownerId": "alice" })))
+            .await;
+    }
+}

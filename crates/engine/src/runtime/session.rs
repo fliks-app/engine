@@ -151,8 +151,16 @@ impl Runtime {
         let owner = req.owner_id.clone();
         let file = req.decide.media.media_file_id;
         let mut evicted = None;
+        let mut replaced = None;
         let (session, orphans) = {
             let mut reg = self.reg.locked();
+            if let (Some(old), Some(_)) = (req.replaces.as_deref(), owner.as_ref())
+                && reg.sessions.get(old).is_some_and(|s| s.owner == owner)
+            {
+                reg.sessions.remove(old);
+                reg.tombstones.remove(old);
+                replaced = Some(old.to_string());
+            }
             // [ts:modules/streaming/live-session.service.ts:409-432]
             let sibling = reg.sessions.values().any(|s| {
                 s.owner == owner
@@ -211,6 +219,12 @@ impl Runtime {
         };
         if !orphans.is_empty() {
             tokio::spawn(kill_all(orphans));
+        }
+        if let Some(r) = replaced {
+            self.events.emit(EngineEvent::SessionEnded {
+                session_id: r,
+                reason: "replaced".into(),
+            });
         }
         if let Some(e) = evicted {
             self.events.emit(EngineEvent::SessionEnded {

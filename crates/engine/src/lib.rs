@@ -178,6 +178,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "subtitle-extract".into(),
                 "live".into(),
                 "intro-detect".into(),
+                "session-replaces".into(),
             ];
             features.extend(jobs::optional_features());
             features
