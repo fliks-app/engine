@@ -3600,6 +3600,10 @@
           },
           "url": {
             "type": "string"
+          },
+          "vetted": {
+            "type": "boolean",
+            "description": "Refuse loopback, link-local, private and other internal addresses, on every redirect hop\ntoo. The host sets it for provider-supplied URLs; admin-configured LAN sources leave it off."
           }
         }
       },

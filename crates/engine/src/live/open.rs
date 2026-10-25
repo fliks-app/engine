@@ -343,6 +343,12 @@ pub(super) async fn probe(
     rt: &Runtime,
     u: &fliks_engine_core::api::LiveUpstream,
 ) -> Option<LiveProbe> {
+    if u.vetted
+        && let Err(e) = super::vet::check(&u.url).await
+    {
+        tracing::warn!(url = u.url, "live probe refused: {e}");
+        return None;
+    }
     let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffprobe);
     cmd.args(core_live::probe_args(&u.url, &u.headers))

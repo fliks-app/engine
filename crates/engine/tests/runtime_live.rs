@@ -1186,3 +1186,38 @@ async fn direct_tees_one_upstream_and_packages_a_manifest() {
     assert_eq!(m["mode"], "remux");
     assert_eq!(conns.load(Ordering::SeqCst), before);
 }
+
+#[tokio::test]
+async fn a_vetted_upstream_refuses_internal_addresses() {
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let (up, _) = provider().await;
+    let named = "http://localhost:9/x".to_string();
+    let direct = json!({ "directPlay": true });
+    for (n, url) in [format!("{up}/live.ts"), named].into_iter().enumerate() {
+        let mut u = upstream(&url, 0);
+        u["vetted"] = json!(true);
+        let r = e
+            .control(
+                "POST",
+                "/v1/live",
+                Some(open_req(
+                    &format!("v{n}"),
+                    vec![u],
+                    direct.clone(),
+                    "alice",
+                    "t",
+                )),
+            )
+            .await;
+        assert_eq!(r.status, 503, "{url}");
+        let err = loop {
+            if let Some((_, Some(err))) =
+                attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await)
+            {
+                break err.to_string();
+            }
+        };
+        assert!(err.contains("Refused") || err.contains("internal"), "{err}");
+    }
+}
