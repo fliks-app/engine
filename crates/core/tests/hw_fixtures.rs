@@ -61,6 +61,10 @@ impl Runner for Replay {
         Outcome { ok, stdout, stderr }
     }
 
+    async fn write(&self, _path: &str, _bytes: &[u8]) -> bool {
+        true
+    }
+
     async fn remove(&self, _path: &str) {}
 }
 

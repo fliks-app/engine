@@ -45,6 +45,10 @@ impl Runner for ProcRunner {
         }
     }
 
+    async fn write(&self, path: &str, bytes: &[u8]) -> bool {
+        std::fs::write(path, bytes).is_ok()
+    }
+
     async fn remove(&self, path: &str) {
         let _ = std::fs::remove_file(path);
     }

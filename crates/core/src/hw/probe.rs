@@ -143,6 +143,8 @@ fn sample_encoder(c: DecodeCodec) -> (&'static str, &'static str) {
         DecodeCodec::Av1 => ("libsvtav1", "ivf"),
         DecodeCodec::Vp9 => ("libvpx-vp9", "ivf"),
         DecodeCodec::Mpeg2 => ("mpeg2video", "m2v"),
+        // No ffmpeg encoder: `decoder_sample_file` supplies the bytes.
+        DecodeCodec::Vc1 => ("", "vc1"),
     }
 }
 
@@ -152,6 +154,11 @@ pub fn decoder_sample_name(c: DecodeCodec, pid: u32) -> String {
         c.name(),
         sample_encoder(c).1
     )
+}
+
+/// A probe sample ffmpeg cannot encode: the bytes to write instead of running `decoder_sample_cmd`.
+pub fn decoder_sample_file(c: DecodeCodec) -> Option<&'static [u8]> {
+    (c == DecodeCodec::Vc1).then_some(include_bytes!("../../assets/probe.vc1"))
 }
 
 /// [ts:backend/src/modules/streaming/transcoding/codec/decoder-probe.ts:105-150]
@@ -182,6 +189,9 @@ pub fn decoder_sample_cmd(c: DecodeCodec, path: &str) -> Cmd {
 pub fn decoder_cmd(dec: &Decoder, d: &Device, sample: &str) -> Cmd {
     let mut a = strs(&["-hide_banner", "-loglevel", "error"]);
     a.extend(dec.input_args(d));
+    if dec.codec == Some(DecodeCodec::Vc1) {
+        a.extend(strs(&["-f", "vc1"]));
+    }
     a.extend(strs(&["-i", sample, "-frames:v", "1"]));
     if dec.gpu_output() {
         a.extend(strs(&["-vf", "hwdownload,format=nv12"]));

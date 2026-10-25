@@ -23,6 +23,7 @@ pub(crate) enum DecodeCodec {
     Av1,
     Vp9,
     Mpeg2,
+    Vc1,
 }
 
 impl DecodeCodec {
@@ -34,6 +35,7 @@ impl DecodeCodec {
             "av1" | "av01" => Some(Self::Av1),
             "vp9" | "vp09" => Some(Self::Vp9),
             "mpeg2video" | "mpeg2" => Some(Self::Mpeg2),
+            "vc1" => Some(Self::Vc1),
             _ => None,
         }
     }
@@ -46,12 +48,13 @@ impl DecodeCodec {
             Self::Av1 => "av1",
             Self::Vp9 => "vp9",
             Self::Mpeg2 => "mpeg2",
+            Self::Vc1 => "vc1",
         }
     }
 
     pub fn max_bit_depth(self) -> u32 {
         match self {
-            Self::H264 | Self::Mpeg2 => 8,
+            Self::H264 | Self::Mpeg2 | Self::Vc1 => 8,
             _ => 10,
         }
     }
@@ -204,7 +207,7 @@ impl Decoder {
     }
 }
 
-use DecodeCodec::{Av1, H264, Hevc, Mpeg2, Vp9};
+use DecodeCodec::{Av1, H264, Hevc, Mpeg2, Vc1, Vp9};
 use Kind as K;
 
 const fn dec(id: &'static str, codec: Option<DecodeCodec>, kind: Kind) -> Decoder {
@@ -218,21 +221,25 @@ pub(crate) const DECODERS: &[Decoder] = &[
     dec("av1_qsv_decode", Some(Av1), K::QsvVaapi),
     dec("vp9_qsv_decode", Some(Vp9), K::QsvVaapi),
     dec("mpeg2_qsv_decode", Some(Mpeg2), K::QsvVaapi),
+    dec("vc1_qsv_decode", Some(Vc1), K::QsvVaapi),
     dec("h264_vaapi_decode", Some(H264), K::Vaapi),
     dec("hevc_vaapi_decode", Some(Hevc), K::Vaapi),
     dec("av1_vaapi_decode", Some(Av1), K::Vaapi),
     dec("vp9_vaapi_decode", Some(Vp9), K::Vaapi),
     dec("mpeg2_vaapi_decode", Some(Mpeg2), K::Vaapi),
+    dec("vc1_vaapi_decode", Some(Vc1), K::Vaapi),
     dec("h264_cuda_decode", Some(H264), K::Cuda),
     dec("hevc_cuda_decode", Some(Hevc), K::Cuda),
     dec("av1_cuda_decode", Some(Av1), K::Cuda),
     dec("vp9_cuda_decode", Some(Vp9), K::Cuda),
     dec("mpeg2_cuda_decode", Some(Mpeg2), K::Cuda),
+    dec("vc1_cuda_decode", Some(Vc1), K::Cuda),
     dec("h264_d3d11va_decode", Some(H264), K::D3d11Cpu),
     dec("hevc_d3d11va_decode", Some(Hevc), K::D3d11Cpu),
     dec("av1_d3d11va_decode", Some(Av1), K::D3d11Cpu),
     dec("vp9_d3d11va_decode", Some(Vp9), K::D3d11Cpu),
     dec("mpeg2_d3d11va_decode", Some(Mpeg2), K::D3d11Cpu),
+    dec("vc1_d3d11va_decode", Some(Vc1), K::D3d11Cpu),
     dec("h264_videotoolbox_decode", Some(H264), K::Vt),
     dec("hevc_videotoolbox_decode", Some(Hevc), K::Vt),
     dec("av1_videotoolbox_decode", Some(Av1), K::Vt),
@@ -244,11 +251,13 @@ pub(crate) const DECODERS: &[Decoder] = &[
     dec("av1_qsv_d3d11_decode", Some(Av1), K::QsvD3d11),
     dec("vp9_qsv_d3d11_decode", Some(Vp9), K::QsvD3d11),
     dec("mpeg2_qsv_d3d11_decode", Some(Mpeg2), K::QsvD3d11),
+    dec("vc1_qsv_d3d11_decode", Some(Vc1), K::QsvD3d11),
     dec("h264_d3d11va_native_decode", Some(H264), K::D3d11Native),
     dec("hevc_d3d11va_native_decode", Some(Hevc), K::D3d11Native),
     dec("av1_d3d11va_native_decode", Some(Av1), K::D3d11Native),
     dec("vp9_d3d11va_native_decode", Some(Vp9), K::D3d11Native),
     dec("mpeg2_d3d11va_native_decode", Some(Mpeg2), K::D3d11Native),
+    dec("vc1_d3d11va_native_decode", Some(Vc1), K::D3d11Native),
 ];
 
 /// The decoder a QSV encode path uses for HEVC: D3D11 on Windows, VAAPI-backed elsewhere.
@@ -272,7 +281,7 @@ mod tests {
 
     #[test]
     fn every_codec_has_each_variant_the_pipeline_looks_up() {
-        for c in [H264, Hevc, Av1, Vp9, Mpeg2] {
+        for c in [H264, Hevc, Av1, Vp9, Mpeg2, Vc1] {
             for suffix in ["_qsv_decode", "_qsv_d3d11_decode", "_d3d11va_native_decode"] {
                 find(&format!("{}{suffix}", c.name()));
             }
@@ -283,6 +292,7 @@ mod tests {
     fn source_names_collapse_to_one_codec() {
         assert_eq!(DecodeCodec::from_source("MPEG2VIDEO"), Some(Mpeg2));
         assert_eq!(DecodeCodec::from_source("vp09"), Some(Vp9));
-        assert_eq!(DecodeCodec::from_source("vc1"), None);
+        assert_eq!(DecodeCodec::from_source("vc1"), Some(Vc1));
+        assert_eq!(DecodeCodec::from_source("wmv3"), None);
     }
 }
