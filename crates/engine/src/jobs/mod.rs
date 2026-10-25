@@ -441,21 +441,7 @@ impl Ctx {
 
     /// Fails below `streaming.jobMinFreeBytes` free under `dir` (created first).
     pub async fn check_disk(&self, dir: &Path) -> Result<(), String> {
-        let min = self
-            .rt
-            .current_config()
-            .streaming
-            .job_min_free_bytes
-            .unwrap_or(DEFAULT_MIN_FREE_BYTES);
-        let d = dir.to_path_buf();
-        let free = tokio::task::spawn_blocking(move || {
-            let _ = std::fs::create_dir_all(&d);
-            free_bytes(&d)
-        })
-        .await
-        .ok()
-        .flatten();
-        disk_verdict(free, min, dir)
+        self.rt.check_disk(dir).await
     }
 
     pub fn media_path(&self) -> String {
@@ -678,6 +664,26 @@ fn free_bytes(p: &Path) -> Option<u64> {
 #[cfg(not(any(unix, windows)))]
 fn free_bytes(_: &Path) -> Option<u64> {
     None
+}
+
+impl Runtime {
+    /// Fails below `streaming.jobMinFreeBytes` free under `dir` (created first): jobs and playback runs.
+    pub async fn check_disk(&self, dir: &Path) -> Result<(), String> {
+        let min = self
+            .current_config()
+            .streaming
+            .job_min_free_bytes
+            .unwrap_or(DEFAULT_MIN_FREE_BYTES);
+        let d = dir.to_path_buf();
+        let free = tokio::task::spawn_blocking(move || {
+            let _ = std::fs::create_dir_all(&d);
+            free_bytes(&d)
+        })
+        .await
+        .ok()
+        .flatten();
+        disk_verdict(free, min, dir)
+    }
 }
 
 type S = State<Arc<AppState>>;

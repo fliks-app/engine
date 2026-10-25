@@ -374,7 +374,15 @@ async fn respond(
         } => (path, job, waited_ms, cache_hit),
         Fetch::Retry => return retry(),
         Fetch::NotFound => return text(StatusCode::NOT_FOUND, "Segment not found"),
-        Fetch::Failed => return text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
+        Fetch::Failed => {
+            let dir = rt
+                .cache
+                .entry_dir(s.owner.as_deref(), s.media_file_id, &s.hash);
+            return match rt.check_disk(&dir).await {
+                Err(e) => text(StatusCode::SERVICE_UNAVAILABLE, &e),
+                Ok(()) => text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
+            };
+        }
     };
     // A restart can remove the file between the wait and the read.
     let Some((body, len)) = package(rt, &path, name, s, remux).await else {
