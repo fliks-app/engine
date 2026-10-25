@@ -5,6 +5,7 @@
 mod open;
 mod supervise;
 mod upstream;
+mod vet;
 
 pub use self::open::open;
 pub use self::supervise::shutdown;
@@ -12,6 +13,7 @@ pub use self::supervise::shutdown;
 use self::open::{has_video, probe};
 use self::supervise::{supervise, teardown, unregister};
 use self::upstream::{attempt, highest_segment, https, recover, stop_transport};
+use self::vet::Resolver;
 use crate::AppState;
 use crate::cache::Cache;
 use crate::lock::Locked;
@@ -80,7 +82,9 @@ pub struct Live {
     /// Key -> the in-flight start, so concurrent opens share one attempt and its outcome.
     opening: Mutex<HashMap<String, watch::Receiver<Outcome>>>,
     seq: AtomicU64,
-    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+    client: Client<HttpsConnector<HttpConnector<Resolver>>, Empty<Bytes>>,
+    /// Its resolver refuses internal addresses; used for `vetted` upstreams.
+    vetted_client: Client<HttpsConnector<HttpConnector<Resolver>>, Empty<Bytes>>,
 }
 
 impl Default for Live {
@@ -89,7 +93,8 @@ impl Default for Live {
             reg: Default::default(),
             opening: Default::default(),
             seq: AtomicU64::new(0),
-            client: Client::builder(TokioExecutor::new()).build(https()),
+            client: Client::builder(TokioExecutor::new()).build(https(false)),
+            vetted_client: Client::builder(TokioExecutor::new()).build(https(true)),
         }
     }
 }

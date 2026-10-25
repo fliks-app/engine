@@ -1,5 +1,6 @@
 //! The two transports of an upstream (packaged ffmpeg run, direct tee) and their failover.
 
+use super::vet::{self, Resolver};
 use super::{
     DIRECT_CONNECT_TIMEOUT, DIRECT_SNIFF, Direct, FIRST_SEGMENT_POLL, FIRST_SEGMENT_TIMEOUT,
     MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, probe,
@@ -22,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::Instant;
 
 /// http and https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them).
-pub(super) fn https() -> HttpsConnector<HttpConnector> {
+pub(super) fn https(vetted: bool) -> HttpsConnector<HttpConnector<Resolver>> {
     let tls = HttpsConnectorBuilder::new()
         .with_native_roots()
         .unwrap_or_else(|e| {
@@ -33,7 +34,9 @@ pub(super) fn https() -> HttpsConnector<HttpConnector> {
                 .with_no_client_auth();
             HttpsConnectorBuilder::new().with_tls_config(config)
         });
-    tls.https_or_http().enable_http1().build()
+    let mut http = HttpConnector::new_with_resolver(Resolver { vetted });
+    http.enforce_http(false);
+    tls.https_or_http().enable_http1().wrap_connector(http)
 }
 
 /// An error with its causes: hyper's own text hides a refused certificate.
@@ -111,6 +114,12 @@ async fn spawn_packaged(
         && let Some(p) = probe(rt, u).await
     {
         pipe.m.locked().probes[i] = Some(p);
+    }
+    if u.vetted
+        && let Err(e) = vet::check(&u.url).await
+    {
+        pipe.m.locked().last_error = Some(e);
+        return false;
     }
     let Some(caps) = rt.caps() else { return false };
     let dir = pipe.dir.clone().expect("packaged pipe");
@@ -241,7 +250,15 @@ async fn http_get(
 ) -> Result<hyper::Response<hyper::body::Incoming>, String> {
     let (ua, _, _) = core_live::split_headers(&u.headers);
     let mut url = u.url.clone();
+    let client = if u.vetted {
+        &rt.live.vetted_client
+    } else {
+        &rt.live.client
+    };
     for _ in 0..=MAX_REDIRECTS {
+        if u.vetted {
+            vet::check_literal(&url)?;
+        }
         let mut b = Request::get(&url).header(
             header::USER_AGENT,
             ua.as_deref()
@@ -256,7 +273,7 @@ async fn http_get(
             b = b.header(k, v);
         }
         let req = b.body(Empty::new()).map_err(|e| e.to_string())?;
-        let res = rt.live.client.request(req).await.map_err(|e| causes(&e))?;
+        let res = client.request(req).await.map_err(|e| causes(&e))?;
         let status = res.status();
         if status.is_redirection()
             && let Some(loc) = res
