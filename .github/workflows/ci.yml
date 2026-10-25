@@ -73,3 +73,27 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  e2e:
+    # The engine image's jellyfin-ffmpeg build (noble); the subtitle timestamps depend on the ffmpeg version.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      JELLYFIN_FFMPEG_VERSION: 8.1.2-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          # PR caches would evict main's from the repository's 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install jellyfin-ffmpeg and chromaprint
+        run: |
+          wget -q -O /tmp/jf.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_amd64.deb"
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /tmp/jf.deb libchromaprint-tools
+      - name: Real-ffmpeg tests (CPU only)
+        env:
+          ENGINE_E2E: '1'
+        run: |
+          FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe FPCALC_PATH=$(command -v fpcalc) \
+            cargo test -p fliks-engine --no-fail-fast --test runtime_e2e --test live_e2e --test runtime_sync
