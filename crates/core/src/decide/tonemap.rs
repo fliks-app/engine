@@ -1,6 +1,7 @@
 //! Tone-map path resolution and the effective encoder backend of a transcode.
-use super::codec::{Encoder, codec_name, normalise_source_codec, resolve_descriptor};
-use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo, VideoCodec};
+use super::codec::{Encoder, resolve_descriptor};
+use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo};
+use crate::hw::decoders::DecodeCodec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -107,7 +108,7 @@ pub struct Pipeline {
 /// QSV crop splice to VAAPI, CPU for a no-base DV tone-map without a bridge, registry CPU fallback.
 pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCaps) -> Pipeline {
     let hw = caps.hw_accel;
-    let codec = normalise_source_codec(c.source_video_codec);
+    let codec = DecodeCodec::from_source(c.source_video_codec);
     let path = resolve_tonemap_path(
         caps,
         c.algo,
@@ -121,7 +122,7 @@ pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCa
         codec.is_some_and(|k| {
             !caps
                 .disabled_decoders
-                .contains(&format!("{}{suffix}", codec_name(k)))
+                .contains(&format!("{}{suffix}", k.name()))
         })
     };
     let qsv_decoder_usable = hw == HwAccel::Qsv
@@ -131,11 +132,7 @@ pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCa
         } else {
             "_qsv_decode"
         });
-    let amf_max_depth = if codec == Some(VideoCodec::H264) {
-        8
-    } else {
-        10
-    };
+    let amf_max_depth = codec.map_or(10, DecodeCodec::max_bit_depth);
     let amf_opencl_available = hw == HwAccel::Amf
         && caps.probe("amfOpencl")
         && c.source_bit_depth <= amf_max_depth

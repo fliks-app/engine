@@ -42,9 +42,10 @@ None passes: `none`. The render node is `gpuRenderNode` when pinned, else `/dev/
 
 ## 3. Decoder probes (all descriptors, whatever the backend) `[ts:T/codec/decoder-probe.ts:33-100]`
 
-1. One sample per source codec (h264 `libx264`, hevc `libx265`, av1 `libsvtav1`; `-y`, 320x180, 1 frame, yuv420p, 10 s) at `<tmp>/fliks-decoder-probe-<codec>-<pid>.<ext>`. Sample missing (encoder absent): that codec's decoders are disabled.
+1. One sample per source codec (h264 `libx264`, hevc `libx265`, av1 `libsvtav1`, vp9 `libvpx-vp9`, mpeg2 `mpeg2video` as `.m2v`; `-y`, 320x180, 1 frame, yuv420p, 10 s) at `<tmp>/fliks-decoder-probe-<codec>-<pid>.<ext>`. Sample missing (encoder absent): that codec's decoders are disabled.
 2. Per decoder, `supports()` false (qsv-vaapi: not win32; D3D11 kinds: win32; videotoolbox: darwin) = disabled without a run. Else its input args + `-i <sample> -frames:v 1 [-vf hwdownload,format=nv12 when frames stay on the GPU] -f null -`, 10 s. The software decoder (`cpu`) uses the h264 sample.
-3. Samples are deleted afterwards. Decoder argv: `core/src/hw/decoders.rs` `[ts:T/codec/decoders/*.ts]`.
+3. VP9 and MPEG-2 have a descriptor per backend like the others (`vp9_vaapi_decode`, `mpeg2_cuda_decode`, ...); MPEG-2 is capped at 8 bit. VC-1 has none: no ffmpeg encoder makes a probe sample, and an unprobed decoder would be trusted blindly.
+4. Samples are deleted afterwards. Decoder argv: `core/src/hw/decoders.rs` `[ts:T/codec/decoders/*.ts]`.
 
 ## 4. Encoder probes `[ts:T/codec/encoder-probe.ts:88-185,247-310]`
 

@@ -1,7 +1,7 @@
 //! Decoder descriptors and the argv slice each puts before `-i`.
 //! [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:30-125]
 use super::device::Device;
-use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::api::{HwAccel, Platform};
 use crate::strs;
 
 /// Frame memory between decode and encode. [ts:backend/src/modules/streaming/transcoding/codec/decoders/types.ts:20]
@@ -13,6 +13,48 @@ pub enum Surface {
     Cuda,
     D3d11,
     Videotoolbox,
+}
+
+/// A source codec some decoder reads: the output codecs plus the legacy inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodeCodec {
+    H264,
+    Hevc,
+    Av1,
+    Vp9,
+    Mpeg2,
+}
+
+impl DecodeCodec {
+    /// ffprobe codec name, aliases collapsed.
+    pub fn from_source(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "h264" | "avc" | "avc1" => Some(Self::H264),
+            "hevc" | "h265" | "hvc1" | "hev1" => Some(Self::Hevc),
+            "av1" | "av01" => Some(Self::Av1),
+            "vp9" | "vp09" => Some(Self::Vp9),
+            "mpeg2video" | "mpeg2" => Some(Self::Mpeg2),
+            _ => None,
+        }
+    }
+
+    /// The prefix of every decoder id of this codec.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::H264 => "h264",
+            Self::Hevc => "hevc",
+            Self::Av1 => "av1",
+            Self::Vp9 => "vp9",
+            Self::Mpeg2 => "mpeg2",
+        }
+    }
+
+    pub fn max_bit_depth(self) -> u32 {
+        match self {
+            Self::H264 | Self::Mpeg2 => 8,
+            _ => 10,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -30,7 +72,7 @@ pub(crate) enum Kind {
 pub(crate) struct Decoder {
     pub id: &'static str,
     /// `None` is the software path, which decodes any codec.
-    pub codec: Option<VideoCodec>,
+    pub codec: Option<DecodeCodec>,
     pub kind: Kind,
 }
 
@@ -66,11 +108,7 @@ impl Decoder {
     }
 
     pub fn max_bit_depth(&self) -> u32 {
-        if self.codec == Some(VideoCodec::H264) {
-            8
-        } else {
-            10
-        }
+        self.codec.map_or(10, DecodeCodec::max_bit_depth)
     }
 
     /// Where decoded frames land; VideoToolbox reports CPU, the argv opts into its surface.
@@ -156,7 +194,7 @@ impl Decoder {
             Kind::Vt => {
                 let mut a = strs(&["-hwaccel", "videotoolbox"]);
                 // ffmpeg defaults AV1 to libdav1d, which ignores the hwaccel.
-                if self.codec == Some(VideoCodec::Av1) {
+                if self.codec == Some(DecodeCodec::Av1) {
                     a.extend(strs(&["-c:v", "av1"]));
                 }
                 a.push("-noautorotate".into());
@@ -166,10 +204,10 @@ impl Decoder {
     }
 }
 
+use DecodeCodec::{Av1, H264, Hevc, Mpeg2, Vp9};
 use Kind as K;
-use VideoCodec::{Av1, H264, Hevc};
 
-const fn dec(id: &'static str, codec: Option<VideoCodec>, kind: Kind) -> Decoder {
+const fn dec(id: &'static str, codec: Option<DecodeCodec>, kind: Kind) -> Decoder {
     Decoder { id, codec, kind }
 }
 
@@ -178,25 +216,39 @@ pub(crate) const DECODERS: &[Decoder] = &[
     dec("h264_qsv_decode", Some(H264), K::QsvVaapi),
     dec("hevc_qsv_decode", Some(Hevc), K::QsvVaapi),
     dec("av1_qsv_decode", Some(Av1), K::QsvVaapi),
+    dec("vp9_qsv_decode", Some(Vp9), K::QsvVaapi),
+    dec("mpeg2_qsv_decode", Some(Mpeg2), K::QsvVaapi),
     dec("h264_vaapi_decode", Some(H264), K::Vaapi),
     dec("hevc_vaapi_decode", Some(Hevc), K::Vaapi),
     dec("av1_vaapi_decode", Some(Av1), K::Vaapi),
+    dec("vp9_vaapi_decode", Some(Vp9), K::Vaapi),
+    dec("mpeg2_vaapi_decode", Some(Mpeg2), K::Vaapi),
     dec("h264_cuda_decode", Some(H264), K::Cuda),
     dec("hevc_cuda_decode", Some(Hevc), K::Cuda),
     dec("av1_cuda_decode", Some(Av1), K::Cuda),
+    dec("vp9_cuda_decode", Some(Vp9), K::Cuda),
+    dec("mpeg2_cuda_decode", Some(Mpeg2), K::Cuda),
     dec("h264_d3d11va_decode", Some(H264), K::D3d11Cpu),
     dec("hevc_d3d11va_decode", Some(Hevc), K::D3d11Cpu),
     dec("av1_d3d11va_decode", Some(Av1), K::D3d11Cpu),
+    dec("vp9_d3d11va_decode", Some(Vp9), K::D3d11Cpu),
+    dec("mpeg2_d3d11va_decode", Some(Mpeg2), K::D3d11Cpu),
     dec("h264_videotoolbox_decode", Some(H264), K::Vt),
     dec("hevc_videotoolbox_decode", Some(Hevc), K::Vt),
     dec("av1_videotoolbox_decode", Some(Av1), K::Vt),
+    dec("vp9_videotoolbox_decode", Some(Vp9), K::Vt),
+    dec("mpeg2_videotoolbox_decode", Some(Mpeg2), K::Vt),
     dec("cpu", None, K::Cpu),
     dec("h264_qsv_d3d11_decode", Some(H264), K::QsvD3d11),
     dec("hevc_qsv_d3d11_decode", Some(Hevc), K::QsvD3d11),
     dec("av1_qsv_d3d11_decode", Some(Av1), K::QsvD3d11),
+    dec("vp9_qsv_d3d11_decode", Some(Vp9), K::QsvD3d11),
+    dec("mpeg2_qsv_d3d11_decode", Some(Mpeg2), K::QsvD3d11),
     dec("h264_d3d11va_native_decode", Some(H264), K::D3d11Native),
     dec("hevc_d3d11va_native_decode", Some(Hevc), K::D3d11Native),
     dec("av1_d3d11va_native_decode", Some(Av1), K::D3d11Native),
+    dec("vp9_d3d11va_native_decode", Some(Vp9), K::D3d11Native),
+    dec("mpeg2_d3d11va_native_decode", Some(Mpeg2), K::D3d11Native),
 ];
 
 /// The decoder a QSV encode path uses for HEVC: D3D11 on Windows, VAAPI-backed elsewhere.
@@ -212,4 +264,25 @@ pub(super) fn qsv_native_hevc(p: Platform) -> &'static Decoder {
 
 pub(crate) fn find(id: &str) -> &'static Decoder {
     DECODERS.iter().find(|d| d.id == id).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_codec_has_each_variant_the_pipeline_looks_up() {
+        for c in [H264, Hevc, Av1, Vp9, Mpeg2] {
+            for suffix in ["_qsv_decode", "_qsv_d3d11_decode", "_d3d11va_native_decode"] {
+                find(&format!("{}{suffix}", c.name()));
+            }
+        }
+    }
+
+    #[test]
+    fn source_names_collapse_to_one_codec() {
+        assert_eq!(DecodeCodec::from_source("MPEG2VIDEO"), Some(Mpeg2));
+        assert_eq!(DecodeCodec::from_source("vp09"), Some(Vp9));
+        assert_eq!(DecodeCodec::from_source("vc1"), None);
+    }
 }

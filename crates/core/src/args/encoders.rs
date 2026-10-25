@@ -575,25 +575,33 @@ fn vaapi_filter(i: &EncoderInput, ten: bool) -> Result<String, String> {
     if !ten && !f.tonemap_vulkan.is_empty() {
         return Ok(f.tonemap_vulkan.clone());
     }
+    // A CPU decode uploads its frames first.
+    let head = if i.input_surface == Surface::Cpu {
+        let up = if ten || !f.tonemap_vaapi.is_empty() || !f.tonemap_opencl.is_empty() {
+            "p010le"
+        } else {
+            "nv12"
+        };
+        format!("{}format={up},hwupload,", f.cpu_crop_prefix)
+    } else {
+        f.hw_crop_prefix.clone()
+    };
     if !ten && !f.tonemap_vaapi.is_empty() {
         return Ok(format!(
-            "{}scale_vaapi=w={w}:h=-2:extra_hw_frames=24{}{burn}",
-            f.hw_crop_prefix, f.tonemap_vaapi
+            "{head}scale_vaapi=w={w}:h=-2:extra_hw_frames=24{}{burn}",
+            f.tonemap_vaapi
         ));
     }
     if !f.tonemap_opencl.is_empty() {
         return Ok(format!(
-            "{}scale_vaapi=w={w}:h=-2:extra_hw_frames=24{},hwmap=derive_device=vaapi:mode=write:reverse=1,format=vaapi{burn}",
-            f.hw_crop_prefix, f.tonemap_opencl
+            "{head}scale_vaapi=w={w}:h=-2:extra_hw_frames=24{},hwmap=derive_device=vaapi:mode=write:reverse=1,format=vaapi{burn}",
+            f.tonemap_opencl
         ));
     }
     if ten && i.tonemap {
         return Err("vaapiScaleFilter10bit: tonemap requested with no opencl chain".into());
     }
-    Ok(format!(
-        "{}scale_vaapi=w={w}:h=-2:format={fmt}{burn}",
-        f.hw_crop_prefix
-    ))
+    Ok(format!("{head}scale_vaapi=w={w}:h=-2:format={fmt}{burn}"))
 }
 
 /// Whether the NVENC chain ends on a CUDA surface. [ts:backend/src/modules/streaming/transcoding/codec/encoders/helpers/nvenc-filters.ts:7-8]

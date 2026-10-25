@@ -1,8 +1,8 @@
 //! The ffmpeg commands of the boot detection, with the timeouts the TS gives each.
 use super::Encoder;
-use super::decoders::{self, Decoder};
+use super::decoders::{self, DecodeCodec, Decoder};
 use super::device::Device;
-use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::api::{HwAccel, Platform};
 use crate::strs;
 
 /// One ffmpeg invocation: argv after the binary, and the kill deadline.
@@ -136,24 +136,26 @@ pub fn encoder_cmd(e: &Encoder, d: &Device) -> Cmd {
 }
 
 /// Software encoder for the one-frame bitstream each decoder probe decodes.
-fn sample_encoder(c: VideoCodec) -> (&'static str, &'static str) {
+fn sample_encoder(c: DecodeCodec) -> (&'static str, &'static str) {
     match c {
-        VideoCodec::H264 => ("libx264", "h264"),
-        VideoCodec::Hevc => ("libx265", "hevc"),
-        VideoCodec::Av1 => ("libsvtav1", "ivf"),
+        DecodeCodec::H264 => ("libx264", "h264"),
+        DecodeCodec::Hevc => ("libx265", "hevc"),
+        DecodeCodec::Av1 => ("libsvtav1", "ivf"),
+        DecodeCodec::Vp9 => ("libvpx-vp9", "ivf"),
+        DecodeCodec::Mpeg2 => ("mpeg2video", "m2v"),
     }
 }
 
-pub fn decoder_sample_name(c: VideoCodec, pid: u32) -> String {
+pub fn decoder_sample_name(c: DecodeCodec, pid: u32) -> String {
     format!(
         "fliks-decoder-probe-{}-{pid}.{}",
-        super::codec_str(c),
+        c.name(),
         sample_encoder(c).1
     )
 }
 
 /// [ts:backend/src/modules/streaming/transcoding/codec/decoder-probe.ts:105-150]
-pub fn decoder_sample_cmd(c: VideoCodec, path: &str) -> Cmd {
+pub fn decoder_sample_cmd(c: DecodeCodec, path: &str) -> Cmd {
     cmd(
         strs(&[
             "-hide_banner",
