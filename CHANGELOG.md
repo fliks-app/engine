@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/fliks-app/engine/compare/v1.7.0...v1.7.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **decide:** serve the source when a requested eco rung saves nothing ([#138](https://github.com/fliks-app/engine/issues/138)) ([499701d](https://github.com/fliks-app/engine/commit/499701d384db04c4aedafa37bf4773a276da0f71))
+
 ## [1.7.0](https://github.com/fliks-app/engine/compare/v1.6.1...v1.7.0) (2026-10-26)
 
 
