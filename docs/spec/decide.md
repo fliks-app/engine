@@ -123,15 +123,16 @@ Gates, in order (each also clears `canDirectPlay`):
 | 1 | `VideoHdrNotSupported` | `(isSourceHdr && !clientCanPresentDynamicRange) || !dvCopyAllowed`, and `runsTonemapFilter`, only once per session. Message `HDR → SDR (tone mapping {dvLabel})`, or `{dvLabel} → HDR10 (tone mapping)` when `dvNoBaseHdr10`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:436-447,519-527]` |
 | 2 | `SubtitleBurnIn` | `burnInSubtitleId` truthy. `[ts:backend/src/modules/streaming/stream-builder.service.ts:528-536]` |
 | 3 | `VideoCrop` | `source.crop` set (needs `autoCropEnabled`) and `!cropsBlackBarsLocally`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:538-546]` |
-| 4 | `VideoDolbyVisionP7NotSupported` | `dv.profile == 7 && 7 not in dvProfiles && copyableIgnoringGates`; always clears DirectPlay even when the reason is skipped. `[ts:backend/src/modules/streaming/stream-builder.service.ts:633-642]` |
-| 5 | `ClientRequiresHls` | `supportsDirectPlay == false` and DirectPlay still possible. `[ts:backend/src/modules/streaming/stream-builder.service.ts:645-651]` |
-| 6 | `ClientNeedsHlsSubtitles` | `needsHlsSubtitles == true` and DirectPlay still possible. `[ts:backend/src/modules/streaming/stream-builder.service.ts:653-661]` |
-| 7 | `ClientCannotSwitchAudio` | DirectPlay still possible and `((pickedAudio != 0 && unreachable) || remuxForSwitching)`; `unreachable = switchesDirectPlayAudio == false || (dedupesAudioByLanguage && first track with the picked language != pickedAudio)`; `remuxForSwitching = switchesDirectPlayAudio == false && audio.len > 1 && canCopyVideo`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:663-678]` |
-| 8 | (none) | `rejectCopy == true` clears DirectPlay silently. `[ts:backend/src/modules/streaming/stream-builder.service.ts:679]` |
-| 9 | `VideoAbr` | `forceLadder && autoOnLadder`; clears DirectPlay. `[ts:backend/src/modules/streaming/stream-builder.service.ts:680-691]` |
-| 10 | `VideoQualityReduced` | `forceLadder && !autoOnLadder` and the requested name matches a ladder rung exactly. `[ts:backend/src/modules/streaming/stream-builder.service.ts:699-707]` |
+| 4 | `VideoInterlaced` | The video stream has a `field_order` (interlaced); a deviation, no `[ts:]` counterpart. |
+| 5 | `VideoDolbyVisionP7NotSupported` | `dv.profile == 7 && 7 not in dvProfiles && copyableIgnoringGates`; always clears DirectPlay even when the reason is skipped. `[ts:backend/src/modules/streaming/stream-builder.service.ts:633-642]` |
+| 6 | `ClientRequiresHls` | `supportsDirectPlay == false` and DirectPlay still possible. `[ts:backend/src/modules/streaming/stream-builder.service.ts:645-651]` |
+| 7 | `ClientNeedsHlsSubtitles` | `needsHlsSubtitles == true` and DirectPlay still possible. `[ts:backend/src/modules/streaming/stream-builder.service.ts:653-661]` |
+| 8 | `ClientCannotSwitchAudio` | DirectPlay still possible and `((pickedAudio != 0 && unreachable) || remuxForSwitching)`; `unreachable = switchesDirectPlayAudio == false || (dedupesAudioByLanguage && first track with the picked language != pickedAudio)`; `remuxForSwitching = switchesDirectPlayAudio == false && audio.len > 1 && canCopyVideo`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:663-678]` |
+| 9 | (none) | `rejectCopy == true` clears DirectPlay silently. `[ts:backend/src/modules/streaming/stream-builder.service.ts:679]` |
+| 10 | `VideoAbr` | `forceLadder && autoOnLadder`; clears DirectPlay. `[ts:backend/src/modules/streaming/stream-builder.service.ts:680-691]` |
+| 11 | `VideoQualityReduced` | `forceLadder && !autoOnLadder` and the requested name matches a ladder rung exactly. `[ts:backend/src/modules/streaming/stream-builder.service.ts:699-707]` |
 
-Gates 4 to 10 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (section 7), computed just before gate 4. Gate 1 to 3 come before them in the code.
+Gates 5 to 11 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (section 7), computed just before gate 5. Gates 1 to 4 come before them in the code.
 
 ## 7. Quality routing and copy eligibility
 
@@ -161,7 +162,7 @@ Gates 4 to 10 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (se
 
 ### 7.3 Copy eligibility
 
-- `sourceCopyable = videoSupported && videoConditionsMet && dvCopyAllowed && (!isSourceHdr || clientCanPresentDynamicRange) && !needsBurnIn && (!needsCrop || cropsBlackBarsLocally)`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:602-608]`
+- `sourceCopyable = videoSupported && videoConditionsMet && dvCopyAllowed && (!isSourceHdr || clientCanPresentDynamicRange) && !needsBurnIn && (!needsCrop || cropsBlackBarsLocally) && !needsDeinterlace`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:602-608]`
 - `copyableIgnoringGates = sourceCopyable && !forceLadder`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:613]`
 - `canCopyVideo = copyableIgnoringGates && dvRemuxCopyAllowed && no active copy gate`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:627-628]`
 
@@ -308,7 +309,7 @@ Context: `hwAccel = hostCaps.hwAccel`, `crop = needsCrop` (the raw `source.crop`
 
 ## 12. Reason order and message summary
 
-Order in `transcodeReasons` (every flag at most once, except where noted): tryDirectPlay flags (5) -> `VideoHdrNotSupported` -> `SubtitleBurnIn` -> `VideoCrop` -> `VideoDolbyVisionP7NotSupported` -> `ClientRequiresHls` -> `ClientNeedsHlsSubtitles` -> `ClientCannotSwitchAudio` -> `VideoAbr` -> `VideoQualityReduced` -> (non-DirectPlay) `MuxNotSupported` -> `ClientRejectedCopy` -> picked-track audio flags -> (DirectStream) `ContainerNotSupported` if absent / (Transcode) `VideoHdrNotSupported` if absent. `[ts:backend/src/modules/streaming/stream-builder.service.ts:436-447,519-707,722-728,816-819,832,891]`
+Order in `transcodeReasons` (every flag at most once, except where noted): tryDirectPlay flags (5) -> `VideoHdrNotSupported` -> `SubtitleBurnIn` -> `VideoCrop` -> `VideoInterlaced` -> `VideoDolbyVisionP7NotSupported` -> `ClientRequiresHls` -> `ClientNeedsHlsSubtitles` -> `ClientCannotSwitchAudio` -> `VideoAbr` -> `VideoQualityReduced` -> (non-DirectPlay) `MuxNotSupported` -> `ClientRejectedCopy` -> picked-track audio flags -> (DirectStream) `ContainerNotSupported` if absent / (Transcode) `VideoHdrNotSupported` if absent. `[ts:backend/src/modules/streaming/stream-builder.service.ts:436-447,519-707,722-728,816-819,832,891]`
 - Messages are free text for display; fixtures pin them, so port them verbatim from the cited lines (all in `stream-builder.service.ts`). Substitutions: `Level {l} > max {m}`, `Video profile "{p}" not supported`, `{d} bit > max {m} bit`, `Resolution {w}x{h} > max {mw ?? ?}x{mh ?? ?}`, `Codec "{c}" not supported`, `Container "{c}" not supported`, `Reduced-quality rung selected ({requestedQuality})`.
 
 ## 13. Known TS quirks the port must reproduce

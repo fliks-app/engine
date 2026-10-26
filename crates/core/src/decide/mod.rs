@@ -202,6 +202,12 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
         dp.can_direct_play = false;
         reasons.push(reason("VideoCrop", "Removing black bars (crop)"));
     }
+    // No platform documents deinterlacing an interlaced bitstream it is handed as-is.
+    let needs_deinterlace = v.is_some_and(|v| v.field_order.is_some());
+    if needs_deinterlace {
+        dp.can_direct_play = false;
+        reasons.push(reason("VideoInterlaced", "Deinterlacing"));
+    }
 
     // Quality routing: the source rung is Direct Play / remux; a lower explicit rung or ABR-on-auto
     // routes to the transcode ladder.
@@ -237,7 +243,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
         && dv_copy_allowed
         && (!is_source_hdr || client_can_present_dynamic_range)
         && !needs_burn_in
-        && (!needs_crop || client_crops_black_bars);
+        && (!needs_crop || client_crops_black_bars)
+        && !needs_deinterlace;
     let copyable_ignoring_gates = source_copyable && !force_ladder;
     let copy_gates = [
         (
