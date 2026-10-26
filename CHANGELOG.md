@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/fliks-app/engine/compare/v1.6.1...v1.7.0) (2026-10-26)
+
+
+### Features
+
+* **decide:** transcode interlaced sources ([#134](https://github.com/fliks-app/engine/issues/134)) ([d111af5](https://github.com/fliks-app/engine/commit/d111af50f783507e5d51b2017e0cda58a8419b5d))
+
 ## [1.6.1](https://github.com/fliks-app/engine/compare/v1.6.0...v1.6.1) (2026-10-25)
 
 
