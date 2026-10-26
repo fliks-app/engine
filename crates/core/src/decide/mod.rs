@@ -25,7 +25,7 @@ use audio::{
 use codec::{SourceForSelector, normalise_source_codec, pick_primary_variant};
 use direct_play::try_direct_play;
 pub use estimate::estimate_sizes;
-use qualities::{build_quality_list, transcode_bitrate_by_quality};
+use qualities::{build_quality_list, eco_reduces_video, transcode_bitrate_by_quality};
 use timeline::{
     VideoCut, frame_seconds_of, last_video_segment_start, parse_source_fps, remux_grid_boundaries,
 };
@@ -119,6 +119,7 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
         device,
         caps,
     );
+    let target_codec = codec::codec_name(selected_variant.codec);
     let use_hdr_ladder = selected_variant.hdr.is_some();
     let dv_no_base_hdr10 = no_base && selected_variant.hdr == Some(HdrFormat::Hdr10);
     // Copy paths never tone-map; a re-encode that cannot keep the HDR does.
@@ -222,8 +223,11 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
         .filter(|r| profile_fits_source(r, source.width, source.height))
         .copied()
         .collect();
+    // An eco rung that saves nothing on this source is served as the source, like the menu hides it.
     let explicit_rung: Option<&Rung> = match requested {
-        Some(name) if !wants_source_rung => resolve_rung(name, &fitting),
+        Some(name) if !wants_source_rung => resolve_rung(name, &fitting).filter(|r| {
+            !is_eco(r.name) || eco_reduces_video(r, &source, &fitting, target_codec, has_audio)
+        }),
         _ => None,
     };
     let negotiated_quality = explicit_rung.map_or("auto", |r| r.name);
@@ -329,8 +333,6 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
 
     let token = sel.token_param.as_deref().unwrap_or("");
     let id = req.media.media_file_id;
-    let video_codec_out = selected_variant.codec;
-    let target_codec = codec::codec_name(video_codec_out);
 
     if dp.can_direct_play {
         let copies: Vec<TrackDecision> = audio_streams

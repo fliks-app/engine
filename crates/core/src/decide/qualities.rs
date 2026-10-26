@@ -52,6 +52,46 @@ fn display_label(name: &str) -> String {
     }
 }
 
+/// The source's total bitrate, 0 when unknown.
+fn source_total_bps(source: &PlaybackSource) -> f64 {
+    source.format_bit_rate.map(f64::from).unwrap_or_else(|| {
+        f64::from(source.video_bit_rate.unwrap_or(0))
+            + f64::from(source.audio_bit_rate.unwrap_or(0))
+    })
+}
+
+/// An eco rung is only worth a forced re-encode when it shrinks the video itself; compares
+/// totals when the source video bitrate is unknown. `fitting`: the rungs that fit the source.
+pub fn eco_reduces_video(
+    rung: &Rung,
+    source: &PlaybackSource,
+    fitting: &[Rung],
+    target_codec: &str,
+    has_audio: bool,
+) -> bool {
+    let rung_ctx = ctx(source, target_codec);
+    let total_of = |r: &Rung| {
+        capped_rung_video_bitrate_bps(r, &rung_ctx) + if has_audio { r.audio_bps } else { 0.0 }
+    };
+    let source_video_bps = resolve_source_video_bitrate_bps(
+        source.video_bit_rate.map(f64::from),
+        source.format_bit_rate.map(f64::from),
+        f64::from(source.audio_bit_rate.unwrap_or(0)),
+    );
+    match source_video_bps.filter(|b| *b > 0.0) {
+        Some(bps) => capped_rung_video_bitrate_bps(rung, &rung_ctx) < bps,
+        None => {
+            let source_total = source_total_bps(source);
+            let saving_ref = if source_total > 0.0 {
+                source_total
+            } else {
+                total_of(top_non_eco(fitting))
+            };
+            total_of(rung) < saving_ref
+        }
+    }
+}
+
 /// The server-authoritative quality list: the ladder rungs that fit the source, the top one
 /// collapsing into `original` when the video is copied, plus the eco rungs that really reduce it.
 pub fn build_quality_list(
@@ -63,10 +103,7 @@ pub fn build_quality_list(
     has_audio: bool,
 ) -> Vec<QualityOption> {
     let rung_ctx = ctx(source, target_codec);
-    let source_total = source.format_bit_rate.map(f64::from).unwrap_or_else(|| {
-        f64::from(source.video_bit_rate.unwrap_or(0))
-            + f64::from(source.audio_bit_rate.unwrap_or(0))
-    });
+    let source_total = source_total_bps(source);
     let mut available: Vec<Rung> = ladder
         .iter()
         .copied()
@@ -104,24 +141,8 @@ pub fn build_quality_list(
         entries.push((r.max_height, option));
     }
 
-    // An eco rung is only worth a forced re-encode when it shrinks the video itself; compare
-    // totals when the source video bitrate is unknown.
-    let source_video_bps = resolve_source_video_bitrate_bps(
-        source.video_bit_rate.map(f64::from),
-        source.format_bit_rate.map(f64::from),
-        f64::from(source.audio_bit_rate.unwrap_or(0)),
-    );
-    let saving_ref = if source_total > 0.0 {
-        source_total
-    } else {
-        total_of(&top)
-    };
     for r in available.iter().filter(|r| is_eco(r.name)) {
-        let reduces_video = match source_video_bps.filter(|b| *b > 0.0) {
-            Some(bps) => capped_rung_video_bitrate_bps(r, &rung_ctx) < bps,
-            None => total_of(r) < saving_ref,
-        };
-        if reduces_video {
+        if eco_reduces_video(r, source, &available, target_codec, has_audio) {
             entries.push((r.max_height, rung_option(r, total_of(r), Some(true))));
         }
     }
