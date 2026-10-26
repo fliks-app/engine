@@ -9,6 +9,8 @@ on:
 
 jobs:
   commitlint:
+    # Dependabot bodies carry release notes; the squash message is linted on push.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
