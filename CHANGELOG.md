@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.3](https://github.com/fliks-app/engine/compare/v1.7.2...v1.7.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **decide:** direct play a sample entry only for a client listing it ([#144](https://github.com/fliks-app/engine/issues/144)) ([91632db](https://github.com/fliks-app/engine/commit/91632db5566eaf0de43922ab70dd4698c77dd301))
+* **runtime:** ask the host to retry an open that arrives before its config ([#142](https://github.com/fliks-app/engine/issues/142)) ([d3a08fa](https://github.com/fliks-app/engine/commit/d3a08faf8755614ef7e5098686f101ffcb864831))
+
 ## [1.7.2](https://github.com/fliks-app/engine/compare/v1.7.1...v1.7.2) (2026-10-28)
 
 
