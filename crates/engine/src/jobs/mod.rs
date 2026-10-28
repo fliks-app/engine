@@ -13,7 +13,6 @@ use crate::AppState;
 use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes, background};
 use crate::runtime::{Runtime, now_ms};
-use crate::slots::BackgroundSlot;
 use axum::{
     Json,
     extract::{Path as UrlPath, State},
@@ -63,6 +62,8 @@ pub struct BgJob {
     dedupe: String,
     created_ms: i64,
     cancel: watch::Sender<bool>,
+    /// A session open waits on it: past the queue, on a playback slot, never preempted.
+    urgent: watch::Sender<bool>,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
     activity: AtomicU64,
     m: Mutex<JobMut>,
@@ -197,49 +198,95 @@ pub fn optional_features() -> Vec<String> {
 
 /// Queues a job, or answers the in-flight one of an identical request.
 pub fn submit(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
+    submit_as(rt, req, false)
+}
+
+/// `submit` for work a session open waits on: the job, or the identical one in flight, runs at
+/// once on a playback slot.
+pub fn submit_urgent(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, String> {
+    submit_as(rt, req, true)
+}
+
+fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String, String> {
     if !Path::new(&req.media.path).is_absolute() {
         return Err("media.path must be absolute".into());
     }
     validate(&req.kind)?;
     let dedupe = serde_json::to_string(&(&req.kind, &req.media)).unwrap_or_default();
-    let id = {
+    let (id, now) = {
         let mut q = rt.jobs.q.locked();
-        if let Some(j) = q.open.get(&dedupe).and_then(|s| q.all.get(s))
+        if let Some(j) = q.open.get(&dedupe).and_then(|s| q.all.get(s)).cloned()
             && !j.base_state().ended()
         {
-            return Ok(j.id.clone());
+            if !urgent {
+                return Ok(j.id.clone());
+            }
+            j.urgent.send_replace(true);
+            let now = q.waiting.remove(&(j.priority(), j.seq)).is_some() && begin(&mut q, &j);
+            (j.id.clone(), now.then_some(j))
+        } else {
+            let j = queue(&mut q, req, dedupe, urgent);
+            let now = urgent && begin(&mut q, &j);
+            if !now {
+                q.waiting.insert((j.priority(), j.seq), j.clone());
+            }
+            (j.id.clone(), now.then_some(j))
         }
-        let seq = q.next_seq;
-        q.next_seq += 1;
-        let j = Arc::new(BgJob {
-            id: crate::random_hex(8),
-            req,
-            seq,
-            dedupe: dedupe.clone(),
-            created_ms: now_ms(),
-            cancel: watch::channel(false).0,
-            activity: AtomicU64::new(0),
-            m: Mutex::new(JobMut {
-                state: BgJobState::Queued,
-                pct: 0.0,
-                started_ms: None,
-                ended_ms: None,
-                result: None,
-                error: None,
-                runs: 0,
-                paused_runs: 0,
-                last_progress: None,
-            }),
-            task: Mutex::new(None),
-        });
-        q.all.insert(seq, j.clone());
-        q.by_id.insert(j.id.clone(), seq);
-        q.open.insert(dedupe, seq);
-        q.waiting.insert((j.priority(), seq), j.clone());
-        j.id.clone()
     };
+    if let Some(j) = now {
+        launch(rt, j);
+    }
     pump(rt);
     Ok(id)
+}
+
+/// A new job, indexed but neither waiting nor started.
+fn queue(q: &mut Queue, req: JobRequest, dedupe: String, urgent: bool) -> Arc<BgJob> {
+    let seq = q.next_seq;
+    q.next_seq += 1;
+    let j = Arc::new(BgJob {
+        id: crate::random_hex(8),
+        req,
+        seq,
+        dedupe: dedupe.clone(),
+        created_ms: now_ms(),
+        cancel: watch::channel(false).0,
+        urgent: watch::channel(urgent).0,
+        activity: AtomicU64::new(0),
+        m: Mutex::new(JobMut {
+            state: BgJobState::Queued,
+            pct: 0.0,
+            started_ms: None,
+            ended_ms: None,
+            result: None,
+            error: None,
+            runs: 0,
+            paused_runs: 0,
+            last_progress: None,
+        }),
+        task: Mutex::new(None),
+    });
+    q.all.insert(seq, j.clone());
+    q.by_id.insert(j.id.clone(), seq);
+    q.open.insert(dedupe, seq);
+    j
+}
+
+/// Marks a queued job running; false when it already left the queue.
+fn begin(q: &mut Queue, j: &BgJob) -> bool {
+    let mut m = j.m.locked();
+    if m.state != BgJobState::Queued {
+        return false;
+    }
+    m.state = BgJobState::Running;
+    m.started_ms = Some(now_ms());
+    q.running += 1;
+    true
+}
+
+fn launch(rt: &Arc<Runtime>, j: Arc<BgJob>) {
+    let task = tokio::spawn(run(rt.clone(), j.clone()));
+    *j.task.locked() = Some(task);
 }
 
 /// Starts queued jobs by priority, then age, while fewer than `MAX_RUNNING` run.
@@ -251,21 +298,14 @@ fn pump(rt: &Arc<Runtime>) {
             let Some((_, j)) = q.waiting.pop_first() else {
                 break;
             };
-            let mut m = j.m.locked();
-            if m.state != BgJobState::Queued {
-                continue;
+            if begin(&mut q, &j) {
+                picked.push(j);
             }
-            m.state = BgJobState::Running;
-            m.started_ms = Some(now_ms());
-            drop(m);
-            q.running += 1;
-            picked.push(j);
         }
         picked
     };
     for j in start {
-        let task = tokio::spawn(run(rt.clone(), j.clone()));
-        *j.task.locked() = Some(task);
+        launch(rt, j);
     }
 }
 
@@ -467,8 +507,8 @@ impl Ctx {
         .await?
     }
 
-    /// Runs `cmds` as one unit on one background slot; `work` drives them, a watchdog verdict,
-    /// the unpaused-time timeout or a cancel stops them all.
+    /// Runs `cmds` as one unit on one slot (background, playback when urgent); `work` drives them,
+    /// a watchdog verdict, the unpaused-time timeout or a cancel stops them all.
     pub async fn pipeline<T, F, Fut>(
         &self,
         timeout_ms: u64,
@@ -480,13 +520,24 @@ impl Ctx {
         Fut: Future<Output = T>,
     {
         let mut cancel = self.job.cancel.subscribe();
-        let mut slot = tokio::select! {
-            s = self.rt.slots.background(self.job.priority()) => s,
+        let mut urgent = self.job.urgent.subscribe();
+        let (_unpreempted, unpreempted) = watch::channel(false);
+        // An urgent job's slot never waits nor is preempted, and its runs keep normal priority.
+        let (_background, playback, mut preempted) = tokio::select! {
+            biased;
+            _ = urgent.wait_for(|u| *u) => (None, Some(self.rt.slots.playback(true)), unpreempted),
+            s = self.rt.slots.background(self.job.priority()) => {
+                let p = s.preempted.clone();
+                (Some(s), None, p)
+            }
             _ = cancel.wait_for(|c| *c) => return Err(CANCELLED.into()),
         };
         let mut procs = vec![];
         for c in &cmds {
-            let (bin, args) = background(&c.bin, &c.argv);
+            let (bin, args) = match playback {
+                Some(_) => (c.bin.clone(), c.argv.clone()),
+                None => background(&c.bin, &c.argv),
+            };
             let p = Ffmpeg::spawn_with(&bin, &args, c.pipes).await;
             procs.push(Arc::new(p.map_err(|e| format!("spawn {}: {e}", c.bin))?));
         }
@@ -494,7 +545,14 @@ impl Ctx {
         let paused = AtomicBool::new(false);
         let work = work(procs.clone());
         let verdict = {
-            let watch = self.supervise(&procs, &mut slot, &mut cancel, timeout_ms, &paused);
+            let watch = self.supervise(
+                &procs,
+                &mut preempted,
+                &mut urgent,
+                &mut cancel,
+                timeout_ms,
+                &paused,
+            );
             tokio::pin!(watch, work);
             tokio::select! {
                 out = &mut work => Ok(out),
@@ -528,7 +586,8 @@ impl Ctx {
     async fn supervise(
         &self,
         procs: &[Arc<Ffmpeg>],
-        slot: &mut BackgroundSlot,
+        preempted: &mut watch::Receiver<bool>,
+        urgent: &mut watch::Receiver<bool>,
         cancel: &mut watch::Receiver<bool>,
         timeout_ms: u64,
         paused_out: &AtomicBool,
@@ -539,7 +598,8 @@ impl Ctx {
         let (mut lines, mut cpu, mut last_progress) = (0, 0, now_ms());
         loop {
             tokio::select! {
-                _ = slot.preempted.changed() => {}
+                _ = preempted.changed() => {}
+                _ = urgent.changed() => {}
                 _ = cancel.changed() => {}
                 _ = tokio::time::sleep(TICK) => {}
             }
@@ -550,7 +610,7 @@ impl Ctx {
             if *cancel.borrow() {
                 return CANCELLED;
             }
-            let want = *slot.preempted.borrow();
+            let want = *preempted.borrow() && !*urgent.borrow();
             if want != paused {
                 let mut sent = false;
                 for p in procs {

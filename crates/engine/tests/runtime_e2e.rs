@@ -1098,6 +1098,39 @@ async fn remux_variant_and_audio_renditions_on_the_keyframe_grid() {
 
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn remux_opened_without_a_scan_scans_the_file_first() {
+    // 2 s GOPs under 3 s segments: a uniform playlist would misstate every cut.
+    let p = play(h264_clip(20)).await;
+    let jobs = || async { p.e.control("GET", "/v1/jobs", None).await.json() };
+    let scanned = p.open_remux().await;
+    assert_eq!(jobs().await, json!([]), "the host's scan is used as is");
+    let mut client = copy_client(&p.file);
+    client.as_object_mut().unwrap().remove("scan");
+    let s = p.e.open(1, &p.file, &p.info, "alice", client).await;
+    assert_eq!(s["hints"]["scanMissing"], true);
+    let keyframes = s["scan"]["keyframes"].as_array().map(Vec::len);
+    assert!(keyframes.is_some_and(|n| n >= 10), "{keyframes:?}");
+    let listed = jobs().await;
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    assert_eq!(listed[0]["kind"], "Scan");
+    assert_eq!(listed[0]["state"], "done");
+    let sid = s["sessionId"].as_str().unwrap();
+    let playlist = |sid: &str| format!("/api/stream/1/remux/index.m3u8?sid={sid}");
+    let video = extinf(&p.text(&playlist(sid)).await);
+    assert_eq!(video, extinf(&p.text(&playlist(&scanned)).await));
+    assert!(video.iter().any(|d| (d - SEG).abs() > 0.5), "{video:?}");
+    let init = p.seg(sid, "alice-jwt", "remux", "init.mp4").await;
+    for (n, t0) in starts(&video).into_iter().enumerate() {
+        let s = p.seg(sid, "alice-jwt", "remux", &seg_name(n as u32)).await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        let t = tfdt_seconds(&init.body, &s.body, true);
+        assert!((t - t0).abs() < 0.05, "seg {n} video tfdt {t}, want {t0}");
+    }
+    p.e.rt.shutdown().await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn remux_seek_restarts_on_the_grid_and_keeps_the_timeline() {
     let p = play(h264_clip(120)).await;
     let sid = p.open_remux().await;

@@ -4,8 +4,9 @@ use super::{Job, JobKind, OpenError, Runtime, kill_all, now_ms, take_orphans};
 use crate::cache::{remove_dir, valid_owner};
 use crate::lock::Locked;
 use fliks_engine_core::api::{
-    Decision, EngineEvent, Hints, HwAccel, MEDIA_INFO_SCHEMA_VERSION, OpenSessionRequest,
-    OpenSessionResponse, PlayMethod, SessionKind, SessionSnapshot, StreamingConfig,
+    DecideRequest, Decision, EngineEvent, Hints, HwAccel, JobKind as ScanKind, JobPriority,
+    JobRequest, JobResult, MEDIA_INFO_SCHEMA_VERSION, MediaRef, OpenSessionRequest,
+    OpenSessionResponse, PlayMethod, SessionKind, SessionSnapshot, SourceScan, StreamingConfig,
 };
 use fliks_engine_core::mp4::grid_segment_index;
 use fliks_engine_core::session::{
@@ -14,6 +15,8 @@ use fliks_engine_core::session::{
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::broadcast::error::RecvError;
 
 pub(super) struct SessionMut {
     pub(super) last_beat_ms: i64,
@@ -128,8 +131,74 @@ impl Session {
     }
 }
 
+/// Well inside a host's request timeout; a scan still running then leaves the uniform grid.
+const OPEN_SCAN_WAIT: Duration = Duration::from_secs(5);
+
 impl Runtime {
-    pub fn open(
+    /// A remux freezes its keyframe grid at open: without the host's scan, the file is scanned first.
+    pub async fn open(
+        self: &Arc<Self>,
+        mut req: OpenSessionRequest,
+    ) -> Result<OpenSessionResponse, OpenError> {
+        let scan_missing = req.decide.scan.is_none();
+        let scan = if scan_missing && self.opens_remux(&req) {
+            self.scan_for_open(&req.decide).await
+        } else {
+            None
+        };
+        if scan.is_some() {
+            req.decide.scan.clone_from(&scan);
+        }
+        let mut open = self.open_now(req)?;
+        open.hints.scan_missing = scan_missing;
+        open.scan = scan;
+        Ok(open)
+    }
+
+    fn opens_remux(&self, req: &OpenSessionRequest) -> bool {
+        let (Some(config), Some(caps)) = (self.config.locked().clone(), self.caps()) else {
+            return false;
+        };
+        let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
+        core_session::plan(req, &decision, &config.streaming, &caps).kind == SessionKind::Remux
+    }
+
+    /// The file's urgent `Scan` job (an identical one in flight is promoted), if it ends within
+    /// `OPEN_SCAN_WAIT`.
+    async fn scan_for_open(self: &Arc<Self>, d: &DecideRequest) -> Option<SourceScan> {
+        let mut events = self.events.subscribe();
+        let job = JobRequest {
+            kind: ScanKind::Scan {
+                info: d.info.clone(),
+            },
+            media: MediaRef {
+                media_file_id: d.media.media_file_id,
+                path: d.media.path.clone(),
+            },
+            priority: Some(JobPriority::High),
+            force: false,
+        };
+        let id = crate::jobs::submit_urgent(self, job)
+            .inspect_err(|e| tracing::warn!(path = d.media.path, "scan before a remux: {e}"))
+            .ok()?;
+        let done = async {
+            loop {
+                match events.recv().await {
+                    Ok(EngineEvent::BgJobDone { job_id, result, .. }) if job_id == id => {
+                        return result;
+                    }
+                    Err(RecvError::Closed) => return None,
+                    _ => {}
+                }
+            }
+        };
+        match tokio::time::timeout(OPEN_SCAN_WAIT, done).await {
+            Ok(Some(JobResult::Scan { scan })) => Some(scan),
+            _ => None,
+        }
+    }
+
+    fn open_now(
         self: &Arc<Self>,
         mut req: OpenSessionRequest,
     ) -> Result<OpenSessionResponse, OpenError> {
@@ -267,6 +336,7 @@ impl Runtime {
                 scan_missing: session.req.decide.scan.is_none(),
             },
             decision,
+            scan: None,
             playback_clock_offset_s: Some(report.playback_clock_offset_s),
             tonemap_algo: report.tonemap_algo,
             tonemap_curve: report.tonemap_curve,

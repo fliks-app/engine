@@ -187,6 +187,42 @@ async fn cancel_a_queued_and_a_running_job_then_shutdown() {
 }
 
 #[tokio::test]
+async fn a_remux_open_runs_the_queued_scan_it_needs_at_once() {
+    // Two fingerprints whose fpcalc hangs hold both job places and the one background slot.
+    let (e, file) = engine_of("hangfp", json!({ "ffmpegSlots": 1 })).await;
+    let head = json!({ "type": "Fingerprint", "window": { "type": "head" } });
+    let a = post(&e, 7, &file, head.clone()).await.json()["jobId"].clone();
+    let b = post(&e, 8, &file, head).await.json()["jobId"].clone();
+    until("fingerprint runs", 30, || !e.ffmpeg_pids().is_empty()).await;
+    let scan = post(&e, 9, &file, json!({ "type": "Scan", "info": info() })).await;
+    let scan = scan.json()["jobId"].as_str().unwrap().to_string();
+    assert_eq!(
+        job(&e, &scan).await["state"],
+        "queued",
+        "behind two jobs and the slot"
+    );
+    let info = serde_json::from_value(info()).unwrap();
+    let copy = json!({ "device": {
+        "directPlayProfiles": [{ "containers": ["mp4"], "videoCodecs": ["h264"], "audioCodecs": ["aac"] }],
+        "rejectCopy": false } });
+    let open = e.open(9, &file, &info, "alice", copy).await;
+    assert_eq!(open["decision"]["response"]["playMethod"], "DirectStream");
+    assert_eq!(open["hints"]["scanMissing"], true);
+    assert_eq!(open["scan"]["keyframes"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        job(&e, &scan).await["state"],
+        "done",
+        "the queued job itself ran"
+    );
+    for id in [a, b] {
+        let state = job(&e, id.as_str().unwrap()).await["state"].clone();
+        assert!(state == "running" || state == "paused", "{state}");
+    }
+    e.rt.shutdown().await;
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
+#[tokio::test]
 async fn failing_frames_and_a_full_disk_fail_the_job() {
     let (e, file) = engine_of("failsprite", json!({ "ffmpegSlots": 2 })).await;
     let mut rx = e.rt.events.subscribe();

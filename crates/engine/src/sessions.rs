@@ -23,7 +23,7 @@ type S = State<Arc<AppState>>;
     (status = 400, description = "no config set yet, or an invalid ownerId/path"),
     (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
 pub async fn open(State(s): S, Json(req): Json<OpenSessionRequest>) -> Response {
-    match s.rt.open(req) {
+    match s.rt.open(req).await {
         Ok(r) => Json(r).into_response(),
         Err(OpenError::NoConfig) => (StatusCode::BAD_REQUEST, "no config set yet").into_response(),
         Err(OpenError::BadRequest(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
