@@ -23,7 +23,7 @@ use crate::slots::PlaybackSlot;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as UrlPath, Query, State};
-use axum::http::{StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fliks_engine_core::api::{
     EngineEvent, LiveError, LiveMode, LiveProbe, LiveSnapshot, OpenLiveRequest, OpenLiveResponse,
@@ -299,19 +299,14 @@ fn refused(status: StatusCode, code: &str) -> Response {
 
 #[utoipa::path(post, path = "/v1/live", operation_id = "open_live", request_body = OpenLiveRequest, responses(
     (status = 200, body = OpenLiveResponse, description = "the opened live session"),
-    (status = 400, description = "no config set yet, or an invalid request"),
+    (status = 400, description = "an invalid request"),
     (status = 409, body = LiveError, description = "`live_at_capacity`: a new upstream is needed and `atCapacity` is set"),
-    (status = 503, body = LiveError, description = "`live_unavailable`: every upstream failed; or, without a body, hardware detection has not finished (Retry-After: 1)")))]
+    (status = 503, body = LiveError, description = "`live_unavailable`: every upstream failed; or, without a body, no config set yet or hardware detection has not finished (Retry-After: 1)")))]
 pub async fn open_handler(State(s): S, Json(req): Json<OpenLiveRequest>) -> Response {
     match open(&s.rt, req).await {
         Ok(r) => Json(r).into_response(),
-        Err(OpenError::NoConfig) => (StatusCode::BAD_REQUEST, "no config set yet").into_response(),
+        Err(OpenError::NoConfig | OpenError::Detecting) => crate::not_ready().into_response(),
         Err(OpenError::BadRequest(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
-        Err(OpenError::Detecting) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            [(header::RETRY_AFTER, "1")],
-        )
-            .into_response(),
         Err(OpenError::AtCapacity) => refused(StatusCode::CONFLICT, "live_at_capacity"),
         Err(OpenError::Unavailable | OpenError::NotStreamable) => {
             refused(StatusCode::SERVICE_UNAVAILABLE, "live_unavailable")

@@ -138,8 +138,21 @@ async fn decide_needs_config_then_matches_the_golden_vector() {
 
     assert_eq!(
         send("POST", "/v1/decide", body.clone()).await.0,
-        StatusCode::BAD_REQUEST
+        StatusCode::SERVICE_UNAVAILABLE
     );
+    // A session opened before the host pushed its config is retried, not failed.
+    let open = Request::builder()
+        .method("POST")
+        .uri("/v1/sessions")
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer secret")
+        .body(Body::from(
+            serde_json::json!({ "decide": fixture["input"] }).to_string(),
+        ))
+        .unwrap();
+    let res = app.clone().oneshot(open).await.unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(res.headers()["retry-after"], "1");
     let put = serde_json::json!({ "revision": 1, "streaming": fixture["config"] }).to_string();
     assert_eq!(send("PUT", "/v1/config", put).await.0, StatusCode::OK);
     let (status, got) = send("POST", "/v1/decide", body).await;

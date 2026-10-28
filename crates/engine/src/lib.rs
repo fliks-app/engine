@@ -187,8 +187,9 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     })
 }
 
-/// Detection runs in the background from boot: until the first run ends the host is told to retry.
-fn detecting() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {
+/// Detection runs from boot and the host pushes its config once it sees this instance: until both
+/// are in, it is told to retry.
+pub(crate) fn not_ready() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         [(RETRY_AFTER, HeaderValue::from_static("1"))],
@@ -205,7 +206,7 @@ async fn capabilities(State(s): State<Arc<AppState>>) -> Response {
             host_caps: snap.host_caps(),
         })
         .into_response(),
-        None => detecting().into_response(),
+        None => not_ready().into_response(),
     }
 }
 
@@ -231,16 +232,16 @@ async fn put_config(
 }
 
 #[utoipa::path(post, path = "/v1/decide", request_body = DecideBody,
-    responses((status = 200, body = Decision, description = "the playback decision"), (status = 400, description = "no config set yet"),
-    (status = 503, description = "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
+    responses((status = 200, body = Decision, description = "the playback decision"),
+    (status = 503, description = "no config set yet, or no `hostCaps` given and hardware detection has not finished (Retry-After: 1)")))]
 async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) -> Response {
     let Some(config) = s.rt.config.locked().clone() else {
-        return StatusCode::BAD_REQUEST.into_response();
+        return not_ready().into_response();
     };
     let caps = match (body.host_caps, s.hw.snapshot()) {
         (Some(c), _) => c,
         (None, Some(snap)) => snap.host_caps(),
-        (None, None) => return detecting().into_response(),
+        (None, None) => return not_ready().into_response(),
     };
     Json(fliks_engine_core::decide::decide(
         &body.request,
