@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/fliks-app/engine/compare/v1.7.1...v1.7.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **remux:** scan an unscanned source before freezing its keyframe grid ([#140](https://github.com/fliks-app/engine/issues/140)) ([bcd9c91](https://github.com/fliks-app/engine/commit/bcd9c91efa6beba67e89c2215ee148353f024dd1))
+
 ## [1.7.1](https://github.com/fliks-app/engine/compare/v1.7.0...v1.7.1) (2026-10-26)
 
 
