@@ -2498,7 +2498,7 @@
           },
           "scanMissing": {
             "type": "boolean",
-            "description": "No source scan: the remux keyframe grid and audio checks were skipped."
+            "description": "The request carried no source scan; `scan` holds the one a remux ran."
           }
         }
       },
@@ -3968,6 +3968,17 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/QoePipeline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scan": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SourceScan",
+                "description": "The scan this open ran for a remux the request carried none for: the host keeps it."
               },
               {
                 "type": "null"

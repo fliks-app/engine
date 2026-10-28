@@ -1,7 +1,8 @@
 //! Wire types of the session runtime (M3): sessions, jobs, cache, revocation, events and the
 //! host resolver contract. Times are f64 epoch milliseconds (no 64-bit integers on the wire).
 use super::{
-    BgJobState, DecideRequest, Decision, HdrFormat, HwAccel, JobResult, LiveProbe, TonemapCurve,
+    BgJobState, DecideRequest, Decision, HdrFormat, HwAccel, JobResult, LiveProbe, SourceScan,
+    TonemapCurve,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -107,7 +108,7 @@ pub struct SubtitleTrack {
 pub struct Hints {
     /// The probe blob predates the engine's schema version.
     pub probe_stale: bool,
-    /// No source scan: the remux keyframe grid and audio checks were skipped.
+    /// The request carried no source scan; `scan` holds the one a remux ran.
     pub scan_missing: bool,
 }
 
@@ -122,6 +123,9 @@ pub struct OpenSessionResponse {
     pub play_path: String,
     pub decision: Decision,
     pub hints: Hints,
+    /// The scan this open ran for a remux the request carried none for: the host keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<SourceScan>,
     /// Source container time less the served timeline's: add it to a container time (an EDL
     /// range) to reach the player's clock; 0 on Direct Play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
