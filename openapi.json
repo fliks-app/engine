@@ -167,11 +167,8 @@
               }
             }
           },
-          "400": {
-            "description": "no config set yet"
-          },
           "503": {
-            "description": "no `hostCaps` given and hardware detection has not finished (Retry-After: 1)"
+            "description": "no config set yet, or no `hostCaps` given and hardware detection has not finished (Retry-After: 1)"
           }
         }
       }
@@ -464,7 +461,7 @@
             }
           },
           "400": {
-            "description": "no config set yet, or an invalid request"
+            "description": "an invalid request"
           },
           "409": {
             "description": "`live_at_capacity`: a new upstream is needed and `atCapacity` is set",
@@ -477,7 +474,7 @@
             }
           },
           "503": {
-            "description": "`live_unavailable`: every upstream failed; or, without a body, hardware detection has not finished (Retry-After: 1)",
+            "description": "`live_unavailable`: every upstream failed; or, without a body, no config set yet or hardware detection has not finished (Retry-After: 1)",
             "content": {
               "application/json": {
                 "schema": {
@@ -653,10 +650,10 @@
             }
           },
           "400": {
-            "description": "no config set yet, or an invalid ownerId/path"
+            "description": "an invalid ownerId/path"
           },
           "503": {
-            "description": "hardware detection has not finished (Retry-After: 1)"
+            "description": "no config set yet, or hardware detection has not finished (Retry-After: 1)"
           }
         }
       }

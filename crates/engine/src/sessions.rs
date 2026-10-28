@@ -5,7 +5,7 @@ use crate::runtime::OpenError;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::{StatusCode, header::RETRY_AFTER},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use fliks_engine_core::api::{
@@ -20,16 +20,13 @@ type S = State<Arc<AppState>>;
 
 #[utoipa::path(post, path = "/v1/sessions", operation_id = "open_session", request_body = OpenSessionRequest, responses(
     (status = 200, body = OpenSessionResponse, description = "the opened session"),
-    (status = 400, description = "no config set yet, or an invalid ownerId/path"),
-    (status = 503, description = "hardware detection has not finished (Retry-After: 1)")))]
+    (status = 400, description = "an invalid ownerId/path"),
+    (status = 503, description = "no config set yet, or hardware detection has not finished (Retry-After: 1)")))]
 pub async fn open(State(s): S, Json(req): Json<OpenSessionRequest>) -> Response {
     match s.rt.open(req).await {
         Ok(r) => Json(r).into_response(),
-        Err(OpenError::NoConfig) => (StatusCode::BAD_REQUEST, "no config set yet").into_response(),
+        Err(OpenError::NoConfig | OpenError::Detecting) => crate::not_ready().into_response(),
         Err(OpenError::BadRequest(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
-        Err(OpenError::Detecting) => {
-            (StatusCode::SERVICE_UNAVAILABLE, [(RETRY_AFTER, "1")]).into_response()
-        }
     }
 }
 

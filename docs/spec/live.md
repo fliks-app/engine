@@ -6,7 +6,7 @@ The runtime half of the host's live TV: one upstream connection per (channel, mo
 
 `OpenLiveRequest { channelId, upstreams: [{ url, priority?, headers?, probedContainer?, probedVideoCodec?, probedAudioCodec?, atCapacity? }], caps: { directPlay?, maxBitrateBps?, useTs? }, ownerId?, capacityToken, atCapacity?, tags? }`.
 
-- 400: no config yet, no upstream, an upstream URL whose scheme is not `http`, `https`, `rtmp(s|t|e)`, `rtsp(s)`, `rtp`, `udp` or `srt` (ffmpeg would read `file:`, `concat:`, ... from the engine's disk) [new], a bad `ownerId`. 503 + `Retry-After: 1` until hardware detection ends.
+- 400: no upstream, an upstream URL whose scheme is not `http`, `https`, `rtmp(s|t|e)`, `rtsp(s)`, `rtp`, `udp` or `srt` (ffmpeg would read `file:`, `concat:`, ... from the engine's disk) [new], a bad `ownerId`. 503 + `Retry-After: 1` before the first config and until hardware detection ends.
 - Upstreams are tried in `priority` order, stable: the host puts the healthy ones first within a priority (its `compareHealth`, `lastError`/`lastOkAt` are host data). `upstream` indexes in answers and events are positions in the request's list. [ts:svc:338-340]
 - `maxBitrateBps` snaps to the first rung `>=` it of 1.5/3/6/10/20 Mb/s, else 20 Mb/s, before anything reads it. [ts:svc:216-223,335-337]
 - Mode (`core::live::decide_mode`): `directPlay: true` = `direct`; a `maxBitrateBps` = `transcode`; else `livetv.fastZap` `true` = `transcode`, `false` = `remux`, absent = `transcode` on a hardware host, `remux` on the CPU. [ts:svc:695-704]

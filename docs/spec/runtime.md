@@ -27,7 +27,7 @@ A job is one ffmpeg run of one session key: `<file>-u<owner>|anon-<profileHash>`
 
 ## 3. Sessions
 
-`POST /v1/sessions` (`OpenSessionRequest`): `decide(request, detected hostCaps, config.streaming)` then a session holding the request, the `Decision`, the frozen `StreamingConfig` (config revision), owner, tags, client. 400 before the first `PUT /v1/config`, 503 + `Retry-After: 1` before detection ends.
+`POST /v1/sessions` (`OpenSessionRequest`): `decide(request, detected hostCaps, config.streaming)` then a session holding the request, the `Decision`, the frozen `StreamingConfig` (config revision), owner, tags, client. 503 + `Retry-After: 1` before the first `PUT /v1/config` (a restarted engine waits for its host to push one) and before detection ends.
 
 - kind: DirectPlay `directplay` (no hash), DirectStream `remux`, Transcode `transcode`. [ts:ctl:1105-1124]
 - profile hash: `core::session::profile_hash(profile_from_layout(..))` over the decision's layout (mux, audio plan and per-track plans with their encoder ids, variant, timeline, `sourceVersion`, DV, tonemap, curve), segment duration in ms. [ts:ctl:1083-1112] [ts:transcoding/session-profile.ts:56-117]
