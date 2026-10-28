@@ -88,6 +88,7 @@ Golden vectors: `fixtures/decide/*.json` (`input`, `hostCaps`, `config`, `expect
 Inputs: `source`, `device`, `hasAudio`. `containerSupported/videoSupported/audioSupported` = any `directPlayProfiles` entry lists the container / video codec / audio codec (exact, case-sensitive string match against the lowercase source value). `!hasAudio` forces `audioSupported`.
 
 - `boundMatch` = one single entry lists container AND video codec AND (audio codec or `!hasAudio`). `[ts:backend/src/modules/streaming/stream-builder.service.ts:1321-1326]`
+- [new] A sample entry beyond the codec's own (`videoCodecTag` `avc3`, `hev1`, `dvh1`, `dvhe` or `dav1`) must also be listed by that entry's `videoCodecs`: Apple's demuxer shows black video on the in-band ones (`avc3`, `hev1`, `dvhe`), a demuxer without Dolby Vision refuses the others. When no entry lists it, `VideoCodecTagNotSupported` (`Sample entry "hev1" not supported`) follows the place of `VideoCodecNotSupported`, and the remux (which rewrites the entry) serves the file.
 - `videoConditionsMet` starts true; only evaluated when `videoSupported` and `codecConditions` non-empty and an entry has `codec == sourceVideoCodec` (first match). Each failing check pushes its reason and clears the flag:
 
 | Flag | Trigger |
@@ -99,7 +100,7 @@ Inputs: `source`, `device`, `hasAudio`. `containerSupported/videoSupported/audio
 
 - `VideoBitrateNotSupported`: `maxStreamingBitrate > 0` and `total > maxStreamingBitrate`, `total = formatBitRate ?? (videoBitRate ?? 0) + (audioBitRate ?? 0)`; also clears `videoConditionsMet`. Message `Bitrate too high (N Mbps)` (rounded). `[ts:backend/src/modules/streaming/stream-builder.service.ts:1386-1397]`
 - Channels: `audioChannels > audioChannelCap(device, audioCodec)` clears `audioSupported` (no reason here). Cap = `audioChannelsByCodec[codec]` ?? `maxAudioChannels` ?? 2. `[ts:backend/src/modules/streaming/stream-builder.service.ts:1401-1404,202-208]`
-- `VideoCodecNotSupported` if `!videoSupported`; then `ContainerNotSupported` if `!containerSupported`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:1406-1417]`
+- `VideoCodecNotSupported` if `!videoSupported` (else `VideoCodecTagNotSupported`, above); then `ContainerNotSupported` if `!containerSupported`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:1406-1417]`
 - `canDirectPlay = boundMatch && audioSupported && videoConditionsMet`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:1421]`
 
 ## 6. HDR / DV / burn-in / crop gates

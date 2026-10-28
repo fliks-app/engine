@@ -93,6 +93,8 @@ pub struct Stream {
     #[serde(default, deserialize_with = "string")]
     pub codec_name: Option<String>,
     #[serde(default, deserialize_with = "string")]
+    pub codec_tag_string: Option<String>,
+    #[serde(default, deserialize_with = "string")]
     pub codec_type: Option<String>,
     #[serde(default, deserialize_with = "string")]
     pub profile: Option<String>,

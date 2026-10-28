@@ -213,6 +213,8 @@ pub struct PlaybackSource {
     pub container: String,
     pub video_codec: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_codec_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_level: Option<i32>,

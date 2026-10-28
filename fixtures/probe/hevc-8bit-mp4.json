@@ -202,6 +202,7 @@
           "avgFrameRate": "24/1",
           "bitRate": 132989,
           "codec": "hevc",
+          "codecTag": "hvc1",
           "colorRange": "tv",
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,

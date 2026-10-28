@@ -260,8 +260,15 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
             "2048",
         ]));
     }
-    if codec == Some("av1") && dv_no_base_tag {
-        video.extend(strs(&["-tag:v", "dav1"]));
+    // A copy keeps the source's entry: `avc3` and a based `dav1` leave as their codec's own.
+    if codec == Some("h264") {
+        video.extend(strs(&["-tag:v", "avc1", "-bsf:v", "h264_mp4toannexb"]));
+    }
+    if codec == Some("av1") {
+        video.extend(strs(&[
+            "-tag:v",
+            if dv_no_base_tag { "dav1" } else { "av01" },
+        ]));
     }
     if codec == Some("av1") && strip_hdr10_plus {
         video.extend(strs(&["-bsf:v", "av1_metadata=remove_hdr10plus=1"]));

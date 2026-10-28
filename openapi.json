@@ -4319,6 +4319,12 @@
           "videoCodec": {
             "type": "string"
           },
+          "videoCodecTag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "videoLevel": {
             "type": [
               "integer",
@@ -5438,6 +5444,13 @@
           },
           "codec": {
             "type": "string"
+          },
+          "codecTag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The container's sample entry (`avc1`, `hev1`, `dvh1`...), absent when the container has none."
           },
           "colorPrimaries": {
             "type": [

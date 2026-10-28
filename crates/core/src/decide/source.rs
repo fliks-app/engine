@@ -51,6 +51,7 @@ pub fn build(req: &DecideRequest, config: &StreamingConfig, picked_audio: usize)
     PlaybackSource {
         container: req.media.ext.replacen('.', "", 1).to_lowercase(),
         video_codec: v.map_or(String::new(), |v| v.codec.to_lowercase()),
+        video_codec_tag: v.and_then(|v| v.codec_tag.clone()),
         video_profile: v.and_then(|v| v.profile.as_ref()).map(|p| p.to_lowercase()),
         video_level: v.and_then(|v| v.level),
         video_bit_rate: video_bit_rate.map(|b| b as u32),

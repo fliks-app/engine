@@ -203,6 +203,7 @@
           "bitDepth": 8,
           "bitRate": 124082,
           "codec": "h264",
+          "codecTag": "avc1",
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

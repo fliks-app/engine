@@ -202,6 +202,7 @@
           "avgFrameRate": "24/1",
           "bitRate": 166237,
           "codec": "hevc",
+          "codecTag": "hvc1",
           "colorPrimaries": "bt2020",
           "colorRange": "tv",
           "colorSpace": "bt2020nc",

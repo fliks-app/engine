@@ -1,7 +1,11 @@
 //! First pass of the decision: can the file play as-is on this device, and why not.
 use super::audio::audio_channel_cap;
-use crate::api::{DeviceProfile, PlaybackSource, TranscodeReason};
+use crate::api::{DeviceProfile, DirectPlayProfile, PlaybackSource, TranscodeReason};
 use crate::ladder::resolution_fits_cap;
+
+/// Sample entries beyond the codec's own (`avc1`, `hvc1`, `av01`): in-band parameter sets (black
+/// video on Apple) or Dolby Vision. A client must list the entry itself; the remux rewrites them.
+const SAMPLE_ENTRIES_CLAIMED_APART: [&str; 5] = ["avc3", "hev1", "dvh1", "dvhe", "dav1"];
 
 pub struct DirectPlay {
     pub can_direct_play: bool,
@@ -43,11 +47,18 @@ pub fn try_direct_play(
             .iter()
             .any(|p| has(&p.audio_codecs, &source.audio_codec));
 
+    let own_entry = source
+        .video_codec_tag
+        .as_ref()
+        .filter(|t| SAMPLE_ENTRIES_CLAIMED_APART.contains(&t.as_str()));
+    let entry_supported = |p: &DirectPlayProfile| own_entry.is_none_or(|t| has(&p.video_codecs, t));
+
     // One profile entry must bind container, video and audio: pieces of different entries are a
     // combination the device never claimed.
     let bound_match = profiles.iter().any(|p| {
         has(&p.containers, &source.container)
             && has(&p.video_codecs, &source.video_codec)
+            && entry_supported(p)
             && (!has_audio || has(&p.audio_codecs, &source.audio_codec))
     });
 
@@ -135,6 +146,13 @@ pub fn try_direct_play(
         reasons.push(reason(
             "VideoCodecNotSupported",
             format!("Codec \"{}\" not supported", source.video_codec),
+        ));
+    } else if let Some(t) = own_entry
+        && !profiles.iter().any(entry_supported)
+    {
+        reasons.push(reason(
+            "VideoCodecTagNotSupported",
+            format!("Sample entry \"{t}\" not supported"),
         ));
     }
     if !container_supported {
