@@ -22,7 +22,7 @@ pub use probe::*;
 pub use runtime::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 2;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 3;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -255,6 +255,9 @@ pub struct HdrMetadata {
 pub struct VideoStreamInfo {
     pub stream_index: u32,
     pub codec: String,
+    /// The container's sample entry (`avc1`, `hev1`, `dvh1`...), absent when the container has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codec_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

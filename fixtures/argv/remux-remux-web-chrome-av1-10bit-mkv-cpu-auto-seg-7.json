@@ -34,6 +34,8 @@
       "copy",
       "-c:a",
       "copy",
+      "-tag:v",
+      "av01",
       "-movflags",
       "+cmaf",
       "-avoid_negative_ts",

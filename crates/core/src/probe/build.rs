@@ -350,6 +350,8 @@ pub fn build(main: &Main, x: &Extras) -> Built {
             VideoStreamInfo {
                 stream_index: index(s),
                 codec: s.codec_name.clone().unwrap_or_else(|| "unknown".into()),
+                // ffprobe prints a container without sample entries as `[0][0][0][0]`.
+                codec_tag: s.codec_tag_string.clone().filter(|t| !t.contains('[')),
                 profile: s.profile.clone(),
                 level: s.level.map(|l| l as i32),
                 width: u32_of(w),

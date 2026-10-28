@@ -29,6 +29,8 @@
       "copy",
       "-bsf:a",
       "aac_adtstoasc",
+      "-tag:v",
+      "av01",
       "-movflags",
       "+cmaf",
       "-avoid_negative_ts",

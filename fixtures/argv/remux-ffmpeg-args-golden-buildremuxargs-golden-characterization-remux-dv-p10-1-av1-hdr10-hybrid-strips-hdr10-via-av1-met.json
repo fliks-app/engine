@@ -29,6 +29,8 @@
       "copy",
       "-bsf:a",
       "aac_adtstoasc",
+      "-tag:v",
+      "av01",
       "-bsf:v",
       "av1_metadata=remove_hdr10plus=1",
       "-movflags",
