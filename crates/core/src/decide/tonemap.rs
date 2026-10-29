@@ -2,7 +2,7 @@
 use super::codec::{Encoder, resolve_descriptor};
 use crate::api::{CodecVariant, HostCaps, HwAccel, Platform, TonemapAlgo};
 use crate::hw::GpuDeint;
-use crate::hw::decoders::DecodeCodec;
+use crate::hw::decoders::{DecodeCodec, Surface, source_decoder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -140,8 +140,13 @@ pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCa
         && caps.probe("amfOpencl")
         && c.source_bit_depth <= amf_max_depth
         && decoder_on("_d3d11va_native_decode");
-    let vulkan_usable =
-        path == TonemapPath::Vulkan && c.tonemap && !c.burn_in && hw == HwAccel::Vaapi;
+    // The Vulkan chain maps a VAAPI surface: a source its decoder cannot take would reach it as CPU frames.
+    let vulkan_usable = path == TonemapPath::Vulkan
+        && c.tonemap
+        && !c.burn_in
+        && hw == HwAccel::Vaapi
+        && source_decoder(Some(c.source_video_codec), c.source_bit_depth, hw, caps).surface()
+            == Surface::Vaapi;
     let dv_no_base_needs_cpu =
         c.dv_no_base && c.tonemap && path != TonemapPath::Opencl && !vulkan_usable;
     let qsv_native_available = !dv_no_base_needs_cpu
@@ -181,5 +186,44 @@ pub fn resolve_pipeline(variant: &CodecVariant, c: &EncodeContext, caps: &HostCa
             && effective != HwAccel::Amf
             && (path == TonemapPath::Vaapi || falls_back_to_vaapi),
         amf_opencl_available,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::VideoCodec;
+
+    fn pipeline(disabled: &[&str]) -> Pipeline {
+        let caps = HostCaps {
+            hw_accel: HwAccel::Vaapi,
+            probes: vec!["vulkan".into()],
+            disabled_decoders: disabled.iter().map(|d| d.to_string()).collect(),
+            ..HostCaps::default()
+        };
+        let variant = CodecVariant {
+            codec: VideoCodec::H264,
+            bit_depth: 8,
+            hdr: None,
+        };
+        let c = EncodeContext {
+            crop: false,
+            burn_in: false,
+            tonemap: true,
+            algo: TonemapAlgo::Auto,
+            source_video_codec: "hevc",
+            dv_no_base: true,
+            dv_apply_rpu: true,
+            source_bit_depth: 10,
+            interlaced: false,
+        };
+        resolve_pipeline(&variant, &c, &caps)
+    }
+
+    #[test]
+    fn vulkan_needs_a_vaapi_surface_decoder() {
+        assert_eq!(pipeline(&[]).requested, HwAccel::Vaapi);
+        let cpu = pipeline(&["hevc_vaapi_decode", "hevc_qsv_decode"]);
+        assert_eq!(cpu.requested, HwAccel::None);
     }
 }
