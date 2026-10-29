@@ -75,8 +75,15 @@ pub(super) fn check_literal(url: &str) -> Result<(), String> {
     }
 }
 
-/// Resolves the host and refuses it when any address is internal (ffmpeg resolves again itself).
+/// http(s) only, and the host not internal: the first hop; the proxy vets the following ones.
 pub(super) async fn check(url: &str) -> Result<(), String> {
+    let scheme = url.split_once("://").map_or("", |(s, _)| s);
+    if !["http", "https"]
+        .iter()
+        .any(|k| scheme.eq_ignore_ascii_case(k))
+    {
+        return Err("Refused: a vetted upstream must be http or https".into());
+    }
     check_literal(url)?;
     let host = host_of(url).ok_or("Refused: no host")?;
     if host.parse::<IpAddr>().is_ok() {

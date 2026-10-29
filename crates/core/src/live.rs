@@ -192,7 +192,11 @@ pub fn split_headers(
 }
 
 /// The codec probe of one upstream. [ts:services/livetv-session.service.ts:746-773]
-pub fn probe_args(url: &str, headers: &BTreeMap<String, String>) -> Vec<String> {
+pub fn probe_args(
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    vet_proxy: Option<&str>,
+) -> Vec<String> {
     let (ua, referer, rest) = split_headers(headers);
     let mut a: Vec<String> = [
         "-v",
@@ -208,9 +212,22 @@ pub fn probe_args(url: &str, headers: &BTreeMap<String, String>) -> Vec<String> 
     ]
     .map(String::from)
     .into();
+    a.extend(vetted_input_args(vet_proxy));
     a.extend(http_header_args(ua.as_deref(), referer.as_deref(), &rest));
     a.push(url.into());
     a
+}
+
+/// A vetted input only speaks http(s), every request of it through the vetting proxy.
+pub fn vetted_input_args(vet_proxy: Option<&str>) -> Vec<String> {
+    vet_proxy.map_or(vec![], |p| {
+        crate::strs(&[
+            "-protocol_whitelist",
+            "http,https,tcp,tls,crypto",
+            "-http_proxy",
+            p,
+        ])
+    })
 }
 
 /// `encodeURIComponent`.
@@ -386,7 +403,7 @@ mod tests {
             ("X-Token".into(), "t".into()),
         ]);
         assert_eq!(
-            probe_args("http://u/", &h)[10..],
+            probe_args("http://u/", &h, None)[10..],
             [
                 "-user_agent",
                 "UA",

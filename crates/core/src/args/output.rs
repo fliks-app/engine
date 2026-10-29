@@ -9,6 +9,7 @@ use crate::api::{AudioCodec, AudioPlan, HostCaps};
 use crate::decide::dolby_vision::has_no_base;
 use crate::hw::Device;
 use crate::jsnum::{js_string as js, round, seconds, to_fixed};
+use crate::live::vetted_input_args;
 use crate::strs;
 
 /// Under `-hls_time` so the muxer cuts on every forced IDR.
@@ -385,6 +386,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         "-rw_timeout",
         "15000000",
     ]);
+    a.extend(vetted_input_args(o.vet_proxy.as_deref()));
     a.extend(http_header_args(
         o.user_agent.as_deref(),
         o.referer.as_deref(),

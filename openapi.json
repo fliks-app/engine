@@ -3607,7 +3607,7 @@
           },
           "vetted": {
             "type": "boolean",
-            "description": "Refuse loopback, link-local, private and other internal addresses, on every redirect hop\ntoo. The host sets it for provider-supplied URLs; admin-configured LAN sources leave it off."
+            "description": "Refuse loopback, link-local, private and other internal addresses on every hop (redirects,\nplaylist entries, segments); only http(s). Set for provider-supplied URLs, off for LAN sources."
           }
         }
       },

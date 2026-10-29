@@ -3,6 +3,7 @@
 //! `backend/src/modules/livetv/` (`svc` = `services/livetv-session.service.ts`).
 
 mod open;
+mod proxy;
 mod supervise;
 mod upstream;
 mod vet;
@@ -10,7 +11,8 @@ mod vet;
 pub use self::open::open;
 pub use self::supervise::shutdown;
 
-use self::open::{has_video, probe};
+use self::open::{has_video, probe, vetted_proxy};
+use self::proxy::VetProxy;
 use self::supervise::{supervise, teardown, unregister};
 use self::upstream::{attempt, highest_segment, https, recover, stop_transport};
 use self::vet::Resolver;
@@ -85,6 +87,19 @@ pub struct Live {
     client: Client<HttpsConnector<HttpConnector<Resolver>>, Empty<Bytes>>,
     /// Its resolver refuses internal addresses; used for `vetted` upstreams.
     vetted_client: Client<HttpsConnector<HttpConnector<Resolver>>, Empty<Bytes>>,
+    /// Started with the first vetted ffmpeg/ffprobe input.
+    proxy: tokio::sync::OnceCell<VetProxy>,
+}
+
+impl Live {
+    /// The proxy a vetted ffmpeg/ffprobe input fetches through.
+    async fn vet_proxy(&self) -> Result<&str, String> {
+        self.proxy
+            .get_or_try_init(|| VetProxy::start(vet::is_internal))
+            .await
+            .map(VetProxy::url)
+            .map_err(|e| format!("vetting proxy: {e}"))
+    }
 }
 
 impl Default for Live {
@@ -95,6 +110,7 @@ impl Default for Live {
             seq: AtomicU64::new(0),
             client: Client::builder(TokioExecutor::new()).build(https(false)),
             vetted_client: Client::builder(TokioExecutor::new()).build(https(true)),
+            proxy: Default::default(),
         }
     }
 }

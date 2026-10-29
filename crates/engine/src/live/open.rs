@@ -343,19 +343,26 @@ pub(super) async fn probe(
     rt: &Runtime,
     u: &fliks_engine_core::api::LiveUpstream,
 ) -> Option<LiveProbe> {
-    if u.vetted
-        && let Err(e) = super::vet::check(&u.url).await
-    {
-        tracing::warn!(url = u.url, "live probe refused: {e}");
-        return None;
+    let mut proxy = None;
+    if u.vetted {
+        match vetted_proxy(rt, &u.url).await {
+            Ok(p) => proxy = Some(p),
+            Err(e) => {
+                tracing::warn!(url = u.url, "live probe refused: {e}");
+                return None;
+            }
+        }
     }
     let _slot = rt.slots.playback(true);
     let mut cmd = tokio::process::Command::new(&rt.ffprobe);
-    cmd.args(core_live::probe_args(&u.url, &u.headers))
+    cmd.args(core_live::probe_args(&u.url, &u.headers, proxy.as_deref()))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
+    if proxy.is_some() {
+        cmd.env_remove("no_proxy").env_remove("NO_PROXY");
+    }
     let child = crate::proc::spawn(&mut cmd).await.ok()?;
     match tokio::time::timeout(PROBE_TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(out)) if out.status.success() => Some(core_live::parse_probe_output(
@@ -366,4 +373,11 @@ pub(super) async fn probe(
             None
         }
     }
+}
+
+/// Preflight of a vetted input (a refusal here is a clear error, not an ffmpeg one) and the
+/// proxy URL its ffmpeg/ffprobe fetches through.
+pub(super) async fn vetted_proxy(rt: &Runtime, url: &str) -> Result<String, String> {
+    super::vet::check(url).await?;
+    rt.live.vet_proxy().await.map(str::to_owned)
 }
