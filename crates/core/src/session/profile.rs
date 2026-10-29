@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Raise when the segment layout (edit lists, tfdt origin, audio alignment) changes, so cached
 /// segments of the old layout never mix in. [ts:transcoding/profile-hash.ts:79]
-pub const SEGMENT_TIMELINE_VERSION: u32 = 1;
+pub const SEGMENT_TIMELINE_VERSION: u32 = 2;
 
 /// Everything that decides the bytes of the segments written for one playback: two playbacks
 /// with equal profiles share a cache dir, any difference forks it.
@@ -250,7 +250,7 @@ mod tests {
         let p = profile_from_layout(&layout(), 3000);
         assert_eq!(
             p.canonical(),
-            "cache/v1|v=h264|vd=8|h=null|a=aac|atm=|ac=2|am=transcode|ae=aac|mux=fmp4|al=inline|sd=3000|tv=browser|tl=1\
+            "cache/v1|v=h264|vd=8|h=null|a=aac|atm=|ac=2|am=transcode|ae=aac|mux=fmp4|al=inline|sd=3000|tv=browser|tl=2\
              |o=0000000000000000|fs=0000000000000000|sv=|dv=0|dvt=0|dvt10=0|h10p=0|dvel=0|tc="
         );
     }
@@ -260,7 +260,7 @@ mod tests {
         // Changing these values orphans every cached title: raise CACHE_NAMESPACE instead.
         assert_eq!(
             profile_hash(&profile_from_layout(&layout(), 3000)),
-            "10d572465a29a073"
+            "15ebb5296e293542"
         );
         let mut hdr = layout();
         hdr.video_variant = Some(CodecVariant {
@@ -272,7 +272,7 @@ mod tests {
         hdr.timeline_origin = 1.4;
         assert_eq!(
             profile_hash(&profile_from_layout(&hdr, 6000)),
-            "a65baad0ad9840d1"
+            "5b3ac32808b6077c"
         );
     }
 
