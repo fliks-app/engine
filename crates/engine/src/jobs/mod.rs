@@ -62,7 +62,8 @@ pub struct BgJob {
     dedupe: String,
     created_ms: i64,
     cancel: watch::Sender<bool>,
-    /// A session open waits on it: past the queue, on a playback slot, never preempted.
+    /// A session open waits on it: past the queue, never preempted; its next runs take playback
+    /// slots, a run in flight keeps its slot and its ionice/nice (priority cannot be raised unprivileged).
     urgent: watch::Sender<bool>,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
     activity: AtomicU64,
