@@ -1,7 +1,7 @@
 //! Decoder descriptors and the argv slice each puts before `-i`.
 //! [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:30-125]
 use super::device::Device;
-use crate::api::{HwAccel, Platform};
+use crate::api::{HwAccel, Platform, VideoCodec};
 use crate::strs;
 
 /// Frame memory between decode and encode. [ts:backend/src/modules/streaming/transcoding/codec/decoders/types.ts:20]
@@ -24,6 +24,16 @@ pub(crate) enum DecodeCodec {
     Vp9,
     Mpeg2,
     Vc1,
+}
+
+impl From<VideoCodec> for DecodeCodec {
+    fn from(c: VideoCodec) -> Self {
+        match c {
+            VideoCodec::H264 => Self::H264,
+            VideoCodec::Hevc => Self::Hevc,
+            VideoCodec::Av1 => Self::Av1,
+        }
+    }
 }
 
 impl DecodeCodec {
@@ -49,6 +59,16 @@ impl DecodeCodec {
             Self::Vp9 => "vp9",
             Self::Mpeg2 => "mpeg2",
             Self::Vc1 => "vc1",
+        }
+    }
+
+    /// The output codec this source codec is also, when it is one.
+    pub fn video_codec(self) -> Option<VideoCodec> {
+        match self {
+            Self::H264 => Some(VideoCodec::H264),
+            Self::Hevc => Some(VideoCodec::Hevc),
+            Self::Av1 => Some(VideoCodec::Av1),
+            _ => None,
         }
     }
 

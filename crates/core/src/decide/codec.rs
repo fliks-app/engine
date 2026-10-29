@@ -1,16 +1,12 @@
 //! Output codec selection: which variant the encoder registry can produce for this client.
 use crate::api::{CodecVariant, DeviceProfile, HdrFormat, HostCaps, HwAccel, Platform, VideoCodec};
+use crate::hw::decoders::DecodeCodec;
 use crate::ladder::resolution_fits_cap;
 use std::collections::HashSet;
 
 /// ffprobe codec name to `VideoCodec`, aliases collapsed.
 pub fn normalise_source_codec(name: &str) -> Option<VideoCodec> {
-    match name.to_lowercase().as_str() {
-        "h264" | "avc" | "avc1" => Some(VideoCodec::H264),
-        "hevc" | "h265" | "hvc1" | "hev1" => Some(VideoCodec::Hevc),
-        "av1" | "av01" => Some(VideoCodec::Av1),
-        _ => None,
-    }
+    DecodeCodec::from_source(name).and_then(DecodeCodec::video_codec)
 }
 
 /// One compiled-in encoder. The bit depth follows `hdr` (10 with HDR, else 8).
@@ -112,11 +108,7 @@ pub(crate) fn registry_ids() -> Vec<String> {
 }
 
 pub fn codec_name(c: VideoCodec) -> &'static str {
-    match c {
-        H264 => "h264",
-        Hevc => "hevc",
-        Av1 => "av1",
-    }
+    DecodeCodec::from(c).name()
 }
 
 fn hw_name(h: HwAccel) -> &'static str {
