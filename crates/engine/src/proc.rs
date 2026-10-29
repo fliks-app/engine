@@ -394,6 +394,18 @@ impl Ffmpeg {
         }
     }
 
+    /// Lifts the run and its group out of `background`'s idle class; false when the OS refuses
+    /// (raising a nice value needs CAP_SYS_NICE or RLIMIT_NICE).
+    pub fn restore_priority(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(pid) = self.pid {
+            // SAFETY: plain syscalls on a pid of ours. IOPRIO_WHO_PGRP, best-effort class, level 4.
+            unsafe { libc::syscall(libc::SYS_ioprio_set, 2, pid as i32, (2 << 13) | 4) };
+            return unsafe { libc::setpriority(libc::PRIO_PGRP, pid as libc::id_t, 0) } == 0;
+        }
+        true
+    }
+
     /// Pause or resume per the host's capability; false when nothing was sent.
     pub async fn pause(&self, cap: PauseCapability, pause: bool) -> bool {
         if self.exited().is_some() {
@@ -454,6 +466,29 @@ mod tests {
         assert!(is_own(pid));
         child.wait().await.unwrap();
         assert!(!is_own(pid));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn restore_priority_reports_whether_the_nice_value_came_back() {
+        let (bin, args) = background("sleep", &["30".into()]);
+        let p = Ffmpeg::spawn(&bin, &args).await.unwrap();
+        let stat = || std::fs::read_to_string(format!("/proc/{}/stat", p.pid.unwrap())).unwrap();
+        let nice = || {
+            stat()
+                .rsplit(')')
+                .next()
+                .unwrap()
+                .split(' ')
+                .nth(17)
+                .unwrap()
+                .to_string()
+        };
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let was = nice();
+        let ok = p.restore_priority();
+        assert_eq!(nice(), if ok { "0" } else { was.as_str() });
+        p.kill().await;
     }
 
     #[tokio::test]

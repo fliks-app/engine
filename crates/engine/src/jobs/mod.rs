@@ -41,6 +41,7 @@ const TICK: Duration = Duration::from_millis(200);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 const DEFAULT_MIN_FREE_BYTES: f64 = 1024.0 * 1024.0 * 1024.0;
 pub const CANCELLED: &str = "cancelled";
+const PROMOTED: &str = "promoted";
 
 struct JobMut {
     /// `Queued`, `Running` or an end state; `Paused` is derived from the runs.
@@ -62,9 +63,11 @@ pub struct BgJob {
     dedupe: String,
     created_ms: i64,
     cancel: watch::Sender<bool>,
-    /// A session open waits on it: past the queue, never preempted; its next runs take playback
-    /// slots, a run in flight keeps its slot and its ionice/nice (priority cannot be raised unprivileged).
+    /// A session open waits on it: past the queue, never preempted, its runs take playback slots.
+    /// A background run in flight is raised in place when the OS allows, else stopped and redone.
     urgent: watch::Sender<bool>,
+    /// A background run was stopped by the promotion: `run` redoes the job from its start.
+    promoted: AtomicBool,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
     activity: AtomicU64,
     m: Mutex<JobMut>,
@@ -253,6 +256,7 @@ fn queue(q: &mut Queue, req: JobRequest, dedupe: String, urgent: bool) -> Arc<Bg
         created_ms: now_ms(),
         cancel: watch::channel(false).0,
         urgent: watch::channel(urgent).0,
+        promoted: AtomicBool::new(false),
         activity: AtomicU64::new(0),
         m: Mutex::new(JobMut {
             state: BgJobState::Queued,
@@ -315,39 +319,12 @@ async fn run(rt: Arc<Runtime>, job: Arc<BgJob>) {
         rt: rt.clone(),
         job: job.clone(),
     };
-    let out = match &job.req.kind {
-        JobKind::Sprite { info } => sprite::run(&ctx, info).await,
-        JobKind::Scan { info } => scan::run(&ctx, info).await,
-        JobKind::Fingerprint {
-            window,
-            max_lookup_minutes,
-        } => fingerprint::run(&ctx, window, *max_lookup_minutes).await,
-        JobKind::SubtitleExtract { info } => subtitles::run(&ctx, info).await,
-        JobKind::SubtitleOcr {
-            info,
-            stream_index,
-            language,
-        } => ocr::run(&ctx, info, *stream_index, language.as_deref()).await,
-        JobKind::SubtitleSync {
-            info,
-            subtitle,
-            reference,
-            max_offset_seconds,
-            no_fix_framerate,
-            gss,
-        } => {
-            sync::run(
-                &ctx,
-                info,
-                subtitle,
-                reference,
-                *max_offset_seconds,
-                no_fix_framerate.unwrap_or(false),
-                gss.unwrap_or(false),
-            )
-            .await
+    // A promotion that stopped a background run redoes the job once, now on playback slots.
+    let out = loop {
+        let out = exec(&ctx).await;
+        if !job.promoted.swap(false, Relaxed) || ctx.cancelled() {
+            break out;
         }
-        JobKind::SubtitleToSrt { info, source } => srt::run(&ctx, info, source).await,
     };
     let (state, result, error) = match out {
         Ok(r) => (BgJobState::Done, Some(r), None),
@@ -359,6 +336,44 @@ async fn run(rt: Arc<Runtime>, job: Arc<BgJob>) {
     };
     finish(&rt, &job, state, result, error);
     pump(&rt);
+}
+
+async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
+    let job = &ctx.job;
+    match &job.req.kind {
+        JobKind::Sprite { info } => sprite::run(ctx, info).await,
+        JobKind::Scan { info } => scan::run(ctx, info).await,
+        JobKind::Fingerprint {
+            window,
+            max_lookup_minutes,
+        } => fingerprint::run(ctx, window, *max_lookup_minutes).await,
+        JobKind::SubtitleExtract { info } => subtitles::run(ctx, info).await,
+        JobKind::SubtitleOcr {
+            info,
+            stream_index,
+            language,
+        } => ocr::run(ctx, info, *stream_index, language.as_deref()).await,
+        JobKind::SubtitleSync {
+            info,
+            subtitle,
+            reference,
+            max_offset_seconds,
+            no_fix_framerate,
+            gss,
+        } => {
+            sync::run(
+                ctx,
+                info,
+                subtitle,
+                reference,
+                *max_offset_seconds,
+                no_fix_framerate.unwrap_or(false),
+                gss.unwrap_or(false),
+            )
+            .await
+        }
+        JobKind::SubtitleToSrt { info, source } => srt::run(ctx, info, source).await,
+    }
 }
 
 fn finish(
@@ -549,7 +564,7 @@ impl Ctx {
             let watch = self.supervise(
                 &procs,
                 &mut preempted,
-                &mut urgent,
+                playback.is_none().then_some(&mut urgent),
                 &mut cancel,
                 timeout_ms,
                 &paused,
@@ -576,7 +591,10 @@ impl Ctx {
             Ok(out) => return Ok(out),
             Err(r) => r,
         };
-        Err(if reason == CANCELLED {
+        if reason == PROMOTED {
+            self.job.promoted.store(true, Relaxed);
+        }
+        Err(if reason == CANCELLED || reason == PROMOTED {
             reason.into()
         } else {
             format!("{} {reason}", cmds[0].name)
@@ -588,19 +606,25 @@ impl Ctx {
         &self,
         procs: &[Arc<Ffmpeg>],
         preempted: &mut watch::Receiver<bool>,
-        urgent: &mut watch::Receiver<bool>,
+        mut urgent: Option<&mut watch::Receiver<bool>>,
         cancel: &mut watch::Receiver<bool>,
         timeout_ms: u64,
         paused_out: &AtomicBool,
     ) -> &'static str {
         let cap = self.rt.pause_capability();
         let lifetime = &self.rt.current_config().lifetime;
-        let (mut paused, mut active_ms, mut tick) = (false, 0u64, Instant::now());
+        let (mut paused, mut raised, mut active_ms, mut tick) =
+            (false, false, 0u64, Instant::now());
         let (mut lines, mut cpu, mut last_progress) = (0, 0, now_ms());
         loop {
             tokio::select! {
                 _ = preempted.changed() => {}
-                _ = urgent.changed() => {}
+                _ = async {
+                    match urgent.as_mut() {
+                        Some(u) => u.changed().await.ok(),
+                        None => std::future::pending().await,
+                    }
+                } => {}
                 _ = cancel.changed() => {}
                 _ = tokio::time::sleep(TICK) => {}
             }
@@ -611,7 +635,15 @@ impl Ctx {
             if *cancel.borrow() {
                 return CANCELLED;
             }
-            let want = *preempted.borrow() && !*urgent.borrow();
+            let promoted = urgent.as_ref().is_some_and(|u| *u.borrow());
+            if promoted && !raised {
+                // Raised in place when the OS lets it, else stopped for `run` to redo on a playback slot.
+                if !procs.iter().all(|p| p.restore_priority()) {
+                    return PROMOTED;
+                }
+                raised = true;
+            }
+            let want = *preempted.borrow() && !promoted;
             if want != paused {
                 let mut sent = false;
                 for p in procs {
