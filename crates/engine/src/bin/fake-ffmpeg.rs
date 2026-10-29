@@ -106,6 +106,31 @@ fn probe(mode: &str, args: &[String]) {
             eprintln!("fake ffprobe: boom");
             std::process::exit(1)
         }
+        // The packet run hangs while niced (idle class); it logs its nice to `<input>.runs`.
+        "idlescan" => {
+            let nice = std::fs::read_to_string("/proc/self/stat")
+                .ok()
+                .and_then(|t| {
+                    t.rsplit(')')
+                        .next()?
+                        .split(' ')
+                        .nth(17)?
+                        .parse::<i32>()
+                        .ok()
+                });
+            let input = args.last().unwrap();
+            let mut runs = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(format!("{input}.runs"))
+                .unwrap();
+            let _ = writeln!(runs, "{}", nice.unwrap_or(0));
+            if nice == Some(19) {
+                println!("pts_time=0.000000|dts_time=0.000000|duration_time=0.041667|flags=K_");
+                let _ = std::io::stdout().flush();
+                hang()
+            }
+        }
         "hangscan" => {
             println!("pts_time=0.000000|dts_time=0.000000|duration_time=0.041667|flags=K_");
             let _ = std::io::stdout().flush();
@@ -402,8 +427,8 @@ fn main() {
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
-        m @ ("scan" | "failscan" | "hangscan" | "fp" | "failfp" | "hangfp" | "sub" | "emptysub"
-        | "failsub" | "hangsub" | "slowsub") => job(m, &args),
+        m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
+        | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),
         "sync" => {
             if args.iter().any(|a| a == "pcm_s16le") {
                 eprintln!("no audio");

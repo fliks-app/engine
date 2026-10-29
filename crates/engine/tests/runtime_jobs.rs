@@ -476,6 +476,57 @@ async fn scan_job_of_mpeg_ts_reads_the_adts_headers_from_the_same_bytes() {
     }
 }
 
+/// The nice values the fake packet run logged, one per run.
+#[cfg(target_os = "linux")]
+fn runs_of(file: &std::path::Path) -> Vec<String> {
+    let log = format!("{}.runs", file.display());
+    std::fs::read_to_string(log)
+        .map(|t| t.lines().map(String::from).collect())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn promoting_a_running_scan_redoes_it_on_a_playback_slot_without_the_wrapper() {
+    // SAFETY: geteuid has no preconditions. A privileged engine renices in place instead.
+    if unsafe { libc::geteuid() } == 0 || !fliks_engine::proc::background("x", &[]).0.eq("ionice") {
+        return;
+    }
+    let (e, file) = engine_of("idlescan", json!({ "ffmpegSlots": 1 })).await;
+    let req = |_| {
+        serde_json::from_value(json!({
+            "kind": { "type": "Scan", "info": info() },
+            "media": { "mediaFileId": 7, "path": file },
+        }))
+        .unwrap()
+    };
+    let mut rx = e.rt.events.subscribe();
+    let id = fliks_engine::jobs::submit(&e.rt, req(())).unwrap();
+    until("the idle-class packet run", 30, || runs_of(&file) == ["19"]).await;
+    assert_eq!(e.rt.slots.playback_in_use(), 0);
+    let again = fliks_engine::jobs::submit_urgent(&e.rt, req(())).unwrap();
+    assert_eq!(again, id, "one job, one run key");
+    let (_, ev) = done(&mut rx, &id).await;
+    let v = done_json(&ev);
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(
+        v["result"]["scan"]["keyframes"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert_eq!(runs_of(&file), ["19", "0"], "redone once, without nice");
+    assert_eq!(
+        e.control("GET", "/v1/jobs", None)
+            .await
+            .json()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(e.ffmpeg_pids().is_empty());
+    until("slots released", 30, || e.rt.slots.playback_in_use() == 0).await;
+}
+
 #[tokio::test]
 async fn scan_job_fails_cancels_and_is_validated() {
     let (e, file) = engine_of("failscan", json!({})).await;
