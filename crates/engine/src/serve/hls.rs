@@ -18,8 +18,8 @@ use fliks_engine_core::hls::{
     Rendition, audio_playlist, iframe_index, iframe_resolution, master_playlist, variant_playlist,
 };
 use fliks_engine_core::mp4::{
-    IdMap, TrackInfo, input_seek_seconds, parse_init_tracks, rewrite_cmaf, rewrite_segment_tfdt,
-    served_origin,
+    IdMap, TrackInfo, has_samples, input_seek_seconds, parse_init_tracks, rewrite_cmaf,
+    rewrite_segment_tfdt, served_origin,
 };
 use fliks_engine_core::session::{
     MasterQuery, SegmentName, is_valid_quality, master_options, parse_segment_name,
@@ -321,27 +321,46 @@ async fn package(
     name: SegmentName,
     s: &Session,
     keyframe_cut: bool,
-) -> Option<(Body, usize)> {
+) -> Result<(Body, usize), Unpackable> {
     if path.extension().is_some_and(|e| e == "ts") {
-        let file = tokio::fs::File::open(path).await.ok()?;
-        let len = usize::try_from(file.metadata().await.ok()?.len()).ok()?;
-        return (len > 0).then(|| (stream_body(file, 256 * 1024), len));
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|_| Unpackable::Gone)?;
+        let len = file.metadata().await.map_err(|_| Unpackable::Gone)?.len();
+        let len = usize::try_from(len).map_err(|_| Unpackable::Gone)?;
+        return if len > 0 {
+            Ok((stream_body(file, 256 * 1024), len))
+        } else {
+            Err(Unpackable::Gone)
+        };
     }
-    let mut buf = rewrite_cmaf(tokio::fs::read(path).await.ok()?)?;
+    let read = || async { rewrite_cmaf(tokio::fs::read(path).await.ok()?) };
+    let mut buf = read().await.ok_or(Unpackable::Gone)?;
     if let (SegmentName::Segment(n), false) = (name, keyframe_cut) {
-        let tracks = init_tracks(rt, path.parent()?).await;
+        if !has_samples(&buf) {
+            return Err(Unpackable::NoMedia);
+        }
+        let tracks = init_tracks(rt, path.parent().ok_or(Unpackable::Gone)?).await;
         let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
         let origin = served_origin(s.plan.timeline.origin);
         buf = match rewrite_segment_tfdt(buf, &tracks, n, seg, origin) {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!(path = %path.display(), "tfdt rewrite: {e:?}");
-                rewrite_cmaf(tokio::fs::read(path).await.ok()?)?
+                read().await.ok_or(Unpackable::Gone)?
             }
         };
     }
     let len = buf.len();
-    Some((Body::from(buf), len))
+    Ok((Body::from(buf), len))
+}
+
+/// Why a cache file cannot be served.
+enum Unpackable {
+    /// Removed or unreadable (a restart): the player retries.
+    Gone,
+    /// A sample-less segment, what ffmpeg writes when it seeks past the end of the source.
+    NoMedia,
 }
 
 /// CMCD of a request: `?CMCD=`, else the `CMCD-*` headers.
@@ -385,8 +404,19 @@ async fn respond(
         }
     };
     // A restart can remove the file between the wait and the read.
-    let Some((body, len)) = package(rt, &path, name, s, remux).await else {
-        return retry();
+    let (body, len) = match package(rt, &path, name, s, remux).await {
+        Ok(p) => p,
+        Err(Unpackable::Gone) => return retry(),
+        Err(Unpackable::NoMedia) => {
+            let at = if let SegmentName::Segment(n) = name {
+                n
+            } else {
+                0
+            };
+            let start = job.as_ref().map_or(at, |j| j.start_segment);
+            rt.discard_no_media(job.as_ref(), &path, start, s).await;
+            return text(StatusCode::NOT_FOUND, "Segment not found");
+        }
     };
     rt.cache.touch(&path).await;
     if let SegmentName::Segment(index) = name {

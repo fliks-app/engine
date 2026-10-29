@@ -23,9 +23,9 @@ pub use remux::{
     remux_run_start, seg_name,
 };
 pub use timeline::{
-    DecodeExtent, IdMap, RawSample, TfdtInfo, TrackInfo, first_tfdt, parse_init_tracks,
-    parse_trex_defaults, read_init_edits, read_tfdt, retime_fragments, rewrite_segment_tfdt,
-    trun_samples, video_decode_extent, with_init_edits,
+    DecodeExtent, IdMap, RawSample, TfdtInfo, TrackInfo, first_tfdt, has_samples,
+    parse_init_tracks, parse_trex_defaults, read_init_edits, read_tfdt, retime_fragments,
+    rewrite_segment_tfdt, trun_samples, video_decode_extent, with_init_edits,
 };
 
 /// Where the host throws.

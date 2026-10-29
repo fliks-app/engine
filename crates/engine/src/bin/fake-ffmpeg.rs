@@ -258,6 +258,26 @@ fn job(mode: &str, args: &[String]) {
     }
 }
 
+/// A VOD run that seeked past the end: an init and a sample-less first segment, exit 0.
+fn nomedia(args: &[String]) {
+    let after = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let dir = Path::new(after("-hls_segment_filename")).parent().unwrap();
+    let start: u32 = after("-start_number").parse().unwrap();
+    let boxed = |kind: &[u8; 4], body: &[u8]| {
+        let mut b = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+        b.extend(kind);
+        b.extend(body);
+        b
+    };
+    let trun = boxed(b"trun", &[0; 8]);
+    let moof = boxed(b"moof", &boxed(b"traf", &trun));
+    put(&dir.join("init.mp4"), b"init");
+    put(
+        &dir.join(format!("seg-{start:04}.m4s")),
+        [moof, boxed(b"mdat", &[])].concat(),
+    );
+}
+
 /// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
 /// silent, `dies` writes three then exits once `die` exists in the run's directory.
 fn live(args: &[String]) {
@@ -378,6 +398,7 @@ fn main() {
         // Dies on a VAAPI command line, hangs on the CPU one.
         "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
+        "nomedia" => nomedia(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),

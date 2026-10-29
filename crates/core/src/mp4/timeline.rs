@@ -458,6 +458,17 @@ pub fn trun_samples(
     Ok(out)
 }
 
+/// Whether a media segment carries at least one sample (ffmpeg writes a sample-less one when it
+/// produced no frames).
+pub fn has_samples(seg: &[u8]) -> bool {
+    boxes(seg, 0, seg.len())
+        .filter(|m| &m.kind == b"moof")
+        .flat_map(|m| boxes(seg, m.payload_start, m.end()))
+        .filter(|t| &t.kind == b"traf")
+        .filter_map(|t| find_box(seg, t.payload_start, t.end(), b"trun"))
+        .any(|t| u32_at(seg, t.payload_start + 4).is_ok_and(|n| n > 0))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodeExtent {
     /// First traf's tfdt plus every sample duration, in ticks.
@@ -515,4 +526,24 @@ pub fn parse_trex_defaults(init: &[u8]) -> Result<IdMap<u32>, Mp4Error> {
         set(&mut out, id, u32_at(init, trex.payload_start + 12)?);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod sample_tests {
+    use super::*;
+
+    fn moof(count: u32) -> Vec<u8> {
+        let mut trun = vec![0; 4];
+        trun.extend(count.to_be_bytes());
+        let trun = make_box(b"trun", &[&trun]).unwrap();
+        let traf = make_box(b"traf", &[&trun]).unwrap();
+        make_box(b"moof", &[&traf]).unwrap()
+    }
+
+    #[test]
+    fn a_segment_without_samples_is_empty() {
+        assert!(has_samples(&moof(1)));
+        assert!(!has_samples(&moof(0)));
+        assert!(!has_samples(&[]));
+    }
 }
