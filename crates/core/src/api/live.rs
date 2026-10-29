@@ -66,8 +66,8 @@ pub struct LiveUpstream {
     /// uses it, failover skips it. The verdict is the host's, taken at open.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub at_capacity: bool,
-    /// Refuse loopback, link-local, private and other internal addresses, on every redirect hop
-    /// too. The host sets it for provider-supplied URLs; admin-configured LAN sources leave it off.
+    /// Refuse loopback, link-local, private and other internal addresses on every hop (redirects,
+    /// playlist entries, segments); only http(s). Set for provider-supplied URLs, off for LAN sources.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vetted: bool,
 }

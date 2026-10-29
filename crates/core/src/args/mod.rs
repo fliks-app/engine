@@ -214,6 +214,9 @@ pub enum LiveMode {
 #[serde(rename_all = "camelCase")]
 pub struct LiveArgs {
     pub input_url: String,
+    /// The vetting proxy every request of a vetted input goes through.
+    #[serde(default)]
+    pub vet_proxy: Option<String>,
     pub output_dir: String,
     pub segment_seconds: f64,
     pub window_minutes: f64,

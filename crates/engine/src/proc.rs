@@ -194,7 +194,24 @@ impl Ffmpeg {
     }
 
     pub async fn spawn_with(bin: &str, args: &[String], pipes: Pipes) -> io::Result<Self> {
+        Self::spawn_env(bin, args, pipes, false).await
+    }
+
+    /// A run whose `-http_proxy` must see every request: ffmpeg's `no_proxy` env would skip it.
+    pub async fn spawn_vetted(bin: &str, args: &[String]) -> io::Result<Self> {
+        Self::spawn_env(bin, args, Pipes::default(), true).await
+    }
+
+    async fn spawn_env(
+        bin: &str,
+        args: &[String],
+        pipes: Pipes,
+        no_proxy_env: bool,
+    ) -> io::Result<Self> {
         let mut cmd = Command::new(bin);
+        if no_proxy_env {
+            cmd.env_remove("no_proxy").env_remove("NO_PROXY");
+        }
         cmd.args(args)
             .stdin(Stdio::piped())
             .stdout(if pipes.stdout {

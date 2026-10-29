@@ -3,7 +3,7 @@
 use super::vet::{self, Resolver};
 use super::{
     DIRECT_CONNECT_TIMEOUT, DIRECT_SNIFF, Direct, FIRST_SEGMENT_POLL, FIRST_SEGMENT_TIMEOUT,
-    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, probe,
+    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, probe, vetted_proxy,
 };
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
@@ -115,11 +115,15 @@ async fn spawn_packaged(
     {
         pipe.m.locked().probes[i] = Some(p);
     }
-    if u.vetted
-        && let Err(e) = vet::check(&u.url).await
-    {
-        pipe.m.locked().last_error = Some(e);
-        return false;
+    let mut vet_proxy = None;
+    if u.vetted {
+        match vetted_proxy(rt, &u.url).await {
+            Ok(p) => vet_proxy = Some(p),
+            Err(e) => {
+                pipe.m.locked().last_error = Some(e);
+                return false;
+            }
+        }
     }
     let Some(caps) = rt.caps() else { return false };
     let dir = pipe.dir.clone().expect("packaged pipe");
@@ -148,6 +152,7 @@ async fn spawn_packaged(
     let argv = args::live(
         &LiveArgs {
             input_url: u.url.clone(),
+            vet_proxy: vet_proxy.clone(),
             output_dir: dir.to_string_lossy().into_owned(),
             segment_seconds: pipe.segment_seconds,
             window_minutes: pipe.window_minutes,
@@ -170,7 +175,12 @@ async fn spawn_packaged(
         &caps,
         &rt.device(&caps),
     );
-    let proc = match Ffmpeg::spawn(&rt.ffmpeg, &argv).await {
+    let spawned = if vet_proxy.is_some() {
+        Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
+    } else {
+        Ffmpeg::spawn(&rt.ffmpeg, &argv).await
+    };
+    let proc = match spawned {
         Ok(p) => Arc::new(p),
         Err(e) => {
             pipe.m.locked().last_error = Some(format!("spawn: {e}"));
