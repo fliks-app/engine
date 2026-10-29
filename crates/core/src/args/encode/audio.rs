@@ -32,10 +32,7 @@ pub fn video_map(index: Option<u32>) -> String {
     index.map_or("0:v:0".into(), |i| format!("0:{i}"))
 }
 
-/// Pads or trims the audio to start on the video's first frame and pads it to `end`.
-/// `stereo` downmixes here, unnormalised: swresample's default scales the whole matrix down
-/// (the centre ends up 10 dB under the source), `rematrix_maxval` keeps ATSC's -3 dB;
-/// `alimiter` only catches the rare sum over full scale.
+/// Aligns the audio to the video's first frame and pads it to `end`; `stereo` downmixes.
 fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
     let st = seconds(start.abs());
     let (to, back) = if start < 0.0 { ("+", "-") } else { ("-", "+") };
