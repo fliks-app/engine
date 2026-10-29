@@ -5,7 +5,7 @@ use crate::lock::Locked;
 use fliks_engine_core::mp4::{
     AudioGroup, OpenedRun, RemuxAssemblyPlan, check_gop, gop_complete, gops_of, open_audio,
     open_run, parse_frame, plan_boundary_seconds, read_box_header, retime_fragments, seg_name,
-    tail_boxes,
+    tail_boxes, ts_gop_complete,
 };
 use fliks_engine_core::session::RemuxProgress;
 use std::fs::File;
@@ -291,8 +291,9 @@ impl Assembler {
             .collect()
     }
 
-    /// MPEG-TS: a GOP file is whole once it exists (ffmpeg renames it when closed), and files
-    /// concatenate into a segment. False until the run's first GOP is out.
+    /// MPEG-TS: GOP files concatenate into a segment. A file exists once the muxer closed it, but a
+    /// stop closes the last one early, so each is checked against the grid. False until the run's
+    /// first GOP is out.
     fn pump_video_ts(&mut self) -> Result<bool, String> {
         if self.opened_at.is_none() {
             if !exists(&self.gop_path(self.plan.start_number)) {
@@ -306,13 +307,18 @@ impl Assembler {
             if !exists(&self.gop_path(*gops.last().unwrap_or(&self.next))) {
                 break;
             }
+            let mut files = Vec::with_capacity(gops.len());
+            for g in &gops {
+                let bytes = std::fs::read(self.gop_path(*g)).map_err(|e| e.to_string())?;
+                if !ts_gop_complete(&self.plan, *g, &bytes).map_err(|e| e.to_string())? {
+                    return Ok(true);
+                }
+                files.push(bytes);
+            }
             write_new(&self.dir.join(seg_name(self.next, true)), |out| {
-                gops.iter().try_for_each(|g| {
-                    let mut f = File::open(self.gop_path(*g)).map_err(|e| e.to_string())?;
-                    std::io::copy(&mut f, out)
-                        .map(drop)
-                        .map_err(|e| e.to_string())
-                })
+                files
+                    .iter()
+                    .try_for_each(|b| out.write_all(b).map_err(|e| e.to_string()))
             })?;
             for g in &gops {
                 let _ = std::fs::remove_file(self.gop_path(*g));

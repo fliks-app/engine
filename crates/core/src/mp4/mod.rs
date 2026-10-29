@@ -8,6 +8,7 @@ mod timeline;
 
 pub use assemble::{
     AudioGroup, OpenedRun, RunVideo, check_gop, gop_complete, open_audio, open_run, tail_boxes,
+    ts_gop_complete,
 };
 pub use boxes::{BoxRef, boxes, find_box, make_box, read_box_header};
 pub use cmaf::{cmaf_rewrite, is_cmaf_rewritten, rewrite_cmaf};

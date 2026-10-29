@@ -162,6 +162,43 @@ pub fn gop_complete(
     Ok(ext.end + ext.last_duration / 2 >= big_int(target)?)
 }
 
+/// Whether the MPEG-TS GOP file `ts` spans grid GOP `gop`: `Ok(false)` when it ends early (a stop
+/// closed the muxer mid-GOP), an error when it runs into a neighbour (the run landed off the grid).
+/// Without a grid the muxer's rename is the only completion signal.
+pub fn ts_gop_complete(plan: &RemuxAssemblyPlan, gop: usize, ts: &[u8]) -> Result<bool, Mp4Error> {
+    let (Some(pts), Some(bounds)) = (&plan.gop_pts, &plan.boundaries) else {
+        return Ok(true);
+    };
+    let frames = crate::mpegts::video_pts(ts);
+    let (Some(&lo), Some(&hi)) = (frames.iter().min(), frames.iter().max()) else {
+        return Ok(false);
+    };
+    let span = (hi - lo) as f64 / 90_000.0;
+    let frame = if frames.len() > 1 {
+        span / (frames.len() - 1) as f64
+    } else {
+        0.1
+    };
+    let end = pts
+        .get(gop + 1)
+        .copied()
+        .or_else(|| bounds.last().copied())
+        .unwrap_or(f64::NAN);
+    let want = end - pts.get(gop).copied().unwrap_or(f64::NAN);
+    let have = span + frame;
+    if have + frame / 2.0 < want {
+        return Ok(false);
+    }
+    if have > want + frame * 4.0 {
+        return Err(Mp4Error::Msg(format!(
+            "GOP file {gop} spans {}s, not the planned {}s",
+            to_fixed(have, 3),
+            to_fixed(want, 3)
+        )));
+    }
+    Ok(true)
+}
+
 /// Whether `moof` opens grid GOP `g`'s video (`Ok(false)` without a video fragment); an error
 /// when it opens a neighbour, whose samples a file matched by number alone would serve.
 /// [ts:ra:557-575]
@@ -320,5 +357,49 @@ impl AudioGroup {
             &data,
         )?;
         Ok(Some((seg, built)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ts_gop(frames: u64) -> Vec<u8> {
+        (0..frames)
+            .flat_map(|i| {
+                let pts = 90_000 + i * 3_600;
+                let mut p = vec![0x47, 0x41, 0x00, 0x10, 0, 0, 1, 0xe0, 0, 0, 0x80, 0x80, 5];
+                p.extend([
+                    0x21 | (pts >> 29) as u8 & 0xe,
+                    (pts >> 22) as u8,
+                    (pts >> 14) as u8 | 1,
+                    (pts >> 7) as u8,
+                    (pts << 1) as u8 | 1,
+                ]);
+                p.resize(188, 0xff);
+                p
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ts_gop_must_span_its_grid_gop() {
+        let plan = RemuxAssemblyPlan {
+            start_segment: 0,
+            start_number: 0,
+            seek_seconds: 0.0,
+            first_gop: None,
+            gop_pts: Some(vec![0.0, 2.0, 4.0]),
+            gop_dts: None,
+            start: 0.0,
+            first_decode: None,
+            boundaries: Some(vec![0.0, 4.0]),
+            segment_duration: 2.0,
+            audio_renditions: 0,
+            use_ts: true,
+        };
+        assert!(ts_gop_complete(&plan, 0, &ts_gop(50)).unwrap());
+        assert!(!ts_gop_complete(&plan, 0, &ts_gop(20)).unwrap());
+        assert!(ts_gop_complete(&plan, 0, &ts_gop(100)).is_err());
     }
 }

@@ -303,6 +303,33 @@ impl Demuxer {
     }
 }
 
+/// PTS (90 kHz) of every video PES that starts in plain 188-byte packets.
+pub fn video_pts(ts: &[u8]) -> Vec<u64> {
+    ts.as_chunks::<PACKET>()
+        .0
+        .iter()
+        .filter(|p| p[0] == SYNC && p[1] & 0x40 != 0 && p[3] & 0x10 != 0)
+        .filter_map(|p| {
+            let at = if p[3] & 0x20 != 0 {
+                5 + usize::from(p[4])
+            } else {
+                4
+            };
+            let h = p.get(at..at + 14)?;
+            if h[..3] != [0, 0, 1] || h[3] & 0xf0 != 0xe0 || h[7] & 0x80 == 0 {
+                return None;
+            }
+            Some(
+                u64::from(h[9] >> 1 & 7) << 30
+                    | u64::from(h[10]) << 22
+                    | u64::from(h[11] >> 1) << 15
+                    | u64::from(h[12]) << 7
+                    | u64::from(h[13] >> 1),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,5 +580,24 @@ mod tests {
         t.extend(m.audio(&frame(4, 200)));
         t.extend(m.packets(AUDIO, true, &[9; 50]));
         assert!(run(&t, 4096).is_none());
+    }
+
+    #[test]
+    fn video_pts_reads_pes_starts() {
+        let mut ts = vec![];
+        for pts in [90_000u64, 93_600] {
+            let mut p = vec![0x47, 0x41, 0x00, 0x30, 0x01, 0x00];
+            p.extend([0, 0, 1, 0xe0, 0, 0, 0x80, 0x80, 5]);
+            p.extend([
+                0x21 | (pts >> 29) as u8 & 0xe,
+                (pts >> 22) as u8,
+                (pts >> 14) as u8 | 1,
+                (pts >> 7) as u8,
+                (pts << 1) as u8 | 1,
+            ]);
+            p.resize(188, 0xff);
+            ts.extend(p);
+        }
+        assert_eq!(video_pts(&ts), [90_000, 93_600]);
     }
 }
