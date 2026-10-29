@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.6](https://github.com/fliks-app/engine/compare/v1.7.5...v1.7.6) (2026-10-29)
+
+
+### Bug Fixes
+
+* **jobs:** raise a promoted background job to playback priority ([#149](https://github.com/fliks-app/engine/issues/149)) ([e66af74](https://github.com/fliks-app/engine/commit/e66af74015d46e5db0e0cdcde83bed47cf89db06))
+
 ## [1.7.5](https://github.com/fliks-app/engine/compare/v1.7.4...v1.7.5) (2026-10-29)
 
 
