@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.4](https://github.com/fliks-app/engine/compare/v1.7.3...v1.7.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **args:** keep the Vulkan tone-map to sources a VAAPI decoder takes ([e15096f](https://github.com/fliks-app/engine/commit/e15096fddc801b58255d04c17199fc19f06aeea2))
+* **live:** vet every hop of a vetted ffmpeg or ffprobe input ([d8b6097](https://github.com/fliks-app/engine/commit/d8b6097786975070a7589ff45abb8af4953c88cd))
+* **remux:** check each MPEG-TS GOP against the grid before serving it ([5e14420](https://github.com/fliks-app/engine/commit/5e14420d434dd161732311196aef1790a3abe187))
+* **session:** bump the segment timeline version ([68106ba](https://github.com/fliks-app/engine/commit/68106ba07ca3c54f7b4189781ff9e9298a33dc59))
+* **subtitles:** serve a text track when another track of the file cannot convert ([85a8ae7](https://github.com/fliks-app/engine/commit/85a8ae79d3d0a3dc1aa6b804ab2cab5c2fa11dba))
+* **token:** never adopt a token file or dir another user could control ([5e83e2c](https://github.com/fliks-app/engine/commit/5e83e2c0b62d3941ec43c513890c7d8b7d06ea94))
+
 ## [1.7.3](https://github.com/fliks-app/engine/compare/v1.7.2...v1.7.3) (2026-10-28)
 
 
