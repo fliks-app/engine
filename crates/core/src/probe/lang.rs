@@ -189,6 +189,16 @@ pub fn is_image_based(codec: Option<&str>) -> bool {
     )
 }
 
+/// Codecs ffmpeg can convert to ASS: not bitmaps, and not the text-like ones with no usable decoder
+/// (teletext decodes to bitmaps, TTML and TextST have none) or an unknown codec.
+pub fn converts_to_ass(codec: Option<&str>) -> bool {
+    !is_image_based(codec)
+        && !matches!(
+            codec,
+            None | Some("" | "dvb_teletext" | "ttml" | "hdmv_text_subtitle")
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

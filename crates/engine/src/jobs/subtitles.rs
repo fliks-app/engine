@@ -35,6 +35,29 @@ pub async fn store(dir: &Path, stream: u32, vtt: &str) -> std::io::Result<()> {
     tokio::fs::rename(&tmp, vtt_path(dir, stream)).await
 }
 
+/// Where ffmpeg writes each stream's ASS before conversion; the tag keeps concurrent runs apart.
+pub fn raw_files(dir: &Path, streams: &[u32]) -> Vec<(u32, String)> {
+    let tag = crate::random_hex(4);
+    streams
+        .iter()
+        .map(|s| {
+            let p = dir.join(format!("{s}.ass.{tag}"));
+            (*s, p.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
+/// Converts ffmpeg's ASS output of one stream and stores its WebVTT.
+pub async fn convert_raw(dir: &Path, stream: u32, raw: &str) -> Result<(), String> {
+    let bytes = tokio::fs::read(raw)
+        .await
+        .map_err(|e| format!("stream {stream}: read {raw}: {e}"))?;
+    let vtt = raw_to_vtt(&bytes, raw).map_err(|e| format!("stream {stream}: {e}"))?;
+    store(dir, stream, &vtt)
+        .await
+        .map_err(|e| format!("stream {stream}: write: {e}"))
+}
+
 pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
     let dir = ctx.rt.cache.subtitles_dir(ctx.job.req.media.media_file_id);
     let all = text_stream_indices(info);
@@ -45,14 +68,7 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
         .collect();
     if !pending.is_empty() {
         ctx.check_disk(&dir).await?;
-        let tag = crate::random_hex(4);
-        let raws: Vec<(u32, String)> = pending
-            .iter()
-            .map(|s| {
-                let p = dir.join(format!("{s}.ass.{tag}"));
-                (*s, p.to_string_lossy().into_owned())
-            })
-            .collect();
+        let raws = raw_files(&dir, &pending);
         let out = extract(ctx, &dir, &raws).await;
         for (_, raw) in &raws {
             let _ = tokio::fs::remove_file(raw).await;
@@ -79,15 +95,8 @@ async fn extract(ctx: &Ctx, dir: &Path, raws: &[(u32, String)]) -> Result<(), St
         if ctx.cancelled() {
             return Err(CANCELLED.into());
         }
-        let vtt = match tokio::fs::read(raw).await {
-            Ok(b) => raw_to_vtt(&b, raw),
-            Err(e) => Err(format!("read {raw}: {e}")),
-        };
-        match vtt {
-            Ok(v) => store(dir, *stream, &v)
-                .await
-                .unwrap_or_else(|e| errors.push(format!("stream {stream}: write: {e}"))),
-            Err(e) => errors.push(format!("stream {stream}: {e}")),
+        if let Err(e) = convert_raw(dir, *stream, raw).await {
+            errors.push(e);
         }
         ctx.progress((i + 1) as f64 / raws.len() as f64 * 99.0);
     }
