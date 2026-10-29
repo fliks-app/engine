@@ -112,6 +112,7 @@
 * **runtime:** kill ffmpeg at once on seek and switch, wake a throttled run for a waiter ([#93](https://github.com/fliks-app/engine/issues/93)) ([78c5853](https://github.com/fliks-app/engine/commit/78c5853c5319f159582d7614eac826535fd8a9c5))
 * **runtime:** no early companion for a session that starts at the beginning ([#107](https://github.com/fliks-app/engine/issues/107)) ([1f1e123](https://github.com/fliks-app/engine/commit/1f1e1231a9b39587e68b4985760c3e05d59f9e80))
 * **runtime:** split the cores between concurrent software encodes ([#95](https://github.com/fliks-app/engine/issues/95)) ([3fbc327](https://github.com/fliks-app/engine/commit/3fbc327617ae5afe0895982d17541f49e7e1d6d5))
+* **subtitles:** extract every text track of a file in one pass on the first embedded-track request ([a384c86](https://github.com/fliks-app/engine/commit/a384c869bd2b468b0830a79b9efd0a095e7b6706))
 * **subtitles:** extract every text track of a file in one pass ([a384c86](https://github.com/fliks-app/engine/commit/a384c869bd2b468b0830a79b9efd0a095e7b6706))
 
 ## [1.0.2](https://github.com/fliks-app/engine/compare/v1.0.1...v1.0.2) (2026-10-22)
