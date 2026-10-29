@@ -1,7 +1,7 @@
 //! Decoder descriptors and the argv slice each puts before `-i`.
 //! [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:30-125]
 use super::device::Device;
-use crate::api::{HwAccel, Platform, VideoCodec};
+use crate::api::{HostCaps, HwAccel, Platform, VideoCodec};
 use crate::strs;
 
 /// Frame memory between decode and encode. [ts:backend/src/modules/streaming/transcoding/codec/decoders/types.ts:20]
@@ -289,6 +289,55 @@ pub(super) fn qsv_native_hevc(p: Platform) -> &'static Decoder {
         "hevc_qsv_decode"
     };
     DECODERS.iter().find(|d| d.id == id).unwrap()
+}
+
+/// Decoder registry: same backend, then any other HW one, then CPU.
+/// [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:66-103]
+pub(crate) fn resolve_decoder(
+    codec: DecodeCodec,
+    depth: u32,
+    preferred: HwAccel,
+    caps: &HostCaps,
+) -> &'static Decoder {
+    let registry = DECODERS.iter().take_while(|d| d.id != "cpu");
+    let usable = |d: &&Decoder| {
+        d.supported(caps.platform)
+            && d.codec.is_none_or(|c| c == codec)
+            && depth <= d.max_bit_depth()
+            && !caps.disabled_decoders.iter().any(|x| x == d.id)
+    };
+    registry
+        .clone()
+        .filter(|d| d.hw() == preferred)
+        .find(usable)
+        .or_else(|| {
+            (preferred != HwAccel::None)
+                .then(|| {
+                    registry
+                        .filter(|d| d.hw() != preferred && d.hw() != HwAccel::None)
+                        .find(usable)
+                })
+                .flatten()
+        })
+        .unwrap_or_else(|| find("cpu"))
+}
+
+/// The decoder for a source codec as ffprobe names it; a reported codec without a HW decoder
+/// here decodes on the CPU, an unreported one is taken for H.264.
+pub(crate) fn source_decoder(
+    source: Option<&str>,
+    depth: u32,
+    preferred: HwAccel,
+    caps: &HostCaps,
+) -> &'static Decoder {
+    let codec = source.and_then(DecodeCodec::from_source);
+    let reported = source.is_some_and(|c| !c.is_empty());
+    let preferred = if reported && codec.is_none() {
+        HwAccel::None
+    } else {
+        preferred
+    };
+    resolve_decoder(codec.unwrap_or(DecodeCodec::H264), depth, preferred, caps)
 }
 
 pub(crate) fn find(id: &str) -> &'static Decoder {

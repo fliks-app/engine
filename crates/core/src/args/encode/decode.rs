@@ -6,7 +6,7 @@ use crate::decide::codec::codec_name;
 use crate::decide::tonemap::{Pipeline, TonemapPath};
 use crate::hw::Device;
 use crate::hw::GpuDeint;
-use crate::hw::decoders::{DECODERS, DecodeCodec, Decoder, Surface, find};
+use crate::hw::decoders::{DecodeCodec, Decoder, Surface, find, resolve_decoder, source_decoder};
 use crate::strs;
 
 pub(super) struct Sdr {
@@ -86,37 +86,6 @@ pub(super) fn hw_name(h: HwAccel) -> &'static str {
     }
 }
 
-/// Decoder registry: same backend, then any other HW one, then CPU.
-/// [ts:backend/src/modules/streaming/transcoding/codec/decoders/index.ts:66-103]
-fn resolve_decoder(
-    codec: DecodeCodec,
-    depth: u32,
-    preferred: HwAccel,
-    caps: &HostCaps,
-) -> &'static Decoder {
-    let registry = DECODERS.iter().take_while(|d| d.id != "cpu");
-    let usable = |d: &&Decoder| {
-        d.supported(caps.platform)
-            && d.codec.is_none_or(|c| c == codec)
-            && depth <= d.max_bit_depth()
-            && !caps.disabled_decoders.iter().any(|x| x == d.id)
-    };
-    registry
-        .clone()
-        .filter(|d| d.hw() == preferred)
-        .find(usable)
-        .or_else(|| {
-            (preferred != HwAccel::None)
-                .then(|| {
-                    registry
-                        .filter(|d| d.hw() != preferred && d.hw() != HwAccel::None)
-                        .find(usable)
-                })
-                .flatten()
-        })
-        .unwrap_or_else(|| find("cpu"))
-}
-
 /// VideoToolbox frames stay on the GPU only if its decoder is there and, for an interlaced source,
 /// so is its deinterlacer.
 fn vt_surface_decodable(codec: Option<DecodeCodec>, interlaced: bool, caps: &HostCaps) -> bool {
@@ -173,7 +142,6 @@ fn pick_decoder(
 ) -> &'static Decoder {
     let hw = p.effective;
     let codec = source_video_codec.and_then(DecodeCodec::from_source);
-    let reported = source_video_codec.is_some_and(|c| !c.is_empty());
     match codec {
         Some(c) if p.qsv_native => find(&format!(
             "{}{}",
@@ -187,17 +155,7 @@ fn pick_decoder(
         Some(c) if p.amf_opencl_available && hw == HwAccel::Amf => {
             find(&format!("{}_d3d11va_native_decode", c.name()))
         }
-        // A reported codec without a HW decoder here decodes on the CPU.
-        _ => resolve_decoder(
-            codec.unwrap_or(DecodeCodec::H264),
-            depth,
-            if reported && codec.is_none() {
-                HwAccel::None
-            } else {
-                hw
-            },
-            caps,
-        ),
+        _ => source_decoder(source_video_codec, depth, hw, caps),
     }
 }
 
