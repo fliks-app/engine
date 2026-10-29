@@ -49,13 +49,12 @@ pub fn list_args(path: &str) -> Vec<String> {
     a
 }
 
-/// The text (non-bitmap) stream indices of a [`list_args`] output.
+/// The indices of a [`list_args`] output that convert to ASS.
 pub fn parse_text_streams(out: &str) -> Vec<u32> {
     out.lines()
         .filter_map(|l| {
             let (idx, codec) = l.trim().split_once(',')?;
-            let codec = Some(codec.trim()).filter(|c| !c.is_empty());
-            (!crate::probe::is_image_based(codec))
+            crate::probe::converts_to_ass(Some(codec.trim()))
                 .then(|| idx.trim().parse().ok())
                 .flatten()
         })
@@ -70,11 +69,11 @@ pub fn webvtt_args(path: &str) -> Vec<String> {
     a
 }
 
-/// Streams the extraction applies to: every non-bitmap track.
+/// Streams the extraction applies to: every track ffmpeg converts to ASS.
 pub fn text_stream_indices(info: &MediaInfo) -> Vec<u32> {
     info.subtitles
         .iter()
-        .filter(|s| !s.is_image_based)
+        .filter(|s| !s.is_image_based && crate::probe::converts_to_ass(Some(&s.codec)))
         .map(|s| s.stream_index)
         .collect()
 }
@@ -458,15 +457,15 @@ mod tests {
 
     #[test]
     fn the_listing_keeps_text_streams_only() {
-        let out = "2,subrip\n3,hdmv_pgs_subtitle\n4,ass\n5,dvd_subtitle\n6,\nx,srt\n";
-        assert_eq!(parse_text_streams(out), vec![2, 4, 6]);
+        let out = "2,subrip\n3,hdmv_pgs_subtitle\n4,ass\n5,dvd_subtitle\n6,\nx,srt\n7,dvb_teletext\n8,ttml\n9,hdmv_text_subtitle\n";
+        assert_eq!(parse_text_streams(out), vec![2, 4]);
     }
 
     #[test]
     fn bitmap_tracks_are_not_extracted() {
         let s = |i, img| SubtitleStreamInfo {
             stream_index: i,
-            codec: String::new(),
+            codec: if img { "hdmv_pgs_subtitle" } else { "subrip" }.into(),
             language: String::new(),
             language_tag: None,
             title: None,

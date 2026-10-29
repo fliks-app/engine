@@ -77,29 +77,34 @@ async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<S
     cached().await.ok()
 }
 
-/// One ffmpeg run writing every uncached text track; `None` when `idx` is not one of them.
+/// Extracts every uncached text track in one run, as the job does; when that run fails, the
+/// requested track alone. `None` when `idx` is not a convertible text track.
 async fn extract_all(rt: &Runtime, dir: &Path, media: &str, idx: u32) -> Option<()> {
-    use crate::jobs::subtitles::{raw_to_vtt, store, vtt_path};
-    use fliks_engine_core::jobs::subtitles::{extract_args, list_args, parse_text_streams};
+    use crate::jobs::subtitles::vtt_path;
+    use fliks_engine_core::jobs::subtitles::{list_args, parse_text_streams};
     let listing = run_capture(rt, &list_args(media), Duration::from_secs(30), &rt.ffprobe).await?;
     let all = parse_text_streams(&String::from_utf8_lossy(&listing));
     if !all.contains(&idx) {
         return None;
     }
-    let tag = crate::random_hex(4);
     tokio::fs::create_dir_all(dir).await.ok()?;
-    let raws: Vec<(u32, String)> = all
+    rt.check_disk(dir).await.ok()?;
+    let pending: Vec<u32> = all
         .into_iter()
         .filter(|s| !vtt_path(dir, *s).exists())
-        .map(|s| {
-            (
-                s,
-                dir.join(format!("{s}.ass.{tag}"))
-                    .to_string_lossy()
-                    .into_owned(),
-            )
-        })
         .collect();
+    extract_into(rt, dir, media, &pending).await;
+    if !vtt_path(dir, idx).exists() && pending != [idx] {
+        extract_into(rt, dir, media, &[idx]).await;
+    }
+    Some(())
+}
+
+/// One ffmpeg run of `streams` into the cache; a track that fails to convert does not hold back the others.
+async fn extract_into(rt: &Runtime, dir: &Path, media: &str, streams: &[u32]) {
+    use crate::jobs::subtitles::{convert_raw, raw_files};
+    use fliks_engine_core::jobs::subtitles::extract_args;
+    let raws = raw_files(dir, streams);
     let outputs: Vec<(u32, &str)> = raws.iter().map(|(s, r)| (*s, r.as_str())).collect();
     let ran = run_capture(
         rt,
@@ -109,17 +114,11 @@ async fn extract_all(rt: &Runtime, dir: &Path, media: &str, idx: u32) -> Option<
     )
     .await;
     for (stream, raw) in &raws {
-        if ran.is_some()
-            && let Ok(vtt) = tokio::fs::read(raw)
-                .await
-                .map_err(|_| ())
-                .and_then(|b| raw_to_vtt(&b, raw).map_err(|_| ()))
-        {
-            let _ = store(dir, *stream, &vtt).await;
+        if ran.is_some() {
+            let _ = convert_raw(dir, *stream, raw).await;
         }
         let _ = tokio::fs::remove_file(raw).await;
     }
-    ran.map(|_| ())
 }
 
 async fn external_text(rt: &Runtime, path: &str, format: Option<&str>) -> Option<String> {
