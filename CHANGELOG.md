@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/fliks-app/engine/compare/v1.7.4...v1.7.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runtime:** fail a run that produces no media instead of caching it ([#147](https://github.com/fliks-app/engine/issues/147)) ([6c53c96](https://github.com/fliks-app/engine/commit/6c53c965b77de3ea3d26891f9a6bbf15035aad2a))
+
 ## [1.7.4](https://github.com/fliks-app/engine/compare/v1.7.3...v1.7.4) (2026-10-29)
 
 
