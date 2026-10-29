@@ -1,5 +1,6 @@
 //! Starting, watching and replacing the runs behind a session.
 
+use super::job::NO_MEDIA;
 use super::{Job, JobKind, JobMut, Runtime, Session, WATCH_EVERY, kill_all, now_ms};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
@@ -9,7 +10,7 @@ use fliks_engine_core::api::{EngineEvent, HwAccel, JobState};
 use fliks_engine_core::mp4::{remux_assembly_plan, remux_audio_grid, remux_run_start};
 use fliks_engine_core::session::{
     self as core_session, JobWatch, JobWatchInput, SegmentName, SegmentSet, early_run_seconds,
-    job_watch, parse_segment_name,
+    job_watch, parse_segment_name, segment_index_to_seconds,
 };
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -294,6 +295,36 @@ impl Runtime {
         Some(job)
     }
 
+    /// A run that produced no media (ffmpeg seeked past the end of the source) fails: its files
+    /// are removed so nothing empty stays cached, and it is logged once. `file` is the empty one.
+    pub async fn discard_no_media(
+        &self,
+        job: Option<&Arc<Job>>,
+        file: &Path,
+        start: u32,
+        s: &Session,
+    ) {
+        let dir = match job {
+            Some(j) => {
+                if j.m.locked().reason.replace(NO_MEDIA) == Some(NO_MEDIA) {
+                    return;
+                }
+                self.unregister(j);
+                j.dir.clone()
+            }
+            None => file.parent().map(Path::to_path_buf).unwrap_or_default(),
+        };
+        tracing::warn!(
+            path = %s.path,
+            start_s = segment_index_to_seconds(start, s.plan.segment_duration, s.plan.source_fps),
+            "ffmpeg produced no media, run discarded"
+        );
+        let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
+        if let Some(j) = job {
+            j.scan().await;
+        }
+    }
+
     /// Drops `job` from the registry unless another run replaced it.
     pub(super) fn unregister(&self, job: &Arc<Job>) {
         let mut reg = self.reg.locked();
@@ -392,6 +423,11 @@ impl Runtime {
             }
             job.scan().await;
             job.m.locked().pending = false;
+            if exit.code == Some(0) && !job.killed() && job.produced_nothing().await {
+                let init = job.file_path(0, SegmentName::Init(None));
+                self.discard_no_media(Some(&job), &init, job.start_segment, &s)
+                    .await;
+            }
             let state = job.state();
             if state == JobState::Failed {
                 tracing::warn!(
@@ -409,6 +445,7 @@ impl Runtime {
             });
             // The replacement is registered before the waiters wake, so they move on to it.
             if state == JobState::Failed
+                && job.m.locked().reason != Some(NO_MEDIA)
                 && !job.has(0, job.start_segment)
                 && job.hw != HwAccel::None
             {

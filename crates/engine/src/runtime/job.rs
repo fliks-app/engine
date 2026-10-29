@@ -6,6 +6,7 @@ use crate::proc::{Exit, Ffmpeg};
 use crate::remux::Remux;
 use crate::slots::PlaybackSlot;
 use fliks_engine_core::api::{HwAccel, JobState, JobStats};
+use fliks_engine_core::mp4::has_samples;
 use fliks_engine_core::session::{
     ExistingRun, PauseCapability, SegmentName, SegmentSet, parse_segment_name,
     segment_index_to_seconds,
@@ -15,6 +16,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::Instant;
+
+/// `JobEnded.reason` of a run that exited cleanly without writing its first segment's samples.
+pub(super) const NO_MEDIA: &str = "no-media";
 
 pub(super) struct JobMut {
     pub(super) sets: Vec<SegmentSet>,
@@ -149,6 +153,7 @@ impl Job {
             None if m.paused => JobState::Paused,
             None => JobState::Running,
             Some(_) if m.killed => JobState::Killed,
+            Some(_) if m.reason == Some(NO_MEDIA) => JobState::Failed,
             Some(e) if e.code == Some(0) => JobState::Done,
             Some(_) => JobState::Failed,
         }
@@ -250,6 +255,19 @@ impl Job {
             start_segment: self.start_segment,
             remux: self.remux.is_some(),
             assembler: self.remux.as_ref().map(|r| r.view.progress(audio)),
+        }
+    }
+
+    /// A finished main or early run whose first segment is missing or has no samples: ffmpeg
+    /// seeked past the end of the source.
+    pub(super) async fn produced_nothing(&self) -> bool {
+        if self.remux.is_some() || self.ext != "m4s" {
+            return false;
+        }
+        let path = self.file_path(0, SegmentName::Segment(self.start_segment));
+        match tokio::fs::read(path).await {
+            Ok(b) => !has_samples(&b),
+            Err(_) => true,
         }
     }
 

@@ -477,3 +477,38 @@ async fn a_burn_in_session_beside_a_soft_one_gets_its_own_hash_and_job() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn a_run_that_produces_no_media_is_discarded_and_answers_404() {
+    let (e, file) = engine_of(&fake("nomedia"), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let sid = open(&e, &file, resume()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    loop {
+        let (key, state, code, reason) = job_ended(&mut rx).await;
+        assert_eq!(
+            (state.as_str(), code, reason.as_deref()),
+            ("Failed", Some(0), Some("no-media"))
+        );
+        if key == s.job_key() {
+            break;
+        }
+    }
+    let dir = e.rt.cache.rung_dir(
+        s.owner.as_deref(),
+        s.media_file_id,
+        &s.cache_hash(JobKind::Main),
+        "720p",
+    );
+    let left: Vec<_> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+    let base = "/api/stream/7/720p";
+    let seg = format!("{base}/seg-0030.m4s?sid={sid}");
+    let r = e.get(&seg, "alice-jwt", &[]).await;
+    assert_eq!(r.status, 404);
+}

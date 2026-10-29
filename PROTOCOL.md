@@ -77,6 +77,8 @@ Engine serves `GET`/`HEAD` of `/api/stream/:mediaFileId/**` except `edl`; everyt
 | `:id/subtitles/embedded/:idx[/download\|/index.m3u8]`, `:id/subtitles/:subId[/download\|/index.m3u8]` | |
 | `/api/livetv/sessions/:sid/{index.m3u8,direct.ts,:segment}` (M6, `GET`/`HEAD`) | `/api/livetv/*` otherwise (`DELETE sessions/:sid`, `PUT sessions/:sid/state`, `channels/:id/play`) |
 
+A fMP4 run that exits cleanly without a sample in its first segment (ffmpeg seeked past the end of the source, e.g. a truncated file) is a failed run: `JobEnded { state: Failed, exitCode: 0, reason: "no-media" }`, logged once at warn with the file and start position, its cache files removed, and the segment request answers `404`, like a segment past the playlist's last one. A sample-less segment is never served.
+
 DirectStream: `:id/remux/*` and a remux session's audio renditions come from copy-video runs on the keyframe grid frozen at open (`docs/spec/runtime.md` section 9).
 
 ## Gateway (`--upstream`, spec: `docs/spec/gateway.md`)
