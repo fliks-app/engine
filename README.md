@@ -9,7 +9,7 @@ cargo run -p fliks-engine -- --listen 127.0.0.1:0     # prints FLIKS_ENGINE_LIST
 cargo run -p fliks-engine -- --supervise -- node dist/main   # engine as parent of the host
 ```
 
-The control plane (`/v1/*`) needs `Authorization: Bearer $FLIKS_ENGINE_TOKEN` (env, else `<FLIKS_CONF_DIR or /app/conf>/.engine-token`, else generated there, 0600; empty counts as unset; a supervised host receives it with `FLIKS_ENGINE_URL`).
+The control plane (`/v1/*`) needs `Authorization: Bearer $FLIKS_ENGINE_TOKEN` (env, else `<FLIKS_CONF_DIR or /app/conf>/.engine-token`, else generated there, 0600; empty counts as unset; a conf dir or token file not owned by the engine user, or a token file open to group or others, is ignored; a supervised host receives it with `FLIKS_ENGINE_URL`).
 
 ## Docker
 

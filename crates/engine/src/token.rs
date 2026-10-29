@@ -10,14 +10,36 @@ fn conf_dirs() -> Vec<PathBuf> {
     vec![main, std::env::temp_dir().join("fliks-conf")]
 }
 
+/// Owned by this user; the token file also closed to group and others.
+#[cfg(unix)]
+fn trusted(path: &Path, private: bool) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).is_ok_and(|m| {
+        // SAFETY: geteuid has no preconditions.
+        m.uid() == unsafe { libc::geteuid() } && (!private || m.mode() & 0o077 == 0)
+    })
+}
+
+#[cfg(not(unix))]
+fn trusted(_: &Path, _: bool) -> bool {
+    true
+}
+
 fn read(file: &Path) -> Option<String> {
+    if !trusted(file, true) {
+        return None;
+    }
     let s = fs::read_to_string(file).ok()?.trim().to_owned();
     (!s.is_empty()).then_some(s)
 }
 
-/// Written 0600 with `create_new`, so the first writer wins; `None` when the dir is not writable.
+/// Written 0600 with `create_new`, so the first writer wins; `None` when the dir is not writable
+/// or the dir or file is not ours (a shared `/tmp` entry is never adopted).
 fn persist(dir: &Path, fresh: &str) -> Option<String> {
     let file = dir.join(".engine-token");
+    if dir.exists() && !trusted(dir, false) {
+        return None;
+    }
     if let Some(s) = read(&file) {
         return Some(s);
     }
@@ -84,6 +106,19 @@ mod tests {
             0o600
         );
         assert_eq!(resolve_in(None, std::slice::from_ref(&d)), first);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_token_file_open_to_others_is_not_adopted() {
+        let d = std::env::temp_dir().join(format!("eng-tok-{}", crate::random_hex(4)));
+        fs::create_dir_all(&d).unwrap();
+        let file = d.join(".engine-token");
+        fs::write(&file, "planted").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        let t = resolve_in(None, std::slice::from_ref(&d));
+        assert_ne!(t, "planted");
+        assert_eq!(fs::read_to_string(&file).unwrap(), "planted");
         fs::remove_dir_all(&d).unwrap();
     }
 
