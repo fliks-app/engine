@@ -12,6 +12,36 @@ fn put(path: &Path, bytes: impl AsRef<[u8]>) {
     std::fs::rename(tmp, path).unwrap();
 }
 
+/// What the MP4 muxer leaves for a `Merge`: `ftyp`, `mdat`, then `moov` with an `ilst`.
+fn m4b() -> Vec<u8> {
+    use fliks_engine_core::mp4::make_box;
+    let part = |kind: &[u8; 4], kids: &[&[u8]]| make_box(kind, kids).unwrap();
+    let ilst = part(b"ilst", &[&part(b"\xA9too", &[b"fake"])]);
+    let meta = part(b"meta", &[&[0; 4], &ilst]);
+    let moov = part(b"moov", &[&part(b"udta", &[&meta])]);
+    [part(b"ftyp", &[b"M4B "]), part(b"mdat", &[b"audio"]), moov].concat()
+}
+
+/// A merge run: progress lines on stdout, then the output (last argument) or, for `failmerge`, a
+/// partial one and an exit code.
+fn merge(mode: &str, args: &[String]) -> ! {
+    let out = Path::new(args.last().unwrap());
+    if mode != "merge" {
+        std::fs::write(out, b"partial").unwrap();
+        if mode == "hangmerge" {
+            hang()
+        }
+        std::process::exit(1)
+    }
+    for us in [1_000_000, 2_000_000] {
+        let _ = writeln!(std::io::stdout(), "out_time_us={us}\nprogress=continue");
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    std::fs::write(out, m4b()).unwrap();
+    std::process::exit(0)
+}
+
 fn hang() -> ! {
     // A hung ffmpeg ignores the polite stop; stdin is never read either.
     #[cfg(unix)]
@@ -426,6 +456,7 @@ fn main() {
         "nomedia" => nomedia(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
+        m @ ("merge" | "failmerge" | "hangmerge") => merge(m, &args),
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
         m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
         | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),

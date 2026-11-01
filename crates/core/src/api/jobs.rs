@@ -1,5 +1,5 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
-use super::{Fingerprint, MediaFamily, MediaInfo, MediaRef, SourceScan};
+use super::{Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, SourceScan};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -66,6 +66,27 @@ pub enum JobKind {
     /// with `GET /v1/covers/{mediaFileId}`.
     #[schema(title = "CoverJob")]
     Cover { info: MediaInfo },
+    /// The ordered audio files of one audiobook merged into one `.m4b` written at `output`, with a
+    /// chapter per part (or the part's own chapters), the first cover and the parts' tags.
+    /// `media` names the first part: it identifies the job (cancel, invalidate).
+    #[schema(title = "MergeJob")]
+    Merge {
+        parts: Vec<MergePart>,
+        /// Absolute `.m4b` path; the job fails when it exists. Written whole or not at all.
+        output: String,
+        /// Fields that win over what the parts carry (the book's own title, author...).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tags: Option<MediaTags>,
+    },
+}
+
+/// One audio file of a `Merge`, in listening order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePart {
+    /// Absolute path, already authorised by the host.
+    pub path: String,
+    pub info: MediaInfo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -126,6 +147,7 @@ impl JobKind {
             JobKind::SubtitleSync { .. } => "SubtitleSync",
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
             JobKind::Cover { .. } => "Cover",
+            JobKind::Merge { .. } => "Merge",
         }
     }
 
@@ -139,7 +161,7 @@ impl JobKind {
             | JobKind::SubtitleSync { info, .. }
             | JobKind::SubtitleToSrt { info, .. }
             | JobKind::Cover { info } => Some(info),
-            JobKind::Fingerprint { .. } => None,
+            JobKind::Fingerprint { .. } | JobKind::Merge { .. } => None,
         }
     }
 
@@ -153,7 +175,7 @@ impl JobKind {
             | JobKind::SubtitleOcr { .. }
             | JobKind::SubtitleToSrt { .. } => VIDEO_ONLY,
             JobKind::SubtitleSync { .. } => ANY,
-            JobKind::Cover { .. } => AUDIO_ONLY,
+            JobKind::Cover { .. } | JobKind::Merge { .. } => AUDIO_ONLY,
         }
     }
 }
@@ -174,6 +196,7 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("SubtitleSync", ANY),
     ("SubtitleToSrt", VIDEO_ONLY),
     ("Cover", AUDIO_ONLY),
+    ("Merge", AUDIO_ONLY),
 ];
 
 /// A job kind and the families of file it applies to.
@@ -183,6 +206,21 @@ pub struct JobFamilies {
     /// `JobKind` `type`.
     pub kind: String,
     pub families: Vec<MediaFamily>,
+}
+
+/// The `.m4b` a `Merge` wrote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeMeta {
+    /// The `output` of the request.
+    pub path: String,
+    /// f64: no 64-bit integers on the wire.
+    pub bytes: f64,
+    pub duration_seconds: f64,
+    /// On the merged timeline, in listening order.
+    pub chapters: Vec<Chapter>,
+    /// The audio was encoded again to AAC; false when the parts' AAC was copied.
+    pub reencoded: bool,
 }
 
 /// The stored cover of `GET /v1/covers/{mediaFileId}`.
@@ -286,6 +324,10 @@ pub enum JobResult {
     Cover {
         cover: CoverMeta,
     },
+    /// The file is at the request's `output`.
+    Merge {
+        merge: MergeMeta,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -343,6 +385,7 @@ mod tests {
             json!({ "type": "SubtitleToSrt", "info": info(), "source": { "type": "stream",
                 "index": 0 } }),
             json!({ "type": "Cover", "info": info() }),
+            json!({ "type": "Merge", "parts": [], "output": "/a.m4b" }),
         ];
         assert_eq!(kinds.len(), JOB_FAMILIES.len());
         for k in kinds {

@@ -3,6 +3,7 @@
 mod alass;
 pub(crate) mod cover;
 mod fingerprint;
+mod merge;
 mod ocr;
 mod scan;
 mod sprite;
@@ -197,6 +198,9 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Cover { info } => {
             fliks_engine_core::jobs::cover::validate(info)?;
         }
+        JobKind::Merge { parts, output, .. } => {
+            fliks_engine_core::jobs::merge::validate(parts, output)?;
+        }
     }
     Ok(())
 }
@@ -357,6 +361,11 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
         JobKind::Sprite { info } => sprite::run(ctx, info).await,
         JobKind::Scan { info } => scan::run(ctx, info).await,
         JobKind::Cover { info } => cover::run(ctx, info).await,
+        JobKind::Merge {
+            parts,
+            output,
+            tags,
+        } => merge::run(ctx, parts, output, tags.as_ref()).await,
         JobKind::Fingerprint {
             window,
             max_lookup_minutes,
