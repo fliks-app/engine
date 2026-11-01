@@ -245,6 +245,18 @@ impl Runtime {
         }
         let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);
+        if plan.item.is_some()
+            && let Some(i) = req
+                .decide
+                .media
+                .parts
+                .iter()
+                .position(|p| p.duration_s() <= 0.0)
+        {
+            return Err(OpenError::BadRequest(format!(
+                "parts[{i}]: an HLS item needs every part's duration (info.durationSeconds, or endS after startS)"
+            )));
+        }
         let sid = crate::random_hex(16);
         let now = now_ms();
         let lifetime = config.lifetime.clone();

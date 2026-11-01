@@ -505,7 +505,7 @@ pub struct ResolveResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl_s: Option<f64>,
     /// An item of ordered pieces instead of one file (`stream`, `download`): `path` is then
-    /// absent. A single `path` stays valid.
+    /// absent. A single `path` stays valid. The order must match the open request's `parts`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<ResolvedPart>,
 }
@@ -515,10 +515,11 @@ pub struct ResolveResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedPart {
     pub path: String,
-    /// Seconds this part adds to the item's timeline.
+    /// Informational: the timeline comes from the open request's parts, and a byte range serves
+    /// the whole file whatever `startS` and `endS` say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_s: Option<f64>,
-    /// The slice of the file that is played, in file seconds.
+    /// The slice of the file that is played, in file seconds (informational, see `durationS`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_s: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

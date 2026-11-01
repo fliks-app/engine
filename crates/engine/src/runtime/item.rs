@@ -63,7 +63,7 @@ impl Runtime {
             SegmentName::Segment(n) => n,
         };
         let t0 = Instant::now();
-        let Some(job) = self.ensure_item_job(s, part, start).await else {
+        let Some(job) = self.ensure_item_job(s, part, start, false).await else {
             return Fetch::Failed;
         };
         let (job, landed) = self.wait_file(job, 0, name, SEGMENT_WAIT).await;
@@ -71,18 +71,23 @@ impl Runtime {
     }
 
     /// The part's run for a request at local segment `requested`: kept while it will reach the
-    /// segment, else replaced by one starting there.
+    /// segment, else replaced by one starting there. A `warm` call only starts a run when the
+    /// part has none, so it never moves the run a request already placed.
     async fn ensure_item_job(
         self: &Arc<Self>,
         s: &Arc<Session>,
         part: usize,
         mut requested: u32,
+        warm: bool,
     ) -> Option<Arc<Job>> {
         let key = s.item_key(part);
         let lock = self.lock_for(&key);
         let _g = lock.lock().await;
         let mut restarts = 0;
         if let Some(e) = self.job(&key) {
+            if warm {
+                return Some(e);
+            }
             restarts = e.restarts + 1;
             // The watcher's last listing of an exited run says which segments it wrote.
             if e.proc.exited().is_some() {
@@ -127,7 +132,7 @@ impl Runtime {
         };
         let (rt, s) = (self.clone(), s.clone());
         tokio::spawn(async move {
-            rt.ensure_item_job(&s, l.part, l.local).await;
+            rt.ensure_item_job(&s, l.part, l.local, true).await;
         });
     }
 }

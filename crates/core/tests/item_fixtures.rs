@@ -2,8 +2,11 @@
 mod common;
 
 use common::{Fixture, blessing, diff};
-use fliks_engine_core::api::{DecideRequest, Decision, HostCaps, StreamingConfig};
+use fliks_engine_core::api::{
+    DecideRequest, Decision, HostCaps, OpenSessionRequest, StreamingConfig,
+};
 use fliks_engine_core::decide::decide;
+use fliks_engine_core::session::plan;
 use std::path::PathBuf;
 
 fn dir() -> PathBuf {
@@ -42,4 +45,22 @@ fn decide_reproduces_expected() {
         }
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// The audio track a session plays changes `-map`, so it forks the cache directory.
+#[test]
+fn the_picked_audio_track_forks_the_cache_hash() {
+    let f = Fixture::load(&dir().join("aac-parts-second-audio-track.json"));
+    let hash = |pick: i32| {
+        let mut input = f.root["input"].clone();
+        input["selection"]["audioStreamIndex"] = pick.into();
+        let req: OpenSessionRequest =
+            serde_json::from_value(serde_json::json!({ "decide": input })).unwrap();
+        let caps: HostCaps = serde_json::from_value(f.root["hostCaps"].clone()).unwrap();
+        let config: StreamingConfig = serde_json::from_value(f.root["config"].clone()).unwrap();
+        let d = decide(&req.decide, &caps, &config);
+        plan(&req, &d, &config, &caps).profile_hash
+    };
+    assert_ne!(hash(0), hash(1));
+    assert_eq!(hash(1), hash(1));
 }

@@ -18,6 +18,24 @@ fn ext_of(path: &str) -> String {
         .map_or_else(String::new, |e| e.to_string_lossy().to_lowercase())
 }
 
+/// A part's MIME type: its probed container when known, else its extension.
+fn mime_of(p: &ItemPart) -> &'static str {
+    let ext = ext_of(&p.path);
+    let named = p
+        .info
+        .format_name
+        .iter()
+        .flat_map(|f| f.split(','))
+        .find_map(audio_mime);
+    named
+        .or_else(|| audio_mime(&ext))
+        .unwrap_or(if ext == "mp4" {
+            "audio/mp4"
+        } else {
+            "application/octet-stream"
+        })
+}
+
 /// The part's picked audio track: the request's index when the part has it, else the first.
 fn picked(p: &ItemPart, index: Option<i32>) -> AudioStreamInfo {
     let at = index
@@ -64,7 +82,8 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
         .iter()
         .map(|p| picked(p, sel.audio_stream_index))
         .collect();
-    let mux = if device.use_ts == Some(true) {
+    // An item has one audio track.
+    let mux = if device.use_ts == Some(true) || device.use_ts_on_single_audio == Some(true) {
         MuxFlavour::Ts
     } else {
         MuxFlavour::Fmp4
@@ -204,34 +223,28 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
         (false, true) => (PlayMethod::DirectStream, true),
         (false, false) => (PlayMethod::Transcode, false),
     };
-    let listed: Vec<PlaybackPart> = if req.media.parts.is_empty() {
-        vec![]
-    } else {
-        let mut offset = 0.0;
-        parts
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let part = PlaybackPart {
-                    index: i as u32,
-                    play_url: format!("/api/stream/{id}/parts/{i}{token}"),
-                    offset_s: offset,
-                    duration_s: p.duration_s(),
-                    content_type: audio_mime(&ext_of(&p.path))
-                        .unwrap_or("application/octet-stream")
-                        .into(),
-                };
-                offset += part.duration_s;
-                part
-            })
-            .collect()
-    };
+    let mut offset = 0.0;
+    let listed: Vec<PlaybackPart> = parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let part = PlaybackPart {
+                index: i as u32,
+                play_url: format!("/api/stream/{id}/parts/{i}{token}"),
+                offset_s: offset,
+                duration_s: p.duration_s(),
+                content_type: mime_of(p).into(),
+            };
+            offset += part.duration_s;
+            part
+        })
+        .collect();
     let (play_url, content_type, container) = if direct {
         (
-            listed.first().map_or_else(
-                || format!("/api/stream/{id}{token}"),
-                |p| p.play_url.clone(),
-            ),
+            listed
+                .first()
+                .map(|p| p.play_url.clone())
+                .unwrap_or_default(),
             req.media.content_type.clone(),
             source.container.clone(),
         )

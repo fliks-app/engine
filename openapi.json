@@ -1568,7 +1568,7 @@
             "items": {
               "$ref": "#/components/schemas/ItemPart"
             },
-            "description": "An item of ordered pieces (an audiobook's files) instead of one file: `path`, `ext` and\nthe request's `info` are then the first part's. Parts of one `position` are the host's\nbusiness: it sends one chosen file per position."
+            "description": "An item of ordered pieces (an audiobook's files) instead of one file: `path`, `ext` and\nthe request's `info` are then the first part's. Without it the request is one file."
           },
           "path": {
             "type": "string"
@@ -5223,7 +5223,7 @@
             "items": {
               "$ref": "#/components/schemas/ResolvedPart"
             },
-            "description": "An item of ordered pieces instead of one file (`stream`, `download`): `path` is then\nabsent. A single `path` stays valid."
+            "description": "An item of ordered pieces instead of one file (`stream`, `download`): `path` is then\nabsent. A single `path` stays valid. The order must match the open request's `parts`."
           },
           "path": {
             "type": [
@@ -5255,7 +5255,7 @@
               "null"
             ],
             "format": "double",
-            "description": "Seconds this part adds to the item's timeline."
+            "description": "Informational: the timeline comes from the open request's parts, and a byte range serves\nthe whole file whatever `startS` and `endS` say."
           },
           "endS": {
             "type": [
@@ -5280,7 +5280,7 @@
               "null"
             ],
             "format": "double",
-            "description": "The slice of the file that is played, in file seconds."
+            "description": "The slice of the file that is played, in file seconds (informational, see `durationS`)."
           }
         }
       },

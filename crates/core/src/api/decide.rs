@@ -55,8 +55,7 @@ pub struct DecideMedia {
     /// Host MIME type of the file, echoed for Direct Play.
     pub content_type: String,
     /// An item of ordered pieces (an audiobook's files) instead of one file: `path`, `ext` and
-    /// the request's `info` are then the first part's. Parts of one `position` are the host's
-    /// business: it sends one chosen file per position.
+    /// the request's `info` are then the first part's. Without it the request is one file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<ItemPart>,
 }

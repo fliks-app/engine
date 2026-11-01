@@ -16,34 +16,30 @@ use serde::{Deserialize, Serialize};
 
 /// Nominal segment length of every part; a part's last segment is what remains.
 pub const SEGMENT_SECONDS: f64 = 6.0;
+/// A remainder under this is folded into the part's last segment: the muxer writes no segment
+/// for a few frames.
+const MIN_TAIL_SECONDS: f64 = 0.5;
 /// Segments one run writes before it exits; a request past them starts the next run.
 pub const RUN_SEGMENTS: u32 = 30;
 /// Under `-hls_time` so the muxer cuts on the segment grid, not one frame after it.
 const HLS_TIME_MARGIN: f64 = 0.0001;
 
-/// The item's parts: `media.parts`, else the request's single file.
-pub fn parts_of(req: &DecideRequest) -> Vec<ItemPart> {
-    if !req.media.parts.is_empty() {
-        return req.media.parts.clone();
-    }
-    vec![ItemPart {
-        path: req.media.path.clone(),
-        info: req.info.clone(),
-        start_s: None,
-        end_s: None,
-    }]
+/// The item's parts: `media.parts`.
+pub fn parts_of(req: &DecideRequest) -> &[ItemPart] {
+    &req.media.parts
 }
 
-/// A request for audio: parts, or a file with audio and no video.
+/// A request for an item: it names its parts. A plain audio file keeps the file path.
 pub fn is_item(req: &DecideRequest) -> bool {
-    !req.media.parts.is_empty() || (req.info.video.is_empty() && !req.info.audio.is_empty())
+    !req.media.parts.is_empty()
 }
 
-/// MIME type of an audio file by extension (no dot, any case).
+/// MIME type of an audio file by extension (no dot, any case). `mp4` is not here: it is a video
+/// container first.
 pub fn audio_mime(ext: &str) -> Option<&'static str> {
     Some(match ext.to_lowercase().as_str() {
         "mp3" => "audio/mpeg",
-        "m4a" | "m4b" | "mp4" => "audio/mp4",
+        "m4a" | "m4b" => "audio/mp4",
         "aac" => "audio/aac",
         "flac" => "audio/flac",
         "ogg" | "oga" | "opus" => "audio/ogg",
@@ -86,10 +82,12 @@ impl ItemTimeline {
             .iter()
             .map(|d| {
                 let d = if d.is_finite() { d.max(0.0) } else { 0.0 };
-                let segments = if d > 0.0 {
-                    ((d / SEGMENT_SECONDS - 1e-9).ceil() as u32).max(1)
-                } else {
+                let whole = (d / SEGMENT_SECONDS + 1e-9).floor();
+                let tail = d - whole * SEGMENT_SECONDS;
+                let segments = if d <= 0.0 {
                     0
+                } else {
+                    (whole as u32 + u32::from(tail >= MIN_TAIL_SECONDS)).max(1)
                 };
                 let span = PartSpan {
                     offset_s: offset,
@@ -124,10 +122,14 @@ impl ItemTimeline {
         Some((i, global - self.parts[i].first_segment))
     }
 
-    /// Seconds segment `local` of `part` lasts: the nominal one, or what the part has left.
+    /// Seconds segment `local` of `part` lasts: the nominal one, or for the last what the part
+    /// has left (up to a folded tail longer).
     pub fn segment_seconds(&self, part: usize, local: u32) -> f64 {
         let p = &self.parts[part];
-        (p.duration_s - f64::from(local) * SEGMENT_SECONDS).clamp(0.0, SEGMENT_SECONDS)
+        if local + 1 >= p.segments {
+            return (p.duration_s - f64::from(local) * SEGMENT_SECONDS).max(0.0);
+        }
+        SEGMENT_SECONDS
     }
 
     /// Duration of every segment, in playlist order.
@@ -196,7 +198,7 @@ pub fn plan(req: &OpenSessionRequest, d: &Decision, caps: &HostCaps) -> SessionP
                 .map(|a| a.stream_index),
         })
         .collect();
-    let canonical = canonical(&parts, &d.response.audio_plan, use_ts, caps, req);
+    let canonical = canonical(parts, &runs, &d.response.audio_plan, use_ts, caps, req);
     SessionPlan {
         kind: session_kind(d.response.play_method),
         profile_hash: fnv_hex(&canonical),
@@ -223,6 +225,7 @@ pub fn plan(req: &OpenSessionRequest, d: &Decision, caps: &HostCaps) -> SessionP
 /// Everything that decides the bytes of the segments: the output format and each part's slice.
 fn canonical(
     parts: &[ItemPart],
+    runs: &[PartRun],
     plan: &AudioPlan,
     use_ts: bool,
     caps: &HostCaps,
@@ -240,12 +243,14 @@ fn canonical(
     };
     let slices: Vec<String> = parts
         .iter()
-        .map(|p| {
+        .zip(runs)
+        .map(|(p, r)| {
             format!(
-                "{}@{}-{}",
+                "{}@{}-{}#{}",
                 p.path,
                 p.start_s.unwrap_or(0.0),
-                p.end_s.map_or(String::new(), |e| e.to_string())
+                p.end_s.map_or(String::new(), |e| e.to_string()),
+                r.stream_index.map_or(String::new(), |i| i.to_string())
             )
         })
         .collect();
@@ -390,6 +395,19 @@ mod tests {
         assert_eq!(t.segment(3), Some((2, 0)));
         assert_eq!(t.segment(5), Some((3, 1)));
         assert_eq!(t.segment(6), None);
+    }
+
+    #[test]
+    fn a_tail_under_half_a_second_joins_the_last_segment() {
+        let t = ItemTimeline::new(&[12.005, 12.5, 0.4]);
+        let counts: Vec<u32> = t.parts.iter().map(|p| p.segments).collect();
+        assert_eq!(counts, [2, 3, 1]);
+        let ms: Vec<f64> = t.durations().iter().map(|d| (d * 1e3).round()).collect();
+        assert_eq!(ms, [6000.0, 6005.0, 6000.0, 6000.0, 500.0, 400.0]);
+        assert_eq!(t.segment(2), Some((1, 0)));
+        // The folded tail is the last segment's own seconds.
+        let l = t.locate(12.0).unwrap();
+        assert_eq!((l.part, l.local), (0, 1));
     }
 
     #[test]

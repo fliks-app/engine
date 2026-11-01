@@ -29,7 +29,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
 use bytes::BytesMut;
-use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, SessionExpired};
+use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, ResolvedPart, SessionExpired};
 use fliks_engine_core::decide::timeline::served_duration;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -242,7 +242,20 @@ async fn access(
                 path: s.req.decide.media.path.clone(),
                 owner: s.owner.clone(),
                 format: None,
-                parts: vec![],
+                parts: s
+                    .req
+                    .decide
+                    .media
+                    .parts
+                    .iter()
+                    .map(|p| ResolvedPart {
+                        path: p.path.clone(),
+                        duration_s: Some(p.duration_s()),
+                        start_s: p.start_s,
+                        end_s: p.end_s,
+                        format: None,
+                    })
+                    .collect(),
             },
             _ => return Err(retry()),
         },
@@ -331,5 +344,7 @@ mod tests {
         assert_eq!(credential(&h, &q), "a=1");
         assert_eq!(content_type("/a/b.MKV", None), "video/x-matroska");
         assert_eq!(content_type("/a/b.bin", Some("video/mp4")), "video/mp4");
+        assert_eq!(content_type("/a/b.mp4", None), "video/mp4");
+        assert_eq!(content_type("/a/b.M4B", None), "audio/mp4");
     }
 }

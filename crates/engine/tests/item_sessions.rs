@@ -19,8 +19,8 @@ fn info(seconds: f64) -> Value {
     })
 }
 
-/// An item of parts lasting `seconds`, played as MPEG-TS HLS by a client that only takes AAC.
-async fn open(seconds: &[f64]) -> Item {
+/// An engine whose resolver answers `paths` as item 1, for alice and bob.
+async fn engine_of(paths: &[String]) -> Engine {
     let e = engine_with(
         host(
             fliks_engine_core::api::HwAccel::None,
@@ -32,9 +32,7 @@ async fn open(seconds: &[f64]) -> Item {
     )
     .await;
     e.stub.grant("alice-jwt", "alice");
-    let paths: Vec<String> = (0..seconds.len())
-        .map(|i| format!("/books/p{i}.mp3"))
-        .collect();
+    e.stub.grant("bob-jwt", "bob");
     e.stub.items.lock().unwrap().insert(
         1,
         paths
@@ -48,15 +46,20 @@ async fn open(seconds: &[f64]) -> Item {
             })
             .collect(),
     );
+    e
+}
+
+/// Opens item 1 for alice, as MPEG-TS HLS for a client that only takes AAC.
+async fn open_parts(e: &Engine, paths: &[String], infos: &[Value], start_at: f64) -> Res {
     let parts: Vec<Value> = paths
         .iter()
-        .zip(seconds)
-        .map(|(p, d)| json!({ "path": p, "info": info(*d) }))
+        .zip(infos)
+        .map(|(p, i)| json!({ "path": p, "info": i }))
         .collect();
     let req = json!({
         "decide": {
             "media": { "mediaFileId": 1, "path": paths[0], "ext": ".mp3", "contentType": "audio/mpeg", "parts": parts },
-            "info": info(seconds[0]),
+            "info": infos[0],
             "device": {
                 "directPlayProfiles": [{ "containers": ["mp4"], "videoCodecs": [], "audioCodecs": ["aac"] }],
                 "useTs": true,
@@ -64,8 +67,19 @@ async fn open(seconds: &[f64]) -> Item {
             "selection": {},
         },
         "ownerId": "alice",
+        "startAtS": start_at,
     });
-    let r = e.control("POST", "/v1/sessions", Some(req)).await;
+    e.control("POST", "/v1/sessions", Some(req)).await
+}
+
+/// An item of fake parts lasting `seconds`.
+async fn open(seconds: &[f64], start_at: f64) -> Item {
+    let paths: Vec<String> = (0..seconds.len())
+        .map(|i| format!("/books/p{i}.mp3"))
+        .collect();
+    let e = engine_of(&paths).await;
+    let infos: Vec<Value> = seconds.iter().map(|d| info(*d)).collect();
+    let r = open_parts(&e, &paths, &infos, start_at).await;
     assert_eq!(r.status, 200, "{}", r.text());
     let sid = r.json()["sessionId"].as_str().unwrap().to_string();
     Item { e, sid }
@@ -122,7 +136,7 @@ fn arg<'a>(argv: &'a [String], flag: &str) -> &'a str {
 
 #[tokio::test]
 async fn the_playlist_covers_every_part_and_a_segment_runs_its_own_part() {
-    let it = open(&[14.0, 9.0, 8.0]).await;
+    let it = open(&[14.0, 9.0, 8.0], 0.0).await;
     let list = it.get("index.m3u8").await.text();
     assert_eq!(list.matches("#EXTINF").count(), 7, "{list}");
     assert!(!list.contains("EXT-X-MAP"), "{list}");
@@ -151,11 +165,12 @@ async fn the_playlist_covers_every_part_and_a_segment_runs_its_own_part() {
 
 #[tokio::test]
 async fn a_run_stops_after_its_budget_and_the_next_request_starts_another() {
-    let it = open(&[400.0]).await;
+    // The open warms the run of segment 29, so the request at 29 is the playhead's, not a seek.
+    let it = open(&[400.0], 174.0).await;
     assert_eq!(it.get("seg-0029.ts").await.status, 200);
     let runs = it.runs(0);
     assert_eq!(runs.len(), 1);
-    // Requested at 29, the run began there and is cut after 30 segments.
+    // The run began at 29 and is cut after 30 segments.
     assert_eq!(arg(&runs[0], "-t"), "180");
     assert_eq!(it.get("seg-0059.ts").await.status, 200);
     let runs = it.runs(0);
@@ -168,7 +183,7 @@ async fn a_run_stops_after_its_budget_and_the_next_request_starts_another() {
 
 #[tokio::test]
 async fn past_the_end_is_a_404_and_the_snapshot_follows_the_playhead() {
-    let it = open(&[14.0, 9.0]).await;
+    let it = open(&[14.0, 9.0], 0.0).await;
     assert_eq!(it.get("seg-0005.ts").await.status, 404);
     assert_eq!(it.get("seg-0003.ts").await.status, 200);
     let r =
@@ -185,4 +200,89 @@ async fn past_the_end_is_a_404_and_the_snapshot_follows_the_playhead() {
             .json();
     assert_eq!(snap["job"]["quality"], "p1");
     assert_eq!(snap["job"]["startSegment"], 0);
+}
+
+#[tokio::test]
+async fn a_tail_under_half_a_second_lists_no_segment_of_its_own() {
+    let it = open(&[12.005], 0.0).await;
+    let list = it.get("index.m3u8").await.text();
+    assert_eq!(list.matches("#EXTINF").count(), 2, "{list}");
+    assert!(list.contains("#EXTINF:6.005,"), "{list}");
+    assert_eq!(it.get("seg-0001.ts").await.status, 200);
+    assert_eq!(it.get("seg-0002.ts").await.status, 404);
+}
+
+#[tokio::test]
+async fn an_hls_item_needs_every_part_to_have_a_duration() {
+    let paths = vec!["/books/p0.mp3".to_string(), "/books/p1.mp3".to_string()];
+    let e = engine_of(&paths).await;
+    let mut no_duration = info(5.0);
+    no_duration
+        .as_object_mut()
+        .unwrap()
+        .remove("durationSeconds");
+    let r = open_parts(&e, &paths, &[info(5.0), no_duration], 0.0).await;
+    assert_eq!(r.status, 400, "{}", r.text());
+    assert!(r.text().contains("parts[1]"), "{}", r.text());
+    // A slice that ends before it starts has none either.
+    let parts = json!([{ "path": paths[0], "info": info(5.0), "startS": 4.0, "endS": 2.0 }]);
+    let req = json!({
+        "decide": {
+            "media": { "mediaFileId": 1, "path": paths[0], "ext": ".mp3", "contentType": "audio/mpeg", "parts": parts },
+            "info": info(5.0),
+            "device": { "directPlayProfiles": [], "useTs": true },
+            "selection": {},
+        },
+    });
+    assert_eq!(
+        e.control("POST", "/v1/sessions", Some(req)).await.status,
+        400
+    );
+}
+
+#[tokio::test]
+async fn parts_are_ranged_gated_by_owner_and_served_while_the_host_is_down() {
+    let dir = temp_dir("parts");
+    let paths: Vec<String> = ["a.mp3", "b.mp3"]
+        .iter()
+        .map(|n| {
+            std::fs::write(dir.join(n), b"0123456789").unwrap();
+            dir.join(n).to_string_lossy().into_owned()
+        })
+        .collect();
+    let e = engine_of(&paths).await;
+    let r = open_parts(&e, &paths, &[info(5.0), info(5.0)], 0.0).await;
+    let sid = r.json()["sessionId"].as_str().unwrap().to_string();
+    let part = |n: u32, cred: &'static str, q: &str, range: &'static str| {
+        let (e, sid, q) = (&e, sid.clone(), q.to_string());
+        async move {
+            let path = format!("/api/stream/1/parts/{n}?sid={sid}{q}");
+            let h: Vec<(&str, &str)> = if range.is_empty() {
+                vec![]
+            } else {
+                vec![("range", range)]
+            };
+            e.get(&path, cred, &h).await
+        }
+    };
+    let r = part(1, "alice-jwt", "", "bytes=2-4").await;
+    assert_eq!((r.status, r.text().as_str()), (206, "234"));
+    assert_eq!(r.header("content-type").as_deref(), Some("audio/mpeg"));
+    assert_eq!(part(1, "alice-jwt", "", "bytes=99-").await.status, 416);
+    assert_eq!(part(2, "alice-jwt", "", "").await.status, 404);
+    // Another user's credential on alice's session.
+    assert_eq!(part(0, "bob-jwt", "", "").await.status, 403);
+    let r = part(0, "alice-jwt", "&download=1", "").await;
+    assert_eq!(r.status, 200);
+    assert!(
+        r.header("content-disposition")
+            .is_some_and(|d| d.contains("a.mp3")),
+        "{:?}",
+        r.headers
+    );
+    // An unseen credential while the host is down: the session's own parts answer.
+    e.stub.grant("alice2-jwt", "alice");
+    e.stub.set_down(true);
+    let r = part(1, "alice2-jwt", "", "bytes=0-1").await;
+    assert_eq!((r.status, r.text().as_str()), (206, "01"));
 }
