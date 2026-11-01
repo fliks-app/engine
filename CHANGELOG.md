@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/fliks-app/engine/compare/v1.7.6...v1.8.0) (2026-11-01)
+
+
+### Features
+
+* **jobs:** merge audiobook parts into one m4b ([#153](https://github.com/fliks-app/engine/issues/153)) ([3a8a754](https://github.com/fliks-app/engine/commit/3a8a754293d6790ec6db6b7f14e98e4d5f17d07d))
+* **probe:** read audio tags and cover, add a cover job and job families ([#151](https://github.com/fliks-app/engine/issues/151)) ([b1b9de5](https://github.com/fliks-app/engine/commit/b1b9de545874e04beac07db76e094ad573d538ca))
+
 ## [1.7.6](https://github.com/fliks-app/engine/compare/v1.7.5...v1.7.6) (2026-10-29)
 
 
