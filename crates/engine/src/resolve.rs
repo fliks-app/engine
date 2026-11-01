@@ -3,7 +3,9 @@
 use crate::lock::Locked;
 use axum::body::Bytes;
 use axum::http::{Request, header};
-use fliks_engine_core::api::{ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse};
+use fliks_engine_core::api::{
+    ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse, ResolvedPart,
+};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
@@ -37,6 +39,8 @@ pub struct Resolved {
     pub path: String,
     pub owner: Option<String>,
     pub format: Option<String>,
+    /// The ordered pieces of an item; `path` is then empty.
+    pub parts: Vec<ResolvedPart>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,20 +85,25 @@ impl Default for Resolver {
     }
 }
 
-/// A sprite grant may come without a path (the engine serves its own), a live one has none.
+/// A sprite grant may come without a path (the engine serves its own), a live one has none, an
+/// item has its parts instead.
 fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, ResolveError> {
     if !res.allow {
         return Err(ResolveError::Denied {
             owner: res.owner_id.clone(),
         });
     }
-    if res.path.is_none() && !matches!(purpose, ResolvePurpose::Sprite | ResolvePurpose::Live) {
+    if res.path.is_none()
+        && res.parts.is_empty()
+        && !matches!(purpose, ResolvePurpose::Sprite | ResolvePurpose::Live)
+    {
         return Err(ResolveError::Unavailable);
     }
     Ok(Resolved {
         path: res.path.clone().unwrap_or_default(),
         owner: res.owner_id.clone(),
         format: res.format.clone(),
+        parts: res.parts.clone(),
     })
 }
 
@@ -228,6 +237,7 @@ mod tests {
                 owner_id: None,
                 format: None,
                 ttl_s: None,
+                parts: vec![],
             },
         }
     }
@@ -240,6 +250,24 @@ mod tests {
             subtitle_id: None,
             stream_index: None,
         }
+    }
+
+    #[test]
+    fn an_item_grant_needs_parts_instead_of_a_path() {
+        let mut res = entry(Instant::now()).res;
+        assert_eq!(
+            granted(&res, ResolvePurpose::Stream),
+            Err(ResolveError::Unavailable)
+        );
+        res.parts = vec![ResolvedPart {
+            path: "/a.mp3".into(),
+            duration_s: Some(3.0),
+            start_s: None,
+            end_s: None,
+            format: None,
+        }];
+        let got = granted(&res, ResolvePurpose::Stream).unwrap();
+        assert_eq!((got.path.as_str(), got.parts.len()), ("", 1));
     }
 
     #[test]

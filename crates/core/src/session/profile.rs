@@ -122,13 +122,17 @@ impl PlaybackProfile {
 }
 
 /// FNV-1a 64, 16 hex digits: a directory name, not a security boundary.
-pub fn profile_hash(p: &PlaybackProfile) -> String {
+pub fn fnv_hex(text: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in p.canonical().bytes() {
+    for byte in text.bytes() {
         h ^= u64::from(byte);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
     format!("{h:016x}")
+}
+
+pub fn profile_hash(p: &PlaybackProfile) -> String {
+    fnv_hex(&p.canonical())
 }
 
 /// One audio output as the hash sees it; `encoder_id` comes from `core::args`.

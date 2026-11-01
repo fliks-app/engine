@@ -53,7 +53,7 @@ impl Runtime {
             let reg = self.reg.locked();
             reg.jobs
                 .values()
-                .filter(|j| j.proc.exited().is_none())
+                .filter(|j| j.proc.exited().is_none() && !j.item)
                 .map(|j| {
                     let viewers = reg
                         .sessions

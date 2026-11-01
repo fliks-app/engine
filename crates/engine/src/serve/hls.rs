@@ -320,7 +320,7 @@ async fn package(
     path: &Path,
     name: SegmentName,
     s: &Session,
-    keyframe_cut: bool,
+    (keyframe_cut, start_pts): (bool, f64),
 ) -> Result<(Body, usize), Unpackable> {
     if path.extension().is_some_and(|e| e == "ts") {
         let file = tokio::fs::File::open(path)
@@ -342,8 +342,7 @@ async fn package(
         }
         let tracks = init_tracks(rt, path.parent().ok_or(Unpackable::Gone)?).await;
         let seg = real_segment_seconds(s.plan.segment_duration, s.plan.source_fps);
-        let origin = served_origin(s.plan.timeline.origin);
-        buf = match rewrite_segment_tfdt(buf, &tracks, n, seg, origin) {
+        buf = match rewrite_segment_tfdt(buf, &tracks, n, seg, start_pts) {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!(path = %path.display(), "tfdt rewrite: {e:?}");
@@ -375,12 +374,21 @@ pub(super) fn cmcd(headers: &HeaderMap, q: &HashMap<String, String>) -> Option<S
     (!parts.is_empty()).then(|| parts.join(","))
 }
 
-async fn respond(
+/// Where a part's segments sit on an item's timeline.
+#[derive(Clone, Copy)]
+pub(super) struct PartBase {
+    pub offset_s: f64,
+    pub first_segment: u32,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn respond(
     rt: &Runtime,
     s: &Session,
     fetch: Fetch,
     name: SegmentName,
     (track, rung, remux): (Track, &str, bool),
+    part: Option<PartBase>,
     headers: &HeaderMap,
     q: &HashMap<String, String>,
 ) -> Response {
@@ -404,7 +412,8 @@ async fn respond(
         }
     };
     // A restart can remove the file between the wait and the read.
-    let (body, len) = match package(rt, &path, name, s, remux).await {
+    let start_pts = part.map_or(served_origin(s.plan.timeline.origin), |p| p.offset_s);
+    let (body, len) = match package(rt, &path, name, s, (remux, start_pts)).await {
         Ok(p) => p,
         Err(Unpackable::Gone) => return retry(),
         Err(Unpackable::NoMedia) => {
@@ -430,16 +439,18 @@ async fn respond(
             session_id: s.sid.clone(),
             track,
             rung: rung.into(),
-            index,
+            index: index + part.map_or(0, |p| p.first_segment),
             waited_ms,
             cache_hit,
             cmcd_raw: cmcd(headers, q),
         });
     }
-    let ct = if path.extension().is_some_and(|e| e == "ts") {
-        "video/MP2T"
-    } else {
-        "video/mp4"
+    let ts = path.extension().is_some_and(|e| e == "ts");
+    let ct = match (ts, part.is_some()) {
+        (true, false) => "video/MP2T",
+        (true, true) => "audio/MP2T",
+        (false, false) => "video/mp4",
+        (false, true) => "audio/mp4",
     };
     (
         [
@@ -471,7 +482,7 @@ fn past_end(s: &Session, name: SegmentName, remux: bool) -> bool {
         && f64::from(n) >= uniform_segment_count(p.duration, seg, frame_seconds_of(p.source_fps))
 }
 
-fn seg_name(seg: &str) -> Result<SegmentName, Response> {
+pub(super) fn seg_name(seg: &str) -> Result<SegmentName, Response> {
     parse_segment_name(seg).ok_or_else(|| {
         text(
             StatusCode::BAD_REQUEST,
@@ -525,6 +536,7 @@ pub(super) async fn segment(
         fetch,
         name,
         (Track::Video, &quality, remux),
+        None,
         &headers,
         &q,
     )
@@ -571,6 +583,7 @@ pub(super) async fn audio_seg(
         fetch,
         name,
         (Track::Audio, &rung, remux),
+        None,
         &headers,
         &q,
     )

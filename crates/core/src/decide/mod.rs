@@ -6,6 +6,7 @@ pub mod codec;
 mod direct_play;
 pub mod dolby_vision;
 mod estimate;
+mod item;
 mod qualities;
 pub mod source;
 pub mod timeline;
@@ -72,6 +73,9 @@ fn track_dto(
 }
 
 pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) -> Decision {
+    if crate::item::is_item(req) {
+        return item::decide(req, config);
+    }
     let (info, device, sel) = (&req.info, &req.device, &req.selection);
     let v = info.video.first();
     let audio_streams = &info.audio;
@@ -391,6 +395,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
                     .map(|(i, (t, c))| track_dto(t, i, c, negotiated_stereo_bps))
                     .collect(),
                 source,
+
+                parts: vec![],
             },
             copies.into_iter().map(|c| c.plan).collect(),
         );
@@ -520,6 +526,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
                 ),
                 audio_tracks,
                 source,
+
+                parts: vec![],
             },
             audio_plans,
         );
@@ -576,6 +584,8 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
             ),
             audio_tracks,
             source,
+
+            parts: vec![],
         },
         audio_plans,
     )

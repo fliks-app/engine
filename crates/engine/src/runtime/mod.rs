@@ -3,6 +3,7 @@
 
 mod fetch;
 mod housekeeping;
+mod item;
 mod job;
 mod session;
 mod spawn;

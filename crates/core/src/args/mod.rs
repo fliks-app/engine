@@ -4,8 +4,8 @@ mod encoders;
 mod filters;
 mod output;
 
+pub(crate) use encode::{AudioEnc, ReportNeeds, audio_stream_args, stage_report};
 pub use encode::{Encoded, encode, live_h264_encoder};
-pub(crate) use encode::{ReportNeeds, stage_report};
 pub use encoders::encoder_args;
 pub use output::{LIVE_USER_AGENT, file, http_header_args, iframe, live, remux, vod};
 

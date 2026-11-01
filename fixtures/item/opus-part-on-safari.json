@@ -1,0 +1,174 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": false,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 2,
+          "codec": "opus",
+          "copy": false,
+          "index": 0,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [
+            "AudioCodecNotSupported"
+          ],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 7,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "",
+      "parts": [
+        {
+          "contentType": "audio/ogg",
+          "durationS": 300,
+          "index": 0,
+          "offsetS": 0,
+          "playUrl": "/api/stream/7/parts/0?token=t"
+        }
+      ],
+      "playMethod": "Transcode",
+      "playUrl": "/api/stream/7/item/index.m3u8?token=t",
+      "qualities": [],
+      "quality": "auto",
+      "source": {
+        "audioChannels": 2,
+        "audioCodec": "opus",
+        "audioLanguage": "fra",
+        "audioSampleRate": 48000,
+        "container": "opus",
+        "durationSeconds": 300,
+        "videoCodec": ""
+      },
+      "tonemapping": false,
+      "transcodeReasons": [
+        {
+          "flag": "ContainerNotSupported",
+          "message": "Container \"opus\" not supported"
+        },
+        {
+          "flag": "AudioCodecNotSupported",
+          "message": "Audio codec \"opus\" is not playable here"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "mp3"
+          ],
+          "containers": [
+            "mp3"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "aac",
+            "alac"
+          ],
+          "containers": [
+            "mp4",
+            "m4a",
+            "m4b"
+          ],
+          "videoCodecs": []
+        }
+      ]
+    },
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "opus",
+          "language": "fra",
+          "sampleRate": 48000,
+          "streamIndex": 0
+        }
+      ],
+      "durationSeconds": 300.0,
+      "formatName": "ogg",
+      "schemaVersion": 4,
+      "subtitles": [],
+      "video": []
+    },
+    "media": {
+      "contentType": "audio/mpeg",
+      "ext": ".opus",
+      "mediaFileId": 7,
+      "parts": [
+        {
+          "info": {
+            "audio": [
+              {
+                "channels": 2,
+                "codec": "opus",
+                "language": "fra",
+                "sampleRate": 48000,
+                "streamIndex": 0
+              }
+            ],
+            "durationSeconds": 300.0,
+            "formatName": "ogg",
+            "schemaVersion": 4,
+            "subtitles": [],
+            "video": []
+          },
+          "path": "/books/e1.opus"
+        }
+      ],
+      "path": "/books/e1.opus"
+    },
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "opus-part-on-safari"
+}

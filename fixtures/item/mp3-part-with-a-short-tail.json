@@ -1,0 +1,183 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": false,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 2,
+          "codec": "mp3",
+          "copy": false,
+          "index": 0,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [
+            "AudioCodecNotSupported"
+          ],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 7,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "",
+      "parts": [
+        {
+          "contentType": "audio/mpeg",
+          "durationS": 12.005,
+          "index": 0,
+          "offsetS": 0,
+          "playUrl": "/api/stream/7/parts/0?token=t"
+        }
+      ],
+      "playMethod": "Transcode",
+      "playUrl": "/api/stream/7/item/index.m3u8?token=t",
+      "qualities": [],
+      "quality": "auto",
+      "source": {
+        "audioChannels": 2,
+        "audioCodec": "mp3",
+        "audioLanguage": "fra",
+        "audioSampleRate": 44100,
+        "container": "mp3",
+        "durationSeconds": 12.005,
+        "videoCodec": ""
+      },
+      "tonemapping": false,
+      "transcodeReasons": [
+        {
+          "flag": "ClientRequiresHls",
+          "message": "Client requires an HLS container (no raw direct play)"
+        },
+        {
+          "flag": "AudioCodecNotSupported",
+          "message": "Audio codec \"mp3\" is not playable here"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "mp3"
+          ],
+          "containers": [
+            "mp3"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "aac"
+          ],
+          "containers": [
+            "mp4",
+            "m4a",
+            "m4b"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "flac"
+          ],
+          "containers": [
+            "flac"
+          ],
+          "videoCodecs": []
+        }
+      ],
+      "supportsDirectPlay": false
+    },
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "mp3",
+          "language": "fra",
+          "sampleRate": 44100,
+          "streamIndex": 0
+        }
+      ],
+      "durationSeconds": 12.005,
+      "formatName": "mp3",
+      "schemaVersion": 4,
+      "subtitles": [],
+      "video": []
+    },
+    "media": {
+      "contentType": "audio/mpeg",
+      "ext": ".mp3",
+      "mediaFileId": 7,
+      "parts": [
+        {
+          "info": {
+            "audio": [
+              {
+                "channels": 2,
+                "codec": "mp3",
+                "language": "fra",
+                "sampleRate": 44100,
+                "streamIndex": 0
+              }
+            ],
+            "durationSeconds": 12.005,
+            "formatName": "mp3",
+            "schemaVersion": 4,
+            "subtitles": [],
+            "video": []
+          },
+          "path": "/books/a1.mp3"
+        }
+      ],
+      "path": "/books/a1.mp3"
+    },
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "mp3-part-with-a-short-tail"
+}

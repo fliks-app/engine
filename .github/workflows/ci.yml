@@ -96,6 +96,6 @@ jobs:
           ENGINE_E2E: '1'
         run: |
           FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe FPCALC_PATH=$(command -v fpcalc) \
-            cargo test -p fliks-engine --no-fail-fast --test runtime_e2e --test live_e2e --test runtime_sync
+            cargo test -p fliks-engine --no-fail-fast --test runtime_e2e --test live_e2e --test runtime_sync --test item_e2e
           FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe \
             cargo test -p fliks-engine --test runtime_jobs merge_job_with_the_real_ffmpeg

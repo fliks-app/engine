@@ -1,0 +1,178 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": false,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 6,
+          "codec": "aac",
+          "copy": false,
+          "index": 0,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [
+            "AudioChannelsNotSupported"
+          ],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 7,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "",
+      "parts": [
+        {
+          "contentType": "audio/mp4",
+          "durationS": 600,
+          "index": 0,
+          "offsetS": 0,
+          "playUrl": "/api/stream/7/parts/0?token=t"
+        }
+      ],
+      "playMethod": "Transcode",
+      "playUrl": "/api/stream/7/item/index.m3u8?token=t",
+      "qualities": [],
+      "quality": "auto",
+      "source": {
+        "audioChannels": 6,
+        "audioCodec": "aac",
+        "audioLanguage": "fra",
+        "audioSampleRate": 48000,
+        "container": "m4a",
+        "durationSeconds": 600,
+        "videoCodec": ""
+      },
+      "tonemapping": false,
+      "transcodeReasons": [
+        {
+          "flag": "ClientRequiresHls",
+          "message": "Client requires an HLS container (no raw direct play)"
+        },
+        {
+          "flag": "AudioChannelsNotSupported",
+          "message": "6 channels > max undefined"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "mp3"
+          ],
+          "containers": [
+            "mp3"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "aac",
+            "alac"
+          ],
+          "containers": [
+            "mp4",
+            "m4a",
+            "m4b"
+          ],
+          "videoCodecs": []
+        }
+      ],
+      "maxAudioChannels": 2,
+      "supportsDirectPlay": false
+    },
+    "info": {
+      "audio": [
+        {
+          "channels": 6,
+          "codec": "aac",
+          "language": "fra",
+          "profile": "LC",
+          "sampleRate": 48000,
+          "streamIndex": 0
+        }
+      ],
+      "durationSeconds": 600.0,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "schemaVersion": 4,
+      "subtitles": [],
+      "video": []
+    },
+    "media": {
+      "contentType": "audio/mpeg",
+      "ext": ".m4a",
+      "mediaFileId": 7,
+      "parts": [
+        {
+          "info": {
+            "audio": [
+              {
+                "channels": 6,
+                "codec": "aac",
+                "language": "fra",
+                "profile": "LC",
+                "sampleRate": 48000,
+                "streamIndex": 0
+              }
+            ],
+            "durationSeconds": 600.0,
+            "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+            "schemaVersion": 4,
+            "subtitles": [],
+            "video": []
+          },
+          "path": "/books/f1.m4a"
+        }
+      ],
+      "path": "/books/f1.m4a"
+    },
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "surround-aac-to-stereo-client"
+}

@@ -54,6 +54,33 @@ pub struct DecideMedia {
     pub ext: String,
     /// Host MIME type of the file, echoed for Direct Play.
     pub content_type: String,
+    /// An item of ordered pieces (an audiobook's files) instead of one file: `path`, `ext` and
+    /// the request's `info` are then the first part's. Without it the request is one file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ItemPart>,
+}
+
+/// One piece of an item, played after the previous one on a single timeline.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemPart {
+    pub path: String,
+    pub info: MediaInfo,
+    /// The slice of the file that is played, in file seconds; absent: from the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_s: Option<f64>,
+    /// Absent: to the end of the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_s: Option<f64>,
+}
+
+impl ItemPart {
+    /// Seconds this part adds to the item's timeline; 0 when unknown.
+    pub fn duration_s(&self) -> f64 {
+        let start = self.start_s.unwrap_or(0.0).max(0.0);
+        let end = self.end_s.or(self.info.duration_seconds).unwrap_or(start);
+        (end - start).max(0.0)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -289,6 +316,23 @@ pub struct PlaybackInfo {
     pub qualities: Vec<QualityOption>,
     pub audio_tracks: Vec<AudioTrackPlan>,
     pub source: PlaybackSource,
+    /// An item's parts on its timeline, for a client that plays them itself (Direct Play) or
+    /// shows chapters; empty for a single file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<PlaybackPart>,
+}
+
+/// One part of an item as the client plays it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackPart {
+    pub index: u32,
+    /// Byte-range URL of the part's file (`/api/stream/{id}/parts/{index}`).
+    pub play_url: String,
+    /// Where the part starts on the item's timeline.
+    pub offset_s: f64,
+    pub duration_s: f64,
+    pub content_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
