@@ -103,6 +103,56 @@ $FF $(a) -c:a flac audio-only.flac
 $FF $(a) -c:a aac -metadata:s:a:0 language=eng audio-only.m4a
 $FF -display_rotation 90 -i h264-aac.mp4 -c copy rotated.mp4
 
+# Audiobook-style files: descriptive tags, chapters, a cover picture, no video stream.
+$FF -f lavfi -i "color=c=blue:size=32x48:duration=1:rate=1" -frames:v 1 "$tmp/cover.png"
+cat > "$tmp/book.txt" <<'C'
+;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=1000
+title=Opening
+[CHAPTER]
+TIMEBASE=1/1000
+START=1000
+END=3000
+title=Middle
+C
+BOOK=(-metadata "title=Tome Un" -metadata "album=Synthetic Series" -metadata "artist=Ada Example"
+  -metadata "album_artist=Ada Example" -metadata "composer=Bob Reader" -metadata genre=Audiobook
+  -metadata date=2021 -metadata "comment=Synthetic story" -metadata track=3/12 -metadata disc=1/2)
+$FF $(a) -i "$tmp/cover.jpg" -i "$tmp/book.txt" -map 0:a -map 1:v -map_chapters 2 -c:a aac -b:a 64k -c:v copy \
+  -disposition:v attached_pic "${BOOK[@]}" -metadata "grouping=Synthetic Saga" -f ipod audio-book.m4b
+# ffmpeg writes no series atoms (mvnm, mvin): custom keys go through mdta tags.
+$FF $(a) -c:a aac -movflags use_metadata_tags -metadata "series=Synthetic Saga" -metadata series-part=2 \
+  -metadata asin=B000TEST00 -metadata isbn=9780000000002 -metadata "narrator=Bob Reader" \
+  -metadata "publisher=Example House" -metadata language=fra -f ipod audio-custom-tags.m4b
+$FF $(a) -i "$tmp/cover.jpg" -i "$tmp/book.txt" -map 0:a -map 1:v -map_chapters 2 -c:a libmp3lame -c:v copy \
+  "${BOOK[@]}" -metadata "publisher=Example House" -metadata language=fra -metadata "series=Synthetic Saga" \
+  -metadata series-part=2 -metadata asin=B000TEST00 -metadata isbn=9780000000002 audio-book.mp3
+$FF $(a) -i "$tmp/cover.png" -map 0:a -map 1:v -c:a flac -c:v copy -disposition:v attached_pic \
+  -metadata "TITLE=Tome Un" -metadata "ALBUM=Synthetic Series" -metadata "ARTIST=Ada Example" \
+  -metadata "ALBUMARTIST=Ada Example" -metadata "COMPOSER=Bob Reader" -metadata "NARRATOR=Bob Reader" \
+  -metadata DATE=2021 -metadata "PUBLISHER=Example House" -metadata "DESCRIPTION=Synthetic story" \
+  -metadata TRACKNUMBER=3 -metadata TRACKTOTAL=12 -metadata DISCNUMBER=1 -metadata DISCTOTAL=2 \
+  -metadata "SERIES=Synthetic Saga" -metadata SERIESPART=2 -metadata ASIN=B000TEST00 \
+  -metadata ISBN=9780000000002 -metadata LANGUAGE=fra audio-book.flac
+# Ogg carries a picture as a base64 FLAC picture block in a METADATA_BLOCK_PICTURE comment.
+picture=$(python3 - "$tmp/cover.jpg" <<'P'
+import base64, struct, sys
+d = open(sys.argv[1], 'rb').read()
+mime = b'image/jpeg'
+blk = struct.pack('>II', 3, len(mime)) + mime + struct.pack('>IIIIII', 0, 64, 64, 24, 0, len(d)) + d
+print(base64.b64encode(blk).decode())
+P
+)
+$FF $(a) -c:a libopus -b:a 24k -metadata TITLE="Tome Un" -metadata ARTIST="Ada Example" -metadata ALBUM="Synthetic Series" \
+  -metadata SERIES="Synthetic Saga" -metadata SERIESPART=2 -metadata TRACKNUMBER=3 \
+  -metadata METADATA_BLOCK_PICTURE="$picture" -f ogg audio-book.opus
+$FF $(a) -c:a libvorbis -q:a 0 -metadata TITLE="Tome Un" -metadata ARTIST="Ada Example" -metadata TRACKNUMBER=3/12 \
+  -metadata DATE=2021-03-04 audio-plain.ogg
+$FF $(a) -i "$tmp/book.txt" -map 0:a -map_chapters 1 -c:a libopus -b:a 24k -metadata title="Tome Un" -metadata language=fra audio-chapters.mka
+
 # Letterbox: 480x190 content in 480x270 (80px total bars, cropped), 480x254 (16px, not cropped), pillarbox.
 bars() { $FF -f lavfi -i "testsrc2=size=$2:rate=24:duration=3" -vf "pad=$3:$4:$5:$6:black" $X264 "$1"; }
 bars letterbox.mkv 480x190 480 270 0 40

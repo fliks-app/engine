@@ -144,7 +144,7 @@ impl Tools for ProcessTools {
                 &cmd,
                 &args,
                 Duration::from_millis(timeout_ms),
-                args::MAX_OUTPUT_BYTES,
+                args::FFPROBE_MAX_OUTPUT_BYTES,
             )
             .await
             .map(|(out, _)| out)
@@ -349,7 +349,7 @@ mod tests {
         let t = StdInstant::now();
         assert!(slow.ffprobe(vec![], 200).await.is_err());
         assert!(t.elapsed() < Duration::from_secs(5));
-        let loud = tools(&dir.script("loud", "yes | head -c 3000000"));
+        let loud = tools(&dir.script("loud", "yes | head -c 20000000"));
         let e = loud.ffprobe(vec![], 5000).await.unwrap_err();
         assert_eq!(e.message, "stdout maxBuffer length exceeded");
     }

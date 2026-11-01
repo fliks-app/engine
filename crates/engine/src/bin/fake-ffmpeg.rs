@@ -436,6 +436,9 @@ fn main() {
             }
             hang()
         }
+        // The picture copy: a JPEG-looking file at the output path, nothing for `emptycover`.
+        "cover" => put(Path::new(args.last().unwrap()), b"\xFF\xD8cover\xFF\xD9"),
+        "emptycover" => put(Path::new(args.last().unwrap()), b""),
         "srt" => {
             let _ = writeln!(std::io::stdout(), "1\n00:00:01,000 --> 00:00:02,000\nhello");
             let _ = std::io::stdout().flush();

@@ -1,5 +1,5 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
-use super::{Fingerprint, MediaInfo, MediaRef, SourceScan};
+use super::{Fingerprint, MediaFamily, MediaInfo, MediaRef, SourceScan};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -62,6 +62,10 @@ pub enum JobKind {
     /// A non-SRT sidecar or an embedded text track, converted to SRT text.
     #[schema(title = "SubtitleToSrtJob")]
     SubtitleToSrt { info: MediaInfo, source: SrtSource },
+    /// The embedded picture of an audio file (`info.cover`), kept in the engine cache and read
+    /// with `GET /v1/covers/{mediaFileId}`.
+    #[schema(title = "CoverJob")]
+    Cover { info: MediaInfo },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -121,8 +125,61 @@ impl JobKind {
             JobKind::SubtitleOcr { .. } => "SubtitleOcr",
             JobKind::SubtitleSync { .. } => "SubtitleSync",
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
+            JobKind::Cover { .. } => "Cover",
         }
     }
+
+    /// The probe result the job is built from; `Fingerprint` reads the file alone.
+    pub fn info(&self) -> Option<&MediaInfo> {
+        match self {
+            JobKind::Sprite { info }
+            | JobKind::Scan { info }
+            | JobKind::SubtitleExtract { info }
+            | JobKind::SubtitleOcr { info, .. }
+            | JobKind::SubtitleSync { info, .. }
+            | JobKind::SubtitleToSrt { info, .. }
+            | JobKind::Cover { info } => Some(info),
+            JobKind::Fingerprint { .. } => None,
+        }
+    }
+
+    /// The families of file the kind applies to.
+    pub fn families(&self) -> &'static [MediaFamily] {
+        JOB_FAMILIES
+            .iter()
+            .find(|(kind, _)| *kind == self.name())
+            .map_or(&[], |(_, f)| f)
+    }
+}
+
+/// Which families of file each job kind applies to (`hello.jobFamilies`).
+pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
+    ("Sprite", &[MediaFamily::Video]),
+    ("Scan", &[MediaFamily::Video]),
+    ("Fingerprint", &[MediaFamily::Video]),
+    ("SubtitleExtract", &[MediaFamily::Video]),
+    ("SubtitleOcr", &[MediaFamily::Video]),
+    ("SubtitleSync", &[MediaFamily::Video]),
+    ("SubtitleToSrt", &[MediaFamily::Video]),
+    ("Cover", &[MediaFamily::Audio]),
+];
+
+/// A job kind and the families of file it applies to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobFamilies {
+    /// `JobKind` `type`.
+    pub kind: String,
+    pub families: Vec<MediaFamily>,
+}
+
+/// The stored cover of `GET /v1/covers/{mediaFileId}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverMeta {
+    /// `image/jpeg` or `image/png`.
+    pub mime: String,
+    pub bytes: u32,
 }
 
 #[derive(
@@ -212,6 +269,10 @@ pub enum JobResult {
     },
     SubtitleToSrt {
         srt: String,
+    },
+    /// The file is read with `GET /v1/covers/{mediaFileId}`.
+    Cover {
+        cover: CoverMeta,
     },
 }
 

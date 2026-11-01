@@ -142,6 +142,25 @@
         }
       }
     },
+    "/v1/covers/{mediaFileId}": {
+      "get": {
+        "tags": [
+          "jobs::cover"
+        ],
+        "operationId": "get_cover",
+        "responses": {
+          "200": {
+            "description": "the picture a `Cover` job stored (`image/png` for a PNG)",
+            "content": {
+              "image/jpeg": {}
+            }
+          },
+          "404": {
+            "description": "no stored cover"
+          }
+        }
+      }
+    },
     "/v1/decide": {
       "post": {
         "tags": [],
@@ -1416,6 +1435,59 @@
           }
         }
       },
+      "CoverArt": {
+        "type": "object",
+        "description": "An embedded picture (`attached_pic`): not a video stream, never played.",
+        "required": [
+          "streamIndex",
+          "codec"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string"
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "streamIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "CoverMeta": {
+        "type": "object",
+        "description": "The stored cover of `GET /v1/covers/{mediaFileId}`.",
+        "required": [
+          "mime",
+          "bytes"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mime": {
+            "type": "string",
+            "description": "`image/jpeg` or `image/png`."
+          }
+        }
+      },
       "CropInfo": {
         "type": "object",
         "required": [
@@ -2475,6 +2547,13 @@
           "instanceId": {
             "type": "string"
           },
+          "jobFamilies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobFamilies"
+            },
+            "description": "Job kinds and the families of file they apply to; a host queues only matching work."
+          },
           "protocolVersion": {
             "type": "integer",
             "format": "int32",
@@ -2739,6 +2818,26 @@
           }
         }
       },
+      "JobFamilies": {
+        "type": "object",
+        "description": "A job kind and the families of file it applies to.",
+        "required": [
+          "kind",
+          "families"
+        ],
+        "properties": {
+          "families": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaFamily"
+            }
+          },
+          "kind": {
+            "type": "string",
+            "description": "`JobKind` `type`."
+          }
+        }
+      },
       "JobKind": {
         "oneOf": [
           {
@@ -2931,6 +3030,26 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "title": "CoverJob",
+            "description": "The embedded picture of an audio file (`info.cover`), kept in the engine cache and read\nwith `GET /v1/covers/{mediaFileId}`.",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Cover"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -3105,6 +3224,25 @@
                 "type": "string",
                 "enum": [
                   "SubtitleToSrt"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file is read with `GET /v1/covers/{mediaFileId}`.",
+            "required": [
+              "cover",
+              "type"
+            ],
+            "properties": {
+              "cover": {
+                "$ref": "#/components/schemas/CoverMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Cover"
                 ]
               }
             }
@@ -3611,6 +3749,14 @@
           }
         }
       },
+      "MediaFamily": {
+        "type": "string",
+        "description": "What a file is, from its streams. Video-only work (sprites, keyframe scan, subtitles) never\napplies to an audio file.",
+        "enum": [
+          "video",
+          "audio"
+        ]
+      },
       "MediaInfo": {
         "type": "object",
         "required": [
@@ -3633,6 +3779,17 @@
             "items": {
               "$ref": "#/components/schemas/Chapter"
             }
+          },
+          "cover": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverArt",
+                "description": "Only for a file without programme video: the embedded picture."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "durationSeconds": {
             "type": [
@@ -3683,6 +3840,17 @@
               "$ref": "#/components/schemas/SubtitleStreamInfo"
             }
           },
+          "tags": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MediaTags",
+                "description": "Only for a file without programme video, and only when it carries a descriptive tag."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "timestampBreakSeconds": {
             "type": [
               "number",
@@ -3714,6 +3882,139 @@
           "path": {
             "type": "string",
             "description": "Absolute path, already authorised by the host."
+          }
+        }
+      },
+      "MediaTags": {
+        "type": "object",
+        "description": "The descriptive tags of an audio file, normalised across ID3, MP4 and Vorbis comments.\nAbsent keys stay absent; text is trimmed and never empty.",
+        "properties": {
+          "album": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "albumArtist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "composer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disc": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "discTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isbn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As tagged, e.g. `fra` or `fr`."
+          },
+          "narrator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seriesPart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Text, a part can be `1.5`."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "track": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "trackTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "First four-digit run of the date tag.",
+            "minimum": 0
           }
         }
       },

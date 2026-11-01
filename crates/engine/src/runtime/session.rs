@@ -588,7 +588,11 @@ impl Runtime {
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
             removed += 1;
         }
-        let dirs = [self.cache.subtitles_dir(file), self.cache.sprite_dir(file)];
+        let dirs = [
+            self.cache.subtitles_dir(file),
+            self.cache.sprite_dir(file),
+            self.cache.cover_dir(file),
+        ];
         let _ = tokio::task::spawn_blocking(move || dirs.iter().for_each(|d| remove_dir(d))).await;
         (jobs.len() as u32 + background, removed)
     }

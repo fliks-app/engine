@@ -158,6 +158,8 @@ pub struct Format {
     pub start_time: Option<String>,
     #[serde(default, deserialize_with = "string")]
     pub format_name: Option<String>,
+    #[serde(default)]
+    pub tags: Tags,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -1,0 +1,107 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"mp3\",\n            \"codec_long_name\": \"MP3 (MPEG audio layer 3)\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"mime_codec_string\": \"mp4a.40.34\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 1,\n            \"channel_layout\": \"mono\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 0,\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/14112000\",\n            \"start_pts\": 324870,\n            \"start_time\": \"0.023021\",\n            \"duration_ts\": 42336000,\n            \"duration\": \"3.000000\",\n            \"bit_rate\": \"64000\",\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            }\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"mjpeg\",\n            \"codec_long_name\": \"Motion JPEG\",\n            \"profile\": \"Baseline\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"width\": 64,\n            \"height\": 64,\n            \"coded_width\": 64,\n            \"coded_height\": 64,\n            \"has_b_frames\": 0,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"1:1\",\n            \"pix_fmt\": \"yuvj420p\",\n            \"level\": -99,\n            \"color_range\": \"pc\",\n            \"color_space\": \"bt470bg\",\n            \"chroma_location\": \"center\",\n            \"r_frame_rate\": \"90000/1\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/90000\",\n            \"start_pts\": 2072,\n            \"start_time\": \"0.023022\",\n            \"duration_ts\": 270000,\n            \"duration\": \"3.000000\",\n            \"bits_per_raw_sample\": \"8\",\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 1,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"comment\": \"Other\"\n            }\n        }\n    ],\n    \"chapters\": [\n        {\n            \"id\": 0,\n            \"time_base\": \"1/1000\",\n            \"start\": 0,\n            \"start_time\": \"0.000000\",\n            \"end\": 1000,\n            \"end_time\": \"1.000000\",\n            \"tags\": {\n                \"title\": \"Opening\"\n            }\n        },\n        {\n            \"id\": 1,\n            \"time_base\": \"1/1000\",\n            \"start\": 1000,\n            \"start_time\": \"1.000000\",\n            \"end\": 3000,\n            \"end_time\": \"3.000000\",\n            \"tags\": {\n                \"title\": \"Middle\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"{path}\",\n        \"nb_streams\": 2,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mp3\",\n        \"format_long_name\": \"MP2/3 (MPEG audio layer 2/3)\",\n        \"start_time\": \"0.023021\",\n        \"duration\": \"3.000000\",\n        \"size\": \"25195\",\n        \"bit_rate\": \"67186\",\n        \"probe_score\": 51,\n        \"tags\": {\n            \"title\": \"Tome Un\",\n            \"album\": \"Synthetic Series\",\n            \"artist\": \"Ada Example\",\n            \"album_artist\": \"Ada Example\",\n            \"composer\": \"Bob Reader\",\n            \"genre\": \"Audiobook\",\n            \"date\": \"2021\",\n            \"comment\": \"Synthetic story\",\n            \"track\": \"3/12\",\n            \"disc\": \"1/2\",\n            \"publisher\": \"Example House\",\n            \"language\": \"fra\",\n            \"series\": \"Synthetic Saga\",\n            \"series-part\": \"2\",\n            \"asin\": \"B000TEST00\",\n            \"isbn\": \"9780000000002\",\n            \"encoder\": \"Lavf62.12.102\"\n        }\n    }\n}\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,N/A\n0,0.000000,\n",
+      "stopped": true
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 64000,
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "mp3",
+          "endSeconds": 3.023021,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0.023021,
+          "streamIndex": 0
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 1,
+          "startSeconds": 0,
+          "title": "Opening"
+        },
+        {
+          "endSeconds": 3,
+          "startSeconds": 1,
+          "title": "Middle"
+        }
+      ],
+      "cover": {
+        "codec": "mjpeg",
+        "height": 64,
+        "streamIndex": 1,
+        "width": 64
+      },
+      "durationSeconds": 3,
+      "formatBitRate": 67186,
+      "formatName": "mp3",
+      "formatStartSeconds": 0.023021,
+      "subtitles": [],
+      "tags": {
+        "album": "Synthetic Series",
+        "albumArtist": "Ada Example",
+        "artist": "Ada Example",
+        "asin": "B000TEST00",
+        "composer": "Bob Reader",
+        "description": "Synthetic story",
+        "disc": 1,
+        "discTotal": 2,
+        "genre": "Audiobook",
+        "isbn": "9780000000002",
+        "language": "fra",
+        "publisher": "Example House",
+        "series": "Synthetic Saga",
+        "seriesPart": "2",
+        "title": "Tome Un",
+        "track": 3,
+        "trackTotal": 12,
+        "year": 2021
+      },
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "audio-book.mp3",
+  "fileSize": 25195,
+  "moviehash": null,
+  "name": "audio-mp3-book",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}

@@ -45,6 +45,9 @@ pub struct Hello {
     pub protocol_version: u32,
     pub features: Vec<String>,
     pub instance_id: String,
+    /// Job kinds and the families of file they apply to; a host queues only matching work.
+    #[serde(default)]
+    pub job_families: Vec<JobFamilies>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -394,6 +397,84 @@ pub struct Chapter {
     pub title: Option<String>,
 }
 
+/// An embedded picture (`attached_pic`): not a video stream, never played.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverArt {
+    pub stream_index: u32,
+    pub codec: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+}
+
+/// The descriptive tags of an audio file, normalised across ID3, MP4 and Vorbis comments.
+/// Absent keys stay absent; text is trimmed and never empty.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaTags {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub album: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub album_artist: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub narrator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// As tagged, e.g. `fra` or `fr`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series: Option<String>,
+    /// Text, a part can be `1.5`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_part: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isbn: Option<String>,
+    /// First four-digit run of the date tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track_total: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_total: Option<u32>,
+}
+
+/// What a file is, from its streams. Video-only work (sprites, keyframe scan, subtitles) never
+/// applies to an audio file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaFamily {
+    Video,
+    Audio,
+}
+
+impl MediaFamily {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaInfo {
@@ -423,6 +504,25 @@ pub struct MediaInfo {
     /// Bumped when probing changes what it records; absent on blobs persisted before the engine existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_version: Option<u32>,
+    /// Only for a file without programme video: the embedded picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<CoverArt>,
+    /// Only for a file without programme video, and only when it carries a descriptive tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<MediaTags>,
+}
+
+impl MediaInfo {
+    /// Video when it has a video stream, else audio when it has an audio one; `None` for neither.
+    pub fn family(&self) -> Option<MediaFamily> {
+        if !self.video.is_empty() {
+            Some(MediaFamily::Video)
+        } else if !self.audio.is_empty() {
+            Some(MediaFamily::Audio)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

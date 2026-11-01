@@ -33,8 +33,8 @@ use axum::{
 use fliks_engine_core::api::{
     CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
     Fingerprint, Hello, IntroDetectRequest, IntroDetectResponse, IntroEpisode, IntroSegment,
-    MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest, ResolveResponse, SessionExpired,
-    SourceScan,
+    JOB_FAMILIES, JobFamilies, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest,
+    ResolveResponse, SessionExpired, SourceScan,
 };
 use fliks_engine_core::hw::selected_render_node;
 use std::sync::Arc;
@@ -61,7 +61,7 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
-        jobs::delete, intro::detect, live::open_handler, live::list_handler, live::get_handler),
+        jobs::delete, jobs::cover::get, intro::detect, live::open_handler, live::list_handler, live::get_handler),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, IntroDetectRequest,
         IntroDetectResponse, IntroEpisode, IntroSegment, ResolveRequest, ResolveResponse,
         SessionExpired)),
@@ -125,6 +125,7 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         .route("/v1/events", get(sessions::events))
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
+        .route("/v1/covers/{id}", get(jobs::cover::get))
         .route("/v1/intro-detect", post(intro::detect))
         .route("/v1/live", get(live::list_handler).post(live::open_handler))
         .route("/v1/live/{sid}", get(live::get_handler))
@@ -176,6 +177,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "scan".into(),
                 "fingerprint".into(),
                 "subtitle-extract".into(),
+                "cover".into(),
                 "live".into(),
                 "intro-detect".into(),
                 "session-replaces".into(),
@@ -184,6 +186,13 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
             features
         },
         instance_id: s.instance_id.clone(),
+        job_families: JOB_FAMILIES
+            .iter()
+            .map(|(kind, families)| JobFamilies {
+                kind: (*kind).into(),
+                families: families.to_vec(),
+            })
+            .collect(),
     })
 }
 

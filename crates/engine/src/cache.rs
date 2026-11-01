@@ -112,6 +112,11 @@ impl Cache {
         self.root.join("sprites/v1").join(file.to_string())
     }
 
+    /// The `cover.jpg` or `cover.png` of an audio file.
+    pub fn cover_dir(&self, file: u32) -> PathBuf {
+        self.root.join("covers/v1").join(file.to_string())
+    }
+
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
         self.root.join("subtitles/v2").join(file.to_string())
     }

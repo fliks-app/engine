@@ -1,0 +1,84 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"opus\",\n            \"codec_long_name\": \"Opus (Opus Interactive Audio Codec)\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"mime_codec_string\": \"opus\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 1,\n            \"channel_layout\": \"mono\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 312,\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/48000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 144312,\n            \"duration\": \"3.006500\",\n            \"extradata_size\": 19,\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"encoder\": \"Lavc62.28.102 libopus\",\n                \"TITLE\": \"Tome Un\",\n                \"ARTIST\": \"Ada Example\",\n                \"ALBUM\": \"Synthetic Series\",\n                \"SERIES\": \"Synthetic Saga\",\n                \"SERIESPART\": \"2\",\n                \"track\": \"3\"\n            }\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"mjpeg\",\n            \"codec_long_name\": \"Motion JPEG\",\n            \"profile\": \"Baseline\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"width\": 64,\n            \"height\": 64,\n            \"coded_width\": 64,\n            \"coded_height\": 64,\n            \"has_b_frames\": 0,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"1:1\",\n            \"pix_fmt\": \"yuvj420p\",\n            \"level\": -99,\n            \"color_range\": \"pc\",\n            \"color_space\": \"bt470bg\",\n            \"chroma_location\": \"center\",\n            \"r_frame_rate\": \"90000/1\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/90000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 270585,\n            \"duration\": \"3.006500\",\n            \"bits_per_raw_sample\": \"8\",\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 1,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"comment\": \"Cover (front)\"\n            }\n        }\n    ],\n    \"chapters\": [\n\n    ],\n    \"format\": {\n        \"filename\": \"{path}\",\n        \"nb_streams\": 2,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"ogg\",\n        \"format_long_name\": \"Ogg\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"3.006500\",\n        \"size\": \"12916\",\n        \"bit_rate\": \"34368\",\n        \"probe_score\": 100\n    }\n}\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,N/A\n0,-0.006500,\n",
+      "stopped": true
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "opus",
+          "endSeconds": 3.0065,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "title": "Tome Un"
+        }
+      ],
+      "chapters": [],
+      "cover": {
+        "codec": "mjpeg",
+        "height": 64,
+        "streamIndex": 1,
+        "width": 64
+      },
+      "durationSeconds": 3.0065,
+      "formatBitRate": 34368,
+      "formatName": "ogg",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "tags": {
+        "album": "Synthetic Series",
+        "artist": "Ada Example",
+        "series": "Synthetic Saga",
+        "seriesPart": "2",
+        "title": "Tome Un",
+        "track": 3
+      },
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "audio-book.opus",
+  "fileSize": 12916,
+  "moviehash": null,
+  "name": "audio-opus-book",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}
