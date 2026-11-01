@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/fliks-app/engine/compare/v1.8.0...v1.9.0) (2026-11-01)
+
+
+### Features
+
+* **auth:** pass device credentials through to the host resolver ([#156](https://github.com/fliks-app/engine/issues/156)) ([27c3308](https://github.com/fliks-app/engine/commit/27c330840a1daa25785218354a4b367b9a788f0a))
+* **item:** play audio items as one HLS timeline, with AAC fallback ([#154](https://github.com/fliks-app/engine/issues/154)) ([a6c1e97](https://github.com/fliks-app/engine/commit/a6c1e974d3e50f9716141e1ca16f173bd41983b9))
+
 ## [1.8.0](https://github.com/fliks-app/engine/compare/v1.7.6...v1.8.0) (2026-11-01)
 
 
