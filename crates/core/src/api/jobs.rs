@@ -151,8 +151,8 @@ impl JobKind {
             | JobKind::Fingerprint { .. }
             | JobKind::SubtitleExtract { .. }
             | JobKind::SubtitleOcr { .. }
-            | JobKind::SubtitleSync { .. }
             | JobKind::SubtitleToSrt { .. } => VIDEO_ONLY,
+            JobKind::SubtitleSync { .. } => ANY,
             JobKind::Cover { .. } => AUDIO_ONLY,
         }
     }
@@ -160,6 +160,8 @@ impl JobKind {
 
 const VIDEO_ONLY: &[MediaFamily] = &[MediaFamily::Video];
 const AUDIO_ONLY: &[MediaFamily] = &[MediaFamily::Audio];
+// Sync aligns cues on the audio track, so a probe without video is enough.
+const ANY: &[MediaFamily] = &[MediaFamily::Video, MediaFamily::Audio];
 
 /// Which families of file each job kind applies to (`hello.jobFamilies`); `families` is the
 /// per-request form, a test keeps the two equal.
@@ -169,7 +171,7 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("Fingerprint", VIDEO_ONLY),
     ("SubtitleExtract", VIDEO_ONLY),
     ("SubtitleOcr", VIDEO_ONLY),
-    ("SubtitleSync", VIDEO_ONLY),
+    ("SubtitleSync", ANY),
     ("SubtitleToSrt", VIDEO_ONLY),
     ("Cover", AUDIO_ONLY),
 ];
