@@ -178,6 +178,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "fingerprint".into(),
                 "subtitle-extract".into(),
                 "cover".into(),
+                "merge".into(),
                 "live".into(),
                 "intro-detect".into(),
                 "session-replaces".into(),

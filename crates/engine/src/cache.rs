@@ -117,6 +117,11 @@ impl Cache {
         self.root.join("covers/v1").join(file.to_string())
     }
 
+    /// Scratch files of one `Merge` job: the concat list and the metadata file.
+    pub fn merge_dir(&self, job: &str) -> PathBuf {
+        self.root.join("merge/v1").join(job)
+    }
+
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
         self.root.join("subtitles/v2").join(file.to_string())
     }

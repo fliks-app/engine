@@ -3,6 +3,7 @@
 pub mod cover;
 pub mod cues;
 pub mod fingerprint;
+pub mod merge;
 pub mod ocr;
 pub mod scan;
 pub mod sprite;

@@ -255,6 +255,8 @@ fn every_wire_key_is_in_its_schema() {
         MediaInfo,
         MediaRef,
         MediaTags,
+        MergeMeta,
+        MergePart,
         MovieHash,
         MuxFlavour,
         OpenLiveRequest,

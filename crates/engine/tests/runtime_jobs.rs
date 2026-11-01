@@ -1161,3 +1161,401 @@ async fn jobs_are_filtered_by_the_family_of_the_file() {
     assert!(has(json!({ "kind": "Sprite", "families": ["video"] })));
     assert!(has(json!({ "kind": "Cover", "families": ["audio"] })));
 }
+
+fn aac_part(path: &std::path::Path, seconds: f64, title: &str) -> Value {
+    json!({ "path": path, "info": {
+        "video": [], "audio": [{ "streamIndex": 0, "codec": "aac", "language": "und", "channels": 1,
+            "sampleRate": 44100, "profile": "LC" }],
+        "subtitles": [], "durationSeconds": seconds, "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+        "tags": { "title": title, "album": "Synthetic Book", "narrator": "Nar Rator" } } })
+}
+
+fn merge_kind(dir: &std::path::Path, output: &std::path::Path) -> Value {
+    json!({ "type": "Merge", "output": output, "parts": [
+        aac_part(&dir.join("a.m4a"), 100.0, "One"), aac_part(&dir.join("b.m4a"), 50.5, "Two")] })
+}
+
+fn files_in(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .map(|d| {
+            d.map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+#[tokio::test]
+async fn merge_job_publishes_the_m4b_reports_progress_and_never_overwrites() {
+    let (e, file) = engine_of("merge", json!({})).await;
+    let out = e.root.join("books/Book.m4b");
+    let mut rx = e.rt.events.subscribe();
+    let r = post(&e, 7, &file, merge_kind(&e.root, &out)).await;
+    assert_eq!(r.status, 200, "{}", r.text());
+    let id = r.json()["jobId"].as_str().unwrap().to_string();
+    let (progress, ev) = done(&mut rx, &id).await;
+    let v = done_json(&ev);
+    let bytes = std::fs::metadata(&out).unwrap().len() as f64;
+    let want = json!({ "type": "Merge", "merge": { "path": out, "bytes": bytes,
+        "durationSeconds": 150.5, "reencoded": false, "chapters": [
+            { "startSeconds": 0.0, "endSeconds": 100.0, "title": "One" },
+            { "startSeconds": 100.0, "endSeconds": 150.5, "title": "Two" }] } });
+    assert_eq!(
+        (v["state"].as_str(), &v["result"]),
+        (Some("done"), &want),
+        "{v}"
+    );
+    assert!(!progress.is_empty() && progress.iter().all(|p| (0.0..=99.0).contains(p)));
+    let written = std::fs::read(&out).unwrap();
+    assert!(
+        written.windows(8).any(|w| w == b"narrator") && written.ends_with(b"Nar Rator"),
+        "the free-form tags are in the moov"
+    );
+    assert_eq!(
+        files_in(&e.root.join("books")),
+        ["Book.m4b"],
+        "no temporary file"
+    );
+    assert_eq!(
+        files_in(&e.root.join("merge/v1")),
+        Vec::<String>::new(),
+        "no scratch"
+    );
+    // The name is taken: the job fails and the file is untouched.
+    let v = run_kind(&e, 7, &file, merge_kind(&e.root, &out)).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert!(
+        v["error"].as_str().unwrap().starts_with("output exists: "),
+        "{v}"
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), written);
+    assert_eq!(files_in(&e.root.join("books")), ["Book.m4b"]);
+}
+
+#[tokio::test]
+async fn merge_job_leaves_nothing_behind_when_ffmpeg_fails_or_it_is_cancelled() {
+    let (e, file) = engine_of("failmerge", json!({})).await;
+    let out = e.root.join("books/Book.m4b");
+    let v = run_kind(&e, 7, &file, merge_kind(&e.root, &out)).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert!(
+        v["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("ffmpeg exited with Some(1)"),
+        "{v}"
+    );
+    assert_eq!(files_in(&e.root.join("books")), Vec::<String>::new());
+    let (e, file) = engine_of("hangmerge", json!({})).await;
+    let out = e.root.join("books/Book.m4b");
+    hang_then_cancel(&e, &file, merge_kind(&e.root, &out)).await;
+    assert_eq!(files_in(&e.root.join("books")), Vec::<String>::new());
+    assert_eq!(files_in(&e.root.join("merge/v1")), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn merge_job_respects_the_disk_threshold_and_validates_its_request() {
+    let (e, file) = engine_of("merge", json!({ "jobMinFreeBytes": 1e18 })).await;
+    let out = e.root.join("books/Book.m4b");
+    let v = run_kind(&e, 7, &file, merge_kind(&e.root, &out)).await;
+    assert!(
+        v["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("not enough disk space: "),
+        "{v}"
+    );
+    let book = |f: &dyn Fn(&mut Value)| {
+        let mut k = merge_kind(&e.root, &out);
+        f(&mut k);
+        k
+    };
+    let video = info();
+    for (kind, why) in [
+        (
+            book(&|k| k["parts"] = json!([])),
+            "Merge needs 1 to 500 parts",
+        ),
+        (
+            book(&|k| k["output"] = json!("/books/Book.mp3")),
+            "Merge output must be an absolute .m4b path without control characters",
+        ),
+        (
+            book(&|k| k["parts"][1]["path"] = json!("b.m4a")),
+            "Merge part 2 path must be absolute, without control characters",
+        ),
+        (
+            book(&|k| k["parts"][1]["path"] = json!("/x/b.m4a\nfile '/etc/passwd'")),
+            "Merge part 2 path must be absolute, without control characters",
+        ),
+        (
+            book(&|k| k["parts"][0]["info"] = video.clone()),
+            "Merge part 1 is not an audio file",
+        ),
+        (
+            book(&|k| k["parts"][1]["info"]["durationSeconds"] = json!(0)),
+            "Merge part 2 has no duration",
+        ),
+    ] {
+        let r = post(&e, 7, &file, kind).await;
+        assert_eq!((r.status, r.text().as_str()), (400, why));
+    }
+    let hello = e.control("GET", "/v1/hello", None).await.json();
+    assert!(
+        hello["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("merge"))
+    );
+    assert!(
+        hello["jobFamilies"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({ "kind": "Merge", "families": ["audio"] }))
+    );
+}
+
+fn tool_ok(bin: &str, args: &[&std::ffi::OsStr]) -> bool {
+    std::process::Command::new(bin)
+        .args(["-v", "error"])
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Synthetic sine-tone parts of an audiobook, probed by the engine: a cover and tags, own
+/// chapters, a plain AAC part and a WAV in another format.
+async fn real_parts(e: &Engine, dir: &std::path::Path) -> Option<Vec<Value>> {
+    let ff = |args: &[&str]| {
+        let args: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        tool_ok(&e.ffmpeg, &args)
+    };
+    let p = |n: &str| dir.join(n).to_string_lossy().into_owned();
+    let chapters = dir.join("chapters.txt");
+    std::fs::write(
+        &chapters,
+        ";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=Inner A\n\
+         [CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=2500\ntitle=Inner B\n",
+    )
+    .unwrap();
+    let sine = |hz: &str, secs: &str, rate: &str| {
+        format!("sine=frequency={hz}:duration={secs}:sample_rate={rate}")
+    };
+    let made = ff(&[
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=red:size=64x64:rate=1:duration=1",
+        "-frames:v",
+        "1",
+        &p("cover.jpg"),
+    ]) && ff(&[
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        &sine("440", "2", "44100"),
+        "-i",
+        &p("cover.jpg"),
+        "-map",
+        "0:a",
+        "-map",
+        "1:v",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-c:v",
+        "copy",
+        "-disposition:v",
+        "attached_pic",
+        "-metadata",
+        "title=Part One",
+        "-metadata",
+        "album=Synth Book",
+        "-metadata",
+        "artist=Au Thor",
+        "-metadata",
+        "date=2020",
+        &p("p1.m4a"),
+    ]) && ff(&[
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        &sine("550", "2.5", "44100"),
+        "-i",
+        &chapters.to_string_lossy(),
+        "-map",
+        "0:a",
+        "-map_chapters",
+        "1",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-movflags",
+        "use_metadata_tags",
+        "-metadata",
+        "asin=B000TEST00",
+        &p("p2.m4a"),
+    ]) && ff(&[
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        &sine("660", "1.5", "44100"),
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        &p("p3.m4a"),
+    ]) && ff(&[
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        &sine("770", "1.5", "22050"),
+        "-c:a",
+        "pcm_s16le",
+        &p("p4.wav"),
+    ]);
+    if !made {
+        return None;
+    }
+    let mut parts = vec![];
+    for (i, n) in ["p1.m4a", "p2.m4a", "p3.m4a", "p4.wav"].iter().enumerate() {
+        let body = json!({ "media": { "mediaFileId": i + 1, "path": p(n) } });
+        let probed = e.control("POST", "/v1/probe", Some(body)).await.json();
+        assert_eq!(probed["ok"], true, "{probed}");
+        parts.push(json!({ "path": p(n), "info": probed["info"] }));
+    }
+    Some(parts)
+}
+
+fn ffprobe_json(bin: &str, file: &std::path::Path) -> Value {
+    let out = std::process::Command::new(bin)
+        .args([
+            "-v",
+            "error",
+            "-show_chapters",
+            "-show_entries",
+            "format=duration:format_tags",
+        ])
+        .args(["-of", "json"])
+        .arg(file)
+        .output()
+        .unwrap();
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// The real ffmpeg on synthetic parts, once copied and once encoded: skipped without ffmpeg.
+#[tokio::test]
+async fn merge_job_with_the_real_ffmpeg_copies_or_encodes_and_chapters_the_parts() {
+    let ffprobe = fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe");
+    if !tool_ok(&ffmpeg(), &[std::ffi::OsStr::new("-version")])
+        || !tool_ok(&ffprobe, &[std::ffi::OsStr::new("-version")])
+    {
+        eprintln!("ffmpeg or ffprobe not available: skipped");
+        return;
+    }
+    let pause = if cfg!(unix) { "signal" } else { "stdin" };
+    let hw = host(HwAccel::None, "/dev/dri/renderD128", pause);
+    let e = engine_with_tools(hw, &ffmpeg(), &ffprobe, "fpcalc", json!({})).await;
+    let dir = temp_dir("merge-real");
+    let Some(parts) = real_parts(&e, &dir).await else {
+        eprintln!("ffmpeg cannot make the synthetic parts: skipped");
+        return;
+    };
+    let first = PathBuf::from(parts[0]["path"].as_str().unwrap());
+    let tags = json!({ "narrator": "Nar Rator", "series": "Series X" });
+    let cases = [
+        (
+            "copy.m4b",
+            &parts[..3],
+            false,
+            6.0,
+            vec![
+                ("Part One", 0.0),
+                ("Inner A", 2.0),
+                ("Inner B", 3.0),
+                ("Part 3", 4.5),
+            ],
+        ),
+        (
+            "encode.m4b",
+            &[&parts[..2], &parts[3..]].concat()[..],
+            true,
+            6.0,
+            vec![
+                ("Part One", 0.0),
+                ("Inner A", 2.0),
+                ("Inner B", 3.0),
+                ("Part 3", 4.5),
+            ],
+        ),
+    ];
+    for (name, set, reencoded, total, chapters) in cases {
+        let out = dir.join(name);
+        let kind = json!({ "type": "Merge", "parts": set, "output": out, "tags": tags });
+        let v = run_kind(&e, 1, &first, kind).await;
+        assert_eq!(v["state"], "done", "{name}: {v}");
+        assert_eq!(v["result"]["merge"]["reencoded"], reencoded, "{name}");
+        let probed = ffprobe_json(&ffprobe, &out);
+        let got: Vec<(String, f64)> = probed["chapters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["tags"]["title"].as_str().unwrap().into(),
+                    c["start_time"].as_str().unwrap().parse().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(got.len(), chapters.len(), "{name}: {probed}");
+        for ((title, at), (want, want_at)) in got.iter().zip(&chapters) {
+            assert!(
+                title == want && (at - want_at).abs() < 0.05,
+                "{name}: {title} {at}"
+            );
+        }
+        let seconds: f64 = probed["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((seconds - total).abs() < 0.15, "{name}: {seconds}s");
+        let t = &probed["format"]["tags"];
+        let tag = |k: &str| t[k].as_str().unwrap_or_default().to_string();
+        assert_eq!(
+            [
+                tag("title"),
+                tag("album"),
+                tag("artist"),
+                tag("date"),
+                tag("narrator"),
+                tag("series"),
+                tag("asin")
+            ],
+            [
+                "Synth Book",
+                "Synth Book",
+                "Au Thor",
+                "2020",
+                "Nar Rator",
+                "Series X",
+                "B000TEST00"
+            ],
+            "{name}: {t}"
+        );
+        let body = json!({ "media": { "mediaFileId": 9, "path": out } });
+        let info = e.control("POST", "/v1/probe", Some(body)).await.json()["info"].clone();
+        assert_eq!(info["cover"]["codec"], "mjpeg", "{name}: the cover is kept");
+        assert_eq!(info["audio"][0]["codec"], "aac", "{name}");
+    }
+    assert!(e.ffmpeg_pids().is_empty());
+}

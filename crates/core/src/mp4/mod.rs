@@ -2,6 +2,7 @@
 mod assemble;
 mod boxes;
 mod cmaf;
+mod freeform;
 mod grid;
 mod remux;
 mod timeline;
@@ -12,6 +13,7 @@ pub use assemble::{
 };
 pub use boxes::{BoxRef, boxes, find_box, make_box, read_box_header};
 pub use cmaf::{cmaf_rewrite, is_cmaf_rewritten, rewrite_cmaf};
+pub use freeform::add_items as add_freeform_items;
 pub use grid::{
     DECODE_TIME_TOLERANCE_SECONDS, KeyframeGrid, SourceTimeline, compute_segment_grid,
     cue_offset_seconds, grid_segment_index, input_seek_seconds, remux_segment_grid, served_origin,

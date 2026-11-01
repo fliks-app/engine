@@ -3050,6 +3050,45 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "title": "MergeJob",
+            "description": "The ordered audio files of one audiobook merged into one `.m4b` written at `output`, with a\nchapter per part (or the part's own chapters), the first cover and the parts' tags.\n`media` names the first part: it identifies the job (cancel, invalidate).",
+            "required": [
+              "parts",
+              "output",
+              "type"
+            ],
+            "properties": {
+              "output": {
+                "type": "string",
+                "description": "Absolute `.m4b` path; the job fails when it exists. Written whole or not at all."
+              },
+              "parts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MergePart"
+                }
+              },
+              "tags": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MediaTags",
+                    "description": "Fields that win over what the parts carry (the book's own title, author...)."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Merge"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -3243,6 +3282,25 @@
                 "type": "string",
                 "enum": [
                   "Cover"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file is at the request's `output`.",
+            "required": [
+              "merge",
+              "type"
+            ],
+            "properties": {
+              "merge": {
+                "$ref": "#/components/schemas/MergeMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Merge"
                 ]
               }
             }
@@ -4016,6 +4074,60 @@
             "format": "int32",
             "description": "First four-digit run of the date tag.",
             "minimum": 0
+          }
+        }
+      },
+      "MergeMeta": {
+        "type": "object",
+        "description": "The `.m4b` a `Merge` wrote.",
+        "required": [
+          "path",
+          "bytes",
+          "durationSeconds",
+          "chapters",
+          "reencoded"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "format": "double",
+            "description": "f64: no 64-bit integers on the wire."
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            },
+            "description": "On the merged timeline, in listening order."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "path": {
+            "type": "string",
+            "description": "The `output` of the request."
+          },
+          "reencoded": {
+            "type": "boolean",
+            "description": "The audio was encoded again to AAC; false when the parts' AAC was copied."
+          }
+        }
+      },
+      "MergePart": {
+        "type": "object",
+        "description": "One audio file of a `Merge`, in listening order.",
+        "required": [
+          "path",
+          "info"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute path, already authorised by the host."
           }
         }
       },
