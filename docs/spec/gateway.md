@@ -27,12 +27,14 @@ Ordered rules, first match wins, no match = forward. A rule is data, `{ "target"
   1. forward `/api/stream/info/**`
   2. forward `/api/stream/:id/edl`
   3. engine `GET`/`HEAD` `/api/stream/:id/**`
-  4. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
+  4. engine `GET`/`HEAD` `/cred/:credential/api/stream/:id/**` (the data plane with a path credential, `runtime.md` section 6; the tail is checked by the engine, not by the table)
+  5. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
   Non-GET verbs (`playback-info`, `DELETE sessions/:sid`, live `PUT .../state`) and every other path fall through to the forward.
 
 ## Forwarding
 
 - Method, path and query verbatim, to `http://<upstream authority>`; `Host` kept as received. HTTP/1.1 to the upstream.
+- `Authorization` (any scheme) and path segments are never touched, so HTTP Basic and path tokens reach the upstream as received; the engine never logs request paths, headers or bodies.
 - Hop-by-hop headers (`Connection` and the headers it names, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`) are stripped in both directions, except on an upgrade (below).
 - Added: `X-Forwarded-For` (peer IP appended to the existing value), `X-Forwarded-Proto` (`http`, kept if already set), `X-Forwarded-Host` (`Host`, kept if already set).
 - Request and response bodies are streamed frame by frame with backpressure (never collected): large downloads/uploads use bounded memory, SSE events are flushed as they arrive.

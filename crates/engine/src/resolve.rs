@@ -4,7 +4,8 @@ use crate::lock::Locked;
 use axum::body::Bytes;
 use axum::http::{Request, header};
 use fliks_engine_core::api::{
-    ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse, ResolvedPart,
+    ResolveCredentialSource, ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse,
+    ResolvedPart,
 };
 use http_body_util::{BodyExt, Full, Limited};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
@@ -52,14 +53,26 @@ pub enum ResolveError {
 }
 
 /// What one data-plane request asks for.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Ask<'a> {
     /// A media file id, or a live sid (`purpose: live`).
     pub media: ResolveMediaId,
     pub credential: &'a str,
+    pub source: Option<ResolveCredentialSource>,
     pub purpose: ResolvePurpose,
     pub subtitle_id: Option<u32>,
     pub stream_index: Option<u32>,
+}
+
+impl std::fmt::Debug for Ask<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ask")
+            .field("media", &self.media)
+            .field("credential", &"<redacted>")
+            .field("source", &self.source)
+            .field("purpose", &self.purpose)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The host callback registered by `PUT /v1/config`.
@@ -107,20 +120,31 @@ fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, R
     })
 }
 
-/// Keeps `cache` under `cap`: drops grants stale past the grace, then the soonest to expire.
+/// Frees room in a full `cache`: drops what is dead (denials once expired, grants past the stale
+/// grace), then denials before grants and the soonest to expire, down to 90% so the sweep is amortised.
 fn make_room(cache: &mut HashMap<Key, Entry>, cap: usize, now: Instant) {
     if cache.len() < cap {
         return;
     }
-    cache.retain(|_, e| e.until + STALE_GRACE > now);
-    while cache.len() >= cap {
-        let Some(k) = cache
-            .iter()
-            .min_by_key(|(_, e)| e.until)
-            .map(|(k, _)| k.clone())
-        else {
-            return;
-        };
+    cache.retain(|_, e| {
+        e.until
+            + if e.res.allow {
+                STALE_GRACE
+            } else {
+                Duration::ZERO
+            }
+            > now
+    });
+    let target = cap - (cap / 10).max(1);
+    if cache.len() <= target {
+        return;
+    }
+    let mut order: Vec<_> = cache
+        .iter()
+        .map(|(k, e)| ((e.res.allow, e.until), k.clone()))
+        .collect();
+    order.sort_unstable_by_key(|(rank, _)| *rank);
+    for (_, k) in order.into_iter().take(cache.len() - target) {
         cache.remove(&k);
     }
 }
@@ -179,6 +203,7 @@ impl Resolver {
         let body = serde_json::to_vec(&ResolveRequest {
             media_id: ask.media.clone(),
             credential: ask.credential.into(),
+            credential_source: ask.source,
             purpose: ask.purpose,
             subtitle_id: ask.subtitle_id,
             stream_index: ask.stream_index,
@@ -211,6 +236,12 @@ impl Resolver {
             .ok()?
             .to_bytes();
         serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Drops every cached answer for `credential`, denials included.
+    pub fn purge_credential(&self, credential: &str) {
+        let hash = self.hasher.hash_one(credential);
+        self.cache.locked().retain(|k, _| k.credential != hash);
     }
 
     /// Drops the cached answers matching every given filter (`POST /v1/revoke`, `/v1/invalidate`).
@@ -282,5 +313,54 @@ mod tests {
         cache.insert(key(4), entry(now + Duration::from_secs(60)));
         make_room(&mut cache, 3, now);
         assert!(!cache.contains_key(&key(3)) && cache.len() == 2);
+    }
+
+    #[test]
+    fn an_expired_denial_goes_at_once_but_an_expired_grant_keeps_its_grace() {
+        let now = Instant::now();
+        let mut cache = HashMap::new();
+        let mut denied = entry(now - Duration::from_secs(1));
+        denied.res.allow = false;
+        cache.insert(key(1), denied);
+        cache.insert(key(2), entry(now - Duration::from_secs(1)));
+        make_room(&mut cache, 2, now);
+        assert!(!cache.contains_key(&key(1)) && cache.contains_key(&key(2)));
+    }
+
+    #[test]
+    fn make_room_sweeps_down_to_ninety_percent() {
+        let now = Instant::now();
+        let mut cache = HashMap::new();
+        for n in 0..100 {
+            cache.insert(key(n), entry(now + Duration::from_secs(n + 1)));
+        }
+        make_room(&mut cache, 100, now);
+        assert_eq!(cache.len(), 90);
+        assert!(!cache.contains_key(&key(0)) && cache.contains_key(&key(99)));
+    }
+
+    #[test]
+    fn make_room_drops_denials_before_grants() {
+        let now = Instant::now();
+        let mut cache = HashMap::new();
+        cache.insert(key(1), entry(now + Duration::from_secs(5)));
+        let mut denied = entry(now + Duration::from_secs(60));
+        denied.res.allow = false;
+        cache.insert(key(2), denied);
+        make_room(&mut cache, 2, now);
+        assert!(cache.contains_key(&key(1)) && !cache.contains_key(&key(2)));
+    }
+
+    #[test]
+    fn debug_never_shows_the_credential() {
+        let ask = Ask {
+            media: ResolveMediaId::File(1),
+            credential: "Basic c2VjcmV0",
+            source: Some(ResolveCredentialSource::Basic),
+            purpose: ResolvePurpose::Download,
+            subtitle_id: None,
+            stream_index: None,
+        };
+        assert!(!format!("{ask:?}").contains("c2VjcmV0"));
     }
 }

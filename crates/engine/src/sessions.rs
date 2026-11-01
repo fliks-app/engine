@@ -117,11 +117,17 @@ pub async fn command(
 }
 
 #[utoipa::path(post, path = "/v1/revoke", request_body = RevokeRequest, responses(
-    (status = 200, body = RevokeResult, description = "what was revoked"), (status = 400, description = "neither ownerId nor mediaFileIds")))]
+    (status = 200, body = RevokeResult, description = "what was revoked"), (status = 400, description = "none of ownerId, mediaFileIds, credential")))]
 pub async fn revoke(State(s): S, Json(r): Json<RevokeRequest>) -> Response {
     let files = r.media_file_ids.unwrap_or_default();
-    if r.owner_id.is_none() && files.is_empty() {
+    if r.owner_id.is_none() && files.is_empty() && r.credential.is_none() {
         return StatusCode::BAD_REQUEST.into_response();
+    }
+    if let Some(c) = &r.credential {
+        s.rt.resolver.purge_credential(c);
+    }
+    if r.owner_id.is_none() && files.is_empty() {
+        return Json(RevokeResult { sessions: 0 }).into_response();
     }
     let sessions = s.rt.revoke(r.owner_id.as_deref(), &files).await;
     Json(RevokeResult { sessions }).into_response()

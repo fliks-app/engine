@@ -305,6 +305,8 @@ mod tests {
             "/api/stream/7/720p/seg1.m4s",
             "/api/stream/7/subtitles/embedded/2/index.m3u8",
             "/api/stream/7/thumbnails/sprite.jpg",
+            "/cred/tok/api/stream/7",
+            "/cred/tok/api/stream/7/parts/2",
             "/api/livetv/sessions/ab12/index.m3u8",
             "/api/livetv/sessions/ab12/seg-00012.m4s",
             "/api/livetv/sessions/ab12/direct.ts",
@@ -313,6 +315,8 @@ mod tests {
             assert_eq!(at(Method::HEAD, p), e, "{p}");
         }
         assert_eq!(at(Method::GET, "/api/stream/7/edl"), f);
+        assert_eq!(at(Method::POST, "/cred/tok/api/stream/7"), f);
+        assert_eq!(at(Method::GET, "/cred/tok/opds/catalog"), f);
         assert_eq!(at(Method::GET, "/api/stream/info/qualities"), f);
         assert_eq!(at(Method::GET, "/api/stream/info"), f);
         assert_eq!(at(Method::POST, "/api/stream/7/playback-info"), f);
