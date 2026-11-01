@@ -94,6 +94,11 @@ impl Job {
         self.proc.exited().is_none() || self.m.locked().pending
     }
 
+    /// The run ended without media and its files were removed.
+    pub fn discarded(&self) -> bool {
+        self.m.locked().reason == Some(NO_MEDIA)
+    }
+
     pub fn killed(&self) -> bool {
         self.m.locked().killed
     }

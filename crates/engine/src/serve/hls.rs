@@ -415,6 +415,10 @@ pub(super) async fn respond(
     let start_pts = part.map_or(served_origin(s.plan.timeline.origin), |p| p.offset_s);
     let (body, len) = match package(rt, &path, name, s, (remux, start_pts)).await {
         Ok(p) => p,
+        // The watcher discards a no-media run before this read: its file is gone, not restarting.
+        Err(Unpackable::Gone) if job.as_ref().is_some_and(|j| j.discarded()) => {
+            return text(StatusCode::NOT_FOUND, "Segment not found");
+        }
         Err(Unpackable::Gone) => return retry(),
         Err(Unpackable::NoMedia) => {
             let at = if let SegmentName::Segment(n) = name {
