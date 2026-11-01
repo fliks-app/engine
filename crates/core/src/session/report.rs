@@ -45,6 +45,9 @@ pub fn open_report(
     caps: &HostCaps,
     burn_in: Option<BurnInKind>,
 ) -> OpenReport {
+    if crate::item::is_item(req) {
+        return crate::item::open_report(d);
+    }
     let r = &d.response;
     let v = req.info.video.first();
     let codec = v.map(|v| v.codec.to_lowercase()).filter(|c| !c.is_empty());

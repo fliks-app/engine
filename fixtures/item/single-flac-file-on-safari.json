@@ -1,0 +1,144 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": false,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 2,
+          "codec": "flac",
+          "copy": false,
+          "index": 0,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [
+            "AudioCodecNotSupported"
+          ],
+          "sampleRate": 48000
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 7,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "",
+      "playMethod": "Transcode",
+      "playUrl": "/api/stream/7/item/index.m3u8?token=t",
+      "qualities": [],
+      "quality": "auto",
+      "source": {
+        "audioChannels": 2,
+        "audioCodec": "flac",
+        "audioLanguage": "fra",
+        "audioSampleRate": 96000,
+        "container": "flac",
+        "durationSeconds": 300,
+        "videoCodec": ""
+      },
+      "tonemapping": false,
+      "transcodeReasons": [
+        {
+          "flag": "ContainerNotSupported",
+          "message": "Container \"flac\" not supported"
+        },
+        {
+          "flag": "AudioCodecNotSupported",
+          "message": "Audio codec \"flac\" is not playable here"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "mp3"
+          ],
+          "containers": [
+            "mp3"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "aac",
+            "alac"
+          ],
+          "containers": [
+            "mp4",
+            "m4a",
+            "m4b"
+          ],
+          "videoCodecs": []
+        }
+      ]
+    },
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "flac",
+          "language": "fra",
+          "sampleRate": 96000,
+          "streamIndex": 0
+        }
+      ],
+      "durationSeconds": 300.0,
+      "formatName": "flac",
+      "schemaVersion": 4,
+      "subtitles": [],
+      "video": []
+    },
+    "media": {
+      "contentType": "audio/mpeg",
+      "ext": ".flac",
+      "mediaFileId": 7,
+      "path": "/books/d1.flac"
+    },
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "single-flac-file-on-safari"
+}

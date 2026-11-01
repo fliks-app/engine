@@ -72,12 +72,25 @@ impl Session {
         self.key(JobKind::Main)
     }
 
+    /// The run key of one part of an item: each part has its own run and directory.
+    pub fn item_key(&self, part: usize) -> String {
+        session_key(
+            self.media_file_id,
+            self.owner.as_deref(),
+            &format!("{}-p{part}", self.hash),
+        )
+    }
+
     pub fn served_kind(&self) -> SessionKind {
         self.m.locked().kind
     }
 
     /// The run snapshots and job commands follow: the remux one while the client plays it.
     pub fn primary_key(&self) -> String {
+        if let Some(it) = &self.plan.item {
+            let part = it.timeline.locate(self.position_s()).map_or(0, |l| l.part);
+            return self.item_key(part);
+        }
         self.key(if self.served_kind() == SessionKind::Remux {
             JobKind::Remux
         } else {
@@ -160,7 +173,8 @@ impl Runtime {
             return false;
         };
         let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
-        core_session::plan(req, &decision, &config.streaming, &caps).kind == SessionKind::Remux
+        let plan = core_session::plan(req, &decision, &config.streaming, &caps);
+        plan.kind == SessionKind::Remux && plan.item.is_none()
     }
 
     /// The file's urgent `Scan` job (an identical one in flight is promoted), if it ends within
@@ -209,8 +223,17 @@ impl Runtime {
                 "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
             ));
         }
-        if !Path::new(&req.decide.media.path).is_absolute() {
-            return Err(OpenError::BadRequest("media.path must be absolute".into()));
+        if !Path::new(&req.decide.media.path).is_absolute()
+            || req
+                .decide
+                .media
+                .parts
+                .iter()
+                .any(|p| !Path::new(&p.path).is_absolute())
+        {
+            return Err(OpenError::BadRequest(
+                "media.path and parts[].path must be absolute".into(),
+            ));
         }
         if let Some(b) = req.burn_in.as_mut()
             && let Some(p) = b.path.as_mut()
@@ -312,7 +335,9 @@ impl Runtime {
         self.events.emit(EngineEvent::SessionOpened {
             session: Box::new(self.snapshot(&session)),
         });
-        if decision.response.play_method == PlayMethod::Transcode {
+        if session.plan.item.is_some() {
+            self.prewarm_item(&session, session.req.start_at_s.unwrap_or(0.0));
+        } else if decision.response.play_method == PlayMethod::Transcode {
             let q = session.req.decide.selection.requested_quality.clone();
             self.prewarm(&session, q.as_deref(), session.req.start_at_s);
         }

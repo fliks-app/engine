@@ -40,6 +40,9 @@ pub(super) fn content_type(path: &str, format: Option<&str>) -> String {
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
+    if let Some(audio) = fliks_engine_core::item::audio_mime(&ext) {
+        return audio.into();
+    }
     match ext.as_str() {
         "mp4" | "m4v" => "video/mp4",
         "mkv" => "video/x-matroska",
@@ -47,9 +50,6 @@ pub(super) fn content_type(path: &str, format: Option<&str>) -> String {
         "mov" => "video/quicktime",
         "avi" => "video/x-msvideo",
         "ts" | "m2ts" | "mts" => "video/mp2t",
-        "mp3" => "audio/mpeg",
-        "m4a" => "audio/mp4",
-        "flac" => "audio/flac",
         _ => "application/octet-stream",
     }
     .into()
@@ -170,6 +170,53 @@ pub(super) async fn direct(
         .await
         .unwrap_or_else(|e| {
             tracing::error!(path, "direct play read: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })
+}
+
+/// Part `n` of an item by byte range. [new]
+pub(super) async fn part(
+    State(rt): S,
+    UrlPath((id, n)): UrlPath<(String, usize)>,
+    headers: HeaderMap,
+    Query(q): Q,
+) -> Response {
+    let id = match file_id(&id) {
+        Ok(i) => i,
+        Err(r) => return r,
+    };
+    let purpose = if q.get("download").is_some_and(|v| !v.is_empty()) {
+        ResolvePurpose::Download
+    } else {
+        ResolvePurpose::Stream
+    };
+    let a = match access(&rt, id, purpose, &headers, &q, (None, None)).await {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    if let Some(s) = &a.session {
+        rt.touch(s, None);
+    }
+    let Some(part) = a.resolved.parts.get(n) else {
+        return text(StatusCode::NOT_FOUND, "Part not found");
+    };
+    let path = rt.map_media_path(&part.path);
+    let Ok(md) = tokio::fs::metadata(&path).await else {
+        return text(StatusCode::NOT_FOUND, "File not found");
+    };
+    let mut res = Response::builder()
+        .header(
+            header::CONTENT_TYPE,
+            content_type(&path, part.format.as_deref()),
+        )
+        .header(header::ACCEPT_RANGES, "bytes");
+    if purpose == ResolvePurpose::Download {
+        res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
+    }
+    ranged_file(res, &headers, &path, md.len())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(path, "part read: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         })
 }

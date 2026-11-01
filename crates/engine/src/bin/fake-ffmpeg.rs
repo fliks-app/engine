@@ -333,6 +333,25 @@ fn nomedia(args: &[String]) {
     );
 }
 
+/// One part's run of an item: every segment its `-t` covers, written at once as MPEG-TS from
+/// `-start_number`, with the argv logged to `argv.log` in the run's directory.
+fn item(args: &[String]) {
+    let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let pattern = at("-hls_segment_filename");
+    let dir = Path::new(pattern).parent().unwrap();
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("argv.log"))
+        .unwrap();
+    writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
+    let start: u32 = at("-start_number").parse().unwrap();
+    let count = (at("-t").parse::<f64>().unwrap() / 6.0).ceil() as u32;
+    for n in start..start + count {
+        put(&dir.join(format!("seg-{n:04}.ts")), format!("segment {n}"));
+    }
+}
+
 /// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
 /// silent, `dies` writes three then exits once `die` exists in the run's directory.
 fn live(args: &[String]) {
@@ -453,6 +472,7 @@ fn main() {
         // Dies on a VAAPI command line, hangs on the CPU one.
         "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
+        "item" => item(&args),
         "nomedia" => nomedia(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),

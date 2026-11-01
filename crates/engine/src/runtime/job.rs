@@ -57,6 +57,8 @@ pub struct Job {
     pub segment_duration: f64,
     pub fps: Option<f64>,
     pub duration: f64,
+    /// One part's run of an item: bounded by itself, never throttled.
+    pub item: bool,
     pub restarts: u32,
     /// Media time a run with a natural end produces (the early companion's `-to`), in ms.
     pub(super) natural_end_ms: Option<i64>,

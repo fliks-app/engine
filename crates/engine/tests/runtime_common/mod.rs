@@ -12,6 +12,7 @@ use fliks_engine::hw::{Hw, Snapshot};
 use fliks_engine::runtime::Runtime;
 use fliks_engine_core::api::{
     HwAccel, MediaInfo, Platform, ResolveMediaId, ResolvePurpose, ResolveRequest, ResolveResponse,
+    ResolvedPart,
 };
 use fliks_engine_core::hw::Detected;
 use http_body_util::{BodyExt, Full};
@@ -31,6 +32,8 @@ pub const TOKEN: &str = "engine-secret";
 pub struct Stub {
     pub owners: Mutex<HashMap<String, String>>,
     pub paths: Mutex<HashMap<u32, String>>,
+    /// Items: the ordered parts a `stream` or `download` answer carries instead of a path.
+    pub items: Mutex<HashMap<u32, Vec<ResolvedPart>>>,
     pub subtitles: Mutex<HashMap<u32, (String, String)>>,
     pub sprites: Mutex<HashMap<u32, String>>,
     pub calls: Mutex<Vec<ResolveRequest>>,
@@ -85,6 +88,7 @@ async fn resolve(
         owner_id: None,
         format: None,
         ttl_s: Some(60.0),
+        parts: vec![],
     };
     let Some(owner) = stub.owners.lock().unwrap().get(&r.credential).cloned() else {
         return Ok(Json(deny));
@@ -100,9 +104,21 @@ async fn resolve(
                 owner_id: Some(owner),
                 format: None,
                 ttl_s: Some(stub.live_ttl.lock().unwrap().unwrap_or(0.0)),
+                parts: vec![],
             }));
         }
     };
+    let item = stub.items.lock().unwrap().get(&id).cloned();
+    if let (Some(parts), ResolvePurpose::Stream | ResolvePurpose::Download) = (item, r.purpose) {
+        return Ok(Json(ResolveResponse {
+            allow: true,
+            path: None,
+            owner_id: Some(owner),
+            format: None,
+            ttl_s: Some(60.0),
+            parts,
+        }));
+    }
     let (path, format) = match (r.purpose, r.subtitle_id) {
         (ResolvePurpose::Subtitle, Some(sub)) => match stub.subtitles.lock().unwrap().get(&sub) {
             Some((p, f)) => (Some(p.clone()), Some(f.clone())),
@@ -123,6 +139,7 @@ async fn resolve(
             owner_id: Some(owner),
             format: None,
             ttl_s: Some(60.0),
+            parts: vec![],
         }));
     }
     Ok(Json(match path {
@@ -132,6 +149,7 @@ async fn resolve(
             owner_id: Some(owner),
             format,
             ttl_s: Some(60.0),
+            parts: vec![],
         },
         None => deny,
     }))

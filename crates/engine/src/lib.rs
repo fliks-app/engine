@@ -182,6 +182,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "live".into(),
                 "intro-detect".into(),
                 "session-replaces".into(),
+                "item-parts".into(),
             ];
             features.extend(jobs::optional_features());
             features

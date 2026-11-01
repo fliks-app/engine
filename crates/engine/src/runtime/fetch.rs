@@ -17,7 +17,7 @@ use tokio::time::Instant;
 impl Runtime {
     /// Waits up to `timeout` for a file of `job`, following the job that replaced it on the same
     /// rung (a CPU fallback).
-    async fn wait_file(
+    pub(super) async fn wait_file(
         &self,
         mut job: Arc<Job>,
         track: usize,
@@ -100,7 +100,7 @@ impl Runtime {
     }
 
     /// A request waits on a throttled run: wake it now, the next tick re-pauses it if still ahead.
-    async fn resume_for_waiter(&self, e: &Job) {
+    pub(super) async fn resume_for_waiter(&self, e: &Job) {
         if e.m.locked().paused {
             e.pause(self.pause_capability(), false).await;
         }
@@ -372,7 +372,12 @@ impl Runtime {
     }
 }
 
-fn ready(path: PathBuf, job: Option<Arc<Job>>, waited_ms: f64, cache_hit: bool) -> Fetch {
+pub(super) fn ready(
+    path: PathBuf,
+    job: Option<Arc<Job>>,
+    waited_ms: f64,
+    cache_hit: bool,
+) -> Fetch {
     Fetch::Ready {
         path,
         job,

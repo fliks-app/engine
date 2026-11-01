@@ -43,6 +43,8 @@ pub struct SessionPlan {
     pub remux_grid: Option<KeyframeGrid>,
     /// The client fetches seg-0 on a load-then-seek: a resume gets the early companion.
     pub probes_seg_zero: bool,
+    /// An item played as HLS: its timeline and parts; `None` for a video or a Direct Play item.
+    pub item: Option<crate::item::ItemPlan>,
 }
 
 pub fn session_kind(m: PlayMethod) -> SessionKind {
@@ -54,7 +56,7 @@ pub fn session_kind(m: PlayMethod) -> SessionKind {
 }
 
 /// The encoder binary an audio plan runs, as the argv builder picks it.
-fn audio_encoder_id(codec: AudioCodec, channels: u32, caps: &HostCaps) -> String {
+pub(crate) fn audio_encoder_id(codec: AudioCodec, channels: u32, caps: &HostCaps) -> String {
     match codec {
         AudioCodec::Aac if caps.libfdk_aac && channels <= 6 => "libfdk_aac".into(),
         AudioCodec::Opus => "libopus".into(),
@@ -88,6 +90,9 @@ pub fn plan(
     streaming: &StreamingConfig,
     caps: &HostCaps,
 ) -> SessionPlan {
+    if crate::item::is_item(&req.decide) {
+        return crate::item::plan(req, d, caps);
+    }
     let info = &req.decide.info;
     let v = info.video.first();
     let timeline = source_timeline(Some(info));
@@ -147,6 +152,7 @@ pub fn plan(
         probes_seg_zero: req.decide.device.probes_seg_zero.unwrap_or(true),
         duration: served_duration(info.duration_seconds.unwrap_or(0.0), &timeline),
         timeline,
+        item: None,
     }
 }
 

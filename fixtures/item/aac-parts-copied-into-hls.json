@@ -1,0 +1,200 @@
+{
+  "config": {
+    "autoCropEnabled": false,
+    "autoQualityMode": "directplay",
+    "segmentDuration": 3,
+    "tonemapAlgo": "auto"
+  },
+  "expected": {
+    "audioPlans": [
+      {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy",
+        "profile": "LC"
+      }
+    ],
+    "muxFlavour": "fmp4",
+    "response": {
+      "audioCopyStream": true,
+      "audioPlan": {
+        "channels": 2,
+        "codec": "aac",
+        "mode": "copy",
+        "profile": "LC"
+      },
+      "audioTracks": [
+        {
+          "bitrateBps": 192000,
+          "channels": 2,
+          "codec": "aac",
+          "copy": true,
+          "index": 0,
+          "language": "fra",
+          "outputChannels": 2,
+          "outputCodec": "aac",
+          "reasonFlags": [],
+          "sampleRate": 44100
+        }
+      ],
+      "clientTonemap": false,
+      "contentType": "application/vnd.apple.mpegurl",
+      "dolbyVision": false,
+      "hwAccel": "none",
+      "mediaFileId": 7,
+      "outputAudioCodec": "aac",
+      "outputContainer": "hls",
+      "outputVideoCodec": "",
+      "parts": [
+        {
+          "contentType": "audio/mp4",
+          "durationS": 5000,
+          "index": 0,
+          "offsetS": 0,
+          "playUrl": "/api/stream/7/parts/0?token=t"
+        },
+        {
+          "contentType": "audio/mp4",
+          "durationS": 4000,
+          "index": 1,
+          "offsetS": 5000,
+          "playUrl": "/api/stream/7/parts/1?token=t"
+        }
+      ],
+      "playMethod": "DirectStream",
+      "playUrl": "/api/stream/7/item/index.m3u8?token=t",
+      "qualities": [],
+      "quality": "original",
+      "source": {
+        "audioChannels": 2,
+        "audioCodec": "aac",
+        "audioLanguage": "fra",
+        "audioSampleRate": 44100,
+        "container": "m4b",
+        "durationSeconds": 9000,
+        "videoCodec": ""
+      },
+      "tonemapping": false,
+      "transcodeReasons": [
+        {
+          "flag": "ClientRequiresHls",
+          "message": "Client requires an HLS container (no raw direct play)"
+        }
+      ],
+      "videoCopyStream": false
+    },
+    "transcodeTonemapping": false,
+    "useHdrLadder": false,
+    "videoVariant": {
+      "bitDepth": 8,
+      "codec": "h264",
+      "hdr": null
+    }
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "device": {
+      "directPlayProfiles": [
+        {
+          "audioCodecs": [
+            "mp3"
+          ],
+          "containers": [
+            "mp3"
+          ],
+          "videoCodecs": []
+        },
+        {
+          "audioCodecs": [
+            "aac",
+            "alac"
+          ],
+          "containers": [
+            "mp4",
+            "m4a",
+            "m4b"
+          ],
+          "videoCodecs": []
+        }
+      ],
+      "supportsDirectPlay": false
+    },
+    "info": {
+      "audio": [
+        {
+          "channels": 2,
+          "codec": "aac",
+          "language": "fra",
+          "profile": "LC",
+          "sampleRate": 44100,
+          "streamIndex": 0
+        }
+      ],
+      "durationSeconds": 5000.0,
+      "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "schemaVersion": 4,
+      "subtitles": [],
+      "video": []
+    },
+    "media": {
+      "contentType": "audio/mpeg",
+      "ext": ".m4b",
+      "mediaFileId": 7,
+      "parts": [
+        {
+          "info": {
+            "audio": [
+              {
+                "channels": 2,
+                "codec": "aac",
+                "language": "fra",
+                "profile": "LC",
+                "sampleRate": 44100,
+                "streamIndex": 0
+              }
+            ],
+            "durationSeconds": 5000.0,
+            "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+            "schemaVersion": 4,
+            "subtitles": [],
+            "video": []
+          },
+          "path": "/books/b1.m4b"
+        },
+        {
+          "info": {
+            "audio": [
+              {
+                "channels": 2,
+                "codec": "aac",
+                "language": "fra",
+                "profile": "LC",
+                "sampleRate": 44100,
+                "streamIndex": 0
+              }
+            ],
+            "durationSeconds": 4000.0,
+            "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+            "schemaVersion": 4,
+            "subtitles": [],
+            "video": []
+          },
+          "path": "/books/b2.m4b"
+        }
+      ],
+      "path": "/books/b1.m4b"
+    },
+    "selection": {
+      "tokenParam": "?token=t"
+    }
+  },
+  "name": "aac-parts-copied-into-hls"
+}

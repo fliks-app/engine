@@ -32,6 +32,8 @@ struct Run {
     pub(super) hw: (HwAccel, HwAccel),
     pub(super) restarts: u32,
     pub(super) remux: Option<Remux>,
+    pub(super) duration: f64,
+    pub(super) item: bool,
 }
 
 impl Runtime {
@@ -114,6 +116,67 @@ impl Runtime {
             hw: (hw, requested_hw),
             restarts,
             remux: None,
+            duration: s.plan.duration,
+            item: false,
+        };
+        self.launch(s, run, &argv).await
+    }
+
+    /// Part `part`'s run of an item from its local segment `start`, on its own key and directory.
+    /// Audio never runs on a GPU, so the hardware fields stay `none`.
+    pub(super) async fn spawn_item_job(
+        self: &Arc<Self>,
+        s: &Arc<Session>,
+        part: usize,
+        start: u32,
+        restarts: u32,
+    ) -> Option<Arc<Job>> {
+        let item = s.plan.item.as_ref()?;
+        let (span, run) = (item.timeline.parts.get(part)?, item.parts.get(part)?);
+        let key = s.item_key(part);
+        if let Some(old) = self.job(&key)
+            && old.producing()
+        {
+            old.kill_now().await;
+        }
+        let quality = format!("p{part}");
+        let dir = self
+            .cache
+            .rung_dir(s.owner.as_deref(), s.media_file_id, &s.hash, &quality);
+        let ext = if s.plan.use_ts { "ts" } else { "m4s" };
+        {
+            let dir = dir.clone();
+            let _ =
+                tokio::task::spawn_blocking(move || purge_from(&dir, false, 1, start, ext)).await;
+        }
+        let input = self.map_media_path(&run.path);
+        let dir_s = dir.to_string_lossy().into_owned();
+        let argv = fliks_engine_core::item::run_args(&fliks_engine_core::item::RunArgs {
+            input_path: &input,
+            output_dir: &dir_s,
+            part_start_s: run.start_s,
+            part_duration_s: span.duration_s,
+            part_offset_s: span.offset_s,
+            start_segment: start,
+            stream_index: run.stream_index,
+            plan: &s.decision.response.audio_plan,
+            use_ts: s.plan.use_ts,
+            libfdk_aac: self.caps().unwrap_or_default().libfdk_aac,
+        });
+        let run = Run {
+            key,
+            kind: JobKind::Main,
+            quality,
+            dir,
+            var_stream_map: false,
+            tracks: 1,
+            ext,
+            start,
+            hw: (HwAccel::None, HwAccel::None),
+            restarts,
+            remux: None,
+            duration: span.duration_s,
+            item: true,
         };
         self.launch(s, run, &argv).await
     }
@@ -209,6 +272,8 @@ impl Runtime {
             hw: (HwAccel::None, HwAccel::None),
             restarts: 0,
             remux: Some(Remux::new(asm_plan, dir, gop_dir)),
+            duration: plan.duration,
+            item: false,
         };
         self.launch(s, run, &argv).await
     }
@@ -255,7 +320,8 @@ impl Runtime {
             hw: r.hw.0,
             segment_duration: s.plan.segment_duration,
             fps: s.plan.source_fps,
-            duration: s.plan.duration,
+            duration: r.duration,
+            item: r.item,
             restarts: r.restarts,
             natural_end_ms: (r.kind == JobKind::Early)
                 .then(|| (early_run_seconds(s.plan.segment_duration) * 1000.0) as i64),

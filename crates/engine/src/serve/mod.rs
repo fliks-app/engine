@@ -5,13 +5,14 @@
 
 mod direct;
 mod hls;
+mod item;
 mod livetv;
 mod subtitles;
 
 pub use self::direct::parse_range;
 pub use self::subtitles::with_timestamp_map;
 
-use self::direct::{attachment, base_name, direct, ranged_file, sprite};
+use self::direct::{attachment, base_name, direct, part, ranged_file, sprite};
 use self::hls::{
     audio_list, audio_seg, cmcd, iframe_list, iframe_seg, master, run_capture, segment, variant,
 };
@@ -44,6 +45,9 @@ pub fn router(rt: Arc<Runtime>) -> Router {
     Router::new()
         .route("/api/stream/{id}", get(direct))
         .route("/api/stream/{id}/master.m3u8", get(master))
+        .route("/api/stream/{id}/parts/{n}", get(part))
+        .route("/api/stream/{id}/item/index.m3u8", get(item::list))
+        .route("/api/stream/{id}/item/{seg}", get(item::file))
         .route("/api/stream/{id}/iframe/index.m3u8", get(iframe_list))
         .route("/api/stream/{id}/iframe/{seg}", get(iframe_seg))
         .route("/api/stream/{id}/audio/{idx}/index.m3u8", get(audio_list))
@@ -238,6 +242,7 @@ async fn access(
                 path: s.req.decide.media.path.clone(),
                 owner: s.owner.clone(),
                 format: None,
+                parts: vec![],
             },
             _ => return Err(retry()),
         },

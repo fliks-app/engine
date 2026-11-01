@@ -1563,6 +1563,13 @@
             "format": "int32",
             "minimum": 0
           },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemPart"
+            },
+            "description": "An item of ordered pieces (an audiobook's files) instead of one file: `path`, `ext` and\nthe request's `info` are then the first part's. Parts of one `position` are the host's\nbusiness: it sends one chosen file per position."
+          },
           "path": {
             "type": "string"
           }
@@ -2803,6 +2810,38 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ItemPart": {
+        "type": "object",
+        "description": "One piece of an item, played after the previous one on a single timeline.",
+        "required": [
+          "path",
+          "info"
+        ],
+        "properties": {
+          "endS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Absent: to the end of the file."
+          },
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          },
+          "path": {
+            "type": "string"
+          },
+          "startS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The slice of the file that is played, in file seconds; absent: from the start."
           }
         }
       },
@@ -4539,6 +4578,13 @@
           "outputVideoCodec": {
             "type": "string"
           },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackPart"
+            },
+            "description": "An item's parts on its timeline, for a client that plays them itself (Direct Play) or\nshows chapters; empty for a single file."
+          },
           "playMethod": {
             "$ref": "#/components/schemas/PlayMethod"
           },
@@ -4592,6 +4638,40 @@
           },
           "videoCopyStream": {
             "type": "boolean"
+          }
+        }
+      },
+      "PlaybackPart": {
+        "type": "object",
+        "description": "One part of an item as the client plays it.",
+        "required": [
+          "index",
+          "playUrl",
+          "offsetS",
+          "durationS",
+          "contentType"
+        ],
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "durationS": {
+            "type": "number",
+            "format": "double"
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "offsetS": {
+            "type": "number",
+            "format": "double",
+            "description": "Where the part starts on the item's timeline."
+          },
+          "playUrl": {
+            "type": "string",
+            "description": "Byte-range URL of the part's file (`/api/stream/{id}/parts/{index}`)."
           }
         }
       },
@@ -5138,6 +5218,13 @@
             ],
             "description": "The user the answer is for. A `live` denial carries it so the engine ends the viewer only\nwhen it is the viewer's owner."
           },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedPart"
+            },
+            "description": "An item of ordered pieces instead of one file (`stream`, `download`): `path` is then\nabsent. A single `path` stays valid."
+          },
           "path": {
             "type": [
               "string",
@@ -5152,6 +5239,48 @@
             ],
             "format": "double",
             "description": "Cache lifetime of this answer; 60 when absent."
+          }
+        }
+      },
+      "ResolvedPart": {
+        "type": "object",
+        "description": "One piece of a resolved item, in playing order.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "durationS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Seconds this part adds to the item's timeline."
+          },
+          "endS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME type of the file."
+          },
+          "path": {
+            "type": "string"
+          },
+          "startS": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The slice of the file that is played, in file seconds."
           }
         }
       },

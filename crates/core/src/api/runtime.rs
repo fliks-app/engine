@@ -504,6 +504,28 @@ pub struct ResolveResponse {
     /// Cache lifetime of this answer; 60 when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl_s: Option<f64>,
+    /// An item of ordered pieces instead of one file (`stream`, `download`): `path` is then
+    /// absent. A single `path` stays valid.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ResolvedPart>,
+}
+
+/// One piece of a resolved item, in playing order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedPart {
+    pub path: String,
+    /// Seconds this part adds to the item's timeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_s: Option<f64>,
+    /// The slice of the file that is played, in file seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_s: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_s: Option<f64>,
+    /// MIME type of the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 /// 410 body of a data-plane request whose `sid` the engine no longer knows.
