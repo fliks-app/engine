@@ -183,6 +183,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "intro-detect".into(),
                 "session-replaces".into(),
                 "item-parts".into(),
+                "device-credentials".into(),
             ];
             features.extend(jobs::optional_features());
             features

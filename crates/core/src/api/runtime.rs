@@ -470,12 +470,14 @@ pub enum ResolveMediaId {
 }
 
 /// `POST {hostUrl}/engine/resolve`, implemented by the host.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveRequest {
     pub media_id: ResolveMediaId,
     /// The client credential exactly as received, one of: the `Cookie` header value, the
-    /// `Authorization` header value (`Bearer <jwt>`), the bare `?token=` value.
+    /// `Authorization` header value (`Bearer <jwt>`), the bare `?token=` value (also what a
+    /// `/cred/<token>/` path prefix carries), else the `Authorization: Basic <base64>` value of a
+    /// device client. Opaque to the engine; the host validates it and its scope.
     pub credential: String,
     pub purpose: ResolvePurpose,
     /// External subtitle (`purpose: subtitle`).
@@ -484,6 +486,16 @@ pub struct ResolveRequest {
     /// Embedded subtitle stream (`purpose: subtitle`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_index: Option<u32>,
+}
+
+impl std::fmt::Debug for ResolveRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolveRequest")
+            .field("media_id", &self.media_id)
+            .field("credential", &"<redacted>")
+            .field("purpose", &self.purpose)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

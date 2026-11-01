@@ -5167,7 +5167,7 @@
         "properties": {
           "credential": {
             "type": "string",
-            "description": "The client credential exactly as received, one of: the `Cookie` header value, the\n`Authorization` header value (`Bearer <jwt>`), the bare `?token=` value."
+            "description": "The client credential exactly as received, one of: the `Cookie` header value, the\n`Authorization` header value (`Bearer <jwt>`), the bare `?token=` value (also what a\n`/cred/<token>/` path prefix carries), else the `Authorization: Basic <base64>` value of a\ndevice client. Opaque to the engine; the host validates it and its scope."
           },
           "mediaId": {
             "$ref": "#/components/schemas/ResolveMediaId"

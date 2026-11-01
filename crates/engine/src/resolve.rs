@@ -52,7 +52,7 @@ pub enum ResolveError {
 }
 
 /// What one data-plane request asks for.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Ask<'a> {
     /// A media file id, or a live sid (`purpose: live`).
     pub media: ResolveMediaId,
@@ -60,6 +60,16 @@ pub struct Ask<'a> {
     pub purpose: ResolvePurpose,
     pub subtitle_id: Option<u32>,
     pub stream_index: Option<u32>,
+}
+
+impl std::fmt::Debug for Ask<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ask")
+            .field("media", &self.media)
+            .field("credential", &"<redacted>")
+            .field("purpose", &self.purpose)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The host callback registered by `PUT /v1/config`.
@@ -107,7 +117,8 @@ fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, R
     })
 }
 
-/// Keeps `cache` under `cap`: drops grants stale past the grace, then the soonest to expire.
+/// Keeps `cache` under `cap`: drops grants stale past the grace, then denials (so a flood of bad
+/// credentials cannot push out a valid grant), then the soonest to expire.
 fn make_room(cache: &mut HashMap<Key, Entry>, cap: usize, now: Instant) {
     if cache.len() < cap {
         return;
@@ -116,7 +127,7 @@ fn make_room(cache: &mut HashMap<Key, Entry>, cap: usize, now: Instant) {
     while cache.len() >= cap {
         let Some(k) = cache
             .iter()
-            .min_by_key(|(_, e)| e.until)
+            .min_by_key(|(_, e)| (e.res.allow, e.until))
             .map(|(k, _)| k.clone())
         else {
             return;
@@ -282,5 +293,29 @@ mod tests {
         cache.insert(key(4), entry(now + Duration::from_secs(60)));
         make_room(&mut cache, 3, now);
         assert!(!cache.contains_key(&key(3)) && cache.len() == 2);
+    }
+
+    #[test]
+    fn make_room_drops_denials_before_grants() {
+        let now = Instant::now();
+        let mut cache = HashMap::new();
+        cache.insert(key(1), entry(now + Duration::from_secs(5)));
+        let mut denied = entry(now + Duration::from_secs(60));
+        denied.res.allow = false;
+        cache.insert(key(2), denied);
+        make_room(&mut cache, 2, now);
+        assert!(cache.contains_key(&key(1)) && !cache.contains_key(&key(2)));
+    }
+
+    #[test]
+    fn debug_never_shows_the_credential() {
+        let ask = Ask {
+            media: ResolveMediaId::File(1),
+            credential: "Basic c2VjcmV0",
+            purpose: ResolvePurpose::Download,
+            subtitle_id: None,
+            stream_index: None,
+        };
+        assert!(!format!("{ask:?}").contains("c2VjcmV0"));
     }
 }

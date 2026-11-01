@@ -23,8 +23,8 @@ use self::subtitles::{
 use crate::resolve::{Ask, Host, ResolveError, Resolved};
 use crate::runtime::{Runtime, Session};
 use axum::body::Body;
-use axum::extract::{Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::extract::{Query, Request, State};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
@@ -34,6 +34,7 @@ use fliks_engine_core::decide::timeline::served_duration;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
+use tower::ServiceExt;
 
 type Q = Query<HashMap<String, String>>;
 type S = State<Arc<Runtime>>;
@@ -42,6 +43,12 @@ const PLAYLIST: &str = "application/vnd.apple.mpegurl";
 
 /// The data-plane router, mountable behind the gateway or on its own listener.
 pub fn router(rt: Arc<Runtime>) -> Router {
+    let base = routes(rt);
+    let inner = base.clone();
+    base.fallback(move |req: Request| with_path_credential(inner.clone(), req))
+}
+
+fn routes(rt: Arc<Runtime>) -> Router {
     Router::new()
         .route("/api/stream/{id}", get(direct))
         .route("/api/stream/{id}/master.m3u8", get(master))
@@ -81,6 +88,50 @@ pub fn router(rt: Arc<Runtime>) -> Router {
         .route("/api/livetv/sessions/{sid}/{segment}", get(live_segment))
         .layer(middleware::map_response(cors))
         .with_state(rt)
+}
+
+/// `/cred/<token>/api/...` is the same route with `?token=<token>`: the credential rides the path
+/// for clients that cannot set a header or keep a query (an e-reader's download link).
+async fn with_path_credential(inner: Router, mut req: Request) -> Response {
+    if !matches!(*req.method(), Method::GET | Method::HEAD) {
+        return text(StatusCode::NOT_FOUND, "Not Found");
+    }
+    match path_credential(req.uri()) {
+        Some(uri) => {
+            *req.uri_mut() = uri;
+            inner.oneshot(req).await.into_response()
+        }
+        None => text(StatusCode::NOT_FOUND, "Not Found"),
+    }
+}
+
+/// `/cred/<token>/<tail>?q` -> `/<tail>?q&token=<token>`, replacing any `token` of `q`.
+fn path_credential(uri: &Uri) -> Option<Uri> {
+    let (raw, tail) = uri.path().strip_prefix("/cred/")?.split_once('/')?;
+    let kept = uri
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .filter(|kv| !kv.is_empty() && kv.split('=').next() != Some("token"))
+        .map(|kv| format!("{kv}&"))
+        .collect::<String>();
+    format!("/{tail}?{kept}token={}", encode(&percent_decode(raw)?))
+        .parse()
+        .ok()
+}
+
+fn percent_decode(s: &str) -> Option<String> {
+    let (b, mut out, mut i) = (s.as_bytes(), Vec::new(), 0);
+    while i < b.len() {
+        if b[i] == b'%' {
+            out.push(u8::from_str_radix(s.get(i + 1..i + 3)?, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 async fn cors(mut res: Response) -> Response {
@@ -181,7 +232,8 @@ fn token_param(q: &HashMap<String, String>) -> String {
 }
 
 /// The credential as received, in the host's extractor order: the `Cookie` header, else a
-/// `Bearer` `Authorization` value, else `?token=`. [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
+/// `Bearer` `Authorization` value, else `?token=`, else a `Basic` one (device clients).
+/// [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
 fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
     let h = |n| {
         headers
@@ -189,14 +241,17 @@ fn credential(headers: &HeaderMap, q: &HashMap<String, String>) -> String {
             .and_then(|v: &HeaderValue| v.to_str().ok())
             .filter(|v| !v.is_empty())
     };
-    let bearer = h(header::AUTHORIZATION).filter(|v| {
-        v.get(..7)
-            .is_some_and(|s| s.eq_ignore_ascii_case("bearer "))
-    });
+    let scheme = |name: &str| {
+        h(header::AUTHORIZATION).filter(|v| {
+            v.split_once(' ')
+                .is_some_and(|(s, _)| s.eq_ignore_ascii_case(name))
+        })
+    };
     h(header::COOKIE)
-        .or(bearer)
+        .or(scheme("bearer"))
         .map(String::from)
         .or_else(|| q.get("token").filter(|t| !t.is_empty()).cloned())
+        .or_else(|| scheme("basic").map(String::from))
         .unwrap_or_default()
 }
 
@@ -319,6 +374,21 @@ mod tests {
     }
 
     #[test]
+    fn a_path_credential_becomes_the_token_query() {
+        let at = |u: &str| path_credential(&u.parse().unwrap()).map(|u| u.to_string());
+        assert_eq!(
+            at("/cred/a%2Bb/api/stream/7/parts/2").as_deref(),
+            Some("/api/stream/7/parts/2?token=a%2Bb")
+        );
+        assert_eq!(
+            at("/cred/k/api/stream/7?download=1&token=old&sid=s").as_deref(),
+            Some("/api/stream/7?download=1&sid=s&token=k")
+        );
+        assert_eq!(at("/cred/k"), None);
+        assert_eq!(at("/cred/%zz/api/x"), None);
+    }
+
+    #[test]
     fn timestamp_map_and_token() {
         assert_eq!(
             with_timestamp_map("WEBVTT\n\n00:00.000 --> 00:01.000\nhi\n", 1.5),
@@ -338,6 +408,7 @@ mod tests {
         assert_eq!(credential(&h, &q), "t");
         h.insert(header::AUTHORIZATION, HeaderValue::from_static("Basic x"));
         assert_eq!(credential(&h, &q), "t");
+        assert_eq!(credential(&h, &HashMap::new()), "Basic x");
         h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer j"));
         assert_eq!(credential(&h, &q), "Bearer j");
         h.insert(header::COOKIE, HeaderValue::from_static("a=1"));

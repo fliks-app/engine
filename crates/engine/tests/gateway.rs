@@ -334,6 +334,8 @@ async fn engine_and_forwarded_routes_are_told_apart() {
         (Method::HEAD, "/api/stream/7/master.m3u8", "engine"),
         (Method::GET, "/api/stream/7/audio/1/seg3.m4s", "engine"),
         (Method::GET, "/api/stream/7/subtitles/12/download", "engine"),
+        (Method::GET, "/cred/tok/api/stream/7/parts/1", "engine"),
+        (Method::GET, "/cred/tok/opds/catalog", "upstream"),
         (Method::GET, "/api/stream/7/edl", "upstream"),
         (Method::GET, "/api/stream/info/qualities?x=1", "upstream"),
         (Method::POST, "/api/stream/7/master.m3u8", "upstream"),
