@@ -1166,7 +1166,7 @@ fn aac_part(path: &std::path::Path, seconds: f64, title: &str) -> Value {
     json!({ "path": path, "info": {
         "video": [], "audio": [{ "streamIndex": 0, "codec": "aac", "language": "und", "channels": 1,
             "sampleRate": 44100, "profile": "LC" }],
-        "subtitles": [], "durationSeconds": seconds,
+        "subtitles": [], "durationSeconds": seconds, "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
         "tags": { "title": title, "album": "Synthetic Book", "narrator": "Nar Rator" } } })
 }
 
@@ -1279,11 +1279,15 @@ async fn merge_job_respects_the_disk_threshold_and_validates_its_request() {
         ),
         (
             book(&|k| k["output"] = json!("/books/Book.mp3")),
-            "Merge output must be an absolute .m4b path",
+            "Merge output must be an absolute .m4b path without control characters",
         ),
         (
             book(&|k| k["parts"][1]["path"] = json!("b.m4a")),
-            "Merge part 2 path must be absolute",
+            "Merge part 2 path must be absolute, without control characters",
+        ),
+        (
+            book(&|k| k["parts"][1]["path"] = json!("/x/b.m4a\nfile '/etc/passwd'")),
+            "Merge part 2 path must be absolute, without control characters",
         ),
         (
             book(&|k| k["parts"][0]["info"] = video.clone()),

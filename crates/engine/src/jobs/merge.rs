@@ -71,29 +71,40 @@ async fn build(
         .iter()
         .map(|p| ctx.rt.map_media_path(&p.path))
         .collect();
-    let (list, meta) = (scratch.join("list.txt"), scratch.join("meta.txt"));
+    let files = MergeFiles {
+        list: path_text(&scratch.join("list.txt")),
+        meta: path_text(&scratch.join("meta.txt")),
+        graph: path_text(&scratch.join("graph.txt")),
+    };
+    let graph = match encoding {
+        Encoding::Copy => String::new(),
+        Encoding::Aac {
+            sample_rate,
+            channels,
+            ..
+        } => filter_graph(parts.len(), sample_rate, channels),
+    };
     let write = async {
         tokio::fs::create_dir_all(scratch).await?;
-        tokio::fs::write(&list, concat_list(&paths)).await?;
-        tokio::fs::write(&meta, ffmetadata(&tags, &chapters)).await
+        tokio::fs::write(&files.list, concat_list(&paths)).await?;
+        tokio::fs::write(&files.meta, ffmetadata(&tags, &chapters)).await?;
+        tokio::fs::write(&files.graph, graph).await
     };
     write.await.map_err(|e| format!("write merge files: {e}"))?;
-    let argv = merge_args(
-        parts,
-        &paths,
-        &encoding,
-        &list.to_string_lossy(),
-        &meta.to_string_lossy(),
-        &tmp.to_string_lossy(),
-    );
+    let argv = merge_args(parts, &paths, &encoding, &files, &path_text(tmp));
+    let chars = argv_chars(&argv);
+    if cfg!(windows) && chars > WINDOWS_ARGV_LIMIT {
+        return Err(format!(
+            "{} parts need a command line of {chars} characters, past the {WINDOWS_ARGV_LIMIT} Windows allows",
+            parts.len()
+        ));
+    }
     ffmpeg(ctx, &argv, total_seconds(parts)).await?;
     let items = freeform_tags(&tags);
-    if !items.is_empty() {
-        let tmp = tmp.to_owned();
-        tokio::task::spawn_blocking(move || add_freeform(&tmp, &items))
-            .await
-            .map_err(|e| e.to_string())??;
-    }
+    let file = tmp.to_owned();
+    tokio::task::spawn_blocking(move || finish_file(&file, &items))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok((chapters, encoding != Encoding::Copy))
 }
 
@@ -138,15 +149,29 @@ async fn publish(tmp: &Path, out: &Path) -> Result<(), String> {
     }
 }
 
+fn path_text(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
 /// Adds free-form atoms to the `moov` of `path`, which the muxer wrote last (no faststart), in
-/// place: nothing before it moves.
-fn add_freeform(path: &Path, items: &[(&str, String)]) -> Result<(), String> {
-    let io = |e: std::io::Error| format!("tag {}: {e}", path.display());
+/// place (nothing before it moves), then flushes the file to disk before it is published.
+fn finish_file(path: &Path, items: &[(&str, String)]) -> Result<(), String> {
     let mut f = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
         .map_err(io)?;
+    if !items.is_empty() {
+        add_freeform(&mut f, items)?;
+    }
+    f.sync_all().map_err(io)
+}
+
+fn io(e: std::io::Error) -> String {
+    format!("finish the m4b: {e}")
+}
+
+fn add_freeform(f: &mut std::fs::File, items: &[(&str, String)]) -> Result<(), String> {
     let len = f.metadata().map_err(io)?.len() as usize;
     let mut at = 0;
     let moov = loop {

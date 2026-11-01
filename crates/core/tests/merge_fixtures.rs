@@ -15,6 +15,11 @@ fn run(i: &Value) -> Value {
     if let Err(e) = validate(&parts, i["output"].as_str().unwrap()) {
         return json!({ "error": e });
     }
+    let files = MergeFiles {
+        list: "/s/list.txt".into(),
+        meta: "/s/meta.txt".into(),
+        graph: "/s/graph.txt".into(),
+    };
     let enc = encoding(&parts);
     let tags = merged_tags(&parts, over.as_ref());
     let chapters = chapters(&parts);
@@ -25,7 +30,11 @@ fn run(i: &Value) -> Value {
         "list": concat_list(&paths),
         "ffmetadata": ffmetadata(&tags, &chapters),
         "freeform": freeform_tags(&tags),
-        "argv": merge_args(&parts, &paths, &enc, "/s/list.txt", "/s/meta.txt", "/books/.Synthetic Saga.m4b.merge-ab12.tmp"),
+        "graph": match enc {
+            Encoding::Aac { sample_rate, channels, .. } => json!(filter_graph(parts.len(), sample_rate, channels)),
+            Encoding::Copy => Value::Null,
+        },
+        "argv": merge_args(&parts, &paths, &enc, &files, "/books/.Synthetic Saga.m4b.merge-ab12.tmp"),
     })
 }
 

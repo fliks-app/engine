@@ -6,25 +6,43 @@ use serde::Serialize;
 use std::fmt::Write;
 use std::path::Path;
 
-/// Keeps argv within what Windows accepts (one `-i` per part when re-encoding).
+/// A re-encode opens one input per part.
 pub const MAX_PARTS: usize = 500;
+
+/// Characters of a Windows command line (the limit is 32767 with the program's own path).
+pub const WINDOWS_ARGV_LIMIT: usize = 30_000;
 
 /// Ceiling of an unpaused run: realtime plus an hour. The stall watchdog ends a hung run sooner.
 pub fn timeout_ms(total_seconds: f64) -> u64 {
-    3_600_000 + (total_seconds.max(0.0) * 1000.0) as u64
+    3_600_000_u64.saturating_add((total_seconds.max(0.0) * 1000.0) as u64)
+}
+
+/// Characters the arguments take on a command line, separators included.
+pub fn argv_chars(argv: &[String]) -> usize {
+    argv.iter().map(|a| a.chars().count() + 1).sum()
+}
+
+/// A path ffmpeg or the concat list could read as something else: a newline starts a directive.
+fn plain(path: &str) -> bool {
+    !path.chars().any(char::is_control)
 }
 
 pub fn validate(parts: &[MergePart], output: &str) -> Result<(), String> {
     if parts.is_empty() || parts.len() > MAX_PARTS {
         return Err(format!("Merge needs 1 to {MAX_PARTS} parts"));
     }
-    if !Path::new(output).is_absolute() || !output.to_ascii_lowercase().ends_with(".m4b") {
-        return Err("Merge output must be an absolute .m4b path".into());
+    if !plain(output)
+        || !Path::new(output).is_absolute()
+        || !output.to_ascii_lowercase().ends_with(".m4b")
+    {
+        return Err("Merge output must be an absolute .m4b path without control characters".into());
     }
     for (i, p) in parts.iter().enumerate() {
         let n = i + 1;
-        if !Path::new(&p.path).is_absolute() {
-            return Err(format!("Merge part {n} path must be absolute"));
+        if !plain(&p.path) || !Path::new(&p.path).is_absolute() {
+            return Err(format!(
+                "Merge part {n} path must be absolute, without control characters"
+            ));
         }
         if p.info.family() != Some(MediaFamily::Audio) {
             return Err(format!("Merge part {n} is not an audio file"));
@@ -58,29 +76,38 @@ pub enum Encoding {
     },
 }
 
+/// Lossless codecs: their bit rate says nothing about what speech needs.
+fn lossless(codec: &str) -> bool {
+    codec.starts_with("pcm_")
+        || matches!(codec, "flac" | "alac" | "wavpack" | "ape" | "tta" | "tak")
+}
+
 pub fn encoding(parts: &[MergePart]) -> Encoding {
     let first = |p: &MergePart| p.info.audio.first().cloned();
     let lead = first(&parts[0]);
+    let family = |p: &MergePart| p.info.format_name.clone();
     let same = lead.as_ref().is_some_and(|l| {
         l.codec == "aac"
             && l.sample_rate.is_some()
             && l.channels.is_some()
+            && family(&parts[0]).is_some()
             && parts.iter().all(|p| {
-                first(p).is_some_and(|a| {
-                    (
-                        &a.codec,
-                        a.sample_rate,
-                        a.channels,
-                        &a.profile,
-                        a.stream_index,
-                    ) == (
-                        &l.codec,
-                        l.sample_rate,
-                        l.channels,
-                        &l.profile,
-                        l.stream_index,
-                    )
-                })
+                family(p) == family(&parts[0])
+                    && first(p).is_some_and(|a| {
+                        (
+                            &a.codec,
+                            a.sample_rate,
+                            a.channels,
+                            &a.profile,
+                            a.stream_index,
+                        ) == (
+                            &l.codec,
+                            l.sample_rate,
+                            l.channels,
+                            &l.profile,
+                            l.stream_index,
+                        )
+                    })
             })
     });
     if same {
@@ -92,13 +119,25 @@ pub fn encoding(parts: &[MergePart]) -> Encoding {
         .max()
         .unwrap_or(2)
         .clamp(1, 2);
+    // A lossless source counts as 64 kb/s per channel, a lossy one as its own rate.
+    let speech =
+        |a: &crate::api::AudioStreamInfo| 64_000 * a.channels.unwrap_or(channels).clamp(1, 2);
     let bit_rate = streams()
-        .filter_map(|a| a.bit_rate)
+        .map(|a| {
+            if lossless(&a.codec) {
+                speech(&a)
+            } else {
+                a.bit_rate.unwrap_or_else(|| speech(&a))
+            }
+        })
         .max()
         .unwrap_or(64_000 * channels)
         .clamp(32_000, 128_000 * channels);
     Encoding::Aac {
-        sample_rate: lead.and_then(|a| a.sample_rate).unwrap_or(44_100),
+        sample_rate: lead
+            .and_then(|a| a.sample_rate)
+            .unwrap_or(44_100)
+            .min(96_000),
         channels,
         bit_rate,
     }
@@ -179,7 +218,10 @@ pub fn merged_tags(parts: &[MergePart], over: Option<&MediaTags>) -> MediaTags {
             .next()
     });
     MediaTags {
-        album: pick(|t| t.album.clone()).or_else(|| title.clone()),
+        album: over
+            .and_then(|t| t.album.clone().or_else(|| t.title.clone()))
+            .or_else(|| pick(|t| t.album.clone()))
+            .or_else(|| title.clone()),
         title,
         artist: pick(|t| t.artist.clone()),
         album_artist: pick(|t| t.album_artist.clone()),
@@ -198,11 +240,12 @@ pub fn merged_tags(parts: &[MergePart], over: Option<&MediaTags>) -> MediaTags {
     }
 }
 
-/// `key=value` escaped for an ffmetadata file.
+/// A value escaped for an ffmetadata file. A trailing backslash would escape the line break, so
+/// it is dropped; NUL cannot be stored.
 fn escape(v: &str) -> String {
     let mut out = String::with_capacity(v.len());
-    for c in v.chars() {
-        if matches!(c, '=' | ';' | '#' | '\\' | '\n') {
+    for c in v.trim_end_matches('\\').chars().filter(|c| *c != '\0') {
+        if matches!(c, '=' | ';' | '#' | '\\' | '\n' | '\r') {
             out.push('\\');
         }
         out.push(c);
@@ -275,17 +318,27 @@ fn first_cover(parts: &[MergePart]) -> Option<(usize, &CoverArt)> {
         .find_map(|(i, p)| Some((i, p.info.cover.as_ref()?)))
 }
 
-/// One ffmpeg run: `paths` are the parts' files on the engine's host, in order. Progress goes to
-/// stdout (`progress_seconds`); the output is the temporary file, written as an `ipod` mux (the
-/// `.m4b` flavour) whatever its name.
+/// The filter graph of a re-encode, read from a file (`-filter_complex_script`) so that the
+/// argv does not grow with it: every part's first audio stream concatenated, then one `aformat`.
+pub fn filter_graph(count: usize, sample_rate: u32, channels: u32) -> String {
+    let layout = if channels == 1 { "mono" } else { "stereo" };
+    let inputs: String = (0..count).map(|i| format!("[{i}:a:0]")).collect();
+    format!(
+        "{inputs}concat=n={count}:v=0:a=1,aformat=sample_rates={sample_rate}:channel_layouts={layout}[out]\n"
+    )
+}
+
+/// One ffmpeg run: `paths` are the parts' files on the engine's host, in order, `graph` the file
+/// of `filter_graph`. Progress goes to stdout (`progress_seconds`); the output is the temporary
+/// file, written as an `ipod` mux (the `.m4b` flavour) whatever its name.
 pub fn merge_args(
     parts: &[MergePart],
     paths: &[String],
     encoding: &Encoding,
-    list: &str,
-    meta: &str,
+    files: &MergeFiles,
     output: &str,
 ) -> Vec<String> {
+    let (list, meta, graph) = (&files.list, &files.meta, &files.graph);
     let mut a = strs(&[
         "-nostdin",
         "-hide_banner",
@@ -319,25 +372,7 @@ pub fn merge_args(
     };
     match encoding {
         Encoding::Copy => a.extend(strs(&["-map", "0:a:0"])),
-        Encoding::Aac {
-            sample_rate,
-            channels,
-            ..
-        } => {
-            let layout = if *channels == 1 { "mono" } else { "stereo" };
-            let mut graph = String::new();
-            for i in 0..paths.len() {
-                let _ = write!(
-                    graph,
-                    "[{i}:a:0]aformat=sample_rates={sample_rate}:channel_layouts={layout}[a{i}];"
-                );
-            }
-            (0..paths.len()).for_each(|i| {
-                let _ = write!(graph, "[a{i}]");
-            });
-            let _ = write!(graph, "concat=n={}:v=0:a=1[out]", paths.len());
-            a.extend(strs(&["-filter_complex", &graph, "-map", "[out]"]));
-        }
+        Encoding::Aac { .. } => a.extend(strs(&["-filter_complex_script", graph, "-map", "[out]"])),
     }
     if let (Some((_, art)), Some(at)) = (cover, cover_at) {
         a.extend(strs(&["-map"]));
@@ -365,6 +400,13 @@ pub fn merge_args(
     a.extend(strs(&["-f", "ipod"]));
     a.push(output.into());
     a
+}
+
+/// The files `merge_args` reads, in the job's scratch directory.
+pub struct MergeFiles {
+    pub list: String,
+    pub meta: String,
+    pub graph: String,
 }
 
 /// Seconds of output written so far, from a `-progress` line (`out_time_us=` is microseconds).
