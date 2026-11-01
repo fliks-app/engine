@@ -662,8 +662,14 @@ async fn revoking_a_credential_drops_its_cached_answers_and_no_session() {
     }
     assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 403);
     assert_eq!(e.get("/api/stream/7", "late-jwt", &[]).await.status, 200);
-    // The session itself was never touched.
+    // The session itself was never touched: once the denial is revoked too, it plays again.
     e.stub.grant("alice-jwt", "alice");
+    e.control(
+        "POST",
+        "/v1/revoke",
+        Some(json!({ "credential": "alice-jwt" })),
+    )
+    .await;
     assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 200);
 }
 
