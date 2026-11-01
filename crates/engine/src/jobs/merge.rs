@@ -16,6 +16,20 @@ pub async fn run(
     over: Option<&MediaTags>,
 ) -> Result<JobResult, String> {
     let out = PathBuf::from(ctx.rt.map_media_path(output));
+    // The core accepts any platform's absolute form; the mapped paths must be this host's.
+    let paths: Vec<String> = parts
+        .iter()
+        .map(|p| ctx.rt.map_media_path(&p.path))
+        .collect();
+    if let Some(bad) = std::iter::once(&*out)
+        .chain(paths.iter().map(Path::new))
+        .find(|p| !p.is_absolute())
+    {
+        return Err(format!(
+            "not an absolute path on this host: {}",
+            bad.display()
+        ));
+    }
     let (dir, name) = out
         .parent()
         .zip(out.file_name())
@@ -30,7 +44,7 @@ pub async fn run(
         crate::random_hex(4)
     ));
     let scratch = ctx.rt.cache.merge_dir(&ctx.job.id);
-    let built = build(ctx, parts, over, &scratch, &tmp).await;
+    let built = build(ctx, parts, &paths, over, &scratch, &tmp).await;
     let _ = tokio::fs::remove_dir_all(&scratch).await;
     let published = match built {
         Ok(r) => publish(&tmp, &out).await.map(|()| r),
@@ -62,15 +76,12 @@ fn taken(out: &Path) -> String {
 async fn build(
     ctx: &Ctx,
     parts: &[MergePart],
+    paths: &[String],
     over: Option<&MediaTags>,
     scratch: &Path,
     tmp: &Path,
 ) -> Result<(Vec<Chapter>, bool), String> {
     let (tags, chapters, encoding) = (merged_tags(parts, over), chapters(parts), encoding(parts));
-    let paths: Vec<String> = parts
-        .iter()
-        .map(|p| ctx.rt.map_media_path(&p.path))
-        .collect();
     let files = MergeFiles {
         list: path_text(&scratch.join("list.txt")),
         meta: path_text(&scratch.join("meta.txt")),
@@ -86,12 +97,12 @@ async fn build(
     };
     let write = async {
         tokio::fs::create_dir_all(scratch).await?;
-        tokio::fs::write(&files.list, concat_list(&paths)).await?;
+        tokio::fs::write(&files.list, concat_list(paths)).await?;
         tokio::fs::write(&files.meta, ffmetadata(&tags, &chapters)).await?;
         tokio::fs::write(&files.graph, graph).await
     };
     write.await.map_err(|e| format!("write merge files: {e}"))?;
-    let argv = merge_args(parts, &paths, &encoding, &files, &path_text(tmp));
+    let argv = merge_args(parts, paths, &encoding, &files, &path_text(tmp));
     let chars = argv_chars(&argv);
     if cfg!(windows) && chars > WINDOWS_ARGV_LIMIT {
         return Err(format!(

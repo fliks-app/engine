@@ -4,7 +4,6 @@ use crate::api::{Chapter, CoverArt, MediaFamily, MediaTags, MergePart};
 use crate::strs;
 use serde::Serialize;
 use std::fmt::Write;
-use std::path::Path;
 
 /// A re-encode opens one input per part.
 pub const MAX_PARTS: usize = 500;
@@ -22,6 +21,16 @@ pub fn argv_chars(argv: &[String]) -> usize {
     argv.iter().map(|a| a.chars().count() + 1).sum()
 }
 
+/// `/x`, `\\x` or `C:\x` on every platform: the same verdict wherever the core runs.
+fn absolute(path: &str) -> bool {
+    let b = path.as_bytes();
+    matches!(b.first(), Some(b'/' | b'\\'))
+        || (b.len() > 2
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && matches!(b[2], b'/' | b'\\'))
+}
+
 /// A path ffmpeg or the concat list could read as something else: a newline starts a directive.
 fn plain(path: &str) -> bool {
     !path.chars().any(char::is_control)
@@ -31,15 +40,12 @@ pub fn validate(parts: &[MergePart], output: &str) -> Result<(), String> {
     if parts.is_empty() || parts.len() > MAX_PARTS {
         return Err(format!("Merge needs 1 to {MAX_PARTS} parts"));
     }
-    if !plain(output)
-        || !Path::new(output).is_absolute()
-        || !output.to_ascii_lowercase().ends_with(".m4b")
-    {
+    if !plain(output) || !absolute(output) || !output.to_ascii_lowercase().ends_with(".m4b") {
         return Err("Merge output must be an absolute .m4b path without control characters".into());
     }
     for (i, p) in parts.iter().enumerate() {
         let n = i + 1;
-        if !plain(&p.path) || !Path::new(&p.path).is_absolute() {
+        if !plain(&p.path) || !absolute(&p.path) {
             return Err(format!(
                 "Merge part {n} path must be absolute, without control characters"
             ));
