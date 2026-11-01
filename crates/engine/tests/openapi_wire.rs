@@ -279,6 +279,7 @@ fn every_wire_key_is_in_its_schema() {
         QsvPreset,
         QualityEstimate,
         QualityOption,
+        ResolveCredentialSource,
         ResolveMediaId,
         ResolvePurpose,
         ResolveRequest,

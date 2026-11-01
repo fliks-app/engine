@@ -298,13 +298,30 @@ pub struct SessionSnapshot {
 }
 
 /// `POST /v1/revoke`: at least one field.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", default)]
 pub struct RevokeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_file_ids: Option<Vec<u32>>,
+    /// A client credential as the host received it: its cached resolver answers (grants and
+    /// denials) go, no session is touched. Alone it is a whole request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
+}
+
+impl std::fmt::Debug for RevokeRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RevokeRequest")
+            .field("owner_id", &self.owner_id)
+            .field("media_file_ids", &self.media_file_ids)
+            .field(
+                "credential",
+                &self.credential.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -461,6 +478,17 @@ pub enum ResolvePurpose {
     Live,
 }
 
+/// Where the engine found the credential of a resolve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ResolveCredentialSource {
+    Cookie,
+    Bearer,
+    Query,
+    Path,
+    Basic,
+}
+
 /// `mediaId` of a resolve: a media file id, or a live session id (`purpose: live`, M6).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(untagged)]
@@ -479,6 +507,10 @@ pub struct ResolveRequest {
     /// `/cred/<token>/` path prefix carries), else the `Authorization: Basic <base64>` value of a
     /// device client. Opaque to the engine; the host validates it and its scope.
     pub credential: String,
+    /// Where `credential` came from, absent without one. Not part of the engine's cache key: the
+    /// forms differ in shape, so one string is never both a query and a path token in practice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_source: Option<ResolveCredentialSource>,
     pub purpose: ResolvePurpose,
     /// External subtitle (`purpose: subtitle`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -493,6 +525,7 @@ impl std::fmt::Debug for ResolveRequest {
         f.debug_struct("ResolveRequest")
             .field("media_id", &self.media_id)
             .field("credential", &"<redacted>")
+            .field("credential_source", &self.credential_source)
             .field("purpose", &self.purpose)
             .finish_non_exhaustive()
     }

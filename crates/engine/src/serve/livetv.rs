@@ -38,10 +38,13 @@ async fn live_access(
         url,
         token: config.host_token.clone(),
     });
-    let cred = credential(headers, q);
+    let Some((cred, source)) = credential(headers, q) else {
+        return Err(text(StatusCode::BAD_REQUEST, "Credential too long"));
+    };
     let ask = Ask {
         media: ResolveMediaId::Live(sid.into()),
         credential: &cred,
+        source,
         purpose: ResolvePurpose::Live,
         subtitle_id: None,
         stream_index: None,

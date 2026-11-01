@@ -589,7 +589,7 @@
             }
           },
           "400": {
-            "description": "neither ownerId nor mediaFileIds"
+            "description": "none of ownerId, mediaFileIds, credential"
           }
         }
       }
@@ -5133,6 +5133,17 @@
           }
         }
       },
+      "ResolveCredentialSource": {
+        "type": "string",
+        "description": "Where the engine found the credential of a resolve.",
+        "enum": [
+          "cookie",
+          "bearer",
+          "query",
+          "path",
+          "basic"
+        ]
+      },
       "ResolveMediaId": {
         "oneOf": [
           {
@@ -5168,6 +5179,17 @@
           "credential": {
             "type": "string",
             "description": "The client credential exactly as received, one of: the `Cookie` header value, the\n`Authorization` header value (`Bearer <jwt>`), the bare `?token=` value (also what a\n`/cred/<token>/` path prefix carries), else the `Authorization: Basic <base64>` value of a\ndevice client. Opaque to the engine; the host validates it and its scope."
+          },
+          "credentialSource": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResolveCredentialSource",
+                "description": "Where `credential` came from, absent without one. Not part of the engine's cache key: the\nforms differ in shape, so one string is never both a query and a path token in practice."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "mediaId": {
             "$ref": "#/components/schemas/ResolveMediaId"
@@ -5288,6 +5310,14 @@
         "type": "object",
         "description": "`POST /v1/revoke`: at least one field.",
         "properties": {
+          "credential": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A client credential as the host received it: its cached resolver answers (grants and\ndenials) go, no session is touched. Alone it is a whole request.",
+            "default": null
+          },
           "mediaFileIds": {
             "type": [
               "array",

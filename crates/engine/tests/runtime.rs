@@ -642,6 +642,32 @@ async fn a_deleted_sid_answers_410_on_every_route() {
 }
 
 #[tokio::test]
+async fn revoking_a_credential_drops_its_cached_answers_and_no_session() {
+    let (e, file) = setup().await;
+    let s = open(&e, &file, "alice").await;
+    let sid = s["sessionId"].as_str().unwrap();
+    let play = format!("/api/stream/7/master.m3u8?sid={sid}");
+    // A grant stays cached after the host forgot it, a denial after the host learned it.
+    assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 200);
+    e.stub.owners.lock().unwrap().remove("alice-jwt");
+    assert_eq!(e.get("/api/stream/7", "late-jwt", &[]).await.status, 403);
+    e.stub.grant("late-jwt", "alice");
+    assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 200);
+    assert_eq!(e.get("/api/stream/7", "late-jwt", &[]).await.status, 403);
+    for cred in ["alice-jwt", "late-jwt"] {
+        let r = e
+            .control("POST", "/v1/revoke", Some(json!({ "credential": cred })))
+            .await;
+        assert_eq!((r.status, r.json()["sessions"].as_u64()), (200, Some(0)));
+    }
+    assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 403);
+    assert_eq!(e.get("/api/stream/7", "late-jwt", &[]).await.status, 200);
+    // The session itself was never touched.
+    e.stub.grant("alice-jwt", "alice");
+    assert_eq!(e.get(&play, "alice-jwt", &[]).await.status, 200);
+}
+
+#[tokio::test]
 async fn a_revoked_sid_answers_410_on_every_route() {
     let (e, file) = setup().await;
     let s = open(&e, &file, "alice").await;
