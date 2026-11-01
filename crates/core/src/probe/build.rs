@@ -1,6 +1,7 @@
 //! ffprobe JSON to `MediaInfo`: `detectMediaFileInfo` minus the process spawning.
 use super::ffjson::{Frame, Main, Stream};
 use super::lang::{is_image_based, language_from_title, subtitle_flags_from_title};
+use super::tags;
 use crate::api::{
     AudioStreamInfo, Chapter, HdrFormat, HdrMetadata, MediaInfo, SubtitleStreamInfo,
     VideoStreamInfo,
@@ -501,7 +502,20 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .collect();
 
     let no_streams = video.is_empty() && audio.is_empty();
+    let audio_file = !no_streams && video.is_empty();
+    let first_audio_tags = main
+        .streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("audio"))
+        .map(|s| &s.tags);
     let info = MediaInfo {
+        cover: audio_file.then(|| tags::cover(&main.streams)).flatten(),
+        tags: audio_file
+            .then(|| {
+                let name = main.format.format_name.as_deref();
+                tags::media_tags(&main.format.tags, name, first_audio_tags)
+            })
+            .flatten(),
         video: if no_streams { vec![] } else { video },
         audio,
         subtitles: if no_streams { vec![] } else { subtitles },

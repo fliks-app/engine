@@ -11,6 +11,8 @@ pub const MKVMERGE_TIMEOUT_MS: u64 = 15_000;
 pub const CROP_TIMEOUT_MS: u64 = 30_000;
 /// `execFile` default `maxBuffer` of the host's ffprobe and ffmpeg runs.
 pub const MAX_OUTPUT_BYTES: usize = 1 << 20;
+/// Output cap of the ffprobe JSON runs: an audiobook with thousands of chapters passes 1 MiB.
+pub const FFPROBE_MAX_OUTPUT_BYTES: usize = 1 << 24;
 /// `maxBuffer` of the host's `mkvmerge -J`.
 pub const MKVMERGE_MAX_OUTPUT_BYTES: usize = 1 << 24;
 

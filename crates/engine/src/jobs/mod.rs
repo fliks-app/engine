@@ -1,6 +1,7 @@
 //! Background jobs: queue, priority, cancellation, progress, disk check, and their ffmpeg runs on
 //! the shared slot budget. Spec: `docs/spec/jobs.md`.
 mod alass;
+pub(crate) mod cover;
 mod fingerprint;
 mod ocr;
 mod scan;
@@ -21,7 +22,7 @@ use axum::{
 };
 use fliks_engine_core::api::{
     BgJobState, EngineEvent, FingerprintWindow, JobAccepted, JobKind, JobPriority, JobRequest,
-    JobResult, JobSnapshot,
+    JobResult, JobSnapshot, MediaInfo,
 };
 use fliks_engine_core::jobs::sprite::RUN_TIMEOUT_MS;
 use fliks_engine_core::session::{JobWatch, JobWatchInput, job_watch};
@@ -149,6 +150,15 @@ impl Jobs {
 }
 
 fn validate(kind: &JobKind) -> Result<(), String> {
+    if let Some(family) = kind.info().and_then(MediaInfo::family)
+        && !kind.families().contains(&family)
+    {
+        return Err(format!(
+            "{} does not apply to {} files",
+            kind.name(),
+            family.as_str()
+        ));
+    }
     match kind {
         JobKind::Sprite { info } => {
             if !info
@@ -184,6 +194,9 @@ fn validate(kind: &JobKind) -> Result<(), String> {
             ..
         } => sync::validate(info, subtitle, reference, *max_offset_seconds)?,
         JobKind::SubtitleToSrt { info, source } => srt::validate(info, source)?,
+        JobKind::Cover { info } => {
+            fliks_engine_core::jobs::cover::validate(info)?;
+        }
     }
     Ok(())
 }
@@ -343,6 +356,7 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
     match &job.req.kind {
         JobKind::Sprite { info } => sprite::run(ctx, info).await,
         JobKind::Scan { info } => scan::run(ctx, info).await,
+        JobKind::Cover { info } => cover::run(ctx, info).await,
         JobKind::Fingerprint {
             window,
             max_lookup_minutes,

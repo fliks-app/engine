@@ -1,5 +1,5 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
-use super::{Fingerprint, MediaInfo, MediaRef, SourceScan};
+use super::{Fingerprint, MediaFamily, MediaInfo, MediaRef, SourceScan};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -62,6 +62,10 @@ pub enum JobKind {
     /// A non-SRT sidecar or an embedded text track, converted to SRT text.
     #[schema(title = "SubtitleToSrtJob")]
     SubtitleToSrt { info: MediaInfo, source: SrtSource },
+    /// The embedded picture of an audio file (`info.cover`), kept in the engine cache and read
+    /// with `GET /v1/covers/{mediaFileId}`.
+    #[schema(title = "CoverJob")]
+    Cover { info: MediaInfo },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -121,8 +125,73 @@ impl JobKind {
             JobKind::SubtitleOcr { .. } => "SubtitleOcr",
             JobKind::SubtitleSync { .. } => "SubtitleSync",
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
+            JobKind::Cover { .. } => "Cover",
         }
     }
+
+    /// The probe result the job is built from; `Fingerprint` reads the file alone.
+    pub fn info(&self) -> Option<&MediaInfo> {
+        match self {
+            JobKind::Sprite { info }
+            | JobKind::Scan { info }
+            | JobKind::SubtitleExtract { info }
+            | JobKind::SubtitleOcr { info, .. }
+            | JobKind::SubtitleSync { info, .. }
+            | JobKind::SubtitleToSrt { info, .. }
+            | JobKind::Cover { info } => Some(info),
+            JobKind::Fingerprint { .. } => None,
+        }
+    }
+
+    /// The families of file the kind applies to.
+    pub fn families(&self) -> &'static [MediaFamily] {
+        match self {
+            JobKind::Sprite { .. }
+            | JobKind::Scan { .. }
+            | JobKind::Fingerprint { .. }
+            | JobKind::SubtitleExtract { .. }
+            | JobKind::SubtitleOcr { .. }
+            | JobKind::SubtitleToSrt { .. } => VIDEO_ONLY,
+            JobKind::SubtitleSync { .. } => ANY,
+            JobKind::Cover { .. } => AUDIO_ONLY,
+        }
+    }
+}
+
+const VIDEO_ONLY: &[MediaFamily] = &[MediaFamily::Video];
+const AUDIO_ONLY: &[MediaFamily] = &[MediaFamily::Audio];
+// Sync aligns cues on the audio track, so a probe without video is enough.
+const ANY: &[MediaFamily] = &[MediaFamily::Video, MediaFamily::Audio];
+
+/// Which families of file each job kind applies to (`hello.jobFamilies`); `families` is the
+/// per-request form, a test keeps the two equal.
+pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
+    ("Sprite", VIDEO_ONLY),
+    ("Scan", VIDEO_ONLY),
+    ("Fingerprint", VIDEO_ONLY),
+    ("SubtitleExtract", VIDEO_ONLY),
+    ("SubtitleOcr", VIDEO_ONLY),
+    ("SubtitleSync", ANY),
+    ("SubtitleToSrt", VIDEO_ONLY),
+    ("Cover", AUDIO_ONLY),
+];
+
+/// A job kind and the families of file it applies to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobFamilies {
+    /// `JobKind` `type`.
+    pub kind: String,
+    pub families: Vec<MediaFamily>,
+}
+
+/// The stored cover of `GET /v1/covers/{mediaFileId}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverMeta {
+    /// `image/jpeg` or `image/png`.
+    pub mime: String,
+    pub bytes: u32,
 }
 
 #[derive(
@@ -213,6 +282,10 @@ pub enum JobResult {
     SubtitleToSrt {
         srt: String,
     },
+    /// The file is read with `GET /v1/covers/{mediaFileId}`.
+    Cover {
+        cover: CoverMeta,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -254,5 +327,36 @@ mod tests {
             (None, false, "Sprite")
         );
         assert!(JobPriority::High < JobPriority::Normal && JobPriority::Normal < JobPriority::Low);
+    }
+
+    #[test]
+    fn the_families_table_matches_every_kind() {
+        let info = || json!({ "video": [], "audio": [], "subtitles": [] });
+        let kinds = [
+            json!({ "type": "Sprite", "info": info() }),
+            json!({ "type": "Scan", "info": info() }),
+            json!({ "type": "Fingerprint", "window": { "type": "head" } }),
+            json!({ "type": "SubtitleExtract", "info": info() }),
+            json!({ "type": "SubtitleOcr", "info": info(), "streamIndex": 0 }),
+            json!({ "type": "SubtitleSync", "info": info(), "subtitle": { "format": "srt",
+                "text": "" }, "reference": { "type": "auto" } }),
+            json!({ "type": "SubtitleToSrt", "info": info(), "source": { "type": "stream",
+                "index": 0 } }),
+            json!({ "type": "Cover", "info": info() }),
+        ];
+        assert_eq!(kinds.len(), JOB_FAMILIES.len());
+        for k in kinds {
+            let kind: JobKind = serde_json::from_value(k).unwrap();
+            let row = JOB_FAMILIES.iter().find(|(n, _)| *n == kind.name());
+            assert_eq!(row.map(|r| r.1), Some(kind.families()), "{}", kind.name());
+        }
+    }
+
+    #[test]
+    fn a_future_family_reads_as_unknown() {
+        let f: JobFamilies =
+            serde_json::from_value(json!({ "kind": "Lyrics", "families": ["text", "audio"] }))
+                .unwrap();
+        assert_eq!(f.families, [MediaFamily::Unknown, MediaFamily::Audio]);
     }
 }

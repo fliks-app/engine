@@ -1,0 +1,78 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"vorbis\",\n            \"codec_long_name\": \"Vorbis\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"mime_codec_string\": \"vorbis\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 1,\n            \"channel_layout\": \"mono\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 0,\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/48000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 144000,\n            \"duration\": \"3.000000\",\n            \"bit_rate\": \"48000\",\n            \"extradata_size\": 3427,\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"encoder\": \"Lavc62.28.102 libvorbis\",\n                \"TITLE\": \"Tome Un\",\n                \"ARTIST\": \"Ada Example\",\n                \"track\": \"3/12\",\n                \"DATE\": \"2021-03-04\"\n            }\n        }\n    ],\n    \"chapters\": [\n\n    ],\n    \"format\": {\n        \"filename\": \"{path}\",\n        \"nb_streams\": 1,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"ogg\",\n        \"format_long_name\": \"Ogg\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"3.000000\",\n        \"size\": \"8803\",\n        \"bit_rate\": \"23474\",\n        \"probe_score\": 100\n    }\n}\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,-0.002667,\n",
+      "stopped": true
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 48000,
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "vorbis",
+          "endSeconds": 3,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 0,
+          "title": "Tome Un"
+        }
+      ],
+      "chapters": [],
+      "durationSeconds": 3,
+      "formatBitRate": 23474,
+      "formatName": "ogg",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "tags": {
+        "artist": "Ada Example",
+        "title": "Tome Un",
+        "track": 3,
+        "trackTotal": 12,
+        "year": 2021
+      },
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "audio-plain.ogg",
+  "fileSize": 8803,
+  "moviehash": null,
+  "name": "audio-ogg-vorbis-tags",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}

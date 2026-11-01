@@ -23,13 +23,17 @@ fn info() -> Value {
 /// An engine whose ffmpeg, ffprobe and fpcalc are `mode`'s fake, with `streaming` merged into its
 /// config, and a media file per id.
 async fn engine_of(mode: &str, streaming: Value) -> (Engine, PathBuf) {
+    engine_on(&fake(mode), streaming).await
+}
+
+/// `engine_of` over any tool binary, used for all three tools.
+async fn engine_on(f: &str, streaming: Value) -> (Engine, PathBuf) {
     let pause = if cfg!(unix) { "signal" } else { "stdin" };
-    let f = fake(mode);
     let e = engine_with_tools(
         host(HwAccel::None, "/dev/dri/renderD128", pause),
-        &f,
-        &f,
-        &f,
+        f,
+        f,
+        f,
         json!({}),
     )
     .await;
@@ -997,4 +1001,163 @@ async fn playback_pauses_a_fingerprint_job() {
     assert_eq!(r.status, 204);
     e.rt.shutdown().await;
     assert!(e.ffmpeg_pids().is_empty());
+}
+
+fn audio_book() -> Value {
+    json!({
+        "video": [],
+        "audio": [{ "streamIndex": 0, "codec": "aac", "language": "und", "channels": 1, "sampleRate": 48000 }],
+        "subtitles": [], "formatName": "mov,mp4,m4a,3gp,3g2,mj2", "durationSeconds": 3.0,
+        "cover": { "streamIndex": 2, "codec": "mjpeg", "width": 64, "height": 64 },
+    })
+}
+
+#[tokio::test]
+async fn cover_job_stores_the_picture_and_the_control_plane_reads_it() {
+    let (e, file) = engine_of("cover", json!({})).await;
+    let kind = json!({ "type": "Cover", "info": audio_book() });
+    let v = run_kind(&e, 7, &file, kind.clone()).await;
+    let want = json!({ "type": "Cover", "cover": { "mime": "image/jpeg", "bytes": 9 } });
+    assert_eq!(
+        (v["state"].as_str(), &v["result"]),
+        (Some("done"), &want),
+        "{v}"
+    );
+    let r = e.control("GET", "/v1/covers/7", None).await;
+    assert_eq!(
+        (r.status, r.header("content-type")),
+        (200, Some("image/jpeg".into()))
+    );
+    assert_eq!(&r.body[..], b"\xFF\xD8cover\xFF\xD9");
+    // A stored cover answers a second job without a run.
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(v["result"], want, "{v}");
+    assert_eq!(e.control("GET", "/v1/covers/8", None).await.status, 404);
+    let r = e
+        .control("POST", "/v1/invalidate", Some(json!({ "mediaFileId": 7 })))
+        .await;
+    assert_eq!(r.status, 200);
+    assert_eq!(e.control("GET", "/v1/covers/7", None).await.status, 404);
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
+#[tokio::test]
+async fn cover_job_fails_on_an_empty_picture() {
+    let (e, file) = engine_of("emptycover", json!({})).await;
+    let kind = json!({ "type": "Cover", "info": audio_book() });
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(
+        (v["state"].as_str(), v["error"].as_str()),
+        (Some("failed"), Some("ffmpeg wrote no picture"))
+    );
+    assert_eq!(e.control("GET", "/v1/covers/7", None).await.status, 404);
+}
+
+#[tokio::test]
+async fn cover_job_refuses_a_picture_over_the_cap() {
+    let (e, file) = engine_of("bigcover", json!({})).await;
+    let kind = json!({ "type": "Cover", "info": audio_book() });
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(
+        (v["state"].as_str(), v["error"].as_str()),
+        (Some("failed"), Some("cover too large"))
+    );
+    assert_eq!(e.control("GET", "/v1/covers/7", None).await.status, 404);
+    let dir = std::fs::read_dir(e.root.join("covers/v1/7"));
+    assert_eq!(dir.map_or(0, |d| d.count()), 0, "no temporary file is left");
+}
+
+/// The real ffmpeg on a BMP picture, which is neither copied nor stored as is: skipped without ffmpeg.
+#[tokio::test]
+async fn cover_job_re_encodes_a_bmp_picture_to_jpeg() {
+    let dir = temp_dir("cover-real");
+    let mp3 = dir.join("bmp.mp3");
+    let made = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=1",
+            "-f",
+            "lavfi",
+        ])
+        .args([
+            "-i",
+            "color=c=green:size=16x16:duration=1:rate=1",
+            "-map",
+            "0:a",
+        ])
+        .args([
+            "-map",
+            "1:v",
+            "-frames:v",
+            "1",
+            "-c:a",
+            "libmp3lame",
+            "-c:v",
+            "bmp",
+        ])
+        .args(["-disposition:v", "attached_pic"])
+        .arg(&mp3)
+        .status();
+    if !made.is_ok_and(|s| s.success()) {
+        eprintln!("ffmpeg with libmp3lame not available: skipped");
+        return;
+    }
+    let (e, _) = engine_on("ffmpeg", json!({})).await;
+    e.stub.file(7, &mp3);
+    let mut info = audio_book();
+    info["cover"] = json!({ "streamIndex": 1, "codec": "bmp", "width": 16, "height": 16 });
+    let v = run_kind(&e, 7, &mp3, json!({ "type": "Cover", "info": info })).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["cover"]["mime"], "image/jpeg");
+    let r = e.control("GET", "/v1/covers/7", None).await;
+    assert_eq!(&r.body[..3], b"\xFF\xD8\xFF", "a JPEG");
+}
+
+#[tokio::test]
+async fn jobs_are_filtered_by_the_family_of_the_file() {
+    let (e, file) = engine_of("cover", json!({})).await;
+    let book = audio_book();
+    let mut with_cover = info();
+    with_cover["cover"] = book["cover"].clone();
+    let empty = json!({ "video": [], "audio": [], "subtitles": [] });
+    for (kind, why) in [
+        (
+            json!({ "type": "Sprite", "info": book }),
+            "Sprite does not apply to audio files",
+        ),
+        (
+            json!({ "type": "Scan", "info": book }),
+            "Scan does not apply to audio files",
+        ),
+        (
+            json!({ "type": "SubtitleExtract", "info": book }),
+            "SubtitleExtract does not apply to audio files",
+        ),
+        (
+            json!({ "type": "Cover", "info": with_cover }),
+            "Cover does not apply to video files",
+        ),
+        (
+            json!({ "type": "Cover", "info": empty }),
+            "Cover needs info.cover",
+        ),
+    ] {
+        let r = post(&e, 7, &file, kind).await;
+        assert_eq!((r.status, r.text().as_str()), (400, why));
+    }
+    let hello = e.control("GET", "/v1/hello", None).await.json();
+    let has = |v: Value| hello["jobFamilies"].as_array().unwrap().contains(&v);
+    assert!(
+        hello["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("cover"))
+    );
+    assert!(has(json!({ "kind": "Sprite", "families": ["video"] })));
+    assert!(has(json!({ "kind": "Cover", "families": ["audio"] })));
 }

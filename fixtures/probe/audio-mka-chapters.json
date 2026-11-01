@@ -1,0 +1,93 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"opus\",\n            \"codec_long_name\": \"Opus (Opus Interactive Audio Codec)\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"mime_codec_string\": \"opus\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 1,\n            \"channel_layout\": \"mono\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 312,\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/1000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"extradata_size\": 19,\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"ENCODER\": \"Lavc62.28.102 libopus\",\n                \"DURATION\": \"00:00:03.008000000\"\n            }\n        }\n    ],\n    \"chapters\": [\n        {\n            \"id\": 1,\n            \"time_base\": \"1/1000000000\",\n            \"start\": 0,\n            \"start_time\": \"0.000000\",\n            \"end\": 1000000000,\n            \"end_time\": \"1.000000\",\n            \"tags\": {\n                \"title\": \"Opening\"\n            }\n        },\n        {\n            \"id\": 2,\n            \"time_base\": \"1/1000000000\",\n            \"start\": 1000000000,\n            \"start_time\": \"1.000000\",\n            \"end\": 3000000000,\n            \"end_time\": \"3.000000\",\n            \"tags\": {\n                \"title\": \"Middle\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"{path}\",\n        \"nb_streams\": 1,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"matroska,webm\",\n        \"format_long_name\": \"Matroska / WebM\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"3.008000\",\n        \"size\": \"13609\",\n        \"bit_rate\": \"36194\",\n        \"probe_score\": 100,\n        \"tags\": {\n            \"title\": \"Tome Un\",\n            \"LANGUAGE\": \"fra\",\n            \"ENCODER\": \"Lavf62.12.102\"\n        }\n    }\n}\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "0,-0.007000,\n",
+      "stopped": true
+    },
+    {
+      "args": [
+        "-J",
+        "{path}"
+      ],
+      "cmd": "mkvmerge",
+      "stderr": "",
+      "stdout": "{\n  \"attachments\": [],\n  \"chapters\": [\n    {\n      \"num_entries\": 2\n    }\n  ],\n  \"container\": {\n    \"properties\": {\n      \"container_type\": 17,\n      \"duration\": 3008000000,\n      \"is_providing_timestamps\": true,\n      \"muxing_application\": \"Lavf62.12.102\",\n      \"segment_uid\": \"3bbdcb17987e1de33615c58d3cd8ada9\",\n      \"timestamp_scale\": 1000000,\n      \"title\": \"Tome Un\",\n      \"writing_application\": \"Lavf62.12.102\"\n    },\n    \"recognized\": true,\n    \"supported\": true,\n    \"type\": \"Matroska\"\n  },\n  \"errors\": [],\n  \"file_name\": \"{path}\",\n  \"global_tags\": [\n    {\n      \"num_entries\": 2\n    }\n  ],\n  \"identification_format_version\": 19,\n  \"track_tags\": [\n    {\n      \"num_entries\": 2,\n      \"track_id\": 0\n    }\n  ],\n  \"tracks\": [\n    {\n      \"codec\": \"Opus\",\n      \"id\": 0,\n      \"properties\": {\n        \"audio_bits_per_sample\": 16,\n        \"audio_channels\": 1,\n        \"audio_sampling_frequency\": 48000,\n        \"codec_delay\": 6500000,\n        \"codec_id\": \"A_OPUS\",\n        \"codec_private_data\": \"4f707573486561640101380180bb0000000000\",\n        \"codec_private_length\": 19,\n        \"default_track\": false,\n        \"enabled_track\": true,\n        \"forced_track\": false,\n        \"language\": \"und\",\n        \"minimum_timestamp\": 0,\n        \"num_index_entries\": 1,\n        \"number\": 1,\n        \"tag_duration\": \"00:00:03.008000000\",\n        \"tag_encoder\": \"Lavc62.28.102 libopus\",\n        \"uid\": 303825827713978728\n      },\n      \"type\": \"audio\"\n    }\n  ],\n  \"warnings\": []\n}\n"
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "opus",
+          "endSeconds": 3.008,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0,
+          "streamIndex": 0
+        }
+      ],
+      "chapters": [
+        {
+          "endSeconds": 1,
+          "startSeconds": 0,
+          "title": "Opening"
+        },
+        {
+          "endSeconds": 3,
+          "startSeconds": 1,
+          "title": "Middle"
+        }
+      ],
+      "durationSeconds": 3.008,
+      "formatBitRate": 36194,
+      "formatName": "matroska,webm",
+      "formatStartSeconds": 0,
+      "subtitles": [],
+      "tags": {
+        "language": "fra",
+        "title": "Tome Un"
+      },
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "audio-chapters.mka",
+  "fileSize": 13609,
+  "moviehash": null,
+  "name": "audio-mka-chapters",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}
