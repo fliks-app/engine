@@ -349,6 +349,9 @@ mod tests {
         let t = StdInstant::now();
         assert!(slow.ffprobe(vec![], 200).await.is_err());
         assert!(t.elapsed() < Duration::from_secs(5));
+        // A book with thousands of chapters prints more than 1 MiB.
+        let big = tools(&dir.script("big", "yes | head -c 3000000"));
+        assert_eq!(big.ffprobe(vec![], 5000).await.unwrap().len(), 3_000_000);
         let loud = tools(&dir.script("loud", "yes | head -c 20000000"));
         let e = loud.ffprobe(vec![], 5000).await.unwrap_err();
         assert_eq!(e.message, "stdout maxBuffer length exceeded");

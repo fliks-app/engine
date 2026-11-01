@@ -88,7 +88,7 @@ async fn cors(mut res: Response) -> Response {
 }
 
 /// A reader as a response body in `chunk`-byte reads, reusing the buffer once a chunk is sent.
-fn stream_body<R: AsyncRead + Unpin + Send + 'static>(r: R, chunk: usize) -> Body {
+pub(crate) fn stream_body<R: AsyncRead + Unpin + Send + 'static>(r: R, chunk: usize) -> Body {
     Body::from_stream(futures_util::stream::try_unfold(
         (r, BytesMut::new()),
         move |(mut r, mut buf)| async move {

@@ -145,23 +145,33 @@ impl JobKind {
 
     /// The families of file the kind applies to.
     pub fn families(&self) -> &'static [MediaFamily] {
-        JOB_FAMILIES
-            .iter()
-            .find(|(kind, _)| *kind == self.name())
-            .map_or(&[], |(_, f)| f)
+        match self {
+            JobKind::Sprite { .. }
+            | JobKind::Scan { .. }
+            | JobKind::Fingerprint { .. }
+            | JobKind::SubtitleExtract { .. }
+            | JobKind::SubtitleOcr { .. }
+            | JobKind::SubtitleSync { .. }
+            | JobKind::SubtitleToSrt { .. } => VIDEO_ONLY,
+            JobKind::Cover { .. } => AUDIO_ONLY,
+        }
     }
 }
 
-/// Which families of file each job kind applies to (`hello.jobFamilies`).
+const VIDEO_ONLY: &[MediaFamily] = &[MediaFamily::Video];
+const AUDIO_ONLY: &[MediaFamily] = &[MediaFamily::Audio];
+
+/// Which families of file each job kind applies to (`hello.jobFamilies`); `families` is the
+/// per-request form, a test keeps the two equal.
 pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
-    ("Sprite", &[MediaFamily::Video]),
-    ("Scan", &[MediaFamily::Video]),
-    ("Fingerprint", &[MediaFamily::Video]),
-    ("SubtitleExtract", &[MediaFamily::Video]),
-    ("SubtitleOcr", &[MediaFamily::Video]),
-    ("SubtitleSync", &[MediaFamily::Video]),
-    ("SubtitleToSrt", &[MediaFamily::Video]),
-    ("Cover", &[MediaFamily::Audio]),
+    ("Sprite", VIDEO_ONLY),
+    ("Scan", VIDEO_ONLY),
+    ("Fingerprint", VIDEO_ONLY),
+    ("SubtitleExtract", VIDEO_ONLY),
+    ("SubtitleOcr", VIDEO_ONLY),
+    ("SubtitleSync", VIDEO_ONLY),
+    ("SubtitleToSrt", VIDEO_ONLY),
+    ("Cover", AUDIO_ONLY),
 ];
 
 /// A job kind and the families of file it applies to.
@@ -315,5 +325,36 @@ mod tests {
             (None, false, "Sprite")
         );
         assert!(JobPriority::High < JobPriority::Normal && JobPriority::Normal < JobPriority::Low);
+    }
+
+    #[test]
+    fn the_families_table_matches_every_kind() {
+        let info = || json!({ "video": [], "audio": [], "subtitles": [] });
+        let kinds = [
+            json!({ "type": "Sprite", "info": info() }),
+            json!({ "type": "Scan", "info": info() }),
+            json!({ "type": "Fingerprint", "window": { "type": "head" } }),
+            json!({ "type": "SubtitleExtract", "info": info() }),
+            json!({ "type": "SubtitleOcr", "info": info(), "streamIndex": 0 }),
+            json!({ "type": "SubtitleSync", "info": info(), "subtitle": { "format": "srt",
+                "text": "" }, "reference": { "type": "auto" } }),
+            json!({ "type": "SubtitleToSrt", "info": info(), "source": { "type": "stream",
+                "index": 0 } }),
+            json!({ "type": "Cover", "info": info() }),
+        ];
+        assert_eq!(kinds.len(), JOB_FAMILIES.len());
+        for k in kinds {
+            let kind: JobKind = serde_json::from_value(k).unwrap();
+            let row = JOB_FAMILIES.iter().find(|(n, _)| *n == kind.name());
+            assert_eq!(row.map(|r| r.1), Some(kind.families()), "{}", kind.name());
+        }
+    }
+
+    #[test]
+    fn a_future_family_reads_as_unknown() {
+        let f: JobFamilies =
+            serde_json::from_value(json!({ "kind": "Lyrics", "families": ["text", "audio"] }))
+                .unwrap();
+        assert_eq!(f.families, [MediaFamily::Unknown, MediaFamily::Audio]);
     }
 }

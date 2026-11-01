@@ -2,7 +2,8 @@
 use crate::api::{CoverArt, MediaInfo};
 use crate::strs;
 
-pub const TIMEOUT_MS: u64 = 60_000;
+/// A larger picture fails the job; ffmpeg stops writing one byte past it.
+pub const MAX_BYTES: u64 = 16 << 20;
 /// Final names, in the order a stored cover is looked up.
 pub const FILES: [&str; 2] = ["cover.jpg", "cover.png"];
 
@@ -37,6 +38,8 @@ pub fn extract_args(input: &str, cover: &CoverArt, output: &str) -> Vec<String> 
     } else {
         a.extend(strs(&["-c:v", "mjpeg", "-q:v", "2"]));
     }
+    a.extend(strs(&["-fs"]));
+    a.push((MAX_BYTES + 1).to_string());
     a.extend(strs(&["-f", "image2", "-update", "1"]));
     a.push(output.into());
     a
@@ -71,7 +74,7 @@ mod tests {
         assert_eq!(
             argv("mjpeg"),
             "-nostdin -hide_banner -loglevel error -y -i /a.m4b -map 0:2 -an -sn -dn \
-             -frames:v 1 -c:v copy -f image2 -update 1 /t/cover-tmp.jpg"
+             -frames:v 1 -c:v copy -fs 16777217 -f image2 -update 1 /t/cover-tmp.jpg"
         );
         assert!(argv("png").contains("-c:v copy"));
         assert!(argv("webp").contains("-c:v mjpeg -q:v 2"));

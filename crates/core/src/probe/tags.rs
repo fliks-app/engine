@@ -2,7 +2,7 @@
 use super::ffjson::{Stream, Tags};
 use crate::api::{CoverArt, MediaTags};
 
-/// Tag sources in priority order: the container's, then the first audio stream's (Ogg).
+/// Tag sources in priority order: the container's, then the first audio stream's (Ogg only).
 struct Sources<'a>(&'a [&'a Tags]);
 
 impl Sources<'_> {
@@ -46,8 +46,16 @@ fn year(s: &str) -> Option<u32> {
         .and_then(|i| s[i..i + 4].parse().ok())
 }
 
-pub fn media_tags(format: &Tags, audio: Option<&Tags>) -> Option<MediaTags> {
-    let all: Vec<&Tags> = std::iter::once(format).chain(audio).collect();
+/// Only Ogg keeps the file's comments on its stream; elsewhere a stream tag names the track.
+pub fn media_tags(
+    format: &Tags,
+    format_name: Option<&str>,
+    audio: Option<&Tags>,
+) -> Option<MediaTags> {
+    let ogg = format_name.is_some_and(|n| n.split(',').any(|f| f == "ogg"));
+    let all: Vec<&Tags> = std::iter::once(format)
+        .chain(audio.filter(|_| ogg))
+        .collect();
     let t = Sources(&all);
     let (track, track_total) =
         t.position(&["track", "tracknumber"], &["tracktotal", "totaltracks"]);
@@ -123,7 +131,7 @@ mod tests {
     #[test]
     fn positions_read_a_fraction_or_their_own_total_keys() {
         let t = tags(r#"{"TRACK":"3/12","disc":"1","DISCTOTAL":"2"}"#);
-        let m = media_tags(&t, None).unwrap();
+        let m = media_tags(&t, None, None).unwrap();
         assert_eq!(
             (m.track, m.track_total, m.disc, m.disc_total),
             (Some(3), Some(12), Some(1), Some(2))
@@ -131,13 +139,24 @@ mod tests {
     }
 
     #[test]
-    fn the_container_wins_over_the_stream_and_blank_values_are_absent() {
+    fn only_ogg_falls_back_to_the_stream_and_blank_values_are_absent() {
         let format = tags(r#"{"title":"  ","album":"Container"}"#);
         let stream = tags(r#"{"title":"Stream","album":"Stream","SERIES":"S"}"#);
-        let m = media_tags(&format, Some(&stream)).unwrap();
+        let m = media_tags(&format, Some("ogg"), Some(&stream)).unwrap();
         assert_eq!(m.title.as_deref(), Some("Stream"));
         assert_eq!(m.album.as_deref(), Some("Container"));
         assert_eq!(m.series.as_deref(), Some("S"));
-        assert_eq!(media_tags(&tags(r#"{"encoder":"x"}"#), None), None);
+        // A Matroska or MP4 stream tag is a track name, not the file's title.
+        let m = media_tags(&format, Some("matroska,webm"), Some(&stream)).unwrap();
+        assert_eq!((m.title, m.series), (None, None));
+        assert_eq!(media_tags(&tags(r#"{"encoder":"x"}"#), None, None), None);
+    }
+
+    #[test]
+    fn a_multi_valued_tag_stays_the_one_string_ffprobe_joined() {
+        let t = tags(r#"{"artist":"Ada Example; Bob Reader","narrator":"Bob Reader/Cy Voice"}"#);
+        let m = media_tags(&t, None, None).unwrap();
+        assert_eq!(m.artist.as_deref(), Some("Ada Example; Bob Reader"));
+        assert_eq!(m.narrator.as_deref(), Some("Bob Reader/Cy Voice"));
     }
 }

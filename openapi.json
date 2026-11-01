@@ -3754,7 +3754,8 @@
         "description": "What a file is, from its streams. Video-only work (sprites, keyframe scan, subtitles) never\napplies to an audio file.",
         "enum": [
           "video",
-          "audio"
+          "audio",
+          "unknown"
         ]
       },
       "MediaInfo": {

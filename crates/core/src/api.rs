@@ -22,7 +22,7 @@ pub use probe::*;
 pub use runtime::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 3;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 4;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -464,6 +464,9 @@ pub struct MediaTags {
 pub enum MediaFamily {
     Video,
     Audio,
+    /// A family a newer engine added; never produced by this one.
+    #[serde(other)]
+    Unknown,
 }
 
 impl MediaFamily {
@@ -471,6 +474,7 @@ impl MediaFamily {
         match self {
             Self::Video => "video",
             Self::Audio => "audio",
+            Self::Unknown => "unknown",
         }
     }
 }

@@ -511,7 +511,10 @@ pub fn build(main: &Main, x: &Extras) -> Built {
     let info = MediaInfo {
         cover: audio_file.then(|| tags::cover(&main.streams)).flatten(),
         tags: audio_file
-            .then(|| tags::media_tags(&main.format.tags, first_audio_tags))
+            .then(|| {
+                let name = main.format.format_name.as_deref();
+                tags::media_tags(&main.format.tags, name, first_audio_tags)
+            })
             .flatten(),
         video: if no_streams { vec![] } else { video },
         audio,

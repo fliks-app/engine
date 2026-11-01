@@ -1,0 +1,76 @@
+{
+  "calls": [
+    {
+      "args": [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-show_chapters",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"mp3\",\n            \"codec_long_name\": \"MP3 (MPEG audio layer 3)\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"mime_codec_string\": \"mp4a.40.34\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 1,\n            \"channel_layout\": \"mono\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 0,\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/14112000\",\n            \"start_pts\": 324870,\n            \"start_time\": \"0.023021\",\n            \"duration_ts\": 13886208,\n            \"duration\": \"0.984000\",\n            \"bit_rate\": \"64000\",\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            }\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"bmp\",\n            \"codec_long_name\": \"BMP (Windows and OS/2 bitmap)\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"[0][0][0][0]\",\n            \"codec_tag\": \"0x0000\",\n            \"width\": 16,\n            \"height\": 16,\n            \"coded_width\": 16,\n            \"coded_height\": 16,\n            \"has_b_frames\": 0,\n            \"pix_fmt\": \"bgr24\",\n            \"level\": -99,\n            \"r_frame_rate\": \"90000/1\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/90000\",\n            \"start_pts\": 2072,\n            \"start_time\": \"0.023022\",\n            \"duration_ts\": 88560,\n            \"duration\": \"0.984000\",\n            \"disposition\": {\n                \"default\": 0,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 1,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"comment\": \"Other\"\n            }\n        }\n    ],\n    \"chapters\": [\n\n    ],\n    \"format\": {\n        \"filename\": \"{path}\",\n        \"nb_streams\": 2,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mp3\",\n        \"format_long_name\": \"MP2/3 (MPEG audio layer 2/3)\",\n        \"start_time\": \"0.023021\",\n        \"duration\": \"0.984000\",\n        \"size\": \"9146\",\n        \"bit_rate\": \"74357\",\n        \"probe_score\": 51,\n        \"tags\": {\n            \"encoder\": \"Lavf62.12.102\"\n        }\n    }\n}\n"
+    },
+    {
+      "args": [
+        "-v",
+        "error",
+        "-show_entries",
+        "packet=stream_index,pts_time",
+        "-of",
+        "csv=p=0",
+        "{path}"
+      ],
+      "cmd": "ffprobe",
+      "stderr": "",
+      "stdout": "1,N/A\n0,0.000000,\n",
+      "stopped": true
+    }
+  ],
+  "expected": {
+    "info": {
+      "audio": [
+        {
+          "bitRate": 64000,
+          "channelLayout": "mono",
+          "channels": 1,
+          "codec": "mp3",
+          "endSeconds": 1.007021,
+          "isDefault": false,
+          "language": "und",
+          "sampleRate": 48000,
+          "startTimeSeconds": 0.023021,
+          "streamIndex": 0
+        }
+      ],
+      "chapters": [],
+      "cover": {
+        "codec": "bmp",
+        "height": 16,
+        "streamIndex": 1,
+        "width": 16
+      },
+      "durationSeconds": 0.984,
+      "formatBitRate": 74357,
+      "formatName": "mp3",
+      "formatStartSeconds": 0.023021,
+      "subtitles": [],
+      "video": []
+    },
+    "nulls": [],
+    "ok": true
+  },
+  "file": "audio-bmp-cover.mp3",
+  "fileSize": 9146,
+  "moviehash": null,
+  "name": "audio-mp3-bmp-cover",
+  "opts": {
+    "crop": true,
+    "mkvTags": true
+  },
+  "source": "corpus"
+}

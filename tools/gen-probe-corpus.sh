@@ -152,6 +152,12 @@ $FF $(a) -c:a libopus -b:a 24k -metadata TITLE="Tome Un" -metadata ARTIST="Ada E
 $FF $(a) -c:a libvorbis -q:a 0 -metadata TITLE="Tome Un" -metadata ARTIST="Ada Example" -metadata TRACKNUMBER=3/12 \
   -metadata DATE=2021-03-04 audio-plain.ogg
 $FF $(a) -i "$tmp/book.txt" -map 0:a -map_chapters 1 -c:a libopus -b:a 24k -metadata title="Tome Un" -metadata language=fra audio-chapters.mka
+# A Matroska cover is an attachment; the audio track's own title must not become the file's.
+$FF $(a) -c:a libopus -b:a 24k -attach "$tmp/cover.jpg" -metadata:s:t mimetype=image/jpeg -metadata:s:t filename=cover.jpg \
+  -metadata "title=Tome Un" -metadata "artist=Ada Example; Bob Reader" -metadata:s:a:0 "title=Narrator Track" audio-cover.mka
+# A picture that is neither JPEG nor PNG: the cover job re-encodes it.
+$FF $(a) -f lavfi -i "color=c=green:size=16x16:duration=1:rate=1" -map 0:a -map 1:v -frames:v 1 -c:a libmp3lame -c:v bmp \
+  -disposition:v attached_pic audio-bmp-cover.mp3
 
 # Letterbox: 480x190 content in 480x270 (80px total bars, cropped), 480x254 (16px, not cropped), pillarbox.
 bars() { $FF -f lavfi -i "testsrc2=size=$2:rate=24:duration=3" -vf "pad=$3:$4:$5:$6:black" $X264 "$1"; }

@@ -23,13 +23,17 @@ fn info() -> Value {
 /// An engine whose ffmpeg, ffprobe and fpcalc are `mode`'s fake, with `streaming` merged into its
 /// config, and a media file per id.
 async fn engine_of(mode: &str, streaming: Value) -> (Engine, PathBuf) {
+    engine_on(&fake(mode), streaming).await
+}
+
+/// `engine_of` over any tool binary, used for all three tools.
+async fn engine_on(f: &str, streaming: Value) -> (Engine, PathBuf) {
     let pause = if cfg!(unix) { "signal" } else { "stdin" };
-    let f = fake(mode);
     let e = engine_with_tools(
         host(HwAccel::None, "/dev/dri/renderD128", pause),
-        &f,
-        &f,
-        &f,
+        f,
+        f,
+        f,
         json!({}),
     )
     .await;
@@ -1047,6 +1051,71 @@ async fn cover_job_fails_on_an_empty_picture() {
         (Some("failed"), Some("ffmpeg wrote no picture"))
     );
     assert_eq!(e.control("GET", "/v1/covers/7", None).await.status, 404);
+}
+
+#[tokio::test]
+async fn cover_job_refuses_a_picture_over_the_cap() {
+    let (e, file) = engine_of("bigcover", json!({})).await;
+    let kind = json!({ "type": "Cover", "info": audio_book() });
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(
+        (v["state"].as_str(), v["error"].as_str()),
+        (Some("failed"), Some("cover too large"))
+    );
+    assert_eq!(e.control("GET", "/v1/covers/7", None).await.status, 404);
+    let dir = std::fs::read_dir(e.root.join("covers/v1/7"));
+    assert_eq!(dir.map_or(0, |d| d.count()), 0, "no temporary file is left");
+}
+
+/// The real ffmpeg on a BMP picture, which is neither copied nor stored as is: skipped without ffmpeg.
+#[tokio::test]
+async fn cover_job_re_encodes_a_bmp_picture_to_jpeg() {
+    let dir = temp_dir("cover-real");
+    let mp3 = dir.join("bmp.mp3");
+    let made = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=1",
+            "-f",
+            "lavfi",
+        ])
+        .args([
+            "-i",
+            "color=c=green:size=16x16:duration=1:rate=1",
+            "-map",
+            "0:a",
+        ])
+        .args([
+            "-map",
+            "1:v",
+            "-frames:v",
+            "1",
+            "-c:a",
+            "libmp3lame",
+            "-c:v",
+            "bmp",
+        ])
+        .args(["-disposition:v", "attached_pic"])
+        .arg(&mp3)
+        .status();
+    if !made.is_ok_and(|s| s.success()) {
+        eprintln!("ffmpeg with libmp3lame not available: skipped");
+        return;
+    }
+    let (e, _) = engine_on("ffmpeg", json!({})).await;
+    e.stub.file(7, &mp3);
+    let mut info = audio_book();
+    info["cover"] = json!({ "streamIndex": 1, "codec": "bmp", "width": 16, "height": 16 });
+    let v = run_kind(&e, 7, &mp3, json!({ "type": "Cover", "info": info })).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["cover"]["mime"], "image/jpeg");
+    let r = e.control("GET", "/v1/covers/7", None).await;
+    assert_eq!(&r.body[..3], b"\xFF\xD8\xFF", "a JPEG");
 }
 
 #[tokio::test]
