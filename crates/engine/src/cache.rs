@@ -122,6 +122,23 @@ impl Cache {
         self.root.join("merge/v1").join(job)
     }
 
+    /// Boot: a merge killed mid-run left its temporary file; the journal in its scratch names
+    /// exactly that file, which is deleted with the scratch. No other file is touched.
+    pub fn sweep_merges(&self) {
+        let Ok(rd) = std::fs::read_dir(self.root.join("merge/v1")) else {
+            return;
+        };
+        for e in rd.flatten() {
+            if let Ok(tmp) = std::fs::read_to_string(e.path().join(MERGE_JOURNAL))
+                && let Err(err) = std::fs::remove_file(tmp.trim_end())
+                && err.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(path = tmp.trim_end(), "merge leftover: {err}");
+            }
+            remove_dir(&e.path());
+        }
+    }
+
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
         self.root.join("subtitles/v2").join(file.to_string())
     }
@@ -213,6 +230,9 @@ impl Cache {
 }
 
 /// `rm -rf`, quiet on a missing path.
+/// File of a merge's scratch directory holding the path of its temporary output.
+pub const MERGE_JOURNAL: &str = "tmp-path";
+
 pub fn remove_dir(dir: &Path) {
     if let Err(e) = std::fs::remove_dir_all(dir)
         && e.kind() != std::io::ErrorKind::NotFound
@@ -224,6 +244,28 @@ pub fn remove_dir(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boot_deletes_the_temporary_file_a_merge_journal_names_and_nothing_else() {
+        let root = std::env::temp_dir().join(format!("fliks-merge-test-{}", std::process::id()));
+        let c = Cache { root: root.clone() };
+        let (tmp, other) = (
+            root.join("out/.a.m4b.merge-0a1b2c3d.tmp"),
+            root.join("out/.a.m4b.merge-ffffffff.tmp"),
+        );
+        std::fs::create_dir_all(tmp.parent().unwrap()).unwrap();
+        std::fs::write(&tmp, b"x").unwrap();
+        std::fs::write(&other, b"x").unwrap();
+        std::fs::create_dir_all(c.merge_dir("j1")).unwrap();
+        std::fs::write(
+            c.merge_dir("j1").join(MERGE_JOURNAL),
+            tmp.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+        c.sweep_merges();
+        assert!(!tmp.exists() && other.exists() && !c.merge_dir("j1").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn layout_scan_and_old_layout_purge() {
