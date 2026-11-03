@@ -1,6 +1,7 @@
 //! The `Merge` job: the parts of an audiobook into one `.m4b`, one ffmpeg run, written beside its
 //! final name and published without overwriting. Spec: `docs/spec/jobs.md` section 10.
 use super::{Cmd, Ctx, tail};
+use crate::cache::{MERGE_JOURNAL, file_id};
 use crate::proc::{Ffmpeg, Pipes};
 use fliks_engine_core::api::{Chapter, JobResult, MediaTags, MergeMeta, MergePart};
 use fliks_engine_core::jobs::merge::*;
@@ -44,13 +45,35 @@ pub async fn run(
         crate::random_hex(4)
     ));
     let scratch = ctx.rt.cache.merge_dir(&ctx.job.id);
-    let built = build(ctx, parts, &paths, over, &scratch, &tmp).await;
-    let _ = tokio::fs::remove_dir_all(&scratch).await;
+    // The temporary file is created here, exclusively, and journaled with its identity: only
+    // that file is ever removed, by this job or by a boot after a crash.
+    let claimed = async {
+        tokio::fs::create_dir_all(&scratch).await?;
+        tokio::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .await?;
+        let id = file_id(&tmp).unwrap_or_default();
+        let text = format!("{}\n{}\n{id}\n", path_text(&out), path_text(&tmp));
+        tokio::fs::write(scratch.join(MERGE_JOURNAL), text).await?;
+        Ok::<_, std::io::Error>(id)
+    };
+    let (claimed, built) = match claimed.await {
+        Ok(id) => (
+            Some(id),
+            build(ctx, parts, &paths, over, &scratch, &tmp).await,
+        ),
+        Err(e) => (None, Err(format!("write merge files: {e}"))),
+    };
     let published = match built {
         Ok(r) => publish(&tmp, &out).await.map(|()| r),
         Err(e) => Err(e),
     };
-    let _ = tokio::fs::remove_file(&tmp).await;
+    if claimed.is_some_and(|id| file_id(&tmp).as_deref() == Some(id.as_str())) {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+    let _ = tokio::fs::remove_dir_all(&scratch).await;
     let (chapters, reencoded) = published?;
     let bytes = tokio::fs::metadata(&out).await.map_or(0, |m| m.len());
     Ok(JobResult::Merge {

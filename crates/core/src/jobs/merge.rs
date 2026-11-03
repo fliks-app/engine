@@ -353,7 +353,7 @@ pub fn merge_args(
         "-nostats",
         "-progress",
         "pipe:1",
-        "-n",
+        "-y",
     ]);
     let cover = first_cover(parts);
     // Inputs: the concat list, the metadata, the cover's part; or every part, then the metadata.

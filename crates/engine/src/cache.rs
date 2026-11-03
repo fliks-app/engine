@@ -122,6 +122,52 @@ impl Cache {
         self.root.join("merge/v1").join(job)
     }
 
+    /// Boot: a merge killed mid-run left its temporary file; the journal in its scratch names
+    /// the output, the file and its identity. The file goes only when it is a
+    /// `.<output>.merge-<8 hex>.tmp` beside the output and still that file; no other is touched.
+    pub fn sweep_merges(&self) {
+        let Ok(rd) = std::fs::read_dir(self.root.join("merge/v1")) else {
+            return;
+        };
+        for e in rd.flatten() {
+            if let Ok(j) = std::fs::read_to_string(e.path().join(MERGE_JOURNAL)) {
+                let mut l = j.lines();
+                if let (Some(out), Some(tmp), Some(id)) = (l.next(), l.next(), l.next()) {
+                    let (out, tmp) = (Path::new(out), Path::new(tmp));
+                    if is_merge_tmp(out, tmp) && file_id(tmp).as_deref() == Some(id) {
+                        let _ = std::fs::remove_file(tmp);
+                    }
+                }
+            }
+            remove_dir(&e.path());
+        }
+    }
+
+    /// An exclusive lock on the cache root, held while the returned file lives: the leftovers a
+    /// boot sweeps belong to the engine that is gone, so two engines must not share a root.
+    pub fn lock_exclusive(&self) -> std::io::Result<Option<std::fs::File>> {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            std::fs::create_dir_all(&self.root)?;
+            let f = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(self.root.join(".lock"))?;
+            // SAFETY: the descriptor is open for the call.
+            if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+                return Err(std::io::Error::other(format!(
+                    "cache root {} is in use by another engine",
+                    self.root.display()
+                )));
+            }
+            Ok(Some(f))
+        }
+        #[cfg(not(unix))]
+        Ok(None)
+    }
+
     pub fn subtitles_dir(&self, file: u32) -> PathBuf {
         self.root.join("subtitles/v2").join(file.to_string())
     }
@@ -213,6 +259,39 @@ impl Cache {
 }
 
 /// `rm -rf`, quiet on a missing path.
+/// File of a merge's scratch directory: the output path, the temporary path and its identity.
+pub const MERGE_JOURNAL: &str = "tmp-path";
+
+/// `dev:inode` of a file, so a name taken by someone else is not mistaken for ours.
+pub fn file_id(path: &Path) -> Option<String> {
+    let m = std::fs::symlink_metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(format!("{}:{}", m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = m;
+        Some(String::new())
+    }
+}
+
+/// `tmp` is `.<name of out>.merge-<8 lowercase hex>.tmp` in the directory of `out`.
+pub fn is_merge_tmp(out: &Path, tmp: &Path) -> bool {
+    let (Some(name), Some(t)) = (out.file_name(), tmp.file_name()) else {
+        return false;
+    };
+    let prefix = format!(".{}.merge-", name.to_string_lossy());
+    tmp.parent() == out.parent()
+        && t.to_string_lossy()
+            .strip_prefix(&prefix)
+            .and_then(|r| r.strip_suffix(".tmp"))
+            .is_some_and(|h| {
+                h.len() == 8 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            })
+}
+
 pub fn remove_dir(dir: &Path) {
     if let Err(e) = std::fs::remove_dir_all(dir)
         && e.kind() != std::io::ErrorKind::NotFound
@@ -224,6 +303,46 @@ pub fn remove_dir(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boot_deletes_only_the_journaled_file_that_is_still_ours() {
+        let root = std::env::temp_dir().join(format!("fliks-merge-test-{}", std::process::id()));
+        let c = Cache { root: root.clone() };
+        let out = root.join("out/a.m4b");
+        let tmp = root.join("out/.a.m4b.merge-0a1b2c3d.tmp");
+        let other = root.join("out/.a.m4b.merge-ffffffff.tmp");
+        let user = root.join("out/notes.txt");
+        std::fs::create_dir_all(tmp.parent().unwrap()).unwrap();
+        for f in [&tmp, &other, &user] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let journal = |job: &str, file: &Path, id: String| {
+            std::fs::create_dir_all(c.merge_dir(job)).unwrap();
+            let text = format!("{}\n{}\n{id}\n", out.display(), file.display());
+            std::fs::write(c.merge_dir(job).join(MERGE_JOURNAL), text).unwrap();
+        };
+        journal("j1", &tmp, file_id(&tmp).unwrap());
+        journal("j2", &user, file_id(&user).unwrap());
+        journal("j3", &other, "0:0".into());
+        c.sweep_merges();
+        assert!(!tmp.exists(), "ours, by name and identity");
+        assert!(user.exists(), "not a merge temporary name");
+        assert!(other.exists(), "another file now holds the name");
+        assert!(!c.merge_dir("j1").exists() && !c.merge_dir("j3").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_second_engine_cannot_take_the_cache_root() {
+        let root = std::env::temp_dir().join(format!("fliks-lock-test-{}", std::process::id()));
+        let c = Cache { root: root.clone() };
+        let held = c.lock_exclusive().unwrap();
+        assert!(c.lock_exclusive().is_err());
+        drop(held);
+        assert!(c.lock_exclusive().is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn layout_scan_and_old_layout_purge() {

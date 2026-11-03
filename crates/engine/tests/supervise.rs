@@ -8,11 +8,19 @@ use std::{
 /// Deadline of every wait on a child process: generous, the polls return as soon as they hold.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
+/// A cache root of its own: an engine locks it, and these tests run engines side by side.
+fn cache_dir() -> std::path::PathBuf {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("fliks-supervise-{}-{n}", std::process::id()))
+}
+
 #[test]
 fn restarts_failing_host() {
     let dir = std::env::temp_dir().join(format!("fliks-sup-{}", std::process::id()));
     let log = dir.with_extension("log");
     let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .env("FLIKS_TRANSCODE_DIR", cache_dir())
         .env("FLIKS_ENGINE_BACKOFF_MS", "20")
         .args(["--supervise", "--", "sh", "-c"])
         .arg(format!(
@@ -42,6 +50,7 @@ fn restarts_failing_host() {
 fn upstream_sets_the_host_port_and_serves_the_public_listener() {
     let out = std::env::temp_dir().join(format!("fliks-port-{}", std::process::id()));
     let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .env("FLIKS_TRANSCODE_DIR", cache_dir())
         .args(["--supervise", "--upstream", "http://10.1.2.3:4321"])
         .args(["--public-listen", "127.0.0.1:0", "--", "sh", "-c"])
         .arg(format!("echo \"$PORT\" > {}; sleep 30", out.display()))
@@ -85,6 +94,7 @@ fn a_killed_engine_leaves_no_ffmpeg() {
     .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .env("FLIKS_TRANSCODE_DIR", cache_dir())
         .env("FFMPEG_PATH", &fake)
         .args(["--supervise", "--", "sleep", "5"])
         .stdout(std::process::Stdio::null())
@@ -132,6 +142,7 @@ fn a_killed_supervisor_leaves_no_host() {
     std::fs::create_dir_all(&dir).unwrap();
     let pidfile = dir.join("pid");
     let mut engine = Command::new(env!("CARGO_BIN_EXE_fliks-engine"))
+        .env("FLIKS_TRANSCODE_DIR", cache_dir())
         .args(["--supervise", "--", "sh", "-c"])
         .arg(format!("echo $$ > {}; exec sleep 600", pidfile.display()))
         .stdout(std::process::Stdio::null())
