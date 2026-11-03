@@ -50,6 +50,14 @@ async fn main() -> std::process::ExitCode {
     if cli.engine_upstream.is_some() {
         return run_remote_gateway(cli).await;
     }
+    let cache = fliks_engine::cache::Cache::from_env();
+    let _cache_lock = match cache.lock_exclusive() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("{e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let token = fliks_engine::token::resolve();
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await
@@ -60,11 +68,7 @@ async fn main() -> std::process::ExitCode {
         fliks_engine::hw::ffmpeg_path(),
     ));
     hw.start();
-    let rt = fliks_engine::runtime::Runtime::new(
-        hw,
-        fliks_engine::cache::Cache::from_env(),
-        fliks_engine::hw::ffmpeg_path(),
-    );
+    let rt = fliks_engine::runtime::Runtime::new(hw, cache, fliks_engine::hw::ffmpeg_path());
     rt.start();
     let server = axum::serve(listener, fliks_engine::router(token.clone(), rt.clone()));
     let mut host_env = vec![];
