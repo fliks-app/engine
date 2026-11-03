@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1](https://github.com/fliks-app/engine/compare/v1.9.0...v1.9.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **jobs:** delete the temporary file of a crashed merge at boot, from a journal ([#160](https://github.com/fliks-app/engine/issues/160)) ([f875eb5](https://github.com/fliks-app/engine/commit/f875eb5345f188d5b5a9be314132c2be9a493eb0))
+* **jobs:** publish a merge without links through renameat2 no-replace ([#161](https://github.com/fliks-app/engine/issues/161)) ([cd4610c](https://github.com/fliks-app/engine/commit/cd4610c865bcb221c90c72cefaad82fd7ec390e2))
+* **serve:** answer 404 for a segment of a discarded no-media run ([#158](https://github.com/fliks-app/engine/issues/158)) ([44aad73](https://github.com/fliks-app/engine/commit/44aad73cc9009737d92c259a63763dbb526c4e3a))
+* **serve:** let a /cred/&lt;token&gt;/ path credential win over cookie and bearer ([#163](https://github.com/fliks-app/engine/issues/163)) ([8d8ec83](https://github.com/fliks-app/engine/commit/8d8ec83ab84403c2228ff517c3fce4481e81a8a9))
+
 ## [1.9.0](https://github.com/fliks-app/engine/compare/v1.8.0...v1.9.0) (2026-11-01)
 
 
