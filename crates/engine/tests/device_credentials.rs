@@ -337,14 +337,16 @@ async fn the_source_of_the_credential_reaches_the_host_and_cannot_be_forged() {
 }
 
 #[tokio::test]
-async fn a_cookie_or_bearer_beats_the_path_token_and_basic() {
+async fn the_path_token_beats_cookie_and_bearer_which_beat_basic() {
+    use fliks_engine_core::api::ResolveCredentialSource as Src;
     let e = reader_engine().await;
     let p = format!("/cred/{SECRET}/api/stream/2");
-    assert_eq!(sent(&e, &p, &[("cookie", "access=c")]).await, "access=c");
-    assert_eq!(
-        sent(&e, &p, &[("authorization", "Bearer j")]).await,
-        "Bearer j"
-    );
+    let bearer = [("authorization", "Bearer x")];
+    assert_eq!(sent(&e, &p, &bearer).await, SECRET);
+    assert_eq!(seen(&e, &p, &bearer).await, Some(Src::Path));
+    let both = [("authorization", "Bearer x"), ("cookie", "access=c")];
+    assert_eq!(sent(&e, &p, &both).await, SECRET);
+    assert_eq!(seen(&e, &p, &both).await, Some(Src::Path));
     let both = [("authorization", BASIC), ("cookie", "access=d")];
     assert_eq!(sent(&e, "/api/stream/2", &both).await, "access=d");
 }
