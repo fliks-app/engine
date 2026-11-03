@@ -255,9 +255,9 @@ fn token_param(q: &HashMap<String, String>) -> String {
     }
 }
 
-/// The credential as received, in the host's extractor order: the `Cookie` header, else a
-/// `Bearer` `Authorization` value, else `?token=`, else a `Basic` one (device clients), with where
-/// it was found. `None` when it is over `MAX_CREDENTIAL`. [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
+/// The credential as received, in the host's extractor order: a `/cred/<token>/` path token, else
+/// the `Cookie` header, else a `Bearer` `Authorization` value, else `?token=`, else a `Basic` one
+/// (device clients), with where it was found. `None` when it is over `MAX_CREDENTIAL`. [ts:modules/auth/strategies/jwt.strategy.ts:43-47]
 fn credential(
     headers: &HeaderMap,
     q: &HashMap<String, String>,
@@ -277,15 +277,14 @@ fn credential(
     };
     let query = q.get("token").filter(|t| !t.is_empty());
     let from_path = headers.get(SOURCE_HEADER).is_some_and(|v| v == "path");
-    let (cred, src) = if let Some(c) = h(header::COOKIE) {
+    let (cred, src) = if let Some(t) = query.filter(|_| from_path) {
+        (t.clone(), Some(Src::Path))
+    } else if let Some(c) = h(header::COOKIE) {
         (c.to_string(), Some(Src::Cookie))
     } else if let Some(b) = scheme("bearer") {
         (b.to_string(), Some(Src::Bearer))
     } else if let Some(t) = query {
-        (
-            t.clone(),
-            Some(if from_path { Src::Path } else { Src::Query }),
-        )
+        (t.clone(), Some(Src::Query))
     } else if let Some(b) = scheme("basic") {
         (b.to_string(), Some(Src::Basic))
     } else {
