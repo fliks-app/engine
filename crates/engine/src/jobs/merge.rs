@@ -87,8 +87,9 @@ pub async fn run(
     })
 }
 
+/// Whether the name is taken, a dangling symlink included.
 async fn exists(p: &Path) -> bool {
-    tokio::fs::try_exists(p).await.unwrap_or(false)
+    tokio::fs::symlink_metadata(p).await.is_ok()
 }
 
 fn taken(out: &Path) -> String {
@@ -171,15 +172,85 @@ async fn report(ctx: &Ctx, p: &Ffmpeg, total: f64) {
 }
 
 /// Moves `tmp` to `out` unless `out` exists: a hard link fails on a taken name where a rename
-/// would replace it; a filesystem without links gets a check and a rename.
+/// would replace it; a filesystem without links gets `rename_new`.
 async fn publish(tmp: &Path, out: &Path) -> Result<(), String> {
     match tokio::fs::hard_link(tmp, out).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(taken(out)),
         Err(_) if exists(out).await => Err(taken(out)),
-        Err(_) => tokio::fs::rename(tmp, out)
-            .await
-            .map_err(|e| format!("write {}: {e}", out.display())),
+        Err(_) => {
+            let (from, to) = (tmp.to_owned(), out.to_owned());
+            match tokio::task::spawn_blocking(move || rename_new(&from, &to)).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) if e.kind() == ErrorKind::AlreadyExists => Err(taken(out)),
+                Ok(Err(e)) => Err(format!("write {}: {e}", out.display())),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    }
+}
+
+/// Renames without replacing: atomic through `renameat2(RENAME_NOREPLACE)` on Linux, a check and
+/// a rename where the kernel or the filesystem lacks it (and elsewhere).
+fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes());
+        if let (Ok(f), Ok(t)) = (c(from), c(to)) {
+            // SAFETY: both pointers are NUL-terminated strings that outlive the call.
+            let r = unsafe {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    libc::AT_FDCWD as libc::c_long,
+                    f.as_ptr() as libc::c_long,
+                    libc::AT_FDCWD as libc::c_long,
+                    t.as_ptr() as libc::c_long,
+                    libc::RENAME_NOREPLACE as libc::c_long,
+                )
+            };
+            if r == 0 {
+                return Ok(());
+            }
+            let e = std::io::Error::last_os_error();
+            if !matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
+                return Err(e);
+            }
+        }
+    }
+    if std::fs::symlink_metadata(to).is_ok() {
+        return Err(ErrorKind::AlreadyExists.into());
+    }
+    std::fs::rename(from, to)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rename_never_replaces() {
+        let d = std::env::temp_dir().join(format!("fliks-noreplace-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let (a, b) = (d.join("a"), d.join("b"));
+        std::fs::write(&a, b"new").unwrap();
+        std::fs::write(&b, b"old").unwrap();
+        assert_eq!(
+            rename_new(&a, &b).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(&b).unwrap(), b"old");
+        std::fs::remove_file(&b).unwrap();
+        rename_new(&a, &b).unwrap();
+        assert_eq!(std::fs::read(&b).unwrap(), b"new");
+        let dangling = d.join("dangling");
+        std::os::unix::fs::symlink(d.join("nowhere"), &dangling).unwrap();
+        std::fs::write(&a, b"again").unwrap();
+        assert_eq!(
+            rename_new(&a, &dangling).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
 
