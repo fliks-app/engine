@@ -87,8 +87,9 @@ pub async fn run(
     })
 }
 
+/// Whether the name is taken, a dangling symlink included.
 async fn exists(p: &Path) -> bool {
-    tokio::fs::try_exists(p).await.unwrap_or(false)
+    tokio::fs::symlink_metadata(p).await.is_ok()
 }
 
 fn taken(out: &Path) -> String {
@@ -201,11 +202,11 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
             let r = unsafe {
                 libc::syscall(
                     libc::SYS_renameat2,
-                    libc::AT_FDCWD,
-                    f.as_ptr(),
-                    libc::AT_FDCWD,
-                    t.as_ptr(),
-                    libc::RENAME_NOREPLACE,
+                    libc::AT_FDCWD as libc::c_long,
+                    f.as_ptr() as libc::c_long,
+                    libc::AT_FDCWD as libc::c_long,
+                    t.as_ptr() as libc::c_long,
+                    libc::RENAME_NOREPLACE as libc::c_long,
                 )
             };
             if r == 0 {
@@ -217,7 +218,7 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
             }
         }
     }
-    if to.try_exists()? {
+    if std::fs::symlink_metadata(to).is_ok() {
         return Err(ErrorKind::AlreadyExists.into());
     }
     std::fs::rename(from, to)
@@ -242,6 +243,13 @@ mod tests {
         std::fs::remove_file(&b).unwrap();
         rename_new(&a, &b).unwrap();
         assert_eq!(std::fs::read(&b).unwrap(), b"new");
+        let dangling = d.join("dangling");
+        std::os::unix::fs::symlink(d.join("nowhere"), &dangling).unwrap();
+        std::fs::write(&a, b"again").unwrap();
+        assert_eq!(
+            rename_new(&a, &dangling).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }
