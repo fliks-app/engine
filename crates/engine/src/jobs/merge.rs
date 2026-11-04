@@ -190,33 +190,39 @@ async fn publish(tmp: &Path, out: &Path) -> Result<(), String> {
     }
 }
 
-/// Renames without replacing: atomic through `renameat2(RENAME_NOREPLACE)` on Linux, a check and
-/// a rename where the kernel or the filesystem lacks it (and elsewhere).
+/// Renames without replacing: atomic through `renameat2(RENAME_NOREPLACE)` on Linux and
+/// `renamex_np(RENAME_EXCL)` on macOS, a check and a rename where the kernel or filesystem lacks it.
+#[cfg(unix)]
 fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes());
+    let (f, t) = (c(from)?, c(to)?);
+    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
     #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes());
-        if let (Ok(f), Ok(t)) = (c(from), c(to)) {
-            // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-            let r = unsafe {
-                libc::syscall(
-                    libc::SYS_renameat2,
-                    libc::AT_FDCWD as libc::c_long,
-                    f.as_ptr() as libc::c_long,
-                    libc::AT_FDCWD as libc::c_long,
-                    t.as_ptr() as libc::c_long,
-                    libc::RENAME_NOREPLACE as libc::c_long,
-                )
-            };
-            if r == 0 {
-                return Ok(());
-            }
-            let e = std::io::Error::last_os_error();
-            if !matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
-                return Err(e);
-            }
-        }
+    let (r, unsupported) = unsafe {
+        let r = libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD as libc::c_long,
+            f.as_ptr() as libc::c_long,
+            libc::AT_FDCWD as libc::c_long,
+            t.as_ptr() as libc::c_long,
+            libc::RENAME_NOREPLACE as libc::c_long,
+        );
+        // EPERM: a seccomp profile that denies syscalls it does not know.
+        (r, [libc::EINVAL, libc::ENOSYS, libc::EPERM])
+    };
+    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
+    #[cfg(target_os = "macos")]
+    let (r, unsupported) = unsafe {
+        let r = libc::renamex_np(f.as_ptr(), t.as_ptr(), libc::RENAME_EXCL);
+        (r, [libc::EINVAL, libc::ENOTSUP])
+    };
+    if r == 0 {
+        return Ok(());
+    }
+    let e = std::io::Error::last_os_error();
+    if !e.raw_os_error().is_some_and(|n| unsupported.contains(&n)) {
+        return Err(e);
     }
     if std::fs::symlink_metadata(to).is_ok() {
         return Err(ErrorKind::AlreadyExists.into());
@@ -224,33 +230,20 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::rename(from, to)
 }
 
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_rename_never_replaces() {
-        let d = std::env::temp_dir().join(format!("fliks-noreplace-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        let (a, b) = (d.join("a"), d.join("b"));
-        std::fs::write(&a, b"new").unwrap();
-        std::fs::write(&b, b"old").unwrap();
-        assert_eq!(
-            rename_new(&a, &b).unwrap_err().kind(),
-            ErrorKind::AlreadyExists
-        );
-        assert_eq!(std::fs::read(&b).unwrap(), b"old");
-        std::fs::remove_file(&b).unwrap();
-        rename_new(&a, &b).unwrap();
-        assert_eq!(std::fs::read(&b).unwrap(), b"new");
-        let dangling = d.join("dangling");
-        std::os::unix::fs::symlink(d.join("nowhere"), &dangling).unwrap();
-        std::fs::write(&a, b"again").unwrap();
-        assert_eq!(
-            rename_new(&a, &dangling).unwrap_err().kind(),
-            ErrorKind::AlreadyExists
-        );
-        let _ = std::fs::remove_dir_all(&d);
+/// Renames without replacing: `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING` fails on a taken
+/// name.
+#[cfg(windows)]
+fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    let w = |p: &Path| p.as_os_str().encode_wide().chain([0]).collect::<Vec<u16>>();
+    // SAFETY: both pointers are NUL-terminated wide strings that outlive the call.
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::MoveFileExW(w(from).as_ptr(), w(to).as_ptr(), 0)
+    };
+    if ok != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -298,4 +291,37 @@ fn add_freeform(f: &mut std::fs::File, items: &[(&str, String)]) -> Result<(), S
     let grown = add_freeform_items(&buf, items).map_err(|e| e.to_string())?;
     f.seek(SeekFrom::Start(at as u64)).map_err(io)?;
     f.write_all(&grown).map_err(io)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rename_never_replaces() {
+        let d = std::env::temp_dir().join(format!("fliks-noreplace-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let (a, b) = (d.join("a"), d.join("b"));
+        std::fs::write(&a, b"new").unwrap();
+        std::fs::write(&b, b"old").unwrap();
+        assert_eq!(
+            rename_new(&a, &b).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(&b).unwrap(), b"old");
+        std::fs::remove_file(&b).unwrap();
+        rename_new(&a, &b).unwrap();
+        assert_eq!(std::fs::read(&b).unwrap(), b"new");
+        #[cfg(unix)]
+        {
+            let dangling = d.join("dangling");
+            std::os::unix::fs::symlink(d.join("nowhere"), &dangling).unwrap();
+            std::fs::write(&a, b"again").unwrap();
+            assert_eq!(
+                rename_new(&a, &dangling).unwrap_err().kind(),
+                ErrorKind::AlreadyExists
+            );
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

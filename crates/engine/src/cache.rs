@@ -262,19 +262,44 @@ impl Cache {
 /// File of a merge's scratch directory: the output path, the temporary path and its identity.
 pub const MERGE_JOURNAL: &str = "tmp-path";
 
-/// `dev:inode` of a file, so a name taken by someone else is not mistaken for ours.
+/// `dev:inode` of a file (volume serial and 128-bit file id on Windows), so a name taken by
+/// someone else is not mistaken for ours.
+#[cfg(unix)]
 pub fn file_id(path: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
     let m = std::fs::symlink_metadata(path).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Some(format!("{}:{}", m.dev(), m.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = m;
-        Some(String::new())
-    }
+    Some(format!("{}:{}", m.dev(), m.ino()))
+}
+
+#[cfg(windows)]
+pub fn file_id(path: &Path) -> Option<String> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FileIdInfo,
+        GetFileInformationByHandleEx,
+    };
+    let f = std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut i = FILE_ID_INFO::default();
+    // SAFETY: the handle is open for the call and `i` is a FILE_ID_INFO of the size passed.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            f.as_raw_handle(),
+            FileIdInfo,
+            (&raw mut i).cast(),
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    (ok != 0).then(|| {
+        format!(
+            "{}:{}",
+            i.VolumeSerialNumber,
+            u128::from_le_bytes(i.FileId.Identifier)
+        )
+    })
 }
 
 /// `tmp` is `.<name of out>.merge-<8 lowercase hex>.tmp` in the directory of `out`.
@@ -321,6 +346,7 @@ mod tests {
             let text = format!("{}\n{}\n{id}\n", out.display(), file.display());
             std::fs::write(c.merge_dir(job).join(MERGE_JOURNAL), text).unwrap();
         };
+        assert_ne!(file_id(&tmp), file_id(&other));
         journal("j1", &tmp, file_id(&tmp).unwrap());
         journal("j2", &user, file_id(&user).unwrap());
         journal("j3", &other, "0:0".into());
