@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/fliks-app/engine/compare/v1.9.1...v1.9.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **jobs:** check merge temporaries and publish without replacing on every platform ([#165](https://github.com/fliks-app/engine/issues/165)) ([d2e46bc](https://github.com/fliks-app/engine/commit/d2e46bcbf77be4bcd7ab539b712f2622969d4465)), closes [#162](https://github.com/fliks-app/engine/issues/162)
+
 ## [1.9.1](https://github.com/fliks-app/engine/compare/v1.9.0...v1.9.1) (2026-11-03)
 
 
