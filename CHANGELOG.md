@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/fliks-app/engine/compare/v1.9.2...v1.10.0) (2026-11-07)
+
+
+### Features
+
+* **protocol:** publish the worker contract and three probe facts ([#167](https://github.com/fliks-app/engine/issues/167)) ([a5132ad](https://github.com/fliks-app/engine/commit/a5132ad33a2f953574c82af84c60083b1af89948))
+
 ## [1.9.2](https://github.com/fliks-app/engine/compare/v1.9.1...v1.9.2) (2026-11-04)
 
 
