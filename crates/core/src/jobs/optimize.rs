@@ -672,6 +672,11 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         bad.push("chapters differ from the source".into());
     }
     if c.reencoded {
+        if let (Some(a), Some(b)) = (sv.bit_depth, ov.bit_depth)
+            && b < a
+        {
+            bad.push(format!("video depth {b} bits, source {a} bits"));
+        }
         if sv.hdr_format.is_some()
             && (ov.hdr_format != sv.hdr_format
                 || ov.color_space != sv.color_space
@@ -1123,6 +1128,38 @@ mod tests {
             ..facts
         };
         assert!(check(&src, sparse)[0].contains("keyframes"));
+    }
+
+    #[test]
+    fn a_depth_cut_in_the_output_fails() {
+        let mut src = info();
+        src.video[0].bit_depth = Some(10);
+        let out = info();
+        let facts = Facts {
+            packets: None,
+            max_keyframe_gap: None,
+        };
+        let bad = verify_output(&OutputCheck {
+            src: &src,
+            out: &out,
+            plan: &plan(),
+            src_facts: facts,
+            out_facts: facts,
+            reencoded: true,
+        });
+        assert!(bad.iter().any(|b| b.contains("depth")), "{bad:?}");
+    }
+
+    #[test]
+    fn a_reencode_with_cover_art_indexes_the_video_options() {
+        let mut i = info();
+        i.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
+        let a = argv_of(&i, &plan(), "hevc", false);
+        assert!(a.iter().any(|x| x == "-filter:v:0"), "{a:?}");
+        for bare in ["-vf", "-pix_fmt", "-profile:v", "-c:v"] {
+            assert!(!a.iter().any(|x| x == bare), "{bare} in {a:?}");
+        }
+        assert!(a.windows(2).any(|w| w == ["-c:v:1", "copy"]));
     }
 
     #[test]

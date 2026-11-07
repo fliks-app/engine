@@ -60,6 +60,8 @@ struct JobMut {
     error: Option<String>,
     runs: u32,
     paused_runs: u32,
+    /// Runs of a leased job waiting for a slot.
+    waiting: u32,
     last_progress: Option<Instant>,
 }
 
@@ -73,8 +75,11 @@ pub struct BgJob {
     /// A session open waits on it: past the queue, never preempted, its runs take playback slots.
     /// A background run in flight is raised in place when the OS allows, else stopped and redone.
     urgent: watch::Sender<bool>,
-    /// A leased optimization: its own device slot, outside `MAX_RUNNING`.
-    lane: Option<Lane>,
+    /// A leased optimization: its own device slot, outside `MAX_RUNNING`; a software fallback on
+    /// a GPU lane moves it to the CPU lane (`Ctx::set_lane`).
+    lane: Mutex<Option<Lane>>,
+    /// Unpaused milliseconds of the last pipeline run.
+    last_active_ms: AtomicU64,
     /// A background run was stopped by the promotion: `run` redoes the job from its start.
     promoted: AtomicBool,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
@@ -99,7 +104,9 @@ impl BgJob {
 
     pub fn snapshot(&self) -> JobSnapshot {
         let m = self.m.locked();
-        let paused = m.state == BgJobState::Running && m.runs > 0 && m.paused_runs == m.runs;
+        let held = m.runs > 0 && m.paused_runs == m.runs;
+        let queued_for_slot = m.runs == 0 && m.waiting > 0 && self.lane.locked().is_some();
+        let paused = m.state == BgJobState::Running && (held || queued_for_slot);
         JobSnapshot {
             job_id: self.id.clone(),
             kind: self.req.kind.name().into(),
@@ -309,7 +316,8 @@ fn queue(
         req,
         seq,
         dedupe: dedupe.clone(),
-        lane,
+        lane: Mutex::new(lane),
+        last_active_ms: AtomicU64::new(0),
         created_ms: now_ms(),
         cancel: watch::channel(false).0,
         urgent: watch::channel(urgent).0,
@@ -324,6 +332,7 @@ fn queue(
             error: None,
             runs: 0,
             paused_runs: 0,
+            waiting: 0,
             last_progress: None,
         }),
         task: Mutex::new(None),
@@ -342,7 +351,7 @@ fn begin(q: &mut Queue, j: &BgJob) -> bool {
     }
     m.state = BgJobState::Running;
     m.started_ms = Some(now_ms());
-    q.running += usize::from(j.lane.is_none());
+    q.running += usize::from(j.lane.locked().is_none());
     true
 }
 
@@ -477,7 +486,7 @@ fn finish(
         BgJobState::Queued => {
             q.waiting.remove(&(job.priority(), job.seq));
         }
-        BgJobState::Running => q.running -= usize::from(job.lane.is_none()),
+        BgJobState::Running => q.running -= usize::from(job.lane.locked().is_none()),
         _ => {}
     }
     q.ended.push_back(job.seq);
@@ -617,6 +626,7 @@ impl Ctx {
         let mut urgent = self.job.urgent.subscribe();
         let (_unpreempted, unpreempted) = watch::channel(false);
         // An urgent job's slot never waits nor is preempted, and its runs keep normal priority.
+        self.job.m.locked().waiting += 1;
         let (_background, playback, mut preempted) = tokio::select! {
             biased;
             _ = urgent.wait_for(|u| *u) => (None, Some(self.rt.slots.playback(true)), unpreempted),
@@ -624,8 +634,13 @@ impl Ctx {
                 let p = s.preempted.clone();
                 (Some(s), None, p)
             }
-            _ = cancel.wait_for(|c| *c) => return Err(CANCELLED.into()),
+            _ = cancel.wait_for(|c| *c) => {
+                self.job.m.locked().waiting -= 1;
+                return Err(CANCELLED.into());
+            }
         };
+        self.job.m.locked().waiting -= 1;
+        self.job.last_active_ms.store(0, Relaxed);
         let mut procs = vec![];
         for c in &cmds {
             let (bin, args) = match playback {
@@ -683,15 +698,29 @@ impl Ctx {
 
     /// The background slot of the job: an optimization's device lane, else its priority's queue.
     async fn slot(&self) -> crate::slots::BackgroundSlot {
-        match &self.job.lane {
-            Some(lane) => self.rt.slots.optimize(lane.clone()).await,
+        let lane = self.lane();
+        match lane {
+            Some(lane) => self.rt.slots.optimize(lane).await,
             None => self.rt.slots.background(self.job.priority(), 1).await,
         }
     }
 
     /// The optimization lane the job was leased on.
-    pub fn lane(&self) -> Option<&Lane> {
-        self.job.lane.as_ref()
+    pub fn lane(&self) -> Option<Lane> {
+        self.job.lane.locked().clone()
+    }
+
+    /// Moves a leased job to another device lane; its next run takes a slot there.
+    pub fn set_lane(&self, lane: Lane) {
+        let mut l = self.job.lane.locked();
+        if l.is_some() {
+            *l = Some(lane);
+        }
+    }
+
+    /// Unpaused milliseconds of the last pipeline run: what its work took, slot wait and pauses out.
+    pub fn last_active_ms(&self) -> u64 {
+        self.job.last_active_ms.load(Relaxed)
     }
 
     /// Applies the slot's pause verdict and returns why the runs must be stopped.
@@ -705,7 +734,7 @@ impl Ctx {
         paused_out: &AtomicBool,
     ) -> &'static str {
         let cap = self.rt.pause_capability();
-        let restart = self.job.lane.is_some() && self.rt.optimize_pause() == PauseMode::Restart;
+        let restart = self.lane().is_some() && self.rt.optimize_pause() == PauseMode::Restart;
         let lifetime = &self.rt.current_config().lifetime;
         let (mut paused, mut raised, mut active_ms, mut tick) =
             (false, false, 0u64, Instant::now());
@@ -724,6 +753,7 @@ impl Ctx {
             }
             if !paused {
                 active_ms += tick.elapsed().as_millis() as u64;
+                self.job.last_active_ms.store(active_ms, Relaxed);
             }
             tick = Instant::now();
             if *cancel.borrow() {

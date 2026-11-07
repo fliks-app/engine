@@ -79,10 +79,17 @@ pub(super) fn base_name(p: &str) -> String {
 }
 
 /// Streams `[start, end]` of a file.
-async fn file_body(path: &str, start: u64, len: u64) -> std::io::Result<Body> {
-    let mut f = tokio::fs::File::open(path).await?;
+async fn file_body(mut f: tokio::fs::File, start: u64, len: u64) -> std::io::Result<Body> {
     f.seek(std::io::SeekFrom::Start(start)).await?;
     Ok(stream_body(f.take(len), 64 * 1024))
+}
+
+/// Opens `path` and reads its size and mtime from the handle: they describe the bytes served,
+/// whatever replaces the path afterwards.
+async fn open_with_metadata(path: &str) -> Option<(tokio::fs::File, std::fs::Metadata)> {
+    let f = tokio::fs::File::open(path).await.ok()?;
+    let md = f.metadata().await.ok()?;
+    Some((f, md))
 }
 
 /// `"<size>-<mtimeMs>"`: a replaced file (the optimizer swaps in a new one) never shares it.
@@ -104,12 +111,12 @@ fn range_applies(headers: &HeaderMap, etag: Option<&str>) -> bool {
     }
 }
 
-/// `path` whole, or the part of it a `Range` header asks for; `res` carries the route's headers.
-/// `etag` is sent and checked against `If-Range`.
+/// The open file whole, or the part of it a `Range` header asks for; `res` carries the route's
+/// headers. `size` and `etag` come from the same handle; `etag` is checked against `If-Range`.
 pub(super) async fn ranged_file(
     mut res: axum::http::response::Builder,
     headers: &HeaderMap,
-    path: &str,
+    file: tokio::fs::File,
     size: u64,
     etag: Option<&str>,
 ) -> std::io::Result<Response> {
@@ -136,7 +143,7 @@ pub(super) async fn ranged_file(
             }
         },
     };
-    let body = file_body(path, start, len).await?;
+    let body = file_body(file, start, len).await?;
     Ok(res
         .status(status)
         .header(header::CONTENT_LENGTH, len)
@@ -169,7 +176,7 @@ pub(super) async fn direct(
         rt.touch(s, None);
     }
     let path = rt.map_media_path(&a.resolved.path);
-    let Ok(md) = tokio::fs::metadata(&path).await else {
+    let Some((file, md)) = open_with_metadata(&path).await else {
         return text(StatusCode::NOT_FOUND, "File not found");
     };
     let size = md.len();
@@ -194,7 +201,7 @@ pub(super) async fn direct(
     if download {
         res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
     }
-    ranged_file(res, &headers, &path, size, Some(&etag(&md)))
+    ranged_file(res, &headers, file, size, Some(&etag(&md)))
         .await
         .unwrap_or_else(|e| {
             tracing::error!(path, "direct play read: {e}");
@@ -229,7 +236,7 @@ pub(super) async fn part(
         return text(StatusCode::NOT_FOUND, "Part not found");
     };
     let path = rt.map_media_path(&part.path);
-    let Ok(md) = tokio::fs::metadata(&path).await else {
+    let Some((file, md)) = open_with_metadata(&path).await else {
         return text(StatusCode::NOT_FOUND, "File not found");
     };
     let mut res = Response::builder()
@@ -241,7 +248,7 @@ pub(super) async fn part(
     if purpose == ResolvePurpose::Download {
         res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
     }
-    ranged_file(res, &headers, &path, md.len(), Some(&etag(&md)))
+    ranged_file(res, &headers, file, md.len(), Some(&etag(&md)))
         .await
         .unwrap_or_else(|e| {
             tracing::error!(path, "part read: {e}");
@@ -316,6 +323,34 @@ mod etag_tests {
             Some(tag)
         ));
         assert!(!range_applies(&with(tag), None));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn size_and_etag_follow_the_opened_file_not_the_path() {
+        let dir = std::env::temp_dir().join(format!("fliks-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.bin");
+        std::fs::write(&f, b"abc").unwrap();
+        let path = f.to_string_lossy().into_owned();
+        let (file, md) = open_with_metadata(&path).await.unwrap();
+        let tag = etag(&md);
+        let moved = dir.join("b.bin");
+        std::fs::write(&moved, b"replacement").unwrap();
+        std::fs::rename(&moved, &f).unwrap();
+        let res = ranged_file(
+            Response::builder(),
+            &HeaderMap::new(),
+            file,
+            md.len(),
+            Some(&tag),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res.headers()[header::CONTENT_LENGTH], "3");
+        let body = axum::body::to_bytes(res.into_body(), 100).await.unwrap();
+        assert_eq!(&body[..], b"abc");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -139,7 +139,10 @@ pub(super) async fn live_segment(
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "public, max-age=0");
     // ffmpeg may slide the window between the stat and the open.
-    ranged_file(res, &headers, &path, size, None)
+    let Ok(file) = tokio::fs::File::open(&path).await else {
+        return nest(StatusCode::NOT_FOUND, MISSING);
+    };
+    ranged_file(res, &headers, file, size, None)
         .await
         .unwrap_or_else(|_| nest(StatusCode::NOT_FOUND, MISSING))
 }

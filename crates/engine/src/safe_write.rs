@@ -98,10 +98,11 @@ pub fn create_staged(src: &Path, staged: &Path) -> std::io::Result<std::fs::File
         let dir = staged.parent().unwrap_or(Path::new("."));
         use std::os::unix::fs::MetadataExt;
         if std::fs::metadata(dir)?.dev() != meta.dev() {
-            return Err(std::io::Error::other(format!(
-                "{} is not on the source's filesystem",
-                dir.display()
-            )));
+            // A wrong mapping, not a failing disk: classed `access`.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("{} is not on the source's filesystem", dir.display()),
+            ));
         }
     }
     let f = std::fs::File::options()
@@ -216,6 +217,23 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn another_filesystem_is_an_access_error_not_an_io_one() {
+        use std::os::unix::fs::MetadataExt;
+        let (shm, tmp) = (Path::new("/dev/shm"), std::env::temp_dir());
+        if !shm.is_dir()
+            || std::fs::metadata(shm).unwrap().dev() == std::fs::metadata(&tmp).unwrap().dev()
+        {
+            return;
+        }
+        let src = shm.join(format!("fliks-dev-{}", std::process::id()));
+        std::fs::write(&src, b"a").unwrap();
+        let e = create_staged(&src, &tmp.join("x.tmp")).unwrap_err();
+        let _ = std::fs::remove_file(&src);
+        assert_eq!(e.kind(), ErrorKind::PermissionDenied);
     }
 
     #[test]
