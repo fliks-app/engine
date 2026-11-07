@@ -607,6 +607,9 @@ pub enum DeviceType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceProfile {
+    /// Stable client device id, the key of the server's `client_codecs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
     pub direct_play_profiles: Vec<DirectPlayProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codec_conditions: Option<Vec<CodecCondition>>,
@@ -748,7 +751,7 @@ mod tests {
             "directPlayProfiles": [{ "containers": ["mp4"], "videoCodecs": ["h264"], "audioCodecs": ["aac"] }],
             "codecConditions": [{ "codec": "h264", "maxLevel": 41.0, "profiles": ["high"] }],
             "audioChannelsByCodec": { "aac": 8.0 }, "dolbyVisionProfiles": [5, 8],
-            "deviceType": "mobile", "supportsAbr": false
+            "deviceType": "mobile", "supportsAbr": false, "deviceId": "dev-1"
         });
         assert_eq!(roundtrip::<DeviceProfile>(&d), d);
         let s = json!({
