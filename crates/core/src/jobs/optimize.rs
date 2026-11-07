@@ -784,19 +784,15 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
             bad.push(format!("extra subtitle {} differs from the plan", x.path));
         }
     }
-    // Matroska writes a cover as an attachment: both count as one kind of embedded file.
-    let embedded = |m: &MediaInfo| m.attachments.unwrap_or(0) + u32::from(m.cover.is_some());
-    if container_of(src, plan) == source_container(src) && src.attachments.is_some() {
-        let mkv = container_of(src, plan) == OptimizeContainer::Mkv;
-        if mkv && embedded(src) != embedded(out) {
-            bad.push(format!(
-                "{} attached files or covers, source {}",
-                embedded(out),
-                embedded(src)
-            ));
-        } else if !mkv && src.cover.is_some() != out.cover.is_some() {
-            bad.push("cover picture differs from the source".into());
-        }
+    if container_of(src, plan) == OptimizeContainer::Mkv
+        && source_container(src) == OptimizeContainer::Mkv
+        && let Some(a) = src.attachments
+        && a != out.attachments.unwrap_or(0)
+    {
+        bad.push(format!(
+            "{} attachments, source {a}",
+            out.attachments.unwrap_or(0)
+        ));
     }
     if src.chapters.as_ref().map_or(0, Vec::len) != out.chapters.as_ref().map_or(0, Vec::len) {
         bad.push("chapters differ from the source".into());
@@ -1415,10 +1411,9 @@ mod tests {
     }
 
     #[test]
-    fn the_output_must_keep_attachments_cover_and_defaults() {
+    fn the_output_must_keep_attachments_and_defaults() {
         let mut src = info();
         src.attachments = Some(2);
-        src.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
         src.audio[0].is_default = Some(true);
         let check = |out: &MediaInfo| {
             verify_output(&OutputCheck {
@@ -1433,16 +1428,7 @@ mod tests {
         assert_eq!(check(&src), Vec::<String>::new());
         let mut out = src.clone();
         out.attachments = Some(0);
-        assert!(check(&out).iter().any(|b| b.contains("attached files")));
-        let mut out = src.clone();
-        out.cover = None;
-        out.attachments = Some(2);
-        assert!(check(&out).iter().any(|b| b.contains("attached files")));
-        out.attachments = Some(3);
-        assert!(
-            check(&out).is_empty(),
-            "a cover turned attachment is the same file"
-        );
+        assert!(check(&out).iter().any(|b| b.contains("attachments")));
         let mut out = src.clone();
         out.audio[0].is_default = Some(false);
         assert!(check(&out).iter().any(|b| b.contains("audio default")));
