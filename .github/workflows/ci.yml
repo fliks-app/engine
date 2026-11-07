@@ -37,7 +37,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - name: Regenerate openapi.json
-        run: cargo run -q --bin gen-openapi > openapi.json
+        run: cargo run -q --bin gen-openapi
       - name: Drift check
         run: git diff --exit-code -- openapi.json
       - name: Breaking changes against main
