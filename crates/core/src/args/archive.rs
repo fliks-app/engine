@@ -133,6 +133,19 @@ pub struct ArchiveAudio {
     pub action: ArchiveAudioEnc,
 }
 
+/// A text subtitle file added as an extra input (the OCR'd SRT of an image track).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveExtraSub {
+    pub path: String,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub default: Option<bool>,
+}
+
 /// Explicit mapping of an archival file: only what is listed is written.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -152,6 +165,9 @@ pub struct ArchiveFile {
     pub audio: Vec<ArchiveAudio>,
     #[serde(default)]
     pub subtitles: Vec<ArchiveTrack>,
+    /// Text files written as subtitle tracks after `subtitles`, one extra input each.
+    #[serde(default)]
+    pub extra_subtitles: Vec<ArchiveExtraSub>,
 }
 
 /// `pan` that folds up to 5.1 into stereo with a boosted centre, no clipping (coefficients sum to 1).
@@ -220,12 +236,25 @@ pub(super) fn file(
         (e.args, e.video_map)
     };
     let mkv = f.format == FileFormat::Mkv;
+    if let Some(at) = a
+        .windows(2)
+        .position(|w| w[0] == "-i" && w[1] == o.input_path)
+    {
+        let extra = ar
+            .extra_subtitles
+            .iter()
+            .flat_map(|x| ["-i".into(), x.path.clone()]);
+        a.splice(at + 2..at + 2, extra.collect::<Vec<String>>());
+    }
     a.extend(["-map".into(), vmap]);
     for c in &ar.cover_art {
         a.extend(["-map".into(), format!("0:{c}")]);
     }
     for t in ar.audio.iter().map(|x| &x.track).chain(&ar.subtitles) {
         a.extend(["-map".into(), format!("0:{}", t.stream_index)]);
+    }
+    for k in 1..=ar.extra_subtitles.len() {
+        a.extend(["-map".into(), format!("{k}:0")]);
     }
     if mkv {
         a.extend(strs(&["-map", "0:t?"]));
@@ -251,11 +280,21 @@ pub(super) fn file(
         a.extend(audio_args(k, x.action));
         a.extend(tags('a', k, &x.track));
     }
-    if !ar.subtitles.is_empty() {
+    if !ar.subtitles.is_empty() || !ar.extra_subtitles.is_empty() {
+        // Text from a file is `subrip`: copied into MKV, `mov_text` in MP4.
         a.extend(strs(&["-c:s", if mkv { "copy" } else { "mov_text" }]));
     }
     for (k, t) in ar.subtitles.iter().enumerate() {
         a.extend(tags('s', k, t));
+    }
+    for (k, x) in ar.extra_subtitles.iter().enumerate() {
+        let t = ArchiveTrack {
+            stream_index: 0,
+            language: x.language.clone(),
+            title: x.title.clone(),
+            default: x.default,
+        };
+        a.extend(tags('s', ar.subtitles.len() + k, &t));
     }
     if mkv {
         a.extend(strs(&["-c:t", "copy"]));

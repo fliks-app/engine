@@ -3,10 +3,11 @@
 use super::{Cmd, Ctx, tail};
 use crate::cache::{MERGE_JOURNAL, file_id};
 use crate::proc::{Ffmpeg, Pipes};
+use crate::safe_write::{exists, publish, taken};
 use fliks_engine_core::api::{Chapter, JobResult, MediaTags, MergeMeta, MergePart};
 use fliks_engine_core::jobs::merge::*;
 use fliks_engine_core::mp4::{add_freeform_items, read_box_header};
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -87,15 +88,6 @@ pub async fn run(
     })
 }
 
-/// Whether the name is taken, a dangling symlink included.
-async fn exists(p: &Path) -> bool {
-    tokio::fs::symlink_metadata(p).await.is_ok()
-}
-
-fn taken(out: &Path) -> String {
-    format!("output exists: {}", out.display())
-}
-
 /// The finished temporary file: chapters of the merged timeline and whether the audio was encoded.
 async fn build(
     ctx: &Ctx,
@@ -171,82 +163,6 @@ async fn report(ctx: &Ctx, p: &Ffmpeg, total: f64) {
     }
 }
 
-/// Moves `tmp` to `out` unless `out` exists: a hard link fails on a taken name where a rename
-/// would replace it; a filesystem without links gets `rename_new`.
-async fn publish(tmp: &Path, out: &Path) -> Result<(), String> {
-    match tokio::fs::hard_link(tmp, out).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(taken(out)),
-        Err(_) if exists(out).await => Err(taken(out)),
-        Err(_) => {
-            let (from, to) = (tmp.to_owned(), out.to_owned());
-            match tokio::task::spawn_blocking(move || rename_new(&from, &to)).await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(e)) if e.kind() == ErrorKind::AlreadyExists => Err(taken(out)),
-                Ok(Err(e)) => Err(format!("write {}: {e}", out.display())),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-    }
-}
-
-/// Renames without replacing: atomic through `renameat2(RENAME_NOREPLACE)` on Linux and
-/// `renamex_np(RENAME_EXCL)` on macOS, a check and a rename where the kernel or filesystem lacks it.
-#[cfg(unix)]
-fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes());
-    let (f, t) = (c(from)?, c(to)?);
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    #[cfg(target_os = "linux")]
-    let (r, unsupported) = unsafe {
-        let r = libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD as libc::c_long,
-            f.as_ptr() as libc::c_long,
-            libc::AT_FDCWD as libc::c_long,
-            t.as_ptr() as libc::c_long,
-            libc::RENAME_NOREPLACE as libc::c_long,
-        );
-        // EPERM: a seccomp profile that denies syscalls it does not know.
-        (r, [libc::EINVAL, libc::ENOSYS, libc::EPERM])
-    };
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    #[cfg(target_os = "macos")]
-    let (r, unsupported) = unsafe {
-        let r = libc::renamex_np(f.as_ptr(), t.as_ptr(), libc::RENAME_EXCL);
-        (r, [libc::EINVAL, libc::ENOTSUP])
-    };
-    if r == 0 {
-        return Ok(());
-    }
-    let e = std::io::Error::last_os_error();
-    if !e.raw_os_error().is_some_and(|n| unsupported.contains(&n)) {
-        return Err(e);
-    }
-    if std::fs::symlink_metadata(to).is_ok() {
-        return Err(ErrorKind::AlreadyExists.into());
-    }
-    std::fs::rename(from, to)
-}
-
-/// Renames without replacing: `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING` fails on a taken
-/// name.
-#[cfg(windows)]
-fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    let w = |p: &Path| p.as_os_str().encode_wide().chain([0]).collect::<Vec<u16>>();
-    // SAFETY: both pointers are NUL-terminated wide strings that outlive the call.
-    let ok = unsafe {
-        windows_sys::Win32::Storage::FileSystem::MoveFileExW(w(from).as_ptr(), w(to).as_ptr(), 0)
-    };
-    if ok != 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
 fn path_text(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
@@ -291,37 +207,4 @@ fn add_freeform(f: &mut std::fs::File, items: &[(&str, String)]) -> Result<(), S
     let grown = add_freeform_items(&buf, items).map_err(|e| e.to_string())?;
     f.seek(SeekFrom::Start(at as u64)).map_err(io)?;
     f.write_all(&grown).map_err(io)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_rename_never_replaces() {
-        let d = std::env::temp_dir().join(format!("fliks-noreplace-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        let (a, b) = (d.join("a"), d.join("b"));
-        std::fs::write(&a, b"new").unwrap();
-        std::fs::write(&b, b"old").unwrap();
-        assert_eq!(
-            rename_new(&a, &b).unwrap_err().kind(),
-            ErrorKind::AlreadyExists
-        );
-        assert_eq!(std::fs::read(&b).unwrap(), b"old");
-        std::fs::remove_file(&b).unwrap();
-        rename_new(&a, &b).unwrap();
-        assert_eq!(std::fs::read(&b).unwrap(), b"new");
-        #[cfg(unix)]
-        {
-            let dangling = d.join("dangling");
-            std::os::unix::fs::symlink(d.join("nowhere"), &dangling).unwrap();
-            std::fs::write(&a, b"again").unwrap();
-            assert_eq!(
-                rename_new(&a, &dangling).unwrap_err().kind(),
-                ErrorKind::AlreadyExists
-            );
-        }
-        let _ = std::fs::remove_dir_all(&d);
-    }
 }

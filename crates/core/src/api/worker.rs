@@ -120,6 +120,16 @@ pub enum OptimizeLevel {
     Reencode,
 }
 
+/// Playable audio a track is converted to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamEncode {
+    /// E-AC-3, 640 kb/s up to 5.1 (7.1 folds to 5.1), 256 kb/s stereo.
+    Eac3,
+    /// Stereo AAC 256 kb/s; multichannel sources are downmixed with a boosted centre.
+    Aac,
+}
+
 /// What happens to one stream of the source.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +140,48 @@ pub struct StreamPlan {
     /// Language tag to write (ISO 639-2), when it differs from the source's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// Title to write; `Some("")` clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Sets or clears the default flag; absent keeps the source's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<bool>,
+    /// Audio only: the kept track is replaced by this encode (or, with `keepOriginal`, joined by it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encode: Option<StreamEncode>,
+    /// With `encode`: the original stays beside the new track (`title` and `default` go to the new one).
+    #[serde(default)]
+    pub keep_original: bool,
+}
+
+/// Quality target of a `reencode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum OptimizeQuality {
+    Small,
+    Balanced,
+    Faithful,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum OptimizeContainer {
+    Mkv,
+    Mp4,
+}
+
+/// A text subtitle file (the OCR'd SRT of an image track) added to the output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraSubtitle {
+    /// Absolute path of the SRT on the worker.
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<bool>,
 }
 
 /// The resolved plan of an optimisation: decided by the host, executed as written.
@@ -148,9 +200,33 @@ pub struct OptimizePlan {
     /// Write `hvc1` instead of `hev1` on HEVC in MP4.
     #[serde(default)]
     pub hvc1_tag: bool,
-    /// Drop the per-track statistics tags, which the new file would carry stale.
+    /// Regenerate the per-track statistics tags (`mkvpropedit`) instead of carrying stale ones.
     #[serde(default)]
     pub strip_statistics_tags: bool,
+    /// Quality of a `reencode`; absent: balanced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<OptimizeQuality>,
+    /// Software encoder instead of the hardware one.
+    #[serde(default)]
+    pub software: bool,
+    /// Longest estimated software encode, hours; absent: 12. Beyond it the job is `too_slow`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_software_hours: Option<f64>,
+    /// The 3 sample encodes must save at least this share of the video; else the video is copied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_savings_pct: Option<f64>,
+    /// Keep Dolby Vision 7/8 and HDR10+ video as it is (copy); absent: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_hdr10plus_dv: Option<bool>,
+    /// Output container; absent: the source's (MP4 and MOV stay MP4, the rest is MKV).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<OptimizeContainer>,
+    /// Empty the global title.
+    #[serde(default)]
+    pub clear_title: bool,
+    /// Text subtitles added after the kept tracks.
+    #[serde(default)]
+    pub extra_subtitles: Vec<ExtraSubtitle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -159,6 +235,10 @@ pub struct OptimizePayload {
     /// Probe of the source at queue time.
     pub info: MediaInfo,
     pub plan: OptimizePlan,
+    /// Where the output is written; absent: `.fliks-opt-<job>-1.tmp` beside the source. The worker
+    /// loop sets it from the lease's `stagedPath`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub staged_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -205,7 +285,7 @@ pub enum JobErrorClass {
     Io,
     /// The source cannot be decoded; retrying will not help.
     Corrupt,
-    /// The output failed its own check.
+    /// The source decodes with isolated errors below the per-hour threshold: readable, never optimized.
     Damaged,
     /// No room for the staging file.
     Nospace,
@@ -213,12 +293,57 @@ pub enum JobErrorClass {
     Engine,
     /// A transfer with the host failed.
     Network,
-    /// A `Verify` job found the file faulty.
+    /// The output does not conform to the source even after the CPU fallback.
     Verify,
     /// The device or file is in use; the job goes back without counting as a failure.
     Busy,
     /// The source no longer matches the queue-time snapshot.
     Stale,
+}
+
+impl JobErrorClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Access => "access",
+            Self::Io => "io",
+            Self::Corrupt => "corrupt",
+            Self::Damaged => "damaged",
+            Self::Nospace => "nospace",
+            Self::Engine => "engine",
+            Self::Network => "network",
+            Self::Verify => "verify",
+            Self::Busy => "busy",
+            Self::Stale => "stale",
+        }
+    }
+
+    /// An executor's failure text: `<class>: <message>`, which `from_message` reads back.
+    pub fn message(self, text: impl std::fmt::Display) -> String {
+        format!("{}: {text}", self.as_str())
+    }
+
+    /// The class and text of a failure made by `message`; any other text is an `engine` failure.
+    pub fn from_message(s: &str) -> (Self, &str) {
+        const ALL: [JobErrorClass; 10] = [
+            JobErrorClass::Access,
+            JobErrorClass::Io,
+            JobErrorClass::Corrupt,
+            JobErrorClass::Damaged,
+            JobErrorClass::Nospace,
+            JobErrorClass::Engine,
+            JobErrorClass::Network,
+            JobErrorClass::Verify,
+            JobErrorClass::Busy,
+            JobErrorClass::Stale,
+        ];
+        ALL.iter()
+            .find_map(|c| {
+                s.strip_prefix(c.as_str())
+                    .and_then(|r| r.strip_prefix(": "))
+                    .map(|r| (*c, r))
+            })
+            .unwrap_or((Self::Engine, s))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -281,6 +406,19 @@ mod tests {
             "fre"
         );
         assert!(back.get("inputUrl").is_none());
+    }
+
+    #[test]
+    fn job_error_text_round_trips_its_class() {
+        let t = JobErrorClass::Corrupt.message("moov atom not found");
+        assert_eq!(
+            JobErrorClass::from_message(&t),
+            (JobErrorClass::Corrupt, "moov atom not found")
+        );
+        assert_eq!(
+            JobErrorClass::from_message("ffmpeg stalled"),
+            (JobErrorClass::Engine, "ffmpeg stalled")
+        );
     }
 
     #[test]

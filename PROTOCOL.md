@@ -46,7 +46,7 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 
 ## Worker protocol (engine to host)
 
-A worker (the local engine or a remote one) pulls optimisation and verification work from the host, over HTTP it initiates, like `/engine/resolve`. Types: `crates/core/src/api/worker.rs` (`WorkerHello`, `LeasedJob`, `JobKind::Optimize`/`Verify`...), all in `openapi.json`. Bodies are JSON, camelCase. The job executor is not part of this contract yet: an engine answers an `Optimize` or `Verify` on `POST /v1/jobs` with a failure ("not implemented").
+A worker (the local engine or a remote one) pulls optimisation and verification work from the host, over HTTP it initiates, like `/engine/resolve`. Types: `crates/core/src/api/worker.rs` (`WorkerHello`, `LeasedJob`, `JobKind::Optimize`/`Verify`...), all in `openapi.json`. Bodies are JSON, camelCase. The executors (`docs/spec/jobs.md` section 11) run `Optimize` and `Verify` as jobs; a failure is `<class>: <message>`, the class being a `JobErrorClass`. The worker loop that leases and reports them follows.
 
 Auth: `Authorization: Bearer`. The local engine sends its `hostToken`; a remote worker sends its own token (issued by the host, stored hashed, revocable), which is only valid on `/engine/workers/*` and `/engine/jobs/*` and only for the leases it holds. `workerId` is the `instanceId` of the worker's `hello`.
 

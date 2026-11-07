@@ -2386,6 +2386,37 @@
           }
         }
       },
+      "ExtraSubtitle": {
+        "type": "object",
+        "description": "A text subtitle file (the OCR'd SRT of an image track) added to the output.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "default": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the SRT on the worker."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Fingerprint": {
         "type": "object",
         "description": "Chromaprint hashes of one audio window; mirrors the host's in-memory `Fingerprint`.",
@@ -3230,7 +3261,7 @@
           {
             "type": "object",
             "title": "OptimizeJob",
-            "description": "Optimisation of one file by the plan; leased by a worker (`PROTOCOL.md`), not run by `/v1/jobs`.",
+            "description": "Optimisation of one file by the plan (`docs/spec/jobs.md` section 11); the worker loop runs it\nfrom a lease (`PROTOCOL.md`), `/v1/jobs` accepts it too.",
             "required": [
               "payload",
               "type"
@@ -3250,7 +3281,7 @@
           {
             "type": "object",
             "title": "VerifyJob",
-            "description": "Integrity check of one file; leased by a worker, not run by `/v1/jobs`.",
+            "description": "Integrity check of one file: full read, then a counted software decode.",
             "required": [
               "payload",
               "type"
@@ -3479,6 +3510,43 @@
                 "enum": [
                   "Merge"
                 ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "optimize",
+              "type"
+            ],
+            "properties": {
+              "optimize": {
+                "$ref": "#/components/schemas/OptimizeMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Optimize"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A faulty file fails the job with class `damaged` or `corrupt`.",
+            "required": [
+              "verify",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Verify"
+                ]
+              },
+              "verify": {
+                "$ref": "#/components/schemas/VerifyMeta"
               }
             }
           }
@@ -4745,6 +4813,13 @@
           }
         }
       },
+      "OptimizeContainer": {
+        "type": "string",
+        "enum": [
+          "mkv",
+          "mp4"
+        ]
+      },
       "OptimizeLevel": {
         "type": "string",
         "description": "How much of the file a job rewrites.",
@@ -4753,6 +4828,51 @@
           "remux",
           "reencode"
         ]
+      },
+      "OptimizeMeta": {
+        "type": "object",
+        "description": "The staged file of an `Optimize`, verified and hashed.",
+        "required": [
+          "stagedPath",
+          "outSize",
+          "outSha256",
+          "outInfo",
+          "level",
+          "cpuFallback"
+        ],
+        "properties": {
+          "copyReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a planned re-encode copied the video (`unsupported_source`, `low_savings`, `too_slow`)."
+          },
+          "cpuFallback": {
+            "type": "boolean",
+            "description": "The output was produced on the CPU after the hardware encoder failed its run or its check."
+          },
+          "level": {
+            "$ref": "#/components/schemas/OptimizeLevel",
+            "description": "What was really done: a `reencode` whose video was copied reports `remux`."
+          },
+          "outInfo": {
+            "$ref": "#/components/schemas/MediaInfo",
+            "description": "Probe of the output."
+          },
+          "outSha256": {
+            "type": "string"
+          },
+          "outSize": {
+            "type": "number",
+            "format": "double",
+            "description": "f64: no 64-bit integers on the wire."
+          },
+          "stagedPath": {
+            "type": "string",
+            "description": "Where the output is."
+          }
+        }
       },
       "OptimizePayload": {
         "type": "object",
@@ -4767,6 +4887,13 @@
           },
           "plan": {
             "$ref": "#/components/schemas/OptimizePlan"
+          },
+          "stagedPath": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the output is written; absent: `.fliks-opt-<job>-1.tmp` beside the source. The worker\nloop sets it from the lease's `stagedPath`."
           }
         }
       },
@@ -4777,12 +4904,27 @@
           "level"
         ],
         "properties": {
+          "clearTitle": {
+            "type": "boolean",
+            "description": "Empty the global title."
+          },
           "codec": {
             "type": [
               "string",
               "null"
             ],
             "description": "Target video codec of a `reencode`."
+          },
+          "container": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OptimizeContainer",
+                "description": "Output container; absent: the source's (MP4 and MOV stay MP4, the rest is MKV)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "crop": {
             "oneOf": [
@@ -4795,12 +4937,57 @@
               }
             ]
           },
+          "extraSubtitles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtraSubtitle"
+            },
+            "description": "Text subtitles added after the kept tracks."
+          },
           "hvc1Tag": {
             "type": "boolean",
             "description": "Write `hvc1` instead of `hev1` on HEVC in MP4."
           },
           "level": {
             "$ref": "#/components/schemas/OptimizeLevel"
+          },
+          "maxSoftwareHours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Longest estimated software encode, hours; absent: 12. Beyond it the job is `too_slow`."
+          },
+          "minSavingsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The 3 sample encodes must save at least this share of the video; else the video is copied."
+          },
+          "quality": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OptimizeQuality",
+                "description": "Quality of a `reencode`; absent: balanced."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skipHdr10plusDv": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Keep Dolby Vision 7/8 and HDR10+ video as it is (copy); absent: true."
+          },
+          "software": {
+            "type": "boolean",
+            "description": "Software encoder instead of the hardware one."
           },
           "streams": {
             "type": "array",
@@ -4810,9 +4997,18 @@
           },
           "stripStatisticsTags": {
             "type": "boolean",
-            "description": "Drop the per-track statistics tags, which the new file would carry stale."
+            "description": "Regenerate the per-track statistics tags (`mkvpropedit`) instead of carrying stale ones."
           }
         }
+      },
+      "OptimizeQuality": {
+        "type": "string",
+        "description": "Quality target of a `reencode`.",
+        "enum": [
+          "small",
+          "balanced",
+          "faithful"
+        ]
       },
       "PathMapping": {
         "type": "object",
@@ -5999,6 +6195,14 @@
         ],
         "description": "Where the SRT conversion reads. `file` is an absolute sidecar; `stream` is a text track of the job's media."
       },
+      "StreamEncode": {
+        "type": "string",
+        "description": "Playable audio a track is converted to.",
+        "enum": [
+          "eac3",
+          "aac"
+        ]
+      },
       "StreamPlan": {
         "type": "object",
         "description": "What happens to one stream of the source.",
@@ -6007,9 +6211,31 @@
           "keep"
         ],
         "properties": {
+          "default": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Sets or clears the default flag; absent keeps the source's."
+          },
+          "encode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StreamEncode",
+                "description": "Audio only: the kept track is replaced by this encode (or, with `keepOriginal`, joined by it)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "keep": {
             "type": "boolean",
             "description": "A stream absent from `OptimizePlan.streams` is kept as it is."
+          },
+          "keepOriginal": {
+            "type": "boolean",
+            "description": "With `encode`: the original stays beside the new track (`title` and `default` go to the new one)."
           },
           "language": {
             "type": [
@@ -6022,6 +6248,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Title to write; `Some(\"\")` clears it."
           }
         }
       },
@@ -6393,6 +6626,24 @@
             "type": "number",
             "format": "double",
             "description": "Bytes held by the host: the next `Upload-Offset`."
+          }
+        }
+      },
+      "VerifyMeta": {
+        "type": "object",
+        "description": "A source that read and decoded cleanly.",
+        "required": [
+          "bytes",
+          "durationSeconds"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "format": "double"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

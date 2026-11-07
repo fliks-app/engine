@@ -396,6 +396,7 @@ dependencies = [
  "libc",
  "mimalloc",
  "rcgen",
+ "ring",
  "rustls",
  "serde",
  "serde_json",
