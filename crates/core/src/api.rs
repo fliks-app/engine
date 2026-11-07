@@ -203,6 +203,10 @@ pub struct EngineConfig {
     /// Absent: the host path is the path this engine opens.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path_mappings: Vec<PathMapping>,
+    /// The host serves the worker protocol (`PROTOCOL.md`): this engine pulls optimize and verify
+    /// jobs from it. Absent or false: it never calls `/engine/workers/*`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub worker: bool,
 }
 
 /// Longest `from` that ends on a path boundary. `/mnt/a` does not rewrite `/mnt/ab`.

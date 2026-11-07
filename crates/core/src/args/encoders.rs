@@ -342,6 +342,10 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
                 ),
                 Some(HdrFormat::Hlg) => "repeat-headers=1:open-gop=0:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc".to_string(),
             };
+            let params = match arc {
+                Some(r) if r.cap_pools => format!("{params}:pools={threads}"),
+                _ => params,
+            };
             a.extend(strs(&["-x265-params", &params]));
             if let Some(h) = e.hdr {
                 a.extend(hdr_color_args(h));
@@ -381,7 +385,10 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             };
             // `irefresh-type=2`: closed GOP with IDR keyframes.
             let params: Vec<String> = arc
-                .map(|_| "irefresh-type=2".to_string())
+                .map(|r| match r.cap_pools {
+                    true => format!("irefresh-type=2:lp={threads}"),
+                    false => "irefresh-type=2".to_string(),
+                })
                 .into_iter()
                 .chain(hdr_params)
                 .collect();

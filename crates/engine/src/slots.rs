@@ -2,6 +2,7 @@
 //! queue and are preempted while playback needs the machine. Spec: `docs/spec/jobs.md` section 3.
 use crate::lock::Locked;
 use fliks_engine_core::api::JobPriority;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{oneshot, watch};
 
@@ -18,22 +19,72 @@ pub fn cpu_quota() -> usize {
         .max(1)
 }
 
-struct Waiter {
+/// The one GPU of this engine; hardware playback reads and GPU optimization are counted on it.
+pub const GPU_DEVICE: &str = "gpu0";
+/// The CPU as an optimization device.
+pub const CPU_DEVICE: &str = "cpu";
+const DEFAULT_CPU_WEIGHT: usize = 2;
+const DEFAULT_GPU_RESERVE: usize = 1;
+/// Below every `JobPriority`: optimization yields to any other background work.
+const OPTIMIZE_RANK: u8 = 3;
+
+/// The device an optimization run holds; `gpu` runs take no CPU budget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lane {
+    pub device: String,
+    pub gpu: bool,
+}
+
+struct Entry {
     id: u64,
-    priority: JobPriority,
+    /// Lower first: priority, optimization last. Ties by `id` (age).
+    rank: u8,
+    /// Share of the CPU budget, 0 for a GPU run. Bounded to `size` when counted.
+    weight: usize,
+    lane: Option<Lane>,
+}
+
+impl Entry {
+    fn cost(&self, size: usize) -> usize {
+        self.weight.min(size.max(1))
+    }
+
+    fn gpu_device(&self) -> Option<&str> {
+        self.lane
+            .as_ref()
+            .filter(|l| l.gpu)
+            .map(|l| l.device.as_str())
+    }
+}
+
+struct Waiter {
+    e: Entry,
     grant: oneshot::Sender<watch::Receiver<bool>>,
+}
+
+struct Holder {
+    e: Entry,
+    /// "Preempted" flag.
+    tx: watch::Sender<bool>,
 }
 
 struct State {
     size: usize,
     /// Software playback runs. These consume the CPU budget.
     playback: usize,
-    /// Hardware encodes. They do not consume the CPU budget; sprites still see them.
-    gpu: usize,
-    /// Background holders in grant order, each with its "preempted" flag.
-    running: Vec<(u64, watch::Sender<bool>)>,
+    /// Hardware playback reads by device. They do not consume the CPU budget; sprites still see them.
+    gpu_reads: HashMap<String, usize>,
+    /// Background holders in grant order.
+    running: Vec<Holder>,
+    /// Waiting by (rank, age).
     queue: Vec<Waiter>,
     next_id: u64,
+    /// Weight of a software optimization (`workerSettings.cpuWeight`).
+    cpu_weight: usize,
+    /// Hardware reads on a device that pause its GPU optimization; 0 never pauses.
+    gpu_reserve: usize,
+    /// Optimizations at once per device, outside the background job limit.
+    device_limit: HashMap<String, usize>,
 }
 
 pub struct Slots {
@@ -46,10 +97,13 @@ impl Slots {
             st: Mutex::new(State {
                 size,
                 playback: 0,
-                gpu: 0,
+                gpu_reads: HashMap::new(),
                 running: vec![],
                 queue: vec![],
                 next_id: 0,
+                cpu_weight: DEFAULT_CPU_WEIGHT,
+                gpu_reserve: DEFAULT_GPU_RESERVE,
+                device_limit: HashMap::new(),
             }),
         })
     }
@@ -67,10 +121,27 @@ impl Slots {
         self.st.locked().size
     }
 
+    /// The host's optimization settings, from `hello`: the CPU weight of a software run and the
+    /// hardware reads on a GPU that pause its background jobs.
+    pub fn set_optimize(&self, cpu_weight: Option<u32>, gpu_reserve: Option<u32>) {
+        let mut st = self.st.locked();
+        st.cpu_weight = cpu_weight.map_or(DEFAULT_CPU_WEIGHT, |w| (w as usize).max(1));
+        st.gpu_reserve = gpu_reserve.map_or(DEFAULT_GPU_RESERVE, |n| n as usize);
+        rebalance(&mut st);
+    }
+
+    /// Optimizations a device runs at once (default 1).
+    pub fn set_device_limit(&self, device: &str, max_jobs: u32) {
+        let mut st = self.st.locked();
+        st.device_limit
+            .insert(device.into(), max_jobs.max(1) as usize);
+        rebalance(&mut st);
+    }
+
     /// Playback runs in use, software and hardware (a throttled run's excluded).
     pub fn playback_in_use(&self) -> usize {
         let st = self.st.locked();
-        st.playback + st.gpu
+        st.playback + st.gpu_reads.values().sum::<usize>()
     }
 
     /// `-threads` for a run about to start: the cores split with the software runs already going
@@ -78,6 +149,13 @@ impl Slots {
     pub fn encode_threads(&self) -> u32 {
         let quota = cpu_quota();
         (quota / (self.st.locked().playback + 1)).max(2.min(quota)) as u32
+    }
+
+    /// Threads of a software optimization: its weight's share of the cores, `weight x quota / size`.
+    pub fn optimize_threads(&self) -> u32 {
+        let st = self.st.locked();
+        let weight = st.cpu_weight.min(st.size.max(1));
+        (weight * cpu_quota() / st.size.max(1)).max(1) as u32
     }
 
     /// Background runs queued for a slot.
@@ -96,23 +174,59 @@ impl Slots {
         }
     }
 
-    /// Waits for a background slot: FIFO within a priority. Dropping the future leaves the queue.
-    pub async fn background(self: &Arc<Self>, priority: JobPriority) -> BackgroundSlot {
+    /// Waits for a background slot of `weight` CPU shares: FIFO within a priority. Dropping the
+    /// future leaves the queue.
+    pub async fn background(
+        self: &Arc<Self>,
+        priority: JobPriority,
+        weight: usize,
+    ) -> BackgroundSlot {
+        let rank = match priority {
+            JobPriority::High => 0,
+            JobPriority::Normal => 1,
+            JobPriority::Low => 2,
+        };
+        self.enter(rank, Some(weight.max(1)), None).await
+    }
+
+    /// An optimization run on `lane`, below all other background work. A CPU lane weighs the
+    /// setting's `cpuWeight`, a GPU lane no CPU at all; both count against the device's own limit.
+    pub async fn optimize(self: &Arc<Self>, lane: Lane) -> BackgroundSlot {
+        self.enter(OPTIMIZE_RANK, None, Some(lane)).await
+    }
+
+    async fn enter(
+        self: &Arc<Self>,
+        rank: u8,
+        weight: Option<usize>,
+        lane: Option<Lane>,
+    ) -> BackgroundSlot {
         let (tx, rx) = oneshot::channel();
         let ticket = {
             let mut st = self.st.locked();
             let id = st.next_id;
             st.next_id += 1;
+            let weight = weight.unwrap_or_else(|| {
+                if lane.as_ref().is_some_and(|l| l.gpu) {
+                    0
+                } else {
+                    st.cpu_weight
+                }
+            });
             let at = st
                 .queue
                 .iter()
-                .position(|w| w.priority > priority)
+                .position(|w| w.e.rank > rank)
                 .unwrap_or(st.queue.len());
             st.queue.insert(
                 at,
                 Waiter {
-                    id,
-                    priority,
+                    e: Entry {
+                        id,
+                        rank,
+                        weight,
+                        lane,
+                    },
                     grant: tx,
                 },
             );
@@ -134,37 +248,88 @@ impl Slots {
 
     fn release(&self, id: u64) {
         let mut st = self.st.locked();
-        st.queue.retain(|w| w.id != id);
-        st.running.retain(|(r, _)| *r != id);
+        st.queue.retain(|w| w.e.id != id);
+        st.running.retain(|h| h.e.id != id);
         rebalance(&mut st);
     }
 
     fn playback_delta(&self, up: bool, cpu: bool) {
         let mut st = self.st.locked();
-        let n = if cpu { &mut st.playback } else { &mut st.gpu };
-        if up {
-            *n += 1;
-        } else {
-            *n = n.saturating_sub(1);
-        }
         if cpu {
-            rebalance(&mut st);
+            st.playback = if up {
+                st.playback + 1
+            } else {
+                st.playback.saturating_sub(1)
+            };
+        } else {
+            let n = st.gpu_reads.entry(GPU_DEVICE.into()).or_default();
+            *n = if up { *n + 1 } else { n.saturating_sub(1) };
         }
+        rebalance(&mut st);
     }
 }
 
-/// Grants waiters up to `size - playback` and preempts the newest holders past it.
+fn gpu_paused(st: &State, device: &str) -> bool {
+    st.gpu_reserve > 0 && st.gpu_reads.get(device).copied().unwrap_or(0) >= st.gpu_reserve
+}
+
+fn on_device(st: &State, device: &str) -> usize {
+    st.running
+        .iter()
+        .filter(|h| h.e.lane.as_ref().is_some_and(|l| l.device == device))
+        .count()
+}
+
+/// Whether the waiter may start now on its own device's terms; CPU weight is checked apart.
+fn device_ready(st: &State, e: &Entry) -> bool {
+    let Some(lane) = &e.lane else { return true };
+    let limit = st.device_limit.get(&lane.device).copied().unwrap_or(1);
+    on_device(st, &lane.device) < limit && !(lane.gpu && gpu_paused(st, &lane.device))
+}
+
+/// Grants waiters while the CPU budget `size - playback` and the devices allow, then flags the
+/// holders that must yield: by (priority, age), the weights summed against the budget, and the GPU
+/// runs of a device whose playback reserve is reached.
 fn rebalance(st: &mut State) {
-    let allowed = st.size.saturating_sub(st.playback);
-    while st.running.len() < allowed && !st.queue.is_empty() {
-        let w = st.queue.remove(0);
+    let size = st.size;
+    let allowed = size.saturating_sub(st.playback);
+    let mut cpu_blocked = false;
+    let mut kept = Vec::with_capacity(st.queue.len());
+    for w in std::mem::take(&mut st.queue) {
+        let cost = w.e.cost(size);
+        let fits = cost == 0 || {
+            // A non-optimization run only competes with its peers: it pauses an optimization.
+            let used: usize = st
+                .running
+                .iter()
+                .filter(|h| w.e.lane.is_some() || h.e.lane.is_none())
+                .map(|h| h.e.cost(size))
+                .sum();
+            used + cost <= allowed
+        };
+        if (cost > 0 && cpu_blocked) || !device_ready(st, &w.e) || !fits {
+            cpu_blocked |= cost > 0 && !fits;
+            kept.push(w);
+            continue;
+        }
         let (tx, rx) = watch::channel(false);
         if w.grant.send(rx).is_ok() {
-            st.running.push((w.id, tx));
+            st.running.push(Holder { e: w.e, tx });
         }
     }
-    for (i, (_, tx)) in st.running.iter().enumerate() {
-        tx.send_if_modified(|p| std::mem::replace(p, i >= allowed) != (i >= allowed));
+    st.queue = kept;
+    let mut order: Vec<usize> = (0..st.running.len()).collect();
+    order.sort_by_key(|i| (st.running[*i].e.rank, st.running[*i].e.id));
+    let mut used = 0;
+    for i in order {
+        let h = &st.running[i];
+        let cost = h.e.cost(size);
+        let cpu_ok = cost == 0 || used + cost <= allowed;
+        if cpu_ok {
+            used += cost;
+        }
+        let pause = !cpu_ok || h.e.gpu_device().is_some_and(|d| gpu_paused(st, d));
+        h.tx.send_if_modified(|p| std::mem::replace(p, pause) != pause);
     }
 }
 
@@ -238,11 +403,11 @@ mod tests {
     #[tokio::test]
     async fn background_queues_fifo_within_priority() {
         let s = Slots::new(1);
-        let a = s.background(JobPriority::Normal).await;
-        let mut low = Box::pin(s.background(JobPriority::Low));
-        let mut n1 = Box::pin(s.background(JobPriority::Normal));
-        let n2 = Box::pin(s.background(JobPriority::Normal));
-        let mut high = Box::pin(s.background(JobPriority::High));
+        let a = s.background(JobPriority::Normal, 1).await;
+        let mut low = Box::pin(s.background(JobPriority::Low, 1));
+        let mut n1 = Box::pin(s.background(JobPriority::Normal, 1));
+        let n2 = Box::pin(s.background(JobPriority::Normal, 1));
+        let mut high = Box::pin(s.background(JobPriority::High, 1));
         assert!(granted(&mut low).await.is_none() && granted(&mut high).await.is_none());
         drop(a);
         let h = granted(&mut high).await.expect("high first");
@@ -257,9 +422,9 @@ mod tests {
     #[tokio::test]
     async fn playback_preempts_and_resumes_the_newest_first() {
         let s = Slots::new(2);
-        let old = s.background(JobPriority::Normal).await;
-        let new = s.background(JobPriority::Normal).await;
-        let mut queued = Box::pin(s.background(JobPriority::High));
+        let old = s.background(JobPriority::Normal, 1).await;
+        let new = s.background(JobPriority::Normal, 1).await;
+        let mut queued = Box::pin(s.background(JobPriority::High, 1));
         let p = s.playback(true);
         assert_eq!(
             (*old.preempted.borrow(), *new.preempted.borrow()),
@@ -281,14 +446,14 @@ mod tests {
     #[tokio::test]
     async fn playback_never_waits_and_a_shrink_preempts() {
         let s = Slots::new(1);
-        let b = s.background(JobPriority::Normal).await;
+        let b = s.background(JobPriority::Normal, 1).await;
         let (p1, p2) = (s.playback(true), s.playback(true));
         assert_eq!(s.playback_in_use(), 2);
         assert!(*b.preempted.borrow());
         drop((p1, p2));
         assert!(!*b.preempted.borrow());
         s.set_size(Some(3));
-        let c = s.background(JobPriority::Normal).await;
+        let c = s.background(JobPriority::Normal, 1).await;
         s.set_size(Some(1));
         assert!(!*b.preempted.borrow() && *c.preempted.borrow());
         s.set_size(None);
@@ -298,7 +463,7 @@ mod tests {
     #[tokio::test]
     async fn hardware_playback_leaves_the_cpu_budget() {
         let s = Slots::new(1);
-        let job = s.background(JobPriority::Normal).await;
+        let job = s.background(JobPriority::Normal, 1).await;
         let hw1 = s.playback(false);
         let hw2 = s.playback(false);
         assert_eq!(s.playback_in_use(), 2);
@@ -310,5 +475,94 @@ mod tests {
         drop(cpu);
         drop((hw1, hw2));
         assert_eq!(s.playback_in_use(), 0);
+    }
+
+    fn cpu_lane() -> Lane {
+        Lane {
+            device: CPU_DEVICE.into(),
+            gpu: false,
+        }
+    }
+
+    fn gpu_lane() -> Lane {
+        Lane {
+            device: GPU_DEVICE.into(),
+            gpu: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_weighted_run_counts_its_weight_and_is_bounded_to_the_size() {
+        let s = Slots::new(2);
+        s.set_optimize(Some(5), None);
+        // Weight 5 is bounded to the size: it still runs alone on 2 slots.
+        let opt = s.optimize(cpu_lane()).await;
+        let mut sprite = Box::pin(s.background(JobPriority::Normal, 1));
+        assert!(!*opt.preempted.borrow());
+        // The sprite starts at once and the optimization yields to it.
+        let sprite = granted(&mut sprite).await.expect("sprite starts");
+        assert!(*opt.preempted.borrow() && !*sprite.preempted.borrow());
+        drop(sprite);
+        assert!(!*opt.preempted.borrow());
+        s.set_size(Some(1));
+        assert!(!*opt.preempted.borrow(), "a smaller size does not block it");
+        let p = s.playback(true);
+        assert!(*opt.preempted.borrow());
+        drop(p);
+    }
+
+    #[tokio::test]
+    async fn the_lowest_priority_pauses_first_whatever_its_age() {
+        let s = Slots::new(2);
+        let low = s.background(JobPriority::Low, 1).await;
+        let high = s.background(JobPriority::High, 1).await;
+        let p = s.playback(true);
+        assert_eq!(
+            (*low.preempted.borrow(), *high.preempted.borrow()),
+            (true, false),
+            "the older low-priority run yields to the newer high one"
+        );
+        drop(p);
+    }
+
+    #[tokio::test]
+    async fn optimization_has_its_own_device_limit_and_no_mark_on_the_job_limit() {
+        let s = Slots::new(8);
+        s.set_device_limit(CPU_DEVICE, 2);
+        s.set_optimize(Some(1), None);
+        let a = s.optimize(cpu_lane()).await;
+        let b = s.optimize(cpu_lane()).await;
+        let mut c = Box::pin(s.optimize(cpu_lane()));
+        assert!(granted(&mut c).await.is_none(), "the device holds two");
+        drop(a);
+        assert!(granted(&mut c).await.is_some());
+        drop(b);
+    }
+
+    #[tokio::test]
+    async fn the_gpu_reserve_pauses_a_device_not_the_cpu() {
+        let s = Slots::new(2);
+        let gpu = s.optimize(gpu_lane()).await;
+        let cpu = s.optimize(cpu_lane()).await;
+        assert!(!*gpu.preempted.borrow() && !*cpu.preempted.borrow());
+        let read = s.playback(false);
+        assert!(*gpu.preempted.borrow() && !*cpu.preempted.borrow());
+        let mut again = Box::pin(s.optimize(gpu_lane()));
+        assert!(granted(&mut again).await.is_none());
+        s.set_optimize(None, Some(2));
+        assert!(!*gpu.preempted.borrow(), "one read is below a reserve of 2");
+        s.set_optimize(None, Some(0));
+        drop(read);
+        assert!(!*gpu.preempted.borrow());
+    }
+
+    #[test]
+    fn optimize_threads_follow_the_weight() {
+        let s = Slots::new(cpu_quota().max(2));
+        s.set_optimize(Some(1), None);
+        let one = s.optimize_threads();
+        s.set_optimize(Some(2), None);
+        assert!(s.optimize_threads() >= one);
+        assert!(s.optimize_threads() as usize <= cpu_quota());
     }
 }

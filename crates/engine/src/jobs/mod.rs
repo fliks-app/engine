@@ -17,6 +17,7 @@ use crate::AppState;
 use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes, background};
 use crate::runtime::{Runtime, now_ms};
+use crate::slots::Lane;
 use axum::{
     Json,
     extract::{Path as UrlPath, State},
@@ -24,8 +25,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use fliks_engine_core::api::{
-    BgJobState, EngineEvent, FingerprintWindow, JobAccepted, JobKind, JobPriority, JobRequest,
-    JobResult, JobSnapshot, MediaInfo,
+    BgJobState, EngineEvent, FingerprintWindow, JobAccepted, JobErrorClass, JobKind, JobPriority,
+    JobRequest, JobResult, JobSnapshot, MediaInfo, PauseMode,
 };
 use fliks_engine_core::jobs::sprite::RUN_TIMEOUT_MS;
 use fliks_engine_core::session::{JobWatch, JobWatchInput, job_watch};
@@ -46,6 +47,8 @@ const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 const DEFAULT_MIN_FREE_BYTES: f64 = 1024.0 * 1024.0 * 1024.0;
 pub const CANCELLED: &str = "cancelled";
 const PROMOTED: &str = "promoted";
+/// A run that must yield and cannot be paused is killed: the job goes back to its queue.
+const REQUEUED: &str = "requeued";
 
 struct JobMut {
     /// `Queued`, `Running` or an end state; `Paused` is derived from the runs.
@@ -70,6 +73,8 @@ pub struct BgJob {
     /// A session open waits on it: past the queue, never preempted, its runs take playback slots.
     /// A background run in flight is raised in place when the OS allows, else stopped and redone.
     urgent: watch::Sender<bool>,
+    /// A leased optimization: its own device slot, outside `MAX_RUNNING`.
+    lane: Option<Lane>,
     /// A background run was stopped by the promotion: `run` redoes the job from its start.
     promoted: AtomicBool,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
@@ -85,6 +90,11 @@ impl BgJob {
 
     fn base_state(&self) -> BgJobState {
         self.m.locked().state
+    }
+
+    /// Every run of the job is held by playback right now.
+    pub fn paused(&self) -> bool {
+        self.snapshot().state == BgJobState::Paused
     }
 
     pub fn snapshot(&self) -> JobSnapshot {
@@ -250,7 +260,7 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
             let now = q.waiting.remove(&(j.priority(), j.seq)).is_some() && begin(&mut q, &j);
             (j.id.clone(), now.then_some(j))
         } else {
-            let j = queue(&mut q, req, dedupe, urgent);
+            let j = queue(&mut q, req, dedupe, urgent, None);
             let now = urgent && begin(&mut q, &j);
             if !now {
                 q.waiting.insert((j.priority(), j.seq), j.clone());
@@ -265,8 +275,33 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
     Ok(id)
 }
 
+/// Starts the optimization or verification a worker leased, at once on `lane`: no wait for
+/// `MAX_RUNNING`, the device's own limit applies in the slots. `lease` names it (never deduped).
+pub fn submit_leased(
+    rt: &Arc<Runtime>,
+    req: JobRequest,
+    lane: Lane,
+    lease: &str,
+) -> Result<Arc<BgJob>, String> {
+    validate(&req.kind)?;
+    let j = {
+        let mut q = rt.jobs.q.locked();
+        let j = queue(&mut q, req, lease.into(), false, Some(lane));
+        begin(&mut q, &j);
+        j
+    };
+    launch(rt, j.clone());
+    Ok(j)
+}
+
 /// A new job, indexed but neither waiting nor started.
-fn queue(q: &mut Queue, req: JobRequest, dedupe: String, urgent: bool) -> Arc<BgJob> {
+fn queue(
+    q: &mut Queue,
+    req: JobRequest,
+    dedupe: String,
+    urgent: bool,
+    lane: Option<Lane>,
+) -> Arc<BgJob> {
     let seq = q.next_seq;
     q.next_seq += 1;
     let j = Arc::new(BgJob {
@@ -274,6 +309,7 @@ fn queue(q: &mut Queue, req: JobRequest, dedupe: String, urgent: bool) -> Arc<Bg
         req,
         seq,
         dedupe: dedupe.clone(),
+        lane,
         created_ms: now_ms(),
         cancel: watch::channel(false).0,
         urgent: watch::channel(urgent).0,
@@ -306,7 +342,7 @@ fn begin(q: &mut Queue, j: &BgJob) -> bool {
     }
     m.state = BgJobState::Running;
     m.started_ms = Some(now_ms());
-    q.running += 1;
+    q.running += usize::from(j.lane.is_none());
     true
 }
 
@@ -441,7 +477,7 @@ fn finish(
         BgJobState::Queued => {
             q.waiting.remove(&(job.priority(), job.seq));
         }
-        BgJobState::Running => q.running -= 1,
+        BgJobState::Running => q.running -= usize::from(job.lane.is_none()),
         _ => {}
     }
     q.ended.push_back(job.seq);
@@ -580,7 +616,7 @@ impl Ctx {
         let (_background, playback, mut preempted) = tokio::select! {
             biased;
             _ = urgent.wait_for(|u| *u) => (None, Some(self.rt.slots.playback(true)), unpreempted),
-            s = self.rt.slots.background(self.job.priority()) => {
+            s = self.slot() => {
                 let p = s.preempted.clone();
                 (Some(s), None, p)
             }
@@ -632,11 +668,26 @@ impl Ctx {
         if reason == PROMOTED {
             self.job.promoted.store(true, Relaxed);
         }
-        Err(if reason == CANCELLED || reason == PROMOTED {
+        Err(if reason == REQUEUED {
+            JobErrorClass::Busy.message("stopped for playback, the job starts over")
+        } else if reason == CANCELLED || reason == PROMOTED {
             reason.into()
         } else {
             format!("{} {reason}", cmds[0].name)
         })
+    }
+
+    /// The background slot of the job: an optimization's device lane, else its priority's queue.
+    async fn slot(&self) -> crate::slots::BackgroundSlot {
+        match &self.job.lane {
+            Some(lane) => self.rt.slots.optimize(lane.clone()).await,
+            None => self.rt.slots.background(self.job.priority(), 1).await,
+        }
+    }
+
+    /// The optimization lane the job was leased on.
+    pub fn lane(&self) -> Option<&Lane> {
+        self.job.lane.as_ref()
     }
 
     /// Applies the slot's pause verdict and returns why the runs must be stopped.
@@ -650,6 +701,7 @@ impl Ctx {
         paused_out: &AtomicBool,
     ) -> &'static str {
         let cap = self.rt.pause_capability();
+        let restart = self.job.lane.is_some() && self.rt.optimize_pause() == PauseMode::Restart;
         let lifetime = &self.rt.current_config().lifetime;
         let (mut paused, mut raised, mut active_ms, mut tick) =
             (false, false, 0u64, Instant::now());
@@ -682,6 +734,9 @@ impl Ctx {
                 raised = true;
             }
             let want = *preempted.borrow() && !promoted;
+            if want && restart {
+                return REQUEUED;
+            }
             if want != paused {
                 let mut sent = false;
                 for p in procs {
@@ -798,6 +853,18 @@ fn free_bytes(_: &Path) -> Option<u64> {
 }
 
 impl Runtime {
+    /// How an optimization yields to playback: suspended, or killed and requeued where the OS
+    /// cannot suspend it (`FLIKS_OPTIMIZE_PAUSE=restart` forces it, for a GPU short of memory).
+    pub fn optimize_pause(&self) -> PauseMode {
+        let forced = std::env::var("FLIKS_OPTIMIZE_PAUSE").is_ok_and(|v| v == "restart");
+        let none = self.pause_capability() == fliks_engine_core::session::PauseCapability::None;
+        if forced || none {
+            PauseMode::Restart
+        } else {
+            PauseMode::Suspend
+        }
+    }
+
     /// Fails below `streaming.jobMinFreeBytes` free under `dir` (created first): jobs and playback runs.
     pub async fn check_disk(&self, dir: &Path) -> Result<(), String> {
         let min = self

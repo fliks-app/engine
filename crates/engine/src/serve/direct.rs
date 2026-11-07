@@ -85,14 +85,42 @@ async fn file_body(path: &str, start: u64, len: u64) -> std::io::Result<Body> {
     Ok(stream_body(f.take(len), 64 * 1024))
 }
 
+/// `"<size>-<mtimeMs>"`: a replaced file (the optimizer swaps in a new one) never shares it.
+pub(super) fn etag(md: &std::fs::Metadata) -> String {
+    let ms = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis());
+    format!("\"{}-{ms}\"", md.len())
+}
+
+/// A `Range` is honoured unless `If-Range` names another version than `etag`: the client then
+/// gets the whole file instead of the rest of a different one.
+fn range_applies(headers: &HeaderMap, etag: Option<&str>) -> bool {
+    match headers.get(header::IF_RANGE).and_then(|v| v.to_str().ok()) {
+        None => true,
+        Some(v) => etag.is_some_and(|e| v.trim() == e),
+    }
+}
+
 /// `path` whole, or the part of it a `Range` header asks for; `res` carries the route's headers.
+/// `etag` is sent and checked against `If-Range`.
 pub(super) async fn ranged_file(
     mut res: axum::http::response::Builder,
     headers: &HeaderMap,
     path: &str,
     size: u64,
+    etag: Option<&str>,
 ) -> std::io::Result<Response> {
-    let (status, start, len) = match headers.get(header::RANGE).and_then(|r| r.to_str().ok()) {
+    if let Some(e) = etag {
+        res = res.header(header::ETAG, e);
+    }
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|r| r.to_str().ok())
+        .filter(|_| range_applies(headers, etag));
+    let (status, start, len) = match range {
         None => (StatusCode::OK, 0, size),
         Some(r) => match parse_range(r, size) {
             Some((s, e)) => {
@@ -166,7 +194,7 @@ pub(super) async fn direct(
     if download {
         res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
     }
-    ranged_file(res, &headers, &path, size)
+    ranged_file(res, &headers, &path, size, Some(&etag(&md)))
         .await
         .unwrap_or_else(|e| {
             tracing::error!(path, "direct play read: {e}");
@@ -213,7 +241,7 @@ pub(super) async fn part(
     if purpose == ResolvePurpose::Download {
         res = res.header(header::CONTENT_DISPOSITION, attachment(&base_name(&path)));
     }
-    ranged_file(res, &headers, &path, md.len())
+    ranged_file(res, &headers, &path, md.len(), Some(&etag(&md)))
         .await
         .unwrap_or_else(|e| {
             tracing::error!(path, "part read: {e}");
@@ -262,5 +290,42 @@ pub(super) async fn sprite(
         )
             .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod etag_tests {
+    use super::*;
+
+    #[test]
+    fn if_range_keeps_a_range_only_for_the_same_version() {
+        let with = |v: &str| {
+            let mut h = HeaderMap::new();
+            h.insert(header::IF_RANGE, v.parse().unwrap());
+            h
+        };
+        let tag = "\"100-5\"";
+        assert!(range_applies(&HeaderMap::new(), Some(tag)));
+        assert!(range_applies(&with(tag), Some(tag)));
+        assert!(
+            !range_applies(&with("\"99-5\""), Some(tag)),
+            "replaced file"
+        );
+        assert!(!range_applies(
+            &with("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(tag)
+        ));
+        assert!(!range_applies(&with(tag), None));
+    }
+
+    #[test]
+    fn the_etag_holds_size_and_mtime_ms() {
+        let dir = std::env::temp_dir().join(format!("fliks-etag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.bin");
+        std::fs::write(&f, b"abc").unwrap();
+        let tag = etag(&std::fs::metadata(&f).unwrap());
+        assert!(tag.starts_with("\"3-") && tag.ends_with('"'), "{tag}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
