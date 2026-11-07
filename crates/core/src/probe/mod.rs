@@ -7,6 +7,7 @@ mod ffjson;
 mod lang;
 mod mkv;
 pub mod moviehash;
+mod statistics;
 mod tags;
 
 pub use build::{apply_late_audio, build, first_frame_stream, measure_fps, parse_main};
@@ -247,11 +248,12 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
         && let Some(v) = info.video.first()
     {
         let (duration, w, h) = (info.duration_seconds, v.width, v.height);
-        let (crop, decode) =
+        let (crop, stable, decode) =
             detect_crop(t, path, duration, w, h, opts.crop_decode.as_deref()).await;
         crop_decode = Some(decode);
-        if let (Some(crop), Some(v)) = (crop, info.video.first_mut()) {
-            v.crop = Some(crop);
+        if let Some(v) = info.video.first_mut() {
+            v.crop = crop;
+            v.crop_stable = Some(stable);
         }
     }
     Outcome {
@@ -263,7 +265,8 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
 }
 
 /// `detectCrop`: samples spread over the file, loosest box wins; the first decides GPU or
-/// software decode for all (same nv12 pixels). Also returns the decoder used.
+/// software decode for all (same nv12 pixels). Also returns whether the samples agree and the
+/// decoder used.
 async fn detect_crop<T: Tools>(
     t: &T,
     path: &str,
@@ -271,7 +274,7 @@ async fn detect_crop<T: Tools>(
     width: Option<u32>,
     height: Option<u32>,
     hw: Option<&[String]>,
-) -> (Option<CropInfo>, String) {
+) -> (Option<CropInfo>, bool, String) {
     let ss = crop::timestamps(duration);
     let run = |hw: Option<&[String]>, ss: &[u32]| {
         t.ffmpeg_samples(ss.iter().map(|s| args::crop_sample(path, *s, hw)).collect())
@@ -290,5 +293,9 @@ async fn detect_crop<T: Tools>(
         .map(|r| r.ok().and_then(|log| crop::parse_sample(&log)))
         .collect();
     let name = hw.map_or("sw", |h| h.get(1).map_or("sw", String::as_str));
-    (crop::aggregate(&samples, width, height), name.into())
+    (
+        crop::aggregate(&samples, width, height),
+        crop::stable(&samples),
+        name.into(),
+    )
 }

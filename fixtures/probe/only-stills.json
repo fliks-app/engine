@@ -254,6 +254,7 @@
           "avgFrameRate": "24000/1001",
           "bitDepth": 8,
           "codec": "png",
+          "cropStable": false,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

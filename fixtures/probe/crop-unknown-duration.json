@@ -217,6 +217,7 @@
             "x": 0,
             "y": 40
           },
+          "cropStable": true,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

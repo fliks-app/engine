@@ -150,6 +150,8 @@ impl Jobs {
     }
 }
 
+const NOT_IMPLEMENTED: &str = "optimize and verify jobs are not implemented by this engine";
+
 fn validate(kind: &JobKind) -> Result<(), String> {
     if let Some(family) = kind.info().and_then(MediaInfo::family)
         && !kind.families().contains(&family)
@@ -201,6 +203,7 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Merge { parts, output, .. } => {
             fliks_engine_core::jobs::merge::validate(parts, output)?;
         }
+        JobKind::Optimize { .. } | JobKind::Verify { .. } => return Err(NOT_IMPLEMENTED.into()),
     }
     Ok(())
 }
@@ -396,6 +399,7 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             .await
         }
         JobKind::SubtitleToSrt { info, source } => srt::run(ctx, info, source).await,
+        JobKind::Optimize { .. } | JobKind::Verify { .. } => Err(NOT_IMPLEMENTED.into()),
     }
 }
 

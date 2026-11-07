@@ -1,6 +1,7 @@
 //! ffprobe JSON to `MediaInfo`: `detectMediaFileInfo` minus the process spawning.
 use super::ffjson::{Frame, Main, Stream};
 use super::lang::{is_image_based, language_from_title, subtitle_flags_from_title};
+use super::statistics::has_statistics_tags;
 use super::tags;
 use crate::api::{
     AudioStreamInfo, Chapter, HdrFormat, HdrMetadata, MediaInfo, SubtitleStreamInfo,
@@ -135,7 +136,7 @@ fn reconcile_frame_rate(declared: Option<String>, measured: Option<f64>) -> Opti
 }
 
 /// An `h:mm:ss[.fff]` DURATION tag in seconds.
-fn clock_seconds(s: &str) -> Option<f64> {
+pub(super) fn clock_seconds(s: &str) -> Option<f64> {
     let mut parts = s.split(':');
     let (h, m, sec) = (parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some() {
@@ -195,12 +196,14 @@ fn derive_hdr(transfer: Option<&str>, primaries: Option<&str>) -> Option<HdrForm
     }
 }
 
-fn resolve_language(s: &Stream) -> String {
+/// The language and whether it was deduced from the title.
+fn resolve_language(s: &Stream) -> (String, bool) {
     match s.tags.get("language") {
-        Some(l) if !l.is_empty() && l.to_lowercase() != "und" => l.to_string(),
-        _ => language_from_title(s.tags.get("title"))
-            .unwrap_or("und")
-            .to_string(),
+        Some(l) if !l.is_empty() && l.to_lowercase() != "und" => (l.to_string(), false),
+        _ => match language_from_title(s.tags.get("title")) {
+            Some(l) => (l.to_string(), true),
+            None => ("und".to_string(), false),
+        },
     }
 }
 
@@ -384,6 +387,7 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 dv_rpu_present: Some(flag("rpu_present_flag")),
                 dv_bl_present: Some(flag("bl_present_flag")),
                 dv_el_present: Some(flag("el_present_flag")),
+                has_statistics_tags: has_statistics_tags(&s.tags).then_some(true),
                 field_order: s
                     .field_order
                     .clone()
@@ -410,29 +414,34 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .streams
         .iter()
         .filter(|s| s.codec_type.as_deref() == Some("audio"))
-        .map(|s| AudioStreamInfo {
-            stream_index: index(s),
-            codec: s.codec_name.clone().unwrap_or_else(|| "unknown".into()),
-            language: resolve_language(s),
-            title: s.tags.get("title").map(String::from),
-            channels: u32_of(s.channels),
-            channel_layout: s.channel_layout.clone(),
-            sample_rate: u32_of(non_empty(&s.sample_rate).and_then(number)),
-            bit_rate: u32_of(non_empty(&s.bit_rate).and_then(number)),
-            profile: s.profile.clone(),
-            is_default: Some(s.disposition.default == Some(1.0)),
-            start_time_seconds: start_seconds(s),
-            end_seconds: stream_end_seconds(s),
-            commentary: flag(s.disposition.comment),
-            audio_description: (s.disposition.visual_impaired == Some(1.0)
-                || s.disposition.descriptions == Some(1.0))
-            .then_some(true),
-            hearing_impaired: flag(s.disposition.hearing_impaired),
-            original: flag(s.disposition.original),
-            dub: flag(s.disposition.dub),
-            clean_effects: flag(s.disposition.clean_effects),
-            karaoke: flag(s.disposition.karaoke).or(flag(s.disposition.lyrics)),
-            language_tag: None,
+        .map(|s| {
+            let (language, from_title) = resolve_language(s);
+            AudioStreamInfo {
+                stream_index: index(s),
+                codec: s.codec_name.clone().unwrap_or_else(|| "unknown".into()),
+                language,
+                language_from_title: from_title.then_some(true),
+                has_statistics_tags: has_statistics_tags(&s.tags).then_some(true),
+                title: s.tags.get("title").map(String::from),
+                channels: u32_of(s.channels),
+                channel_layout: s.channel_layout.clone(),
+                sample_rate: u32_of(non_empty(&s.sample_rate).and_then(number)),
+                bit_rate: u32_of(non_empty(&s.bit_rate).and_then(number)),
+                profile: s.profile.clone(),
+                is_default: Some(s.disposition.default == Some(1.0)),
+                start_time_seconds: start_seconds(s),
+                end_seconds: stream_end_seconds(s),
+                commentary: flag(s.disposition.comment),
+                audio_description: (s.disposition.visual_impaired == Some(1.0)
+                    || s.disposition.descriptions == Some(1.0))
+                .then_some(true),
+                hearing_impaired: flag(s.disposition.hearing_impaired),
+                original: flag(s.disposition.original),
+                dub: flag(s.disposition.dub),
+                clean_effects: flag(s.disposition.clean_effects),
+                karaoke: flag(s.disposition.karaoke).or(flag(s.disposition.lyrics)),
+                language_tag: None,
+            }
         })
         .collect();
 
@@ -465,10 +474,13 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .filter(|s| s.codec_type.as_deref() == Some("subtitle"))
         .map(|s| {
             let (forced, hearing_impaired) = subtitle_flags(s);
+            let (language, from_title) = resolve_language(s);
             SubtitleStreamInfo {
                 stream_index: index(s),
                 codec: s.codec_name.clone().unwrap_or_else(|| "unknown".into()),
-                language: resolve_language(s),
+                language,
+                language_from_title: from_title.then_some(true),
+                has_statistics_tags: has_statistics_tags(&s.tags).then_some(true),
                 language_tag: None,
                 title: s.tags.get("title").map(String::from),
                 forced,

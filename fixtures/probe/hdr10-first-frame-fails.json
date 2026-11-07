@@ -260,6 +260,7 @@
           "colorRange": "tv",
           "colorSpace": "bt2020nc",
           "colorTransfer": "smpte2084",
+          "cropStable": false,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

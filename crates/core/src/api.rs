@@ -12,6 +12,7 @@ mod lifetime;
 mod live;
 mod probe;
 mod runtime;
+mod worker;
 pub use decide::*;
 pub use fingerprint::*;
 pub use intro::*;
@@ -20,9 +21,10 @@ pub use lifetime::*;
 pub use live::*;
 pub use probe::*;
 pub use runtime::*;
+pub use worker::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 4;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 5;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -317,6 +319,12 @@ pub struct VideoStreamInfo {
     pub hdr10_plus: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop: Option<CropInfo>,
+    /// Set when `cropdetect` ran: its samples all gave the same frame. A moving box is not a crop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop_stable: Option<bool>,
+    /// Set when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all present and consistent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_statistics_tags: Option<bool>,
     /// ffprobe `field_order` (`tt`, `bb`, `tb`, `bt`), set only when the stream is interlaced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_order: Option<String>,
@@ -364,6 +372,12 @@ pub struct AudioStreamInfo {
     /// The `karaoke` or `lyrics` disposition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub karaoke: Option<bool>,
+    /// See `VideoStreamInfo::has_statistics_tags`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_statistics_tags: Option<bool>,
+    /// `language` was deduced from the title: the file's tag is absent or `und`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_from_title: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -386,6 +400,12 @@ pub struct SubtitleStreamInfo {
     pub descriptions: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lyrics: Option<bool>,
+    /// See `VideoStreamInfo::has_statistics_tags`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_statistics_tags: Option<bool>,
+    /// See `AudioStreamInfo::language_from_title`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_from_title: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

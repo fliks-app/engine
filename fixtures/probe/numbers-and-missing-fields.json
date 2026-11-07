@@ -260,6 +260,7 @@
         {
           "avgFrameRate": "24000/1001",
           "codec": "h264",
+          "cropStable": false,
           "displayAspectRatio": "0:1",
           "dvBlPresent": false,
           "dvElPresent": false,

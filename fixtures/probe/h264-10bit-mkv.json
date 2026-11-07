@@ -211,6 +211,7 @@
           "bitDepth": 10,
           "codec": "h264",
           "colorRange": "tv",
+          "cropStable": false,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

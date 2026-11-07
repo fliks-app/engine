@@ -29,6 +29,18 @@ impl Tags {
             .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
             .map(|(_, v)| v.as_str())
     }
+
+    /// `key` or its language-suffixed form (`BPS-eng`), as Matroska statistics tags are printed.
+    pub fn get_localised(&self, key: &str) -> Option<&str> {
+        let key = key.to_lowercase();
+        self.0
+            .iter()
+            .find(|(k, _)| {
+                let k = k.to_lowercase();
+                k == key || k.strip_prefix(&key).is_some_and(|r| r.starts_with('-'))
+            })
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 impl<'de> Deserialize<'de> for Tags {

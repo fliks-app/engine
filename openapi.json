@@ -934,6 +934,13 @@
             ],
             "format": "double"
           },
+          "hasStatisticsTags": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "See `VideoStreamInfo::has_statistics_tags`."
+          },
           "hearingImpaired": {
             "type": [
               "boolean",
@@ -955,6 +962,13 @@
           },
           "language": {
             "type": "string"
+          },
+          "languageFromTitle": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`language` was deduced from the title: the file's tag is absent or `und`."
           },
           "languageTag": {
             "type": [
@@ -2857,6 +2871,44 @@
           }
         }
       },
+      "JobError": {
+        "type": "object",
+        "required": [
+          "class",
+          "message"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/JobErrorClass"
+          },
+          "message": {
+            "type": "string"
+          },
+          "stderrTail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "End of the encoder's stderr; the host keeps 64 KiB."
+          }
+        }
+      },
+      "JobErrorClass": {
+        "type": "string",
+        "description": "Why a job did not complete.",
+        "enum": [
+          "access",
+          "io",
+          "corrupt",
+          "damaged",
+          "nospace",
+          "engine",
+          "network",
+          "verify",
+          "busy",
+          "stale"
+        ]
+      },
       "JobFamilies": {
         "type": "object",
         "description": "A job kind and the families of file it applies to.",
@@ -2874,6 +2926,52 @@
           "kind": {
             "type": "string",
             "description": "`JobKind` `type`."
+          }
+        }
+      },
+      "JobHeartbeatRequest": {
+        "type": "object",
+        "description": "`POST /engine/jobs/{id}/heartbeat`, every `heartbeatS`.",
+        "required": [
+          "workerId",
+          "attempt",
+          "progress",
+          "paused"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "progress": {
+            "type": "number",
+            "format": "double",
+            "description": "0 to 1."
+          },
+          "workerId": {
+            "type": "string"
+          }
+        }
+      },
+      "JobHeartbeatResponse": {
+        "type": "object",
+        "required": [
+          "leaseUntil",
+          "cancel"
+        ],
+        "properties": {
+          "cancel": {
+            "type": "boolean",
+            "description": "The job was cancelled: stop and delete the files."
+          },
+          "leaseUntil": {
+            "type": "number",
+            "format": "double",
+            "description": "Epoch ms."
           }
         }
       },
@@ -3128,6 +3226,46 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "title": "OptimizeJob",
+            "description": "Optimisation of one file by the plan; leased by a worker (`PROTOCOL.md`), not run by `/v1/jobs`.",
+            "required": [
+              "payload",
+              "type"
+            ],
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/OptimizePayload"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Optimize"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "VerifyJob",
+            "description": "Integrity check of one file; leased by a worker, not run by `/v1/jobs`.",
+            "required": [
+              "payload",
+              "type"
+            ],
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/VerifyPayload"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Verify"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does; new kinds are additive variants."
@@ -3347,6 +3485,61 @@
         ],
         "description": "What a finished job hands back, as data (files stay in the engine and are served by it)."
       },
+      "JobResultRequest": {
+        "type": "object",
+        "description": "`POST /engine/jobs/{id}/result`.",
+        "required": [
+          "workerId",
+          "attempt",
+          "ok"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "outInfo": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MediaInfo",
+                "description": "Probe of the output."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outSha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Lowercase hex SHA-256 of the staged output, computed by the worker."
+          },
+          "outSize": {
+            "type": "number",
+            "format": "double",
+            "description": "Bytes of the staged output; 0 for a `Verify`."
+          },
+          "workerId": {
+            "type": "string"
+          }
+        }
+      },
       "JobSnapshot": {
         "type": "object",
         "required": [
@@ -3513,6 +3706,100 @@
           "pts": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "LeaseRef": {
+        "type": "object",
+        "description": "A lease the worker holds.",
+        "required": [
+          "id",
+          "attempt"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "LeaseRequest": {
+        "type": "object",
+        "description": "`POST /engine/jobs/lease`: long-polls for a job that fits the device.",
+        "required": [
+          "workerId",
+          "deviceId"
+        ],
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "workerId": {
+            "type": "string"
+          }
+        }
+      },
+      "LeasedJob": {
+        "type": "object",
+        "description": "The answer to a lease; 204 with no body when nothing was queued within the poll.",
+        "required": [
+          "id",
+          "attempt",
+          "leaseS",
+          "kind"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Fencing counter, +1 on each lease; every later call of the job carries it.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "inputPath": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Local read: the source and the staging file to write, both on the worker's filesystem."
+          },
+          "inputToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Remote read: the main engine's data plane (`purpose: download`), with a token bound to the file."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind",
+            "description": "`Optimize` or `Verify`, with its payload."
+          },
+          "leaseS": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "stagedPath": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4458,6 +4745,75 @@
           }
         }
       },
+      "OptimizeLevel": {
+        "type": "string",
+        "description": "How much of the file a job rewrites.",
+        "enum": [
+          "metadata",
+          "remux",
+          "reencode"
+        ]
+      },
+      "OptimizePayload": {
+        "type": "object",
+        "required": [
+          "info",
+          "plan"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo",
+            "description": "Probe of the source at queue time."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/OptimizePlan"
+          }
+        }
+      },
+      "OptimizePlan": {
+        "type": "object",
+        "description": "The resolved plan of an optimisation: decided by the host, executed as written.",
+        "required": [
+          "level"
+        ],
+        "properties": {
+          "codec": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target video codec of a `reencode`."
+          },
+          "crop": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CropInfo",
+                "description": "Letterbox bars to cut, `reencode` only."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hvc1Tag": {
+            "type": "boolean",
+            "description": "Write `hvc1` instead of `hev1` on HEVC in MP4."
+          },
+          "level": {
+            "$ref": "#/components/schemas/OptimizeLevel"
+          },
+          "streams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StreamPlan"
+            }
+          },
+          "stripStatisticsTags": {
+            "type": "boolean",
+            "description": "Drop the per-track statistics tags, which the new file would carry stale."
+          }
+        }
+      },
       "PathMapping": {
         "type": "object",
         "description": "One prefix of a host media path rewritten to the path this engine opens.",
@@ -4473,6 +4829,14 @@
             "type": "string"
           }
         }
+      },
+      "PauseMode": {
+        "type": "string",
+        "description": "How a device holds a job that must yield to playback.",
+        "enum": [
+          "suspend",
+          "restart"
+        ]
       },
       "PipelineStage": {
         "type": "object",
@@ -5635,6 +5999,32 @@
         ],
         "description": "Where the SRT conversion reads. `file` is an absolute sidecar; `stream` is a text track of the job's media."
       },
+      "StreamPlan": {
+        "type": "object",
+        "description": "What happens to one stream of the source.",
+        "required": [
+          "streamIndex",
+          "keep"
+        ],
+        "properties": {
+          "keep": {
+            "type": "boolean",
+            "description": "A stream absent from `OptimizePlan.streams` is kept as it is."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language tag to write (ISO 639-2), when it differs from the source's."
+          },
+          "streamIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "StreamingConfig": {
         "type": "object",
         "description": "The `streaming_*` settings, already resolved by the host. Defaults match the host's.",
@@ -5768,6 +6158,13 @@
           "forced": {
             "type": "boolean"
           },
+          "hasStatisticsTags": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "See `VideoStreamInfo::has_statistics_tags`."
+          },
           "hearingImpaired": {
             "type": "boolean"
           },
@@ -5777,6 +6174,13 @@
           },
           "language": {
             "type": "string"
+          },
+          "languageFromTitle": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "See `AudioStreamInfo::language_from_title`."
           },
           "languageTag": {
             "type": [
@@ -5978,6 +6382,31 @@
           }
         }
       },
+      "UploadAck": {
+        "type": "object",
+        "description": "`PUT /engine/jobs/{id}/output` answer.",
+        "required": [
+          "receivedBytes"
+        ],
+        "properties": {
+          "receivedBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Bytes held by the host: the next `Upload-Offset`."
+          }
+        }
+      },
+      "VerifyPayload": {
+        "type": "object",
+        "required": [
+          "info"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/MediaInfo"
+          }
+        }
+      },
       "VideoCodec": {
         "type": "string",
         "enum": [
@@ -6059,6 +6488,13 @@
               }
             ]
           },
+          "cropStable": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Set when `cropdetect` ran: its samples all gave the same frame. A moving box is not a crop."
+          },
           "displayAspectRatio": {
             "type": [
               "string",
@@ -6133,6 +6569,13 @@
               "string",
               "null"
             ]
+          },
+          "hasStatisticsTags": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Set when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all present and consistent."
           },
           "hdr10Plus": {
             "type": [
@@ -6212,6 +6655,133 @@
               "integer",
               "null"
             ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkerDevice": {
+        "type": "object",
+        "required": [
+          "id",
+          "encoders",
+          "decoders",
+          "maxJobs",
+          "pause"
+        ],
+        "properties": {
+          "decoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "encoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable within an instance (`cpu`, a render node...)."
+          },
+          "maxJobs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "pause": {
+            "$ref": "#/components/schemas/PauseMode"
+          },
+          "vramMib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkerHello": {
+        "type": "object",
+        "description": "`POST /engine/workers/hello`.",
+        "required": [
+          "instanceId",
+          "engineVersion",
+          "devices"
+        ],
+        "properties": {
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkerDevice"
+            }
+          },
+          "engineVersion": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "description": "Generated at worker startup; the `workerId` of every later request."
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaseRef"
+            },
+            "description": "Leases still held; the host puts every other lease of this instance back in the queue."
+          }
+        }
+      },
+      "WorkerHelloResponse": {
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "abandon": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "Leases from `jobs` to drop now: the worker kills their process and deletes their files."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/WorkerSettings"
+          }
+        }
+      },
+      "WorkerSettings": {
+        "type": "object",
+        "description": "Settings the host imposes; path access and mappings are the admin's, never the worker's.",
+        "required": [
+          "leaseS",
+          "heartbeatS",
+          "longPollS",
+          "uploadChunkBytes"
+        ],
+        "properties": {
+          "heartbeatS": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "leaseS": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "longPollS": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "uploadChunkBytes": {
+            "type": "integer",
             "format": "int32",
             "minimum": 0
           }
