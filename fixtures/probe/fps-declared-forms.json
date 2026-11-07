@@ -215,6 +215,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [],
       "chapters": [],
       "durationSeconds": 60,

@@ -2404,6 +2404,18 @@
               "null"
             ]
           },
+          "forced": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hearingImpaired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "language": {
             "type": [
               "string",
@@ -3572,6 +3584,20 @@
             "format": "int32",
             "minimum": 0
           },
+          "copyReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`Optimize` only: why a planned re-encode copied the video."
+          },
+          "cpuFallback": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`Optimize` only: the output was produced on the CPU after the hardware encoder failed."
+          },
           "error": {
             "oneOf": [
               {
@@ -3581,6 +3607,21 @@
                 "type": "null"
               }
             ]
+          },
+          "level": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OptimizeLevel",
+                "description": "`Optimize` only: what was really done (a `reencode` whose video was copied reports `remux`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nothingToDo": {
+            "type": "boolean",
+            "description": "`Optimize` only: the video copy left nothing to change; no output was staged."
           },
           "ok": {
             "type": "boolean"
@@ -4223,6 +4264,15 @@
           "subtitles"
         ],
         "properties": {
+          "attachments": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Attached files (fonts...), counted; absent on blobs probed before it was recorded.",
+            "minimum": 0
+          },
           "audio": {
             "type": "array",
             "items": {
@@ -4868,6 +4918,10 @@
             "$ref": "#/components/schemas/OptimizeLevel",
             "description": "What was really done: a `reencode` whose video was copied reports `remux`."
           },
+          "nothingToDo": {
+            "type": "boolean",
+            "description": "A copied video left nothing to change: no output was staged (`stagedPath` is not a file)."
+          },
           "outInfo": {
             "$ref": "#/components/schemas/MediaInfo",
             "description": "Probe of the output."
@@ -5002,6 +5056,10 @@
                 "type": "null"
               }
             ]
+          },
+          "rename": {
+            "type": "boolean",
+            "description": "Server-side only: the commit renames the file by its words; the engine ignores it."
           },
           "skipHdr10plusDv": {
             "type": [
@@ -6459,6 +6517,13 @@
               "null"
             ],
             "description": "`hearingImpaired` is true from the title only: neither disposition is set."
+          },
+          "isDefault": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The default disposition; absent on blobs probed before it was recorded."
           },
           "isImageBased": {
             "type": "boolean",

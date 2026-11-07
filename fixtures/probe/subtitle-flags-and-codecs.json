@@ -230,6 +230,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "bitRate": 128000,
@@ -255,6 +256,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": true,
           "language": "eng",
           "streamIndex": 2
@@ -265,6 +267,7 @@
           "forcedFromTitle": true,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": true,
           "language": "fre",
           "streamIndex": 3,
@@ -275,6 +278,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": true,
           "language": "eng",
           "streamIndex": 4
@@ -284,6 +288,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": true,
           "language": "eng",
           "streamIndex": 5
@@ -294,6 +299,7 @@
           "hasStatisticsTags": false,
           "hearingImpaired": true,
           "hearingImpairedFromTitle": true,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "languageFromTitle": true,
@@ -305,6 +311,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "und",
           "streamIndex": 7,
@@ -315,6 +322,7 @@
           "forced": true,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 8
@@ -324,6 +332,7 @@
           "forced": true,
           "hasStatisticsTags": false,
           "hearingImpaired": true,
+          "isDefault": false,
           "isImageBased": false,
           "language": "und",
           "streamIndex": 9,
@@ -334,6 +343,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "spa",
           "streamIndex": 10,
@@ -345,6 +355,7 @@
           "forcedFromTitle": true,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "und",
           "streamIndex": 11,
@@ -355,6 +366,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "fre",
           "languageFromTitle": true,
@@ -366,6 +378,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "und",
           "streamIndex": 13

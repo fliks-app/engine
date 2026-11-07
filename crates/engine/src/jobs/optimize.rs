@@ -104,6 +104,8 @@ fn is_busy(e: &str) -> bool {
 }
 
 pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
+    let mapped = with_mapped_paths(p, |s| ctx.rt.map_media_path(s));
+    let p = &mapped;
     let remote = p.input_url.is_some();
     let src = match &p.input_url {
         Some(url) => PathBuf::from(url),
@@ -160,6 +162,15 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
     })
 }
 
+/// The payload with each extra subtitle path on this host, like `stagedPath`.
+fn with_mapped_paths(p: &OptimizePayload, map: impl Fn(&str) -> String) -> OptimizePayload {
+    let mut p = p.clone();
+    for x in &mut p.plan.extra_subtitles {
+        x.path = map(&x.path);
+    }
+    p
+}
+
 /// Size and modification time: what must not move under a running job.
 fn fingerprint(p: &Path) -> std::io::Result<(u64, Option<SystemTime>)> {
     let m = std::fs::metadata(p)?;
@@ -186,6 +197,8 @@ struct Produced {
     level: OptimizeLevel,
     copy_reason: Option<&'static str>,
     cpu_fallback: bool,
+    /// The copied video left nothing to change: no output is kept.
+    nothing_to_do: bool,
 }
 
 impl Work<'_> {
@@ -334,6 +347,7 @@ impl Work<'_> {
             level: OptimizeLevel::Metadata,
             copy_reason: None,
             cpu_fallback: false,
+            nothing_to_do: false,
         })
     }
 
@@ -363,6 +377,14 @@ impl Work<'_> {
 
     /// The remux: video copied, the rest by the plan.
     async fn copy(&mut self, reason: Option<&'static str>) -> Result<Produced, String> {
+        if reason.is_some() && opt::is_noop_copy(self.info(), self.plan()) {
+            return Ok(Produced {
+                level: OptimizeLevel::Remux,
+                copy_reason: reason,
+                cpu_fallback: false,
+                nothing_to_do: true,
+            });
+        }
         let argv = self.argv(true, "none", self.staged_text())?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
@@ -374,6 +396,7 @@ impl Work<'_> {
             level: OptimizeLevel::Remux,
             copy_reason: reason,
             cpu_fallback: false,
+            nothing_to_do: false,
         })
     }
 
@@ -484,6 +507,7 @@ impl Work<'_> {
             level: OptimizeLevel::Reencode,
             copy_reason: None,
             cpu_fallback,
+            nothing_to_do: false,
         })
     }
 
@@ -656,6 +680,19 @@ impl Work<'_> {
     }
 
     async fn finish(&self, made: Produced) -> Result<OptimizeMeta, String> {
+        if made.nothing_to_do {
+            let _ = tokio::fs::remove_file(self.staged).await;
+            return Ok(OptimizeMeta {
+                staged_path: self.staged_text(),
+                out_size: 0.0,
+                out_sha256: String::new(),
+                out_info: self.info().clone(),
+                level: made.level,
+                copy_reason: made.copy_reason.map(String::from),
+                cpu_fallback: made.cpu_fallback,
+                nothing_to_do: true,
+            });
+        }
         let _ = safe_write::sync_file(self.staged);
         let path = self.staged.to_owned();
         let ctx = self.ctx.clone();
@@ -677,6 +714,7 @@ impl Work<'_> {
             level: made.level,
             copy_reason: made.copy_reason.map(String::from),
             cpu_fallback: made.cpu_fallback,
+            nothing_to_do: false,
         })
     }
 }
@@ -835,5 +873,16 @@ mod tests {
         );
         let stalled = Class::Engine.message("ffmpeg stalled");
         assert_eq!(decode_verdict(stalled.clone()), stalled);
+    }
+
+    #[test]
+    fn extra_subtitle_paths_go_through_the_path_mappings() {
+        let p: OptimizePayload = serde_json::from_value(serde_json::json!({
+            "info": { "video": [], "audio": [], "subtitles": [] },
+            "plan": { "level": "remux", "extraSubtitles": [{ "path": "/lib/a.srt" }] }
+        }))
+        .unwrap();
+        let m = with_mapped_paths(&p, |s| s.replace("/lib", "/mnt/lib"));
+        assert_eq!(m.plan.extra_subtitles[0].path, "/mnt/lib/a.srt");
     }
 }

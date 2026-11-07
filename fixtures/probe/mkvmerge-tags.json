@@ -226,6 +226,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "bitRate": 128000,
@@ -264,6 +265,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "languageTag": "pt-BR",
@@ -274,6 +276,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 4
@@ -283,6 +286,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 5

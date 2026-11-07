@@ -42,6 +42,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "channelLayout": "mono",

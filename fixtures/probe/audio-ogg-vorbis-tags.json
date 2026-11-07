@@ -33,6 +33,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "bitRate": 48000,

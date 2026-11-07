@@ -199,6 +199,10 @@ pub struct ExtraSubtitle {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forced: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hearing_impaired: Option<bool>,
 }
 
 /// The resolved plan of an optimisation: decided by the host, executed as written.
@@ -247,6 +251,9 @@ pub struct OptimizePlan {
     /// Text subtitles added after the kept tracks.
     #[serde(default)]
     pub extra_subtitles: Vec<ExtraSubtitle>,
+    /// Server-side only: the commit renames the file by its words; the engine ignores it.
+    #[serde(default)]
+    pub rename: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -400,12 +407,31 @@ pub struct JobResultRequest {
     pub out_info: Option<MediaInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<JobError>,
+    /// `Optimize` only: what was really done (a `reencode` whose video was copied reports `remux`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<OptimizeLevel>,
+    /// `Optimize` only: why a planned re-encode copied the video.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_reason: Option<String>,
+    /// `Optimize` only: the output was produced on the CPU after the hardware encoder failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_fallback: Option<bool>,
+    /// `Optimize` only: the video copy left nothing to change; no output was staged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nothing_to_do: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_rename_flag_defaults_to_false_and_is_read() {
+        let p = |v: serde_json::Value| serde_json::from_value::<OptimizePlan>(v).unwrap();
+        assert!(!p(json!({ "level": "remux" })).rename);
+        assert!(p(json!({ "level": "remux", "rename": true })).rename);
+    }
 
     #[test]
     fn a_leased_optimize_job_round_trips() {
@@ -469,6 +495,10 @@ mod tests {
                 message: "full".into(),
                 stderr_tail: None,
             }),
+            level: None,
+            copy_reason: None,
+            cpu_fallback: None,
+            nothing_to_do: false,
         };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["error"]["class"], "nospace");

@@ -108,6 +108,9 @@ pub struct ArchiveTrack {
     /// `Some` sets or clears the default flag; `None` keeps the source's.
     #[serde(default)]
     pub default: Option<bool>,
+    /// Source codec of a subtitle track: text that Matroska cannot hold as is is written as `srt`.
+    #[serde(default)]
+    pub codec: Option<String>,
 }
 
 /// What happens to the audio of a track. A source stream listed twice is copied and encoded.
@@ -144,6 +147,10 @@ pub struct ArchiveExtraSub {
     pub title: Option<String>,
     #[serde(default)]
     pub default: Option<bool>,
+    #[serde(default)]
+    pub forced: Option<bool>,
+    #[serde(default)]
+    pub hearing_impaired: Option<bool>,
 }
 
 /// Explicit mapping of an archival file: only what is listed is written.
@@ -210,14 +217,21 @@ fn tags(kind: char, k: usize, t: &ArchiveTrack) -> Vec<String> {
     if let Some(title) = &t.title {
         a.extend([format!("-metadata:s:{kind}:{k}"), format!("title={title}")]);
     }
-    if let Some(d) = t.default {
-        a.extend([
-            format!("-disposition:{kind}:{k}"),
-            // Prefixed: a bare value would replace forced, comment, hearing_impaired...
-            if d { "+default" } else { "-default" }.into(),
-        ]);
-    }
+    a.extend(disposition(kind, k, &[("default", t.default)]));
     a
+}
+
+/// One `-disposition` of the stream (a second one would replace the first); each flag is prefixed,
+/// a bare value would replace forced, comment, hearing_impaired...
+fn disposition(kind: char, k: usize, flags: &[(&str, Option<bool>)]) -> Vec<String> {
+    let v: String = flags
+        .iter()
+        .filter_map(|(n, f)| f.map(|f| format!("{}{n}", if f { '+' } else { '-' })))
+        .collect();
+    if v.is_empty() {
+        return vec![];
+    }
+    vec![format!("-disposition:{kind}:{k}"), v]
 }
 
 /// An archival file: the encode (or a video copy) of `f.encode`, explicitly mapped.
@@ -304,6 +318,9 @@ pub(super) fn file(
         a.extend(strs(&["-c:s", if mkv { "copy" } else { "mov_text" }]));
     }
     for (k, t) in ar.subtitles.iter().enumerate() {
+        if mkv && matches!(t.codec.as_deref(), Some("mov_text" | "webvtt")) {
+            a.extend([format!("-c:s:{k}"), "srt".into()]);
+        }
         a.extend(tags('s', k, t));
     }
     for (k, x) in ar.extra_subtitles.iter().enumerate() {
@@ -311,9 +328,20 @@ pub(super) fn file(
             stream_index: 0,
             language: x.language.clone(),
             title: x.title.clone(),
-            default: x.default,
+            default: None,
+            codec: None,
         };
-        a.extend(tags('s', ar.subtitles.len() + k, &t));
+        let k = ar.subtitles.len() + k;
+        a.extend(tags('s', k, &t));
+        a.extend(disposition(
+            's',
+            k,
+            &[
+                ("default", x.default),
+                ("forced", x.forced),
+                ("hearing_impaired", x.hearing_impaired),
+            ],
+        ));
     }
     if mkv {
         a.extend(strs(&["-c:t", "copy"]));

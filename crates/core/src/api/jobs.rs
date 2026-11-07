@@ -235,6 +235,9 @@ pub struct OptimizeMeta {
     pub copy_reason: Option<String>,
     /// The output was produced on the CPU after the hardware encoder failed its run or its check.
     pub cpu_fallback: bool,
+    /// A copied video left nothing to change: no output was staged (`stagedPath` is not a file).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nothing_to_do: bool,
 }
 
 /// A source that read and decoded cleanly.
