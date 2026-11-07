@@ -5057,6 +5057,10 @@
               }
             ]
           },
+          "rename": {
+            "type": "boolean",
+            "description": "Server-side only: the commit renames the file by its words; the engine ignores it."
+          },
           "skipHdr10plusDv": {
             "type": [
               "boolean",

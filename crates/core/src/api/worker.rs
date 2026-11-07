@@ -251,6 +251,9 @@ pub struct OptimizePlan {
     /// Text subtitles added after the kept tracks.
     #[serde(default)]
     pub extra_subtitles: Vec<ExtraSubtitle>,
+    /// Server-side only: the commit renames the file by its words; the engine ignores it.
+    #[serde(default)]
+    pub rename: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -422,6 +425,13 @@ pub struct JobResultRequest {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_rename_flag_defaults_to_false_and_is_read() {
+        let p = |v: serde_json::Value| serde_json::from_value::<OptimizePlan>(v).unwrap();
+        assert!(!p(json!({ "level": "remux" })).rename);
+        assert!(p(json!({ "level": "remux", "rename": true })).rename);
+    }
 
     #[test]
     fn a_leased_optimize_job_round_trips() {
