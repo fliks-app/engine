@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0](https://github.com/fliks-app/engine/compare/v1.12.1...v1.13.0) (2026-11-07)
+
+
+### Features
+
+* **decide:** carry the client device id on the device profile ([#182](https://github.com/fliks-app/engine/issues/182)) ([d7bd334](https://github.com/fliks-app/engine/commit/d7bd334ad8bacaa0ee7cad1786d1d8f656e7fb16))
+
+
+### Bug Fixes
+
+* **optimize:** report video copies and keep order, flags and attachments of the output ([#180](https://github.com/fliks-app/engine/issues/180)) ([c29351c](https://github.com/fliks-app/engine/commit/c29351c17917b58f72620cc27160ae0bc0e8fee9))
+
 ## [1.12.1](https://github.com/fliks-app/engine/compare/v1.12.0...v1.12.1) (2026-11-07)
 
 
