@@ -220,6 +220,9 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
 
     let built = build::build(&main, &x);
     let mut info = built.info;
+    if mkv::is_matroska(main.format.format_name.as_deref()) {
+        mark_missing_statistics(&mut info);
+    }
     if let Some(late) = built.late_audio
         && let Some(size) = t.file_size().await
         && let Ok(out) = t
@@ -261,6 +264,23 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
         error: None,
         info,
         crop_decode,
+    }
+}
+
+/// In Matroska the tags are always computed: a stream without a coherent set reports `false`.
+fn mark_missing_statistics(info: &mut crate::api::MediaInfo) {
+    let flags = info
+        .video
+        .iter_mut()
+        .map(|s| &mut s.has_statistics_tags)
+        .chain(info.audio.iter_mut().map(|s| &mut s.has_statistics_tags))
+        .chain(
+            info.subtitles
+                .iter_mut()
+                .map(|s| &mut s.has_statistics_tags),
+        );
+    for f in flags {
+        f.get_or_insert(false);
     }
 }
 

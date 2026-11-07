@@ -565,6 +565,10 @@ impl Ctx {
         self.rt.check_disk(dir).await
     }
 
+    pub async fn check_disk_existing(&self, dir: &Path) -> Result<(), String> {
+        self.rt.check_disk_existing(dir).await
+    }
+
     pub fn media_path(&self) -> String {
         self.rt.map_media_path(&self.job.req.media.path)
     }
@@ -867,6 +871,15 @@ impl Runtime {
 
     /// Fails below `streaming.jobMinFreeBytes` free under `dir` (created first): jobs and playback runs.
     pub async fn check_disk(&self, dir: &Path) -> Result<(), String> {
+        self.check_disk_in(dir, true).await
+    }
+
+    /// `check_disk` on a directory that must already exist: nothing is created (a missing one passes).
+    pub async fn check_disk_existing(&self, dir: &Path) -> Result<(), String> {
+        self.check_disk_in(dir, false).await
+    }
+
+    async fn check_disk_in(&self, dir: &Path, create: bool) -> Result<(), String> {
         let min = self
             .current_config()
             .streaming
@@ -874,7 +887,9 @@ impl Runtime {
             .unwrap_or(DEFAULT_MIN_FREE_BYTES);
         let d = dir.to_path_buf();
         let free = tokio::task::spawn_blocking(move || {
-            let _ = std::fs::create_dir_all(&d);
+            if create {
+                let _ = std::fs::create_dir_all(&d);
+            }
             free_bytes(&d)
         })
         .await

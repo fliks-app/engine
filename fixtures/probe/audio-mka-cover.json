@@ -48,6 +48,7 @@
           "channels": 1,
           "codec": "opus",
           "endSeconds": 3.008,
+          "hasStatisticsTags": false,
           "isDefault": false,
           "language": "und",
           "sampleRate": 48000,
@@ -72,6 +73,7 @@
         "artist": "Ada Example; Bob Reader",
         "title": "Tome Un"
       },
+      "title": "Tome Un",
       "video": []
     },
     "nulls": [],

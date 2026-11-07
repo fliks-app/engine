@@ -199,6 +199,7 @@
       "subtitles": [
         {
           "codec": "mov_text",
+          "endSeconds": 2.9,
           "forced": false,
           "hearingImpaired": false,
           "isImageBased": false,

@@ -60,9 +60,7 @@ pub fn copy_video_reason(
         None => false,
     };
     let plus = v.hdr10_plus == Some(true) && plan.skip_hdr10plus_dv.unwrap_or(true);
-    // The encoder variants carry 10 bits only with HDR: SDR 10-bit has none.
-    let sdr10 = v.bit_depth.is_some_and(|d| d > 8) && v.hdr_format.is_none();
-    (interlaced || chroma || dv || plus || sdr10).then_some("unsupported_source")
+    (interlaced || chroma || dv || plus).then_some("unsupported_source")
 }
 
 fn plan_of(plan: &OptimizePlan, index: u32) -> Option<&StreamPlan> {
@@ -158,6 +156,7 @@ pub fn archive_file(
         hvc1_tag: plan.hvc1_tag && container == OptimizeContainer::Mp4,
         video_index: Some(main_video(info)?.stream_index),
         cover_art: info.cover.iter().map(|c| c.stream_index).collect(),
+        clear_title: plan.clear_title,
         audio,
         subtitles: subs
             .iter()
@@ -207,7 +206,8 @@ pub fn build_file_args(
         OptimizeQuality::Balanced => "balanced",
         OptimizeQuality::Faithful => "faithful",
     };
-    let ten = v.hdr_format.is_some() && v.bit_depth.is_some_and(|d| d > 8);
+    // HEVC keeps the source's depth, AV1 is always 10-bit.
+    let ten = v.hdr_format.is_some() || v.bit_depth.is_some_and(|d| d > 8) || o.codec == "av1";
     let mut encode = json!({
         "inputPath": o.input_path,
         "outputDir": "/unused",
@@ -536,6 +536,14 @@ pub struct OutputCheck<'a> {
     pub reencoded: bool,
 }
 
+fn ends(bad: &mut Vec<String>, kind: &str, index: u32, src: Option<f64>, out: Option<f64>) {
+    if let (Some(a), Some(b)) = (src, out)
+        && (a - b).abs() > DURATION_TOLERANCE_SECONDS
+    {
+        bad.push(format!("{kind} {index} ends at {b:.1}s, source at {a:.1}s"));
+    }
+}
+
 fn norm(s: &Option<String>) -> &str {
     s.as_deref().unwrap_or("")
 }
@@ -555,15 +563,20 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         (Some(_), None) => bad.push("video packets of the output not counted".into()),
         _ => {}
     }
-    if let (Some(a), Some(b)) = (src.duration_seconds, out.duration_seconds)
-        && (a - b).abs() > DURATION_TOLERANCE_SECONDS
-    {
-        bad.push(format!("duration {b:.1}s, source {a:.1}s"));
-    }
-    if let (Some(a), Some(b)) = (sv.end_seconds, ov.end_seconds)
-        && (a - b).abs() > DURATION_TOLERANCE_SECONDS
-    {
-        bad.push(format!("video ends at {b:.1}s, source at {a:.1}s"));
+    // Stream ends decide; the container duration (wrong in some files) only when the video has none.
+    match (sv.end_seconds, ov.end_seconds) {
+        (Some(a), Some(b)) => {
+            if (a - b).abs() > DURATION_TOLERANCE_SECONDS {
+                bad.push(format!("video ends at {b:.1}s, source at {a:.1}s"));
+            }
+        }
+        _ => {
+            if let (Some(a), Some(b)) = (src.duration_seconds, out.duration_seconds)
+                && (a - b).abs() > DURATION_TOLERANCE_SECONDS
+            {
+                bad.push(format!("duration {b:.1}s, source {a:.1}s"));
+            }
+        }
     }
     let frame = fps(sv).map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
     if let (Some(a), Some(b)) = (sv.start_time_seconds, ov.start_time_seconds)
@@ -604,6 +617,16 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
                 bad.push(format!("audio starts at {b:.3}s, source at {a:.3}s"));
             }
         }
+        // A source whose statistics tags are stale has an untrustworthy `DURATION`.
+        if w.src.has_statistics_tags != Some(false) {
+            ends(
+                &mut bad,
+                "audio",
+                w.src.stream_index,
+                w.src.end_seconds,
+                o.end_seconds,
+            );
+        }
         if o.channel_layout
             .as_deref()
             .is_none_or(|l| l.is_empty() || l == "unknown")
@@ -628,6 +651,15 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         let title = planned
             .and_then(|p| p.title.as_deref())
             .unwrap_or(norm(&w.title));
+        if w.has_statistics_tags != Some(false) {
+            ends(
+                &mut bad,
+                "subtitle",
+                w.stream_index,
+                w.end_seconds,
+                o.end_seconds,
+            );
+        }
         if o.language != lang
             || norm(&o.title) != title
             || o.forced != w.forced
@@ -674,7 +706,7 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
     bad
 }
 
-/// `mkvpropedit` arguments for a metadata-level plan, on `file`.
+/// `mkvpropedit` arguments for a metadata-level plan, on `file`; the statistics tags are always rewritten.
 pub fn mkvpropedit_args(info: &MediaInfo, plan: &OptimizePlan, file: &str) -> Vec<String> {
     let mut a = vec![file.to_string()];
     if plan.clear_title {
@@ -717,10 +749,13 @@ pub fn mkvpropedit_args(info: &MediaInfo, plan: &OptimizePlan, file: &str) -> Ve
             a.extend(set);
         }
     }
-    if plan.strip_statistics_tags {
-        a.push("--add-track-statistics-tags".into());
-    }
+    a.push("--add-track-statistics-tags".into());
     a
+}
+
+/// `mkvpropedit` arguments that regenerate the statistics tags of a Matroska output.
+pub fn statistics_tags_args(file: &str) -> Vec<String> {
+    vec![file.into(), "--add-track-statistics-tags".into()]
 }
 
 #[cfg(test)]
@@ -849,9 +884,10 @@ mod tests {
         );
         v.dv_profile = None;
         v.bit_depth = Some(10);
-        assert!(
-            copy_video_reason(&v, &p, false).is_some(),
-            "SDR 10-bit has no variant"
+        assert_eq!(
+            copy_video_reason(&v, &p, false),
+            None,
+            "SDR 10-bit is encodable"
         );
     }
 
@@ -906,6 +942,115 @@ mod tests {
         let r = runnable(w);
         assert_eq!(r[0], "-y");
         assert_eq!(r.last().unwrap(), "/m/.stage.tmp");
+    }
+
+    fn argv_of(i: &MediaInfo, p: &OptimizePlan, codec: &str, copy: bool) -> Vec<String> {
+        let f = build_file_args(
+            i,
+            p,
+            &Output {
+                input_path: "/m/in.mkv",
+                path: "/m/.stage.tmp",
+                codec,
+                hw: "none",
+                threads: 4,
+                copy_video: copy,
+            },
+        )
+        .unwrap();
+        let dev = crate::hw::Device {
+            platform: crate::api::Platform::Linux,
+            render_node: None,
+            opencl_device: None,
+        };
+        crate::args::file(&f, &Default::default(), &dev).unwrap()
+    }
+
+    #[test]
+    fn a_demoted_default_keeps_forced_and_the_title_can_be_cleared() {
+        let mut p = plan();
+        p.clear_title = true;
+        p.streams = vec![StreamPlan {
+            stream_index: 3,
+            keep: true,
+            language: None,
+            title: None,
+            default: Some(false),
+            encode: None,
+            keep_original: false,
+        }];
+        let a = argv_of(&info(), &p, "hevc", true);
+        assert!(a.windows(2).any(|w| w == ["-disposition:s:0", "-default"]));
+        assert!(a.windows(2).any(|w| w == ["-metadata", "title="]));
+    }
+
+    #[test]
+    fn sdr_above_eight_bits_and_av1_encode_in_ten() {
+        let mut i = info();
+        i.video[0].bit_depth = Some(10);
+        i.video[0].pixel_format = Some("yuv420p10le".into());
+        let p = plan();
+        assert_eq!(copy_video_reason(&i.video[0], &p, false), None);
+        let a = argv_of(&i, &p, "hevc", false);
+        assert!(
+            a.windows(2).any(|w| w == ["-pix_fmt", "yuv420p10le"]),
+            "{a:?}"
+        );
+        assert!(
+            !a.iter().any(|x| x.contains("smpte2084")),
+            "no HDR tags on SDR"
+        );
+        let a = argv_of(&info(), &p, "av1", false);
+        assert!(
+            a.windows(2).any(|w| w == ["-pix_fmt", "yuv420p10le"]),
+            "{a:?}"
+        );
+        let a = argv_of(&info(), &p, "hevc", false);
+        assert!(!a.iter().any(|x| x == "yuv420p10le"), "8-bit stays 8-bit");
+    }
+
+    #[test]
+    fn stream_ends_decide_not_the_container_duration() {
+        let mut src = info();
+        src.duration_seconds = Some(100.0);
+        src.video[0].end_seconds = Some(90.0);
+        src.audio[0].end_seconds = Some(90.0);
+        src.audio[1].end_seconds = Some(90.0);
+        src.subtitles[0].end_seconds = Some(85.0);
+        let facts = Facts::default();
+        let run = |src: &MediaInfo, out: &MediaInfo| {
+            verify_output(&OutputCheck {
+                src,
+                out,
+                plan: &plan(),
+                src_facts: facts,
+                out_facts: facts,
+                reencoded: false,
+            })
+        };
+        for a in &mut src.audio {
+            a.channel_layout = Some("stereo".into());
+        }
+        let mut out = src.clone();
+        // The remux fixed the container duration: no failure.
+        out.duration_seconds = Some(90.0);
+        assert_eq!(run(&src, &out), Vec::<String>::new());
+        out.audio[1].end_seconds = Some(60.0);
+        assert!(run(&src, &out).iter().any(|b| b.contains("audio 2 ends")));
+        out.audio[1].end_seconds = Some(90.0);
+        out.subtitles[0].end_seconds = Some(10.0);
+        assert!(
+            run(&src, &out)
+                .iter()
+                .any(|b| b.contains("subtitle 3 ends"))
+        );
+        // Stale statistics tags of the source: its ends are not trusted.
+        src.subtitles[0].has_statistics_tags = Some(false);
+        assert!(
+            !run(&src, &out)
+                .iter()
+                .any(|b| b.contains("subtitle 3 ends"))
+        );
     }
 
     #[test]
@@ -984,7 +1129,6 @@ mod tests {
     fn mkvpropedit_edits_tracks_by_type_rank() {
         let mut p = plan();
         p.clear_title = true;
-        p.strip_statistics_tags = true;
         p.streams = vec![StreamPlan {
             stream_index: 2,
             keep: true,

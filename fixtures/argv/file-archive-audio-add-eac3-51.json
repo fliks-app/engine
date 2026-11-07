@@ -76,7 +76,7 @@
       "-metadata:s:a:1",
       "title=E-AC-3 5.1",
       "-disposition:a:1",
-      "0",
+      "-default",
       "-c:t",
       "copy",
       "-f",

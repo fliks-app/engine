@@ -24,7 +24,7 @@ pub use runtime::*;
 pub use worker::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 6;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 7;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -326,7 +326,8 @@ pub struct VideoStreamInfo {
     /// Set when `cropdetect` ran: its samples all gave the same frame. A moving box is not a crop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop_stable: Option<bool>,
-    /// Set when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all present and consistent.
+    /// Matroska only: `true` when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all
+    /// present and consistent, `false` when missing or stale. Absent in other containers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_statistics_tags: Option<bool>,
     /// ffprobe `field_order` (`tt`, `bb`, `tb`, `bt`), set only when the stream is interlaced.
@@ -396,8 +397,17 @@ pub struct SubtitleStreamInfo {
     pub title: Option<String>,
     pub forced: bool,
     pub hearing_impaired: bool,
+    /// `forced` is true from the title only: the disposition is not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forced_from_title: Option<bool>,
+    /// `hearingImpaired` is true from the title only: neither disposition is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hearing_impaired_from_title: Option<bool>,
     /// Bitmap subtitles (PGS, VOBSUB, DVB) need burn-in.
     pub is_image_based: bool,
+    /// Where the track ends (Matroska `DURATION` tag, else its own duration), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_seconds: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commentary: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -515,6 +525,9 @@ pub struct MediaInfo {
     pub format_start_seconds: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format_name: Option<String>,
+    /// The container's `title` tag (every family), absent when empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     /// Absent until the background scan ran; `null` when there is no break.
     #[serde(
         default,

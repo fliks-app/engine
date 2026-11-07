@@ -197,6 +197,7 @@
           "endSeconds": 3,
           "firstFrameSeconds": 0,
           "frameRate": "24",
+          "hasStatisticsTags": false,
           "hdr10Plus": false,
           "height": 270,
           "level": 21,

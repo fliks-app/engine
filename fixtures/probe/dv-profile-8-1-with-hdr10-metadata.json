@@ -236,6 +236,7 @@
           "channelLayout": "stereo",
           "channels": 2,
           "codec": "aac",
+          "hasStatisticsTags": false,
           "isDefault": true,
           "language": "eng",
           "sampleRate": 48000,
@@ -268,6 +269,7 @@
           "dvRpuPresent": true,
           "firstFrameSeconds": 0,
           "frameRate": "23.976",
+          "hasStatisticsTags": false,
           "hdr10Plus": false,
           "hdrFormat": "HDR10",
           "hdrMetadata": {

@@ -70,7 +70,7 @@
       "-metadata:s:a:0",
       "title=DTS-HD MA",
       "-disposition:a:0",
-      "default",
+      "+default",
       "-c:t",
       "copy",
       "-f",

@@ -127,6 +127,11 @@ pub fn resolve_encoder(variant: &CodecVariant, hw: HwAccel, caps: &HostCaps) -> 
     resolve_descriptor(variant, hw, caps).map(|e| e.hw)
 }
 
+/// Archive output: HEVC and AV1 carry 10 bits without HDR (H.264 encoders stay 8-bit).
+fn sdr10_ok(v: &CodecVariant) -> bool {
+    v.hdr.is_none() && v.bit_depth == 10 && v.codec != H264
+}
+
 pub(crate) fn resolve_descriptor(
     variant: &CodecVariant,
     hw: HwAccel,
@@ -138,7 +143,7 @@ pub(crate) fn resolve_descriptor(
             e.hw == on
                 && e.codec == variant.codec
                 && e.hdr == variant.hdr
-                && variant.bit_depth == depth
+                && (variant.bit_depth == depth || sdr10_ok(variant))
                 && e.usable(caps)
         })
     };

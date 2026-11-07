@@ -217,7 +217,7 @@ pub struct OptimizePlan {
     /// Write `hvc1` instead of `hev1` on HEVC in MP4.
     #[serde(default)]
     pub hvc1_tag: bool,
-    /// Regenerate the per-track statistics tags (`mkvpropedit`) instead of carrying stale ones.
+    /// Ignored: the statistics tags of every Matroska output are regenerated (`mkvpropedit`).
     #[serde(default)]
     pub strip_statistics_tags: bool,
     /// Quality of a `reencode`; absent: balanced.

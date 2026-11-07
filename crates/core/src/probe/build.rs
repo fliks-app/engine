@@ -207,12 +207,14 @@ fn resolve_language(s: &Stream) -> (String, bool) {
     }
 }
 
-fn subtitle_flags(s: &Stream) -> (bool, bool) {
+/// (forced, hearing impaired) and whether each comes from the title alone (flag not set).
+fn subtitle_flags(s: &Stream) -> ((bool, bool), (bool, bool)) {
     let (forced, hi) = subtitle_flags_from_title(s.tags.get("title"));
-    (
-        s.disposition.forced == Some(1.0) || forced,
-        s.disposition.hearing_impaired == Some(1.0) || s.disposition.captions == Some(1.0) || hi,
-    )
+    let (df, dh) = (
+        s.disposition.forced == Some(1.0),
+        s.disposition.hearing_impaired == Some(1.0) || s.disposition.captions == Some(1.0),
+    );
+    ((df || forced, dh || hi), (forced && !df, hi && !dh))
 }
 
 /// A set disposition, absent otherwise.
@@ -473,7 +475,7 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .iter()
         .filter(|s| s.codec_type.as_deref() == Some("subtitle"))
         .map(|s| {
-            let (forced, hearing_impaired) = subtitle_flags(s);
+            let ((forced, hearing_impaired), (forced_title, hi_title)) = subtitle_flags(s);
             let (language, from_title) = resolve_language(s);
             SubtitleStreamInfo {
                 stream_index: index(s),
@@ -485,7 +487,10 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 title: s.tags.get("title").map(String::from),
                 forced,
                 hearing_impaired,
+                forced_from_title: forced_title.then_some(true),
+                hearing_impaired_from_title: hi_title.then_some(true),
                 is_image_based: is_image_based(s.codec_name.as_deref()),
+                end_seconds: stream_end_seconds(s),
                 commentary: flag(s.disposition.comment),
                 descriptions: flag(s.disposition.descriptions),
                 lyrics: flag(s.disposition.lyrics),
@@ -534,6 +539,12 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         format_bit_rate: u32_of(format_bit_rate),
         format_start_seconds: format_start,
         format_name: main.format.format_name.clone(),
+        title: main
+            .format
+            .tags
+            .get("title")
+            .filter(|t| !t.trim().is_empty())
+            .map(String::from),
         duration_seconds: duration,
         chapters: Some(chapters),
         error: no_streams.then(|| "No streams detected".to_string()),

@@ -191,6 +191,7 @@
           "channels": 1,
           "codec": "aac",
           "endSeconds": 3.021,
+          "hasStatisticsTags": false,
           "isDefault": false,
           "language": "und",
           "profile": "LC",
@@ -207,7 +208,9 @@
       "subtitles": [
         {
           "codec": "subrip",
+          "endSeconds": 2.9,
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "spa",
@@ -216,7 +219,10 @@
         },
         {
           "codec": "ass",
+          "endSeconds": 2.9,
           "forced": true,
+          "forcedFromTitle": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "por",
@@ -226,8 +232,11 @@
         },
         {
           "codec": "webvtt",
+          "endSeconds": 2,
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": true,
+          "hearingImpairedFromTitle": true,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 4,
@@ -235,7 +244,9 @@
         },
         {
           "codec": "subrip",
+          "endSeconds": 2.9,
           "forced": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "chi",
@@ -244,7 +255,9 @@
         },
         {
           "codec": "subrip",
+          "endSeconds": 2.9,
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": true,
           "isImageBased": false,
           "language": "ger",
@@ -254,7 +267,9 @@
         },
         {
           "codec": "hdmv_pgs_subtitle",
+          "endSeconds": 1,
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": true,
           "language": "jpn",
@@ -275,6 +290,7 @@
           "endSeconds": 3,
           "firstFrameSeconds": 0,
           "frameRate": "24",
+          "hasStatisticsTags": false,
           "hdr10Plus": false,
           "height": 90,
           "level": 10,

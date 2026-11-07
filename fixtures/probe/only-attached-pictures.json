@@ -51,6 +51,7 @@
           "channelLayout": "stereo",
           "channels": 2,
           "codec": "aac",
+          "hasStatisticsTags": false,
           "isDefault": true,
           "language": "eng",
           "sampleRate": 48000,

@@ -24,6 +24,12 @@ fn encoder(bin: &str, name: &str) -> bool {
         .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(name))
 }
 
+/// Every MKV output goes through `mkvpropedit` (`MKVPROPEDIT_PATH`).
+fn has_mkvpropedit() -> bool {
+    let bin = std::env::var("MKVPROPEDIT_PATH").unwrap_or("mkvpropedit".into());
+    ok(&bin, &["--version"])
+}
+
 struct Fixture {
     e: Engine,
     dir: TempDir,
@@ -41,6 +47,10 @@ async fn fixture_with(seconds: u32, ext: &str, cover: bool) -> Option<Fixture> {
     let ffprobe = fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe");
     if !ok(&ffmpeg(), &["-version"]) || !ok(&ffprobe, &["-version"]) {
         eprintln!("ffmpeg or ffprobe not available: skipped");
+        return None;
+    }
+    if ext == "mkv" && !has_mkvpropedit() {
+        eprintln!("mkvpropedit not available: skipped");
         return None;
     }
     let pause = if cfg!(unix) { "signal" } else { "stdin" };
@@ -346,4 +356,126 @@ async fn a_plan_the_executor_cannot_run_is_refused_at_submission() {
     assert_eq!(post(drop_audio).await.status, 400);
     let relative = json!({ "level": "remux", "extraSubtitles": [{ "path": "ocr.srt" }] });
     assert_eq!(post(relative).await.status, 400);
+}
+
+async fn probe(f: &Fixture) -> Value {
+    let body = json!({ "media": { "mediaFileId": 1, "path": f.src } });
+    f.e.control("POST", "/v1/probe", Some(body)).await.json()["info"].clone()
+}
+
+#[tokio::test]
+async fn a_demoted_default_keeps_forced_and_clear_title_empties_the_title() {
+    let Some(mut f) = fixture(8).await else {
+        return;
+    };
+    let tagged = f.dir.join("tagged.mkv");
+    let tagged_ok = ok(
+        &ffmpeg(),
+        &[
+            "-y",
+            "-i",
+            f.src.to_str().unwrap(),
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-disposition:s:0",
+            "+forced+default",
+            "-metadata",
+            "title=Movie.2024.1080p.x264-GRP",
+            tagged.to_str().unwrap(),
+        ],
+    );
+    assert!(tagged_ok, "ffmpeg tags the fixture");
+    std::fs::rename(&tagged, &f.src).unwrap();
+    f.info = probe(&f).await;
+    assert_eq!(f.info["title"], "Movie.2024.1080p.x264-GRP", "{}", f.info);
+    assert_eq!(f.info["subtitles"][0]["forced"], true);
+    let staged = f.dir.join(".fliks-opt-7-1.tmp");
+    let plan = json!({ "level": "remux", "clearTitle": true, "streams": [
+        { "streamIndex": 2, "keep": true, "default": false }] });
+    let v = run_kind(&f, optimize(&f, plan, &staged)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    let out = &v["result"]["optimize"]["outInfo"];
+    assert_eq!(out["subtitles"][0]["forced"], true, "{out}");
+    let flags = std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
+        .args(["-v", "error", "-select_streams", "s:0", "-show_entries"])
+        .args(["stream_disposition=default,forced", "-of", "csv=p=0"])
+        .arg(&staged)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&flags.stdout).trim(), "0,1");
+    assert!(out.get("title").is_none(), "{out}");
+}
+
+#[tokio::test]
+async fn a_missing_staged_directory_is_not_created() {
+    let Some(f) = fixture(8).await else { return };
+    let gone = f.dir.join("renamed");
+    let staged = gone.join(".fliks-opt-8-1.tmp");
+    let v = run_kind(&f, optimize(&f, json!({ "level": "remux" }), &staged)).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert!(v["error"].as_str().unwrap().starts_with("access: "), "{v}");
+    assert!(!gone.exists(), "no create_dir_all in the library");
+}
+
+#[tokio::test]
+async fn sdr_ten_bit_is_encoded_and_av1_is_always_ten_bit() {
+    let Some(mut f) = fixture(10).await else {
+        return;
+    };
+    let ten = f.dir.join("ten.mkv");
+    let made = encoder(&ffmpeg(), "libx265")
+        && ok(
+            &ffmpeg(),
+            &[
+                "-y",
+                "-i",
+                f.src.to_str().unwrap(),
+                "-map",
+                "0",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p10le",
+                "-c:a",
+                "copy",
+                "-c:s",
+                "copy",
+                ten.to_str().unwrap(),
+            ],
+        );
+    if !made {
+        eprintln!("10-bit x264 or libx265 not available: skipped");
+        return;
+    }
+    std::fs::rename(&ten, &f.src).unwrap();
+    f.info = probe(&f).await;
+    assert_eq!(f.info["video"][0]["bitDepth"], 10, "{}", f.info);
+    let staged = f.dir.join(".fliks-opt-9-1.tmp");
+    let plan =
+        json!({ "level": "reencode", "codec": "hevc", "software": true, "quality": "small" });
+    let v = run_kind(&f, optimize(&f, plan, &staged)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    let m = &v["result"]["optimize"];
+    assert_eq!(
+        m["level"], "reencode",
+        "10-bit SDR is no longer copied: {m}"
+    );
+    assert_eq!(m["outInfo"]["video"][0]["codec"], "hevc");
+    assert_eq!(
+        m["outInfo"]["video"][0]["pixelFormat"], "yuv420p10le",
+        "{m}"
+    );
+    if encoder(&ffmpeg(), "libsvtav1") {
+        let staged = f.dir.join(".fliks-opt-9-2.tmp");
+        let plan = json!({ "level": "reencode", "codec": "av1", "software": true });
+        let v = run_kind(&f, optimize(&f, plan, &staged)).await;
+        assert_eq!(v["state"], "done", "{v}");
+        let out = &v["result"]["optimize"]["outInfo"]["video"][0];
+        assert_eq!(
+            (out["codec"].as_str(), out["pixelFormat"].as_str()),
+            (Some("av1"), Some("yuv420p10le"))
+        );
+    }
 }

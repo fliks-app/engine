@@ -7,7 +7,8 @@ use crate::proc::{Ffmpeg, Pipes};
 use crate::safe_write;
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MEDIA_INFO_SCHEMA_VERSION, MediaInfo,
-    OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
+    OptimizeContainer, OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality,
+    OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileFormat};
 use fliks_engine_core::jobs::merge::progress_seconds;
@@ -61,6 +62,7 @@ pub(super) fn io_class(e: &std::io::Error) -> Class {
         _ => {}
     }
     match e.kind() {
+        ErrorKind::StorageFull => Class::Nospace,
         ErrorKind::NotFound | ErrorKind::PermissionDenied => Class::Access,
         ErrorKind::AlreadyExists => Class::Engine,
         _ => Class::Io,
@@ -96,8 +98,7 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
         (None, true) => ctx
             .rt
             .cache
-            .root
-            .join("optimize")
+            .optimize_dir()
             .join(format!(".fliks-opt-{}.tmp", ctx.job.id)),
         (None, false) => src
             .parent()
@@ -227,23 +228,27 @@ impl Work<'_> {
         }
     }
 
+    /// Samples live in the engine cache, never beside the source.
     fn sample(&self, k: usize, kind: &str) -> PathBuf {
-        let mut n = self.staged.as_os_str().to_owned();
-        n.push(format!(".sample{k}{kind}.mp4"));
-        PathBuf::from(n)
+        let id = &self.ctx.job.id;
+        let dir = self.ctx.rt.cache.optimize_dir();
+        dir.join(format!(".fliks-opt-{id}.sample{k}{kind}.mp4"))
     }
 
     async fn start(&mut self, src_len: u64) -> Result<OptimizeMeta, String> {
         let dir = self.staged.parent().ok_or("staged has no directory")?;
+        // Only our own cache dir is created; a missing library folder fails `create_staged`.
         if self.remote {
             std::fs::create_dir_all(dir).map_err(|e| io_err(dir, e))?;
         }
         self.ctx
-            .check_disk(dir)
+            .check_disk_existing(dir)
             .await
             .map_err(|e| Class::Nospace.message(e))?;
-        if let Some(free) = free_bytes(dir)
-            && self.plan().level != OptimizeLevel::Metadata
+        let metadata = self.plan().level == OptimizeLevel::Metadata;
+        // The metadata level copies the source first: checked only if the reflink fails.
+        if !metadata
+            && let Some(free) = free_bytes(dir)
             && free < src_len
         {
             return Err(Class::Nospace.message(format!(
@@ -251,7 +256,8 @@ impl Work<'_> {
             )));
         }
         let (src, staged) = (self.src.to_owned(), self.staged.to_owned());
-        let (copy, remote) = (self.plan().level == OptimizeLevel::Metadata, self.remote);
+        let (copy, remote) = (metadata, self.remote);
+        let dir = dir.to_owned();
         tokio::task::spawn_blocking(move || {
             if remote {
                 std::fs::File::options()
@@ -262,7 +268,13 @@ impl Work<'_> {
             }
             let mut f = safe_write::create_staged(&src, &staged)?;
             if copy {
-                safe_write::copy_file(&src, &mut f)?;
+                safe_write::copy_file(&src, &mut f, || match free_bytes(&dir) {
+                    Some(free) if free < src_len => Err(std::io::Error::new(
+                        ErrorKind::StorageFull,
+                        format!("{free} bytes free, the source is {src_len}"),
+                    )),
+                    _ => Ok(()),
+                })?;
                 f.sync_all()?;
             }
             Ok::<_, std::io::Error>(())
@@ -282,6 +294,24 @@ impl Work<'_> {
 
     async fn metadata(&mut self) -> Result<Produced, String> {
         let argv = opt::mkvpropedit_args(self.info(), self.plan(), &self.staged_text());
+        self.mkvpropedit(argv).await?;
+        Ok(Produced {
+            level: OptimizeLevel::Metadata,
+            copy_reason: None,
+            cpu_fallback: false,
+        })
+    }
+
+    /// Statistics tags of a Matroska output: the muxer's (or the source's) are wrong after a rewrite.
+    async fn statistics_tags(&self) -> Result<(), String> {
+        if opt::container_of(self.info(), self.plan()) != OptimizeContainer::Mkv {
+            return Ok(());
+        }
+        self.mkvpropedit(opt::statistics_tags_args(&self.staged_text()))
+            .await
+    }
+
+    async fn mkvpropedit(&self, argv: Vec<String>) -> Result<(), String> {
         let cmd = Cmd::new("mkvpropedit", &mkvpropedit(), &argv, Pipes::default());
         self.ctx
             .pipeline(self.ctx.run_timeout_ms(), vec![cmd], |p| async move {
@@ -293,12 +323,7 @@ impl Work<'_> {
                 }
             })
             .await
-            .map_err(pipeline_err)??;
-        Ok(Produced {
-            level: OptimizeLevel::Metadata,
-            copy_reason: None,
-            cpu_fallback: false,
-        })
+            .map_err(pipeline_err)?
     }
 
     /// The remux: video copied, the rest by the plan.
@@ -308,6 +333,7 @@ impl Work<'_> {
         self.run(&argv, total, (5.0, 85.0))
             .await
             .and_then(|r| self.damage(&r))?;
+        self.statistics_tags().await?;
         self.check(false, false).await?;
         Ok(Produced {
             level: OptimizeLevel::Remux,
@@ -362,7 +388,8 @@ impl Work<'_> {
         match self.samples(if hardware { hw } else { "none" }).await? {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
-                if hw == "none" || self.plan().too_slow == OptimizeTooSlow::Skip {
+                // The CPU lane never takes the GPU: the video is copied instead.
+                if hw == "none" || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
                     return self.copy(Some("too_slow")).await;
                 }
                 hardware = true;
@@ -387,7 +414,10 @@ impl Work<'_> {
             let run = self.run(&argv, total, (5.0, 85.0)).await;
             let verdict = match run {
                 Ok(r) if r.errors > 0 => Err(self.damage(&r).unwrap_err()),
-                Ok(_) => self.check(true, hardware).await.map(Some),
+                Ok(_) => match self.statistics_tags().await {
+                    Ok(()) => self.check(true, hardware).await.map(Some),
+                    Err(e) => return Err(e),
+                },
                 Err(e) => Err(e),
             };
             match verdict {
@@ -418,6 +448,8 @@ impl Work<'_> {
         if starts.is_empty() {
             return Ok(Sampled::None);
         }
+        let dir = self.ctx.rt.cache.optimize_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| io_err(&dir, e))?;
         let (mut copied, mut encoded, mut wall) = (0.0, 0.0, 0.0);
         let input = self.src.to_string_lossy().into_owned();
         let step = 5.0 / starts.len() as f64;

@@ -232,6 +232,7 @@
           "channelLayout": "stereo",
           "channels": 2,
           "codec": "aac",
+          "hasStatisticsTags": false,
           "isDefault": true,
           "language": "eng",
           "languageTag": "es-419",
@@ -244,6 +245,7 @@
           "channelLayout": "stereo",
           "channels": 2,
           "codec": "aac",
+          "hasStatisticsTags": false,
           "isDefault": true,
           "language": "eng",
           "sampleRate": 48000,
@@ -260,6 +262,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "eng",
@@ -269,6 +272,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "eng",
@@ -277,6 +281,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "eng",
@@ -295,6 +300,7 @@
           "dvRpuPresent": false,
           "firstFrameSeconds": 0,
           "frameRate": "23.976",
+          "hasStatisticsTags": false,
           "hdr10Plus": false,
           "height": 1080,
           "level": 41,
