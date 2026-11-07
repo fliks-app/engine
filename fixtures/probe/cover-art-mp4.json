@@ -192,6 +192,12 @@
         }
       ],
       "chapters": [],
+      "cover": {
+        "codec": "mjpeg",
+        "height": 64,
+        "streamIndex": 2,
+        "width": 64
+      },
       "durationSeconds": 3,
       "formatBitRate": 204434,
       "formatName": "mov,mp4,m4a,3gp,3g2,mj2",

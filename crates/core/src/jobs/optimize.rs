@@ -157,7 +157,7 @@ pub fn archive_file(
         copy_video,
         hvc1_tag: plan.hvc1_tag && container == OptimizeContainer::Mp4,
         video_index: Some(main_video(info)?.stream_index),
-        cover_art: vec![],
+        cover_art: info.cover.iter().map(|c| c.stream_index).collect(),
         audio,
         subtitles: subs
             .iter()
@@ -775,6 +775,17 @@ mod tests {
                   "hearingImpaired": false, "isImageBased": false }]
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn a_video_files_cover_is_mapped_and_too_slow_defaults_to_hardware() {
+        let mut i = info();
+        i.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
+        assert_eq!(archive_file(&i, &plan(), true).unwrap().cover_art, [4]);
+        assert_eq!(plan().too_slow, crate::api::OptimizeTooSlow::Hardware);
+        let p: OptimizePlan =
+            serde_json::from_value(json!({ "level": "reencode", "tooSlow": "skip" })).unwrap();
+        assert_eq!(p.too_slow, crate::api::OptimizeTooSlow::Skip);
     }
 
     #[test]

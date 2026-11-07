@@ -521,7 +521,7 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .find(|s| s.codec_type.as_deref() == Some("audio"))
         .map(|s| &s.tags);
     let info = MediaInfo {
-        cover: audio_file.then(|| tags::cover(&main.streams)).flatten(),
+        cover: (!no_streams).then(|| tags::cover(&main.streams)).flatten(),
         tags: audio_file
             .then(|| {
                 let name = main.format.format_name.as_deref();

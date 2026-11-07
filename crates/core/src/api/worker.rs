@@ -169,6 +169,17 @@ pub enum OptimizeQuality {
     Faithful,
 }
 
+/// What a software encode estimated beyond `maxSoftwareHours` does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum OptimizeTooSlow {
+    /// Switch to the hardware encoder when there is one (copy otherwise).
+    #[default]
+    Hardware,
+    /// Copy the video (`too_slow`).
+    Skip,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OptimizeContainer {
@@ -218,6 +229,9 @@ pub struct OptimizePlan {
     /// Longest estimated software encode, hours; absent: 12. Beyond it the job is `too_slow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_software_hours: Option<f64>,
+    /// What a software encode beyond `maxSoftwareHours` does; absent: `hardware`.
+    #[serde(default)]
+    pub too_slow: OptimizeTooSlow,
     /// The 3 sample encodes must save at least this share of the video; else the video is copied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_savings_pct: Option<f64>,

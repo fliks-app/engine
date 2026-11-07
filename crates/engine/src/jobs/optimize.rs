@@ -7,7 +7,7 @@ use crate::proc::{Ffmpeg, Pipes};
 use crate::safe_write;
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MEDIA_INFO_SCHEMA_VERSION, MediaInfo,
-    OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality,
+    OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileFormat};
 use fliks_engine_core::jobs::merge::progress_seconds;
@@ -362,7 +362,7 @@ impl Work<'_> {
         match self.samples(if hardware { hw } else { "none" }).await? {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
-                if hw == "none" {
+                if hw == "none" || self.plan().too_slow == OptimizeTooSlow::Skip {
                     return self.copy(Some("too_slow")).await;
                 }
                 hardware = true;
