@@ -1751,6 +1751,13 @@
               "null"
             ]
           },
+          "deviceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable client device id, the key of the server's `client_codecs`."
+          },
           "deviceName": {
             "type": [
               "string",
