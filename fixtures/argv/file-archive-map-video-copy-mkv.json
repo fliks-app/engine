@@ -1,0 +1,107 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "200M",
+      "-probesize",
+      "200M",
+      "-i",
+      "/media/in.mkv",
+      "-map",
+      "0:0",
+      "-map",
+      "0:5",
+      "-map",
+      "0:1",
+      "-map",
+      "0:t?",
+      "-dn",
+      "-map_chapters",
+      "0",
+      "-map_metadata",
+      "0",
+      "-fps_mode",
+      "passthrough",
+      "-max_muxing_queue_size",
+      "4096",
+      "-c:v",
+      "copy",
+      "-c:v:1",
+      "copy",
+      "-c:a:0",
+      "copy",
+      "-c:t",
+      "copy",
+      "-f",
+      "matroska",
+      "-default_mode",
+      "passthrough",
+      "-cues_to_front",
+      "1",
+      "/out/movie.mkv"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "archive": {
+      "audio": [
+        {
+          "action": {
+            "mode": "copy"
+          },
+          "streamIndex": 1
+        }
+      ],
+      "copyVideo": true,
+      "coverArt": [
+        5
+      ],
+      "videoIndex": 0
+    },
+    "encode": {
+      "archive": {
+        "quality": "balanced"
+      },
+      "hwAccel": "none",
+      "inputPath": "/media/in.mkv",
+      "outputDir": "/unused",
+      "profile": {
+        "audioBitrate": "192k",
+        "maxHeight": 2160,
+        "maxWidth": 3840,
+        "name": "archive",
+        "videoBitrate": "8M"
+      },
+      "sourceFps": 23.976,
+      "sourceHeight": 1080,
+      "sourceVideoCodec": "h264",
+      "sourceWidth": 1920,
+      "trustedStreamInfo": false,
+      "videoVariant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    },
+    "format": "mkv",
+    "path": "/out/movie.mkv"
+  },
+  "kind": "file",
+  "name": "map video copy mkv",
+  "source": "synthetic"
+}

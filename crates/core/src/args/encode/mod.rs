@@ -32,6 +32,8 @@ use crate::strs;
 
 const DEFAULT_SEGMENT_DURATION: f64 = 3.0;
 const DEFAULT_FPS: f64 = 24.0;
+/// Archive GOP length: a multiple of the HLS segment grid.
+const ARCHIVE_GOP_SECONDS: f64 = 5.0;
 /// Read ceiling of the trusted-streamInfo fast path: AV1-in-Matroska needs ~3 MB to seek.
 const TRUSTED_PROBE_SIZE: &str = "5000000";
 const ENCODE_SAMPLE_RATE: &str = "48000";
@@ -67,7 +69,12 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         hw_accel: o.hw_accel,
         ..caps.clone()
     };
-    let seg = o.segment_duration.unwrap_or(DEFAULT_SEGMENT_DURATION);
+    let archive = o.archive.clone();
+    let seg = if archive.is_some() {
+        ARCHIVE_GOP_SECONDS
+    } else {
+        o.segment_duration.unwrap_or(DEFAULT_SEGMENT_DURATION)
+    };
     let fps = o.source_fps.filter(|f| *f > 0.0).unwrap_or(DEFAULT_FPS);
     let gop = round(seg * fps).max(1.0);
     let real_seg = real_segment_seconds(seg, o.source_fps);
@@ -90,7 +97,11 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     };
 
     let mut args = strs(&["-hide_banner", "-loglevel", "warning"]);
-    args.extend(probe_args(o.trusted_stream_info));
+    if archive.is_some() {
+        args.extend(strs(&["-analyzeduration", "200M", "-probesize", "200M"]));
+    } else {
+        args.extend(probe_args(o.trusted_stream_info));
+    }
     if start > 0 {
         let ss = match o.seek_keyframe_dts {
             Some(dts) => dts - format_start,
@@ -108,6 +119,11 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     };
     let (w, h) = if fw > 0.0 && fh > 0.0 {
         let w = f64::from(o.profile.max_width).min(fw);
+        let w = if archive.is_some() {
+            (w / 2.0).floor() * 2.0
+        } else {
+            w
+        };
         (w, ((w * fh / fw / 2.0).ceil() * 2.0).max(2.0))
     } else {
         (
@@ -266,7 +282,9 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
     if let Some(p) = image_file {
         args.extend(["-i".into(), p.into()]);
     }
-    args.extend(strs(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
+    if archive.is_none() {
+        args.extend(strs(&["-copyts", "-muxdelay", "0", "-muxpreload", "0"]));
+    }
     if output_seek != 0.0 {
         args.extend(["-ss".into(), seconds(align)]);
     }
@@ -316,6 +334,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         input_surface: surface,
         qsv_native: Some(p.qsv_native),
         hdr_metadata: o.source_hdr_metadata.clone(),
+        archive,
     };
     let video_start = args.len();
     args.extend(build(encoder, &input)?);

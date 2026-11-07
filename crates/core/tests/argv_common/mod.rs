@@ -1,6 +1,8 @@
 //! Runs one argv vector (`fixtures/argv`, or a fuzz line) through `core::args`.
 use fliks_engine_core::api::HostCaps;
-use fliks_engine_core::args::{self, EncoderInput, IframeArgs, LiveArgs, RemuxArgs, VodArgs};
+use fliks_engine_core::args::{
+    self, EncoderInput, FileArgs, IframeArgs, LiveArgs, RemuxArgs, VodArgs,
+};
 use fliks_engine_core::hw::Device;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -20,6 +22,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let input = &v["input"];
     let out = match v["kind"].as_str() {
         Some("vod") => args::vod(&de::<VodArgs>(input, "vod")?, &caps, &dev),
+        Some("file") => args::file(&de::<FileArgs>(input, "file")?, &caps, &dev),
         Some("remux") => args::remux(&de::<RemuxArgs>(input, "remux")?, &caps),
         Some("live") => Ok(args::live(&de::<LiveArgs>(input, "live")?, &caps, &dev)),
         Some("iframe") => Ok(args::iframe(&de::<IframeArgs>(input, "iframe")?)),

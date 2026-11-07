@@ -1,0 +1,127 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "200M",
+      "-probesize",
+      "200M",
+      "-hwaccel",
+      "videotoolbox",
+      "-noautorotate",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-color_range",
+      "tv",
+      "-threads",
+      "4",
+      "-i",
+      "/media/in.mkv",
+      "-c:v",
+      "hevc_videotoolbox",
+      "-profile:v",
+      "main",
+      "-q:v",
+      "75",
+      "-vf",
+      "scale=1920:ceil(ih*1920/iw/2)*2:flags=lanczos,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+      "-g",
+      "120",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-color_range",
+      "tv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:1",
+      "-map",
+      "0:t?",
+      "-dn",
+      "-map_chapters",
+      "0",
+      "-map_metadata",
+      "0",
+      "-fps_mode",
+      "passthrough",
+      "-max_muxing_queue_size",
+      "4096",
+      "-c:a:0",
+      "copy",
+      "-c:t",
+      "copy",
+      "-f",
+      "matroska",
+      "-default_mode",
+      "passthrough",
+      "-cues_to_front",
+      "1",
+      "/out/movie.mkv"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "videotoolbox",
+    "libfdkAac": false,
+    "platform": "darwin",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "archive": {
+      "audio": [
+        {
+          "action": {
+            "mode": "copy"
+          },
+          "streamIndex": 1
+        }
+      ]
+    },
+    "encode": {
+      "archive": {
+        "quality": "faithful"
+      },
+      "hwAccel": "videotoolbox",
+      "inputPath": "/media/in.mkv",
+      "outputDir": "/unused",
+      "profile": {
+        "audioBitrate": "192k",
+        "maxHeight": 2160,
+        "maxWidth": 3840,
+        "name": "archive",
+        "videoBitrate": "8M"
+      },
+      "sourceFps": 23.976,
+      "sourceHeight": 1080,
+      "sourceVideoCodec": "h264",
+      "sourceWidth": 1920,
+      "trustedStreamInfo": false,
+      "videoVariant": {
+        "bitDepth": 8,
+        "codec": "hevc",
+        "hdr": null
+      }
+    },
+    "format": "mkv",
+    "path": "/out/movie.mkv"
+  },
+  "kind": "file",
+  "name": "videotoolbox hevc faithful",
+  "source": "synthetic"
+}

@@ -476,6 +476,9 @@ pub fn iframe(o: &IframeArgs) -> Vec<String> {
 
 /// A whole-file conversion: the same layer 1 as HLS, written to one MP4 or MKV. [new]
 pub fn file(f: &FileArgs, caps: &HostCaps, dev: &Device) -> Result<Vec<String>, String> {
+    if let Some(ar) = &f.archive {
+        return super::archive::file(f, ar, caps, dev);
+    }
     let o = &f.encode;
     let e = encode(o, caps, dev)?;
     let mut a = e.args;
@@ -558,6 +561,7 @@ mod tests {
             path: "/out/movie.mp4".into(),
             format: FileFormat::Mp4,
             all_audio: false,
+            archive: None,
         };
         let got = file(&mp4, &caps, &dev()).unwrap();
         assert_eq!(got[..layer1.len()], layer1[..]);
@@ -607,6 +611,7 @@ mod tests {
             path: "/out/silent.mp4".into(),
             format: FileFormat::Mp4,
             all_audio: true,
+            archive: None,
         };
         let got = file(&f, &HostCaps::default(), &dev()).unwrap();
         let tail = got[got.len() - 7..].join(" ");
