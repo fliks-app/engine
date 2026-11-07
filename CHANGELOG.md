@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/fliks-app/engine/compare/v1.12.0...v1.12.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **optimize:** fix the review findings of the worker, archive output and direct serve ([#178](https://github.com/fliks-app/engine/issues/178)) ([7e1165a](https://github.com/fliks-app/engine/commit/7e1165a051b72bc3dfd5bec08bd51b3f54f49e0b))
+
 ## [1.12.0](https://github.com/fliks-app/engine/compare/v1.11.1...v1.12.0) (2026-11-07)
 
 
