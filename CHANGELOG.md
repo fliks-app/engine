@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/fliks-app/engine/compare/v1.11.1...v1.12.0) (2026-11-07)
+
+
+### Features
+
+* **optimizer:** wire queueing to engine plans and add the queue control api ([#175](https://github.com/fliks-app/engine/issues/175)) ([275cfc9](https://github.com/fliks-app/engine/commit/275cfc9078cb5ed4944449a891a381dcde5c256f))
+
 ## [1.11.1](https://github.com/fliks-app/engine/compare/v1.11.0...v1.11.1) (2026-11-07)
 
 
