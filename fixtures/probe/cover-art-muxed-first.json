@@ -243,6 +243,12 @@
         }
       ],
       "chapters": [],
+      "cover": {
+        "codec": "mjpeg",
+        "height": 1080,
+        "streamIndex": 0,
+        "width": 1920
+      },
       "durationSeconds": 60,
       "formatBitRate": 5000000,
       "formatName": "matroska,webm",

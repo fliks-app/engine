@@ -24,7 +24,7 @@ pub use runtime::*;
 pub use worker::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 5;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 6;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).

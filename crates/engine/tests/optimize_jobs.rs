@@ -33,6 +33,11 @@ struct Fixture {
 
 /// A 30 s MKV (H.264, one AAC track, one SRT) made by ffmpeg and probed by the engine.
 async fn fixture(seconds: u32) -> Option<Fixture> {
+    fixture_with(seconds, "mkv", false).await
+}
+
+/// `cover`: a JPEG picture embedded as MP4 `covr` or MKV image attachment.
+async fn fixture_with(seconds: u32, ext: &str, cover: bool) -> Option<Fixture> {
     let ffprobe = fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe");
     if !ok(&ffmpeg(), &["-version"]) || !ok(&ffprobe, &["-version"]) {
         eprintln!("ffmpeg or ffprobe not available: skipped");
@@ -50,43 +55,58 @@ async fn fixture(seconds: u32) -> Option<Fixture> {
     let dir = temp_dir("optimize");
     let srt = dir.join("in.srt");
     std::fs::write(&srt, "1\n00:00:01,000 --> 00:00:02,000\nhello\n").unwrap();
-    let src = dir.join("movie.mkv");
+    let src = dir.join(format!("movie.{ext}"));
+    let jpg = dir.join("cover.jpg");
     let d = seconds.to_string();
-    let made = ok(
-        &ffmpeg(),
-        &[
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("testsrc2=size=320x180:rate=24:duration={d}"),
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("sine=frequency=440:duration={d}"),
-            "-i",
-            srt.to_str().unwrap(),
-            "-map",
-            "0:v",
-            "-map",
-            "1:a",
-            "-map",
-            "2:s",
-            "-c:v",
-            "libx264",
-            "-g",
-            "24",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-c:s",
-            "copy",
-            "-metadata:s:a:0",
-            "language=eng",
-            src.to_str().unwrap(),
-        ],
+    let mkv = ext == "mkv";
+    let picture = !cover
+        || ok(
+            &ffmpeg(),
+            &[
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=64x64:rate=1",
+                "-frames:v",
+                "1",
+                jpg.to_str().unwrap(),
+            ],
+        );
+    let (video, tone) = (
+        format!("testsrc2=size=320x180:rate=24:duration={d}"),
+        format!("sine=frequency=440:duration={d}"),
     );
+    let (srt, jpg) = (srt.to_str().unwrap(), jpg.to_str().unwrap());
+    let mut args = vec![
+        "-y", "-f", "lavfi", "-i", &video, "-f", "lavfi", "-i", &tone,
+    ];
+    args.extend(["-i", srt]);
+    if cover && !mkv {
+        args.extend(["-i", jpg]);
+    }
+    args.extend(["-map", "0:v", "-map", "1:a", "-map", "2:s"]);
+    if cover && !mkv {
+        args.extend([
+            "-map",
+            "3:v",
+            "-c:v:1",
+            "copy",
+            "-disposition:v:1",
+            "attached_pic",
+        ]);
+    }
+    args.extend([
+        "-c:v:0", "libx264", "-g", "24", "-pix_fmt", "yuv420p", "-c:a", "aac",
+    ]);
+    args.extend(["-c:s", if mkv { "copy" } else { "mov_text" }]);
+    args.extend(["-metadata:s:a:0", "language=eng"]);
+    if cover && mkv {
+        args.extend(["-attach", jpg, "-metadata:s:t", "mimetype=image/jpeg"]);
+    }
+    let out = src.to_str().unwrap();
+    args.push(out);
+    let made = picture && ok(&ffmpeg(), &args);
     if !made {
         eprintln!("ffmpeg cannot make the synthetic file: skipped");
         return None;
@@ -156,6 +176,44 @@ async fn a_remux_retags_a_track_and_hands_back_a_verified_hashed_output() {
         "the source is untouched"
     );
     assert!(f.e.ffmpeg_pids().is_empty());
+}
+
+async fn cover_survives(ext: &str, id: u32) {
+    let Some(f) = fixture_with(4, ext, true).await else {
+        return;
+    };
+    assert_eq!(f.info["cover"]["codec"], "mjpeg", "{}", f.info);
+    let staged = f.dir.join(format!(".fliks-opt-{id}-1.tmp"));
+    let plan = json!({ "level": "remux" });
+    let v = run_kind(&f, optimize(&f, plan, &staged)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    let out = &v["result"]["optimize"]["outInfo"];
+    assert_eq!(out["video"].as_array().unwrap().len(), 1, "{out}");
+    let pictures =
+        std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name,codec_type",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&staged)
+            .output()
+            .unwrap();
+    let pictures = String::from_utf8_lossy(&pictures.stdout);
+    assert_eq!(pictures.matches("mjpeg").count(), 1, "{pictures}");
+}
+
+#[tokio::test]
+async fn an_mp4_cover_survives_a_remux() {
+    cover_survives("mp4", 20).await;
+}
+
+#[tokio::test]
+async fn an_mkv_image_attachment_survives_a_remux() {
+    cover_survives("mkv", 21).await;
 }
 
 #[tokio::test]

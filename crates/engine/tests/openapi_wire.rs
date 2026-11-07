@@ -274,6 +274,7 @@ fn every_wire_key_is_in_its_schema() {
         OpenSessionResponse,
         OptimizeLevel,
         OptimizeContainer,
+        OptimizeTooSlow,
         OptimizeMeta,
         OptimizePayload,
         OptimizeQuality,

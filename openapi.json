@@ -4998,6 +4998,10 @@
           "stripStatisticsTags": {
             "type": "boolean",
             "description": "Regenerate the per-track statistics tags (`mkvpropedit`) instead of carrying stale ones."
+          },
+          "tooSlow": {
+            "$ref": "#/components/schemas/OptimizeTooSlow",
+            "description": "What a software encode beyond `maxSoftwareHours` does; absent: `hardware`."
           }
         }
       },
@@ -5008,6 +5012,14 @@
           "small",
           "balanced",
           "faithful"
+        ]
+      },
+      "OptimizeTooSlow": {
+        "type": "string",
+        "description": "What a software encode estimated beyond `maxSoftwareHours` does.",
+        "enum": [
+          "hardware",
+          "skip"
         ]
       },
       "PathMapping": {
