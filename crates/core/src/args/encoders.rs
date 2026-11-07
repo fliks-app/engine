@@ -1,5 +1,6 @@
 //! Video encoder argv per descriptor and their `-vf` helpers.
 //! [ts:backend/src/modules/streaming/transcoding/codec/encoders/*.ts]
+use super::archive::{cpu_rate, hw_rate};
 use super::filters::{apply_dovi, curve_name, tonemap_opencl_opts};
 use super::{EncoderInput, Filters};
 use crate::api::{HdrFormat, HdrMetadata, HwAccel, VideoCodec};
@@ -64,8 +65,19 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
         (e.hw, e.codec),
         (Qsv | Vaapi | Nvenc | Amf | Videotoolbox, Hevc) | (Amf, Av1)
     ) && e.hdr == Some(HdrFormat::Hlg);
+    let arc = i.archive.as_ref();
+    if arc.is_some() && e.codec == H264 {
+        return Err("archive: h264 is not an archive codec".into());
+    }
+    let hw_rc = arc
+        .filter(|_| e.hw != None)
+        .map(|a| hw_rate(e, a))
+        .transpose()?;
     let gop_tail = |key: bool| {
         let mut v = strs(&["-g", &gop]);
+        if arc.is_some() {
+            return v;
+        }
         if key {
             v.extend(strs(&["-keyint_min", &gop]));
         }
@@ -79,25 +91,31 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
             if e.codec == Hevc && ten {
                 a.extend(strs(&["-profile:v", "main10"]));
             }
-            a.extend(strs(&["-preset", &i.preset]));
-            a.extend(i.qsv.extra.iter().cloned());
-            if e.codec != Av1 {
-                a.extend(strs(&["-mbbrc", "1"]));
-            }
-            let max = if e.codec == Hevc {
-                b.clone()
+            if let Some(r) = &hw_rc {
+                a.extend(r.iter().cloned());
             } else {
-                js(t.video_bitrate_bps + 1.0)
-            };
+                a.extend(strs(&["-preset", &i.preset]));
+                a.extend(i.qsv.extra.iter().cloned());
+                if e.codec != Av1 {
+                    a.extend(strs(&["-mbbrc", "1"]));
+                }
+                let max = if e.codec == Hevc {
+                    b.clone()
+                } else {
+                    js(t.video_bitrate_bps + 1.0)
+                };
+                a.extend(strs(&[
+                    "-b:v",
+                    &b,
+                    "-maxrate",
+                    &max,
+                    "-rc_init_occupancy",
+                    &js(i.qsv.rc_init_occupancy),
+                    "-bufsize",
+                    &js(i.qsv.bufsize),
+                ]));
+            }
             a.extend(strs(&[
-                "-b:v",
-                &b,
-                "-maxrate",
-                &max,
-                "-rc_init_occupancy",
-                &js(i.qsv.rc_init_occupancy),
-                "-bufsize",
-                &js(i.qsv.bufsize),
                 "-vf",
                 &(if ten { qsv_10bit(i)? } else { qsv_8bit(i) }),
             ]));
@@ -109,14 +127,11 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
             if e.codec == Hevc {
                 a.extend(strs(&["-profile:v", if ten { "2" } else { "1" }]));
             }
-            a.extend(strs(&[
-                "-b:v",
-                &b,
-                "-maxrate",
-                &b,
-                "-vf",
-                &vaapi_filter(i, ten)?,
-            ]));
+            match &hw_rc {
+                Some(r) => a.extend(r.iter().cloned()),
+                _ => a.extend(strs(&["-b:v", &b, "-maxrate", &b])),
+            }
+            a.extend(strs(&["-vf", &vaapi_filter(i, ten)?]));
             a.extend(gop_tail(true));
             a
         }
@@ -125,26 +140,27 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
             if e.codec == Av1 && ten {
                 a.extend(strs(&["-pix_fmt", "p010le"]));
             }
-            a.extend(strs(&["-preset", &i.nvenc_preset]));
+            if hw_rc.is_none() {
+                a.extend(strs(&["-preset", &i.nvenc_preset]));
+            }
             if e.codec == Hevc {
                 a.extend(strs(&["-profile:v", if ten { "main10" } else { "main" }]));
                 if ten {
                     a.extend(strs(&["-pix_fmt", "p010le"]));
                 }
             }
-            a.extend(strs(&[
-                "-b:v",
-                &b,
-                "-maxrate",
-                &b,
-                "-vf",
-                &nvenc_filter(i, ten),
-            ]));
-            a.extend(strs(&["-forced-idr", "1"]));
-            if e.codec != Av1 {
-                a.extend(strs(&["-no-scenecut", "1"]));
+            match &hw_rc {
+                Some(r) => a.extend(r.iter().cloned()),
+                _ => a.extend(strs(&["-b:v", &b, "-maxrate", &b])),
             }
-            a.extend(strs(&["-bf", "0"]));
+            a.extend(strs(&["-vf", &nvenc_filter(i, ten)]));
+            if hw_rc.is_none() {
+                a.extend(strs(&["-forced-idr", "1"]));
+                if e.codec != Av1 {
+                    a.extend(strs(&["-no-scenecut", "1"]));
+                }
+                a.extend(strs(&["-bf", "0"]));
+            }
             a.extend(gop_tail(true));
             a
         }
@@ -153,7 +169,11 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
                 "-c:v",
                 &format!("{}_amf", codec_str(e.codec)),
                 "-usage",
-                "transcoding",
+                if arc.is_some() {
+                    "high_quality"
+                } else {
+                    "transcoding"
+                },
             ]);
             match (e.codec, ten) {
                 (H264, _) => a.extend(strs(&["-profile:v", "high"])),
@@ -164,22 +184,28 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
             if ten && i.input_surface != Surface::D3d11 {
                 a.extend(strs(&["-pix_fmt", "p010le"]));
             }
-            a.extend(strs(&[
-                "-quality",
-                "balanced",
-                "-rc",
-                "cbr",
-                "-b:v",
-                &b,
-                "-maxrate",
-                &b,
-                "-vf",
-                &amf_filter(i, ten),
-                "-forced_idr",
-                "1",
-                "-bf",
-                "0",
-            ]));
+            match &hw_rc {
+                Some(r) => {
+                    a.extend(r.iter().cloned());
+                    a.extend(strs(&["-vf", &amf_filter(i, ten)]));
+                }
+                _ => a.extend(strs(&[
+                    "-quality",
+                    "balanced",
+                    "-rc",
+                    "cbr",
+                    "-b:v",
+                    &b,
+                    "-maxrate",
+                    &b,
+                    "-vf",
+                    &amf_filter(i, ten),
+                    "-forced_idr",
+                    "1",
+                    "-bf",
+                    "0",
+                ])),
+            }
             a.extend(gop_tail(false));
             a
         }
@@ -200,7 +226,7 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
                 "-profile:v",
                 profile,
             ]);
-            if i.early {
+            if i.early && arc.is_none() {
                 a.extend(strs(&["-realtime", "1"]));
             }
             if ten && !metal {
@@ -212,7 +238,11 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
                 (false, true) => vt_tonemap_filter(i),
                 (false, false) => cpu_chain(&i.filters, &w, true, "yuv420p"),
             };
-            a.extend(strs(&["-b:v", &b, "-maxrate", &b, "-vf", &vf]));
+            match &hw_rc {
+                Some(r) => a.extend(r.iter().cloned()),
+                _ => a.extend(strs(&["-b:v", &b, "-maxrate", &b])),
+            }
+            a.extend(strs(&["-vf", &vf]));
             a.extend(gop_tail(true));
             a
         }
@@ -221,7 +251,7 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
     if ten && e.hw != None {
         a.extend(hdr10_args());
     }
-    if e.codec == Hevc && e.hw != None {
+    if e.codec == Hevc && e.hw != None && arc.is_none() {
         a.extend(tag);
     }
     if hlg_from_hdr10 {
@@ -244,7 +274,12 @@ fn codec_str(c: VideoCodec) -> &'static str {
 fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec<String> {
     let w = js(i.target.width);
     let f = &i.filters;
-    let gop_tail = strs(&["-g", gop, "-keyint_min", gop, "-force_key_frames", fkf]);
+    let arc = i.archive.as_ref();
+    let gop_tail = if arc.is_some() {
+        strs(&["-g", gop])
+    } else {
+        strs(&["-g", gop, "-keyint_min", gop, "-force_key_frames", fkf])
+    };
     let hlg = e.hdr == Some(HdrFormat::Hlg);
     let fmt = if e.hdr.is_some() {
         "yuv420p10le"
@@ -278,27 +313,25 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             a
         }
         VideoCodec::Hevc => {
-            let mut a = strs(&[
-                "-c:v",
-                "libx265",
-                "-threads:v",
-                &threads,
-                "-preset",
-                &i.preset,
-            ]);
+            let mut a = strs(&["-c:v", "libx265", "-threads:v", &threads]);
+            if arc.is_none() {
+                a.extend(strs(&["-preset", &i.preset]));
+            }
             if e.hdr.is_some() {
                 a.extend(strs(&["-pix_fmt", "yuv420p10le"]));
             }
-            a.extend(strs(&[
-                "-b:v",
-                b,
-                "-maxrate",
-                b,
-                "-bufsize",
-                &i.libx264_bufsize_mb,
-                "-vf",
-                &vf,
-            ]));
+            match arc {
+                Some(r) => a.extend(cpu_rate(e.codec, r.quality)),
+                None => a.extend(strs(&[
+                    "-b:v",
+                    b,
+                    "-maxrate",
+                    b,
+                    "-bufsize",
+                    &i.libx264_bufsize_mb,
+                ])),
+            }
+            a.extend(strs(&["-vf", &vf]));
             a.extend(gop_tail);
             let params = match e.hdr {
                 None => "open-gop=0".to_string(),
@@ -313,7 +346,9 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             if let Some(h) = e.hdr {
                 a.extend(hdr_color_args(h));
             }
-            a.extend(strs(&["-tag:v", "hvc1"]));
+            if arc.is_none() {
+                a.extend(strs(&["-tag:v", "hvc1"]));
+            }
             a
         }
         VideoCodec::Av1 => {
@@ -322,28 +357,36 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             if e.hdr.is_some() {
                 a.extend(strs(&["-pix_fmt", "yuv420p10le"]));
             }
-            a.extend(strs(&[
-                "-preset",
-                svt_preset(&i.preset),
-                "-b:v",
-                &js(bps),
-                "-bufsize",
-                &js(round(bps * 2.0)),
-            ]));
-            match e.hdr {
-                Some(HdrFormat::Hdr10) => a.extend(strs(&[
-                    "-svtav1-params",
-                    &format!(
-                        "mastering-display={}:content-light={}",
-                        svt_master_display(i.hdr_metadata.as_ref()),
-                        max_cll(i.hdr_metadata.as_ref())
-                    ),
+            match arc {
+                Some(r) => a.extend(cpu_rate(e.codec, r.quality)),
+                None => a.extend(strs(&[
+                    "-preset",
+                    svt_preset(&i.preset),
+                    "-b:v",
+                    &js(bps),
+                    "-bufsize",
+                    &js(round(bps * 2.0)),
                 ])),
-                Some(HdrFormat::Hlg) => a.extend(strs(&[
-                    "-svtav1-params",
-                    "color-primaries=9:transfer-characteristics=18:matrix-coefficients=9",
-                ])),
-                None => {}
+            }
+            let hdr_params = match e.hdr {
+                Some(HdrFormat::Hdr10) => Some(format!(
+                    "mastering-display={}:content-light={}",
+                    svt_master_display(i.hdr_metadata.as_ref()),
+                    max_cll(i.hdr_metadata.as_ref())
+                )),
+                Some(HdrFormat::Hlg) => Some(
+                    "color-primaries=9:transfer-characteristics=18:matrix-coefficients=9".into(),
+                ),
+                None => None,
+            };
+            // `irefresh-type=2`: closed GOP with IDR keyframes.
+            let params: Vec<String> = arc
+                .map(|_| "irefresh-type=2".to_string())
+                .into_iter()
+                .chain(hdr_params)
+                .collect();
+            if !params.is_empty() {
+                a.extend(strs(&["-svtav1-params", &params.join(":")]));
             }
             a.extend(strs(&["-vf", &vf]));
             a.extend(gop_tail);

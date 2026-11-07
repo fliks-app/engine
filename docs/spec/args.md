@@ -104,3 +104,25 @@ Probe flags as VOD; `seek = run.seekSeconds` -> `-noaccurate_seek -seek_timestam
 
 - Iframe `[ts:tc/iframe-trick-play.ts:44-89]`: `-hide_banner -loglevel error -ss {seek.toFixed(3)} -copyts -i P -frames:v 1 -an -sn -dn -vf [crop,]scale=W:H -c:v libx264 -preset veryfast -pix_fmt yuv420p [-output_ts_offset String(offset) when truthy] -f mpegts -muxdelay 0 -muxpreload 0 pipe:1`.
 - File `[new]`: layer 1 of a VOD request (no start segment, no early) + `-map V`, the picked or every audio track (`-c:a:i`), `-f mp4 -movflags +faststart` or `-f matroska`, then the path.
+
+## 14. Archive `[new]`
+
+A whole-file encode or remux for the library optimizer: `VodArgs.archive` (rate control) and `FileArgs.archive` (explicit mapping), through `args::file`. No executor here.
+
+- **GOP**: `-g round(5 x fps)`, scene cuts allowed, closed with IDR keyframes (x265 `open-gop=0`, SVT-AV1 `irefresh-type=2`, NVENC/AMF/QSV `-forced-idr`/`-forced_idr 1`). Never `-bf 0`, `-no-scenecut`, CBR, `-realtime`, `-maxrate`, `-keyint_min` or `-force_key_frames`. No `-copyts`, `-muxdelay`, `-ss`; `-analyzeduration 200M -probesize 200M`. H.264 is refused. No tonemap, burn-in or deinterlace: the caller leaves them off.
+- **Rate control** (small / balanced / faithful), starting values to calibrate:
+
+| Encoder | argv |
+|---|---|
+| libx265 | `-crf 26/22/19 -preset medium` (`slow` faithful) |
+| libsvtav1 | `-crf 34/28/23 -preset 6` (`4` faithful) |
+| *_nvenc | `-preset p7 -tune hq -rc vbr -cq N -b:v 0 -rc-lookahead 32 -spatial-aq 1 -temporal-aq 1 -bf 4 -multipass fullres -forced-idr 1`; `N` = 30/26/22 HEVC, 34/30/26 AV1 |
+| *_qsv | `-preset veryslow -look_ahead_depth 40 -extbrc 1 -global_quality 26/23/20 -forced_idr 1` |
+| *_vaapi | `-rc_mode ICQ -global_quality 26/23/20` |
+| *_amf | `-usage high_quality -quality quality -rc qvbr -qvbr_quality_level 30/26/22 -preanalysis 1 -forced_idr 1` |
+| *_videotoolbox | `-q:v 55/65/75`; `bitrateBps` set (Intel) -> `-b:v` instead |
+
+- **Size**: the width is the source (or cropped) width brought down to even; the height follows from the aspect (`ceil(..)*2`). Crop is the usual `crop=` prefix.
+- **Mapping** (`ArchiveFile`): `-map` main video (`videoIndex`, else `0:v:0`), cover art (`coverArt`, `-c:v:k copy`), every listed audio then subtitle track by absolute index, `0:t?` (MKV only); `-dn -map_chapters 0 -map_metadata 0 -fps_mode passthrough -max_muxing_queue_size 4096`. A source audio stream listed twice is copied and encoded (`add`); listed once with an encode action it is replaced.
+- **Audio**: `copy`; `eac3` 640k up to 5.1 (256k stereo) with `aformat=channel_layouts=5.1|stereo`; `aac` 256k stereo, a `pan` downmix with boosted centre (`aformat=5.1,pan,aformat=stereo`) above two channels. `language`, `title` and `default` become `-metadata:s` / `-disposition`.
+- **Container**: MKV `-f matroska -default_mode passthrough -cues_to_front 1 -c:t copy`; MP4 `-tag:v:0 hvc1` (when `hvc1Tag`) `-movflags +faststart`, subtitles `mov_text`. `copyVideo` writes `-c:v copy` with no encode stage (`encode` then only provides the input and path).

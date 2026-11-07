@@ -1,0 +1,120 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "200M",
+      "-probesize",
+      "200M",
+      "-threads",
+      "4",
+      "-i",
+      "/media/in.mkv",
+      "-c:v",
+      "libx265",
+      "-threads:v",
+      "4",
+      "-pix_fmt",
+      "yuv420p10le",
+      "-crf",
+      "22",
+      "-preset",
+      "medium",
+      "-vf",
+      "scale=1920:ceil(ih*1920/iw/2)*2:flags=lanczos,format=yuv420p10le",
+      "-g",
+      "120",
+      "-x265-params",
+      "hdr-opt=1:repeat-headers=1:open-gop=0:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
+      "-color_primaries",
+      "bt2020",
+      "-color_trc",
+      "smpte2084",
+      "-colorspace",
+      "bt2020nc",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:1",
+      "-map",
+      "0:t?",
+      "-dn",
+      "-map_chapters",
+      "0",
+      "-map_metadata",
+      "0",
+      "-fps_mode",
+      "passthrough",
+      "-max_muxing_queue_size",
+      "4096",
+      "-c:a:0",
+      "copy",
+      "-c:t",
+      "copy",
+      "-f",
+      "matroska",
+      "-default_mode",
+      "passthrough",
+      "-cues_to_front",
+      "1",
+      "/out/movie.mkv"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "archive": {
+      "audio": [
+        {
+          "action": {
+            "mode": "copy"
+          },
+          "streamIndex": 1
+        }
+      ]
+    },
+    "encode": {
+      "archive": {
+        "quality": "balanced"
+      },
+      "hwAccel": "none",
+      "inputPath": "/media/in.mkv",
+      "outputDir": "/unused",
+      "profile": {
+        "audioBitrate": "192k",
+        "maxHeight": 2160,
+        "maxWidth": 3840,
+        "name": "archive",
+        "videoBitrate": "8M"
+      },
+      "sourceFps": 23.976,
+      "sourceHeight": 1080,
+      "sourceVideoCodec": "h264",
+      "sourceWidth": 1920,
+      "trustedStreamInfo": false,
+      "videoVariant": {
+        "bitDepth": 10,
+        "codec": "hevc",
+        "hdr": "HDR10"
+      }
+    },
+    "format": "mkv",
+    "path": "/out/movie.mkv"
+  },
+  "kind": "file",
+  "name": "x265 hdr10 mkv",
+  "source": "synthetic"
+}

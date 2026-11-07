@@ -1,9 +1,11 @@
 //! ffmpeg argv, pure: layer 1 `encode`, layer 2 `output`. Spec: `docs/spec/args.md`.
+mod archive;
 mod encode;
 mod encoders;
 mod filters;
 mod output;
 
+pub use archive::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack};
 pub(crate) use encode::{AudioEnc, ReportNeeds, audio_stream_args, stage_report};
 pub use encode::{Encoded, encode, live_h264_encoder};
 pub use encoders::encoder_args;
@@ -32,6 +34,24 @@ pub struct Profile {
 pub enum BurnInKind {
     Text,
     Image,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArchiveQuality {
+    Small,
+    Balanced,
+    Faithful,
+}
+
+/// Archival rate control: quality-targeted, closed GOP, no live constraint (spec `args.md`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveRate {
+    pub quality: ArchiveQuality,
+    /// VideoToolbox on Intel, which has no `-q:v`: the target bitrate instead.
+    #[serde(default)]
+    pub bitrate_bps: Option<f64>,
 }
 
 /// `filter` is the libass `-vf` step (`subtitles='...'`) of a text track; images overlay `streamIndex`.
@@ -142,6 +162,9 @@ pub struct VodArgs {
     /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
     #[serde(default = "default_encode_threads")]
     pub encode_threads: u32,
+    /// Archival encode: 5 s GOP, quality rate control, original timestamps.
+    #[serde(default)]
+    pub archive: Option<ArchiveRate>,
 }
 
 fn default_encode_threads() -> u32 {
@@ -265,13 +288,18 @@ pub enum FileFormat {
 }
 
 /// A whole-file conversion: layer 1 of a VOD request written to one file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileArgs {
     pub encode: VodArgs,
     pub path: String,
     pub format: FileFormat,
     /// Every audio track instead of the picked one.
+    #[serde(default)]
     pub all_audio: bool,
+    /// Archival output: explicit stream mapping instead of the VOD one.
+    #[serde(default)]
+    pub archive: Option<ArchiveFile>,
 }
 
 /// Output frame and rate of one encode. [ts:backend/src/modules/streaming/transcoding/codec/types.ts:49-59]
@@ -344,4 +372,6 @@ pub struct EncoderInput {
     pub hdr_metadata: Option<HdrMetadata>,
     #[serde(default = "default_encode_threads")]
     pub threads: u32,
+    #[serde(default)]
+    pub archive: Option<ArchiveRate>,
 }

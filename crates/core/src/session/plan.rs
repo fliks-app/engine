@@ -387,6 +387,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
         early: r.early,
         use_ts: plan.use_ts,
         encode_threads: r.encode_threads.max(1),
+        archive: None,
     }
 }
 

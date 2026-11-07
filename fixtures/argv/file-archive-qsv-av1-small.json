@@ -1,0 +1,145 @@
+{
+  "env": {
+    "openclDevice": null,
+    "renderNode": "/dev/dri/renderD128"
+  },
+  "expected": {
+    "argv": [
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-analyzeduration",
+      "200M",
+      "-probesize",
+      "200M",
+      "-init_hw_device",
+      "vaapi=va:/dev/dri/renderD128",
+      "-init_hw_device",
+      "qsv=qs@va",
+      "-filter_hw_device",
+      "qs",
+      "-hwaccel",
+      "vaapi",
+      "-hwaccel_output_format",
+      "vaapi",
+      "-hwaccel_device",
+      "va",
+      "-extra_hw_frames",
+      "32",
+      "-noautorotate",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-color_range",
+      "tv",
+      "-threads",
+      "4",
+      "-i",
+      "/media/in.mkv",
+      "-c:v",
+      "av1_qsv",
+      "-preset",
+      "veryslow",
+      "-look_ahead_depth",
+      "40",
+      "-extbrc",
+      "1",
+      "-global_quality",
+      "26",
+      "-forced_idr",
+      "1",
+      "-vf",
+      "scale_vaapi=w=1920:h=-2:format=nv12:extra_hw_frames=24,hwmap=derive_device=qsv,format=qsv,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+      "-g",
+      "120",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-color_range",
+      "tv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:1",
+      "-map",
+      "0:t?",
+      "-dn",
+      "-map_chapters",
+      "0",
+      "-map_metadata",
+      "0",
+      "-fps_mode",
+      "passthrough",
+      "-max_muxing_queue_size",
+      "4096",
+      "-c:a:0",
+      "copy",
+      "-c:t",
+      "copy",
+      "-f",
+      "matroska",
+      "-default_mode",
+      "passthrough",
+      "-cues_to_front",
+      "1",
+      "/out/movie.mkv"
+    ]
+  },
+  "hostCaps": {
+    "disabledDecoders": [],
+    "disabledEncoders": [],
+    "hwAccel": "none",
+    "libfdkAac": false,
+    "platform": "linux",
+    "probes": [],
+    "vaapiWritesHdrMetadata": false
+  },
+  "input": {
+    "archive": {
+      "audio": [
+        {
+          "action": {
+            "mode": "copy"
+          },
+          "streamIndex": 1
+        }
+      ]
+    },
+    "encode": {
+      "archive": {
+        "quality": "small"
+      },
+      "hwAccel": "qsv",
+      "inputPath": "/media/in.mkv",
+      "outputDir": "/unused",
+      "profile": {
+        "audioBitrate": "192k",
+        "maxHeight": 2160,
+        "maxWidth": 3840,
+        "name": "archive",
+        "videoBitrate": "8M"
+      },
+      "sourceFps": 23.976,
+      "sourceHeight": 1080,
+      "sourceVideoCodec": "h264",
+      "sourceWidth": 1920,
+      "trustedStreamInfo": false,
+      "videoVariant": {
+        "bitDepth": 8,
+        "codec": "av1",
+        "hdr": null
+      }
+    },
+    "format": "mkv",
+    "path": "/out/movie.mkv"
+  },
+  "kind": "file",
+  "name": "qsv av1 small",
+  "source": "synthetic"
+}
