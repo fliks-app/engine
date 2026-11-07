@@ -185,6 +185,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "channelLayout": "mono",
@@ -219,6 +220,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": true,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "lyrics": true,
@@ -231,6 +233,7 @@
           "forcedFromTitle": true,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "fre",
           "streamIndex": 3,
@@ -243,6 +246,7 @@
           "hasStatisticsTags": false,
           "hearingImpaired": true,
           "hearingImpairedFromTitle": true,
+          "isDefault": false,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 4,
@@ -254,6 +258,7 @@
           "forced": true,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": false,
           "language": "spa",
           "streamIndex": 5
@@ -264,6 +269,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": true,
+          "isDefault": false,
           "isImageBased": false,
           "language": "ger",
           "languageFromTitle": true,
@@ -276,6 +282,7 @@
           "forced": false,
           "hasStatisticsTags": false,
           "hearingImpaired": false,
+          "isDefault": false,
           "isImageBased": true,
           "language": "jpn",
           "streamIndex": 7

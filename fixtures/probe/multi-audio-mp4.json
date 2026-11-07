@@ -176,6 +176,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "bitRate": 69603,

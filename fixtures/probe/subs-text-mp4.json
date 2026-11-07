@@ -176,6 +176,7 @@
   ],
   "expected": {
     "info": {
+      "attachments": 0,
       "audio": [
         {
           "bitRate": 69728,
@@ -202,6 +203,7 @@
           "endSeconds": 2.9,
           "forced": false,
           "hearingImpaired": false,
+          "isDefault": true,
           "isImageBased": false,
           "language": "eng",
           "streamIndex": 2

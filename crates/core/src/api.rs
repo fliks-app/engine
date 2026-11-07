@@ -397,6 +397,9 @@ pub struct SubtitleStreamInfo {
     pub title: Option<String>,
     pub forced: bool,
     pub hearing_impaired: bool,
+    /// The default disposition; absent on blobs probed before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_default: Option<bool>,
     /// `forced` is true from the title only: the disposition is not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forced_from_title: Option<bool>,
@@ -548,6 +551,9 @@ pub struct MediaInfo {
     /// Only for a file without programme video: the embedded picture.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<CoverArt>,
+    /// Attached files (fonts...), counted; absent on blobs probed before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<u32>,
     /// Only for a file without programme video, and only when it carries a descriptive tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<MediaTags>,

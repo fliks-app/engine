@@ -24,14 +24,73 @@ const FALLBACK_FRAME_SECONDS: f64 = 0.05;
 
 /// The container the output is written in.
 pub fn container_of(info: &MediaInfo, plan: &OptimizePlan) -> OptimizeContainer {
-    plan.container.unwrap_or_else(|| {
-        let f = info.format_name.as_deref().unwrap_or("");
-        if f.contains("mp4") || f.contains("mov") {
-            OptimizeContainer::Mp4
-        } else {
-            OptimizeContainer::Mkv
-        }
-    })
+    plan.container.unwrap_or_else(|| source_container(info))
+}
+
+fn source_container(info: &MediaInfo) -> OptimizeContainer {
+    let f = info.format_name.as_deref().unwrap_or("");
+    if f.contains("mp4") || f.contains("mov") {
+        OptimizeContainer::Mp4
+    } else {
+        OptimizeContainer::Mkv
+    }
+}
+
+/// Whether the plan, its video copied, changes nothing: the output would be the source rewritten as is.
+pub fn is_noop_copy(info: &MediaInfo, plan: &OptimizePlan) -> bool {
+    let Some(v) = info.video.first() else {
+        return false;
+    };
+    let mp4 = container_of(info, plan) == OptimizeContainer::Mp4;
+    let hvc1 = plan.hvc1_tag && mp4 && v.codec == "hevc" && v.codec_tag.as_deref() != Some("hvc1");
+    let title = !plan.clear_title || info.title.is_none();
+    if container_of(info, plan) != source_container(info)
+        || !title
+        || hvc1
+        || !plan.extra_subtitles.is_empty()
+    {
+        return false;
+    }
+    let same = |sp: Option<&StreamPlan>,
+                lang: &str,
+                from_title: Option<bool>,
+                t: &Option<String>,
+                d: Option<bool>| {
+        sp.is_none_or(|p| {
+            p.keep
+                && p.encode.is_none()
+                && p.language
+                    .as_deref()
+                    .is_none_or(|l| l == lang && from_title != Some(true))
+                && p.title.as_deref().is_none_or(|x| x == norm(t))
+                && p.default.is_none_or(|x| x == d.unwrap_or(false))
+        })
+    };
+    let audio = audio_out(info, plan);
+    let subs = subtitles_out(info, plan);
+    audio.len() == info.audio.len()
+        && subs.len() == info.subtitles.len()
+        && audio.iter().zip(&info.audio).all(|(o, a)| {
+            !o.encoded
+                && o.src.stream_index == a.stream_index
+                && same(
+                    plan_of(plan, a.stream_index),
+                    &a.language,
+                    a.language_from_title,
+                    &a.title,
+                    a.is_default,
+                )
+        })
+        && subs.iter().zip(&info.subtitles).all(|(o, s)| {
+            o.stream_index == s.stream_index
+                && same(
+                    plan_of(plan, s.stream_index),
+                    &s.language,
+                    s.language_from_title,
+                    &s.title,
+                    s.is_default,
+                )
+        })
 }
 
 pub fn is_matroska(info: &MediaInfo) -> bool {
@@ -73,7 +132,25 @@ fn track(index: u32, sp: Option<&StreamPlan>) -> ArchiveTrack {
         language: sp.and_then(|s| s.language.clone()),
         title: sp.and_then(|s| s.title.clone()),
         default: sp.and_then(|s| s.default),
+        codec: None,
     }
+}
+
+/// `items` in the order of `plan.streams`; a stream the plan does not list keeps its place after the listed ones.
+fn in_plan_order<'a, T>(
+    items: &'a [T],
+    plan: &OptimizePlan,
+    index: impl Fn(&T) -> u32,
+) -> Vec<&'a T> {
+    let mut v: Vec<&T> = items.iter().collect();
+    v.sort_by_key(|t| {
+        let i = index(t);
+        plan.streams
+            .iter()
+            .position(|s| s.stream_index == i)
+            .unwrap_or(usize::MAX)
+    });
+    v
 }
 
 /// One output audio track: the source stream it comes from and whether it is encoded.
@@ -86,7 +163,7 @@ pub struct AudioOut<'a> {
 /// The audio tracks of the output, in order.
 pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'a>> {
     let mut out = vec![];
-    for a in &info.audio {
+    for a in in_plan_order(&info.audio, plan, |a| a.stream_index) {
         let sp = plan_of(plan, a.stream_index);
         if sp.is_some_and(|s| !s.keep) {
             continue;
@@ -115,8 +192,8 @@ pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'
 
 /// The subtitle tracks of the output (source streams kept), in order.
 pub fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a SubtitleStreamInfo> {
-    info.subtitles
-        .iter()
+    in_plan_order(&info.subtitles, plan, |s| s.stream_index)
+        .into_iter()
         .filter(|s| plan_of(plan, s.stream_index).is_none_or(|p| p.keep))
         .collect()
 }
@@ -132,15 +209,19 @@ pub fn archive_file(
     for o in audio_out(info, plan) {
         let sp = plan_of(plan, o.src.stream_index);
         let channels = o.src.channels.unwrap_or(2);
+        // Beside its original, the encode is never default unless the plan says so.
+        let encoded = || {
+            let mut t = track(o.src.stream_index, sp);
+            if sp.is_some_and(|s| s.keep_original) {
+                t.default = t.default.or(Some(false));
+            }
+            t
+        };
         let (t, action) = match (o.encoded, sp.and_then(|s| s.encode)) {
-            (true, Some(crate::api::StreamEncode::Eac3)) => (
-                track(o.src.stream_index, sp),
-                ArchiveAudioEnc::Eac3 { channels },
-            ),
-            (true, _) => (
-                track(o.src.stream_index, sp),
-                ArchiveAudioEnc::Aac { channels },
-            ),
+            (true, Some(crate::api::StreamEncode::Eac3)) => {
+                (encoded(), ArchiveAudioEnc::Eac3 { channels })
+            }
+            (true, _) => (encoded(), ArchiveAudioEnc::Aac { channels }),
             // The original beside an encode keeps its own tags and flags.
             (false, Some(_)) => (track(o.src.stream_index, None), ArchiveAudioEnc::Copy),
             (false, None) => (track(o.src.stream_index, sp), ArchiveAudioEnc::Copy),
@@ -160,7 +241,10 @@ pub fn archive_file(
         audio,
         subtitles: subs
             .iter()
-            .map(|s| track(s.stream_index, plan_of(plan, s.stream_index)))
+            .map(|s| ArchiveTrack {
+                codec: Some(s.codec.clone()),
+                ..track(s.stream_index, plan_of(plan, s.stream_index))
+            })
             .collect(),
         extra_subtitles: plan
             .extra_subtitles
@@ -170,6 +254,8 @@ pub fn archive_file(
                 language: x.language.clone(),
                 title: x.title.clone(),
                 default: x.default,
+                forced: x.forced,
+                hearing_impaired: x.hearing_impaired,
             })
             .collect(),
     })
@@ -600,6 +686,18 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         if o.language != lang {
             bad.push(format!("audio language {}, expected {lang}", o.language));
         }
+        let src_default = w.src.is_default;
+        let keeps_original = planned.is_some_and(|p| p.keep_original);
+        let want_default = match (w.encoded, keeps_original) {
+            (true, true) => planned.and_then(|p| p.default).or(Some(false)),
+            (false, true) => src_default,
+            _ => planned.and_then(|p| p.default).or(src_default),
+        };
+        if let Some(d) = want_default
+            && o.is_default.unwrap_or(false) != d
+        {
+            bad.push(format!("audio default {}, expected {d}", !d));
+        }
         if !w.encoded {
             let title = match planned.and_then(|p| p.title.as_ref()) {
                 Some(t) if !w.encoded && !planned.is_some_and(|p| p.keep_original) => t.as_str(),
@@ -660,12 +758,44 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
                 o.end_seconds,
             );
         }
+        let default = planned.and_then(|p| p.default).or(w.is_default);
         if o.language != lang
             || norm(&o.title) != title
             || o.forced != w.forced
             || o.hearing_impaired != w.hearing_impaired
+            || default.is_some_and(|d| o.is_default.unwrap_or(false) != d)
         {
             bad.push(format!("subtitle {} differs from the plan", w.stream_index));
+        }
+    }
+    for (x, o) in plan
+        .extra_subtitles
+        .iter()
+        .zip(out.subtitles.iter().skip(subs.len()))
+    {
+        let lang = x.language.as_deref().unwrap_or(&o.language);
+        if o.language != lang
+            || norm(&o.title) != x.title.as_deref().unwrap_or("")
+            || o.forced != x.forced.unwrap_or(false)
+            || o.hearing_impaired != x.hearing_impaired.unwrap_or(false)
+            || x.default
+                .is_some_and(|d| o.is_default.unwrap_or(false) != d)
+        {
+            bad.push(format!("extra subtitle {} differs from the plan", x.path));
+        }
+    }
+    if container_of(src, plan) == source_container(src) {
+        if src.cover.is_some() != out.cover.is_some() {
+            bad.push("cover picture differs from the source".into());
+        }
+        if container_of(src, plan) == OptimizeContainer::Mkv
+            && let Some(a) = src.attachments
+            && a != out.attachments.unwrap_or(0)
+        {
+            bad.push(format!(
+                "{} attachments, source {a}",
+                out.attachments.unwrap_or(0)
+            ));
         }
     }
     if src.chapters.as_ref().map_or(0, Vec::len) != out.chapters.as_ref().map_or(0, Vec::len) {
@@ -915,6 +1045,8 @@ mod tests {
             language: Some("fre".into()),
             title: None,
             default: None,
+            forced: None,
+            hearing_impaired: None,
         }];
         let f = build_file_args(
             &info(),
@@ -1160,6 +1292,189 @@ mod tests {
             assert!(!a.iter().any(|x| x == bare), "{bare} in {a:?}");
         }
         assert!(a.windows(2).any(|w| w == ["-c:v:1", "copy"]));
+    }
+
+    fn sp(i: u32) -> StreamPlan {
+        StreamPlan {
+            stream_index: i,
+            keep: true,
+            language: None,
+            title: None,
+            default: None,
+            encode: None,
+            keep_original: false,
+        }
+    }
+
+    #[test]
+    fn mov_text_into_matroska_is_written_as_srt() {
+        let mut i = info();
+        i.subtitles[0].codec = "mov_text".into();
+        let a = argv_of(&i, &plan(), "hevc", true);
+        assert!(a.windows(2).any(|w| w == ["-c:s:0", "srt"]), "{a:?}");
+        let a = argv_of(&info(), &plan(), "hevc", true);
+        assert!(!a.iter().any(|x| x == "-c:s:0"), "{a:?}");
+    }
+
+    #[test]
+    fn extra_subtitle_dispositions_are_one_flag_set() {
+        let mut p = plan();
+        p.extra_subtitles = vec![crate::api::ExtraSubtitle {
+            path: "/tmp/x.srt".into(),
+            language: None,
+            title: None,
+            default: Some(false),
+            forced: Some(true),
+            hearing_impaired: Some(true),
+        }];
+        let a = argv_of(&info(), &p, "hevc", true);
+        let want = ["-disposition:s:1", "-default+forced+hearing_impaired"];
+        assert!(a.windows(2).any(|w| w == want), "{a:?}");
+        assert_eq!(a.iter().filter(|x| *x == "-disposition:s:1").count(), 1);
+        let mut out = info();
+        let mut extra = out.subtitles[0].clone();
+        extra.is_default = Some(false);
+        extra.forced = true;
+        extra.hearing_impaired = true;
+        out.subtitles.push(extra.clone());
+        out.subtitles[1].language = "fre".into();
+        let check = |out: &MediaInfo| {
+            verify_output(&OutputCheck {
+                src: &info(),
+                out,
+                plan: &p,
+                src_facts: Facts::default(),
+                out_facts: Facts::default(),
+                reencoded: false,
+            })
+        };
+        assert_eq!(check(&out), Vec::<String>::new());
+        out.subtitles[1].forced = false;
+        assert!(check(&out).iter().any(|b| b.contains("extra subtitle")));
+    }
+
+    #[test]
+    fn the_output_follows_the_order_of_the_plan() {
+        let mut p = plan();
+        p.streams = vec![sp(2), sp(1), sp(3)];
+        let order: Vec<u32> = audio_out(&info(), &p)
+            .iter()
+            .map(|o| o.src.stream_index)
+            .collect();
+        assert_eq!(order, [2, 1]);
+        let f = archive_file(&info(), &p, true).unwrap();
+        assert_eq!(f.audio[0].track.stream_index, 2);
+        let mut out = info();
+        out.audio.swap(0, 1);
+        let check = |out: &MediaInfo, p: &OptimizePlan| {
+            verify_output(&OutputCheck {
+                src: &info(),
+                out,
+                plan: p,
+                src_facts: Facts::default(),
+                out_facts: Facts::default(),
+                reencoded: false,
+            })
+        };
+        assert!(check(&out, &p).is_empty());
+        assert!(
+            !check(&out, &plan()).is_empty(),
+            "source order is a difference"
+        );
+    }
+
+    #[test]
+    fn a_false_default_clears_the_flag_and_the_added_track_takes_the_plan_title() {
+        let mut p = plan();
+        let mut added = sp(1);
+        (added.encode, added.keep_original) = (Some(StreamEncode::Aac), true);
+        added.title = Some("Stereo".into());
+        p.streams = vec![added];
+        let mut i = info();
+        i.audio[0].is_default = Some(true);
+        let a = argv_of(&i, &p, "hevc", true);
+        assert!(
+            a.windows(2)
+                .any(|w| w == ["-metadata:s:a:1", "title=Stereo"]),
+            "{a:?}"
+        );
+        assert!(
+            a.windows(2).any(|w| w == ["-disposition:a:1", "-default"]),
+            "{a:?}"
+        );
+        assert!(
+            !a.iter().any(|x| x == "-disposition:a:0"),
+            "the original keeps its flag"
+        );
+        let mut s = plan();
+        let mut x = sp(3);
+        x.default = Some(false);
+        s.streams = vec![x];
+        let a = argv_of(&i, &s, "hevc", true);
+        assert!(a.windows(2).any(|w| w == ["-disposition:s:0", "-default"]));
+    }
+
+    #[test]
+    fn the_output_must_keep_attachments_cover_and_defaults() {
+        let mut src = info();
+        src.attachments = Some(2);
+        src.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
+        src.audio[0].is_default = Some(true);
+        let check = |out: &MediaInfo| {
+            verify_output(&OutputCheck {
+                src: &src,
+                out,
+                plan: &plan(),
+                src_facts: Facts::default(),
+                out_facts: Facts::default(),
+                reencoded: false,
+            })
+        };
+        assert_eq!(check(&src), Vec::<String>::new());
+        let mut out = src.clone();
+        out.attachments = Some(0);
+        assert!(check(&out).iter().any(|b| b.contains("attachments")));
+        let mut out = src.clone();
+        out.cover = None;
+        assert!(check(&out).iter().any(|b| b.contains("cover")));
+        let mut out = src.clone();
+        out.audio[0].is_default = Some(false);
+        assert!(check(&out).iter().any(|b| b.contains("audio default")));
+    }
+
+    #[test]
+    fn a_copy_that_changes_nothing_is_a_noop() {
+        let p = plan();
+        assert!(is_noop_copy(&info(), &p));
+        let mut keep = p.clone();
+        keep.streams = vec![sp(1), sp(2), sp(3)];
+        assert!(is_noop_copy(&info(), &keep));
+        let mut t = p.clone();
+        let mut x = sp(2);
+        x.title = Some("Commentary".into());
+        t.streams = vec![x];
+        assert!(!is_noop_copy(&info(), &t), "a retitle is a change");
+        let mut r = p.clone();
+        r.streams = vec![sp(2), sp(1)];
+        assert!(!is_noop_copy(&info(), &r), "a reorder is a change");
+        let mut d = p.clone();
+        let mut x = sp(3);
+        x.keep = false;
+        d.streams = vec![x];
+        assert!(!is_noop_copy(&info(), &d));
+        let mut c = p.clone();
+        c.container = Some(OptimizeContainer::Mp4);
+        assert!(!is_noop_copy(&info(), &c));
+        let mut e = p.clone();
+        e.extra_subtitles = vec![crate::api::ExtraSubtitle {
+            path: "/a.srt".into(),
+            language: None,
+            title: None,
+            default: None,
+            forced: None,
+            hearing_impaired: None,
+        }];
+        assert!(!is_noop_copy(&info(), &e));
     }
 
     #[test]

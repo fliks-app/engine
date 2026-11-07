@@ -504,6 +504,7 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 title: s.tags.get("title").map(String::from),
                 forced,
                 hearing_impaired,
+                is_default: Some(s.disposition.default == Some(1.0)),
                 forced_from_title: forced_title.then_some(true),
                 hearing_impaired_from_title: hi_title.then_some(true),
                 is_image_based: is_image_based(s.codec_name.as_deref()),
@@ -544,6 +545,12 @@ pub fn build(main: &Main, x: &Extras) -> Built {
         .map(|s| &s.tags);
     let info = MediaInfo {
         cover: (!no_streams).then(|| tags::cover(&main.streams)).flatten(),
+        attachments: (!no_streams).then(|| {
+            main.streams
+                .iter()
+                .filter(|s| s.codec_type.as_deref() == Some("attachment"))
+                .count() as u32
+        }),
         tags: audio_file
             .then(|| {
                 let name = main.format.format_name.as_deref();

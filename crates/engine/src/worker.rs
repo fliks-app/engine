@@ -551,6 +551,10 @@ fn error_result(worker: &str, attempt: u32, e: &str) -> JobResultRequest {
             message: message.into(),
             stderr_tail: None,
         }),
+        level: None,
+        copy_reason: None,
+        cpu_fallback: None,
+        nothing_to_do: false,
     }
 }
 
@@ -564,13 +568,29 @@ fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRe
         out_sha256,
         out_info,
         error: None,
+        level: None,
+        copy_reason: None,
+        cpu_fallback: None,
+        nothing_to_do: false,
     };
     match &snap.result {
-        Some(JobResult::Optimize { optimize }) => ok(
-            optimize.out_size,
-            Some(optimize.out_sha256.clone()),
-            Some(optimize.out_info.clone()),
-        ),
+        Some(JobResult::Optimize { optimize }) if optimize.nothing_to_do => JobResultRequest {
+            level: Some(optimize.level),
+            copy_reason: optimize.copy_reason.clone(),
+            cpu_fallback: Some(optimize.cpu_fallback),
+            nothing_to_do: true,
+            ..ok(0.0, None, None)
+        },
+        Some(JobResult::Optimize { optimize }) => JobResultRequest {
+            level: Some(optimize.level),
+            copy_reason: optimize.copy_reason.clone(),
+            cpu_fallback: Some(optimize.cpu_fallback),
+            ..ok(
+                optimize.out_size,
+                Some(optimize.out_sha256.clone()),
+                Some(optimize.out_info.clone()),
+            )
+        },
         Some(JobResult::Verify { .. }) => ok(0.0, None, None),
         _ => error_result(
             worker,
@@ -636,6 +656,7 @@ mod tests {
             level: OptimizeLevel::Remux,
             copy_reason: None,
             cpu_fallback: false,
+            nothing_to_do: false,
         };
         let done = JobResult::Optimize {
             optimize: Box::new(meta),
@@ -685,6 +706,7 @@ mod tests {
             level: OptimizeLevel::Remux,
             copy_reason: None,
             cpu_fallback: false,
+            nothing_to_do: false,
         };
         let snap = snapshot(
             BgJobState::Done,
@@ -695,5 +717,35 @@ mod tests {
         );
         let r = result_request("w", 1, &snap);
         assert!(r.ok && r.out_size == 12.0 && r.out_sha256.as_deref() == Some("ab"));
+        assert_eq!(r.level, Some(OptimizeLevel::Remux));
+        assert!(!r.nothing_to_do);
+    }
+
+    #[test]
+    fn a_video_copy_reports_what_was_done_and_a_noop_has_no_output() {
+        let meta = OptimizeMeta {
+            staged_path: "/m/.s".into(),
+            out_size: 0.0,
+            out_sha256: String::new(),
+            out_info: MediaInfo::default(),
+            level: OptimizeLevel::Remux,
+            copy_reason: Some("low_savings".into()),
+            cpu_fallback: true,
+            nothing_to_do: true,
+        };
+        let snap = snapshot(
+            BgJobState::Done,
+            Some(JobResult::Optimize {
+                optimize: Box::new(meta),
+            }),
+            None,
+        );
+        let r = result_request("w", 1, &snap);
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["level"], "remux");
+        assert_eq!(v["copyReason"], "low_savings");
+        assert_eq!(v["cpuFallback"], true);
+        assert_eq!(v["nothingToDo"], true);
+        assert!(r.ok && r.out_sha256.is_none() && r.out_info.is_none());
     }
 }
