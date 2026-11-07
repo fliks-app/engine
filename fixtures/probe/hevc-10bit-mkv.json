@@ -209,6 +209,7 @@
       "video": [
         {
           "avgFrameRate": "24/1",
+          "bitDepth": 10,
           "codec": "hevc",
           "colorRange": "tv",
           "cropStable": false,
