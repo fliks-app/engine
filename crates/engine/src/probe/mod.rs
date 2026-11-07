@@ -1,6 +1,6 @@
 //! `POST /v1/probe`: runs ffprobe, mkvmerge and ffmpeg for the pure parser in `core::probe`.
 //! Spec: `docs/spec/probe.md`.
-mod run;
+pub(crate) mod run;
 
 use crate::AppState;
 use axum::{Json, extract::State, http::StatusCode};

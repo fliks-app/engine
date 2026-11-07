@@ -99,11 +99,43 @@ Input: `{ type: "Merge", parts: [{ path, info }], output, tags? }`; `media` name
 - Files: the concat list and the ffmetadata file live in `<cacheRoot>/merge/v1/<jobId>` and are removed when the job ends. The mux goes to `<dir>/.<name>.merge-<rand>.tmp` beside `output` (its directory is created), is flushed (`fsync`) and published with a hard link, which fails when `output` exists, else (no links on that filesystem) `renameat2(RENAME_NOREPLACE)` on Linux, or a check and a rename where the kernel or filesystem lacks it and on other platforms; the temporary file is removed on failure, cancel and success. An existing `output` fails the job (`output exists: <path>`) before any work, `force` does not change that. The free-space check (`jobMinFreeBytes`) is made on the directory of `output`. The job creates the temporary file itself, exclusively (`create_new`; ffmpeg then overwrites it, `-y`), and writes `<cacheRoot>/merge/v1/<jobId>/tmp-path`: the output path, the temporary path and its `dev:inode`, one per line. The temporary file is removed only while the path still holds that inode, and the scratch directory goes after it. A crash can leave a `.tmp` file: at start, before any job, the engine deletes the file each leftover `tmp-path` names, only when it is `.<output name>.merge-<8 hex>.tmp` in the directory of the journaled output and still has the journaled inode, then the scratch. No other file is touched. This assumes one engine per cache root: the engine takes an exclusive `flock` on `<cacheRoot>/.lock` at start (Unix) and exits with an error when another holds it.
 - Paths go through `pathMappings` like `media.path`, `output` included.
 
-## 11. Adding a kind
+## 11. Optimize and Verify (`core::jobs::optimize`, `engine::jobs::{optimize,verify}`) `[new]`
+
+The library optimizer's executors (plan: batches E3/E4). They run as ordinary jobs on a background slot (`POST /v1/jobs`, or the worker loop from a lease); the lease's `stagedPath` goes into `OptimizePayload.stagedPath`. A failure is `<class>: <message>` (`JobErrorClass::message`/`from_message`; classes in `PROTOCOL.md`), the worker loop turns it into `JobResultRequest.error`.
+
+**Optimize.** `media.path` is the source (through `pathMappings`), `stagedPath` the output (absent: `.fliks-opt-<jobId>-1.tmp` beside the source). The plan is executed as written; the three levels:
+
+- `metadata` (MKV only, no track removed, converted or added): the source is copied into `staged` (`FICLONE` reflink on Linux when the filesystem has it, a full copy otherwise), then `mkvpropedit` (`MKVPROPEDIT_PATH`) edits the copy: `language`, `name` (`""` deletes), `flag-default` per `streams[]`, `--delete title` on the info element (`clearTitle`), `--add-track-statistics-tags` (`stripStatisticsTags`). Tracks are addressed by type and rank (`track:a2`), never by number. No ffmpeg, so no decode check.
+- `remux`: `args::file` with `copyVideo` and the `ArchiveFile` built by `optimize::archive_file`: kept streams by index, `encode` (E-AC-3 or AAC, `args.md` section 14) replaces the track or, with `keepOriginal`, follows it (the original keeps its own tags, `title`/`default` go to the new track), `extraSubtitles` (the OCR'd SRT of an image track) are extra inputs mapped after the kept subtitles. Image subtitles cannot go to MP4 (refused). The output container is `plan.container`, else the source's (MP4/MOV stay MP4).
+- `reencode`: the video is copied (`copyReason: unsupported_source`) when the source is interlaced (`fieldOrder`), 4:2:2/4:4:4 on a hardware encoder, Dolby Vision profile 5, DV 7/8 or HDR10+ while `skipHdr10plusDv` (default true), or SDR 10-bit (the encoder variants carry 10 bits with HDR only). Otherwise up to three 20 s windows (evenly spread; one under 2 min, none under 20 s) are encoded and the same windows copied, video only, into `<staged>.sample<k>{s,e}.mp4`: a saving below `minSavingsPct` copies the video (`low_savings`). A software encode (`software`, or no accelerator) estimated above `maxSoftwareHours` (default 12) switches to the hardware encoder, or copies the video (`too_slow`) without one. After the encode the saving of the produced video track (ffprobe packet sizes) is checked again: below the threshold the output is redone as a remux (`low_savings`). Hardware is the default; quality is `plan.quality` (default balanced).
+- `OptimizeMeta.level` is what was done (a re-encode that copied the video is `remux`); `copyReason` says why.
+
+**Safe writing.** `safe_write::create_staged`: `create_new` (never `create_dir_all`, a taken name fails the job and is never removed), the directory's `st_dev` must equal the source's, mode and owner are the source's (`fchmod`/`fchown`, best effort). ffmpeg runs `-y` over that empty file. `safe_write::publish`/`rename_new` (extracted from Merge) publish without replacing; the server's commit step owns the swap, the engine only leaves `staged`. The staged file (and samples) are deleted when the job ends other than by `done`; a source whose size or mtime moved during the job fails `stale`. Space: `jobMinFreeBytes` plus at least the source's size free beside `staged` (`nospace`).
+
+**Checks** (`optimize::verify_output` plus the engine's measurements; any failure is class `verify`):
+1. video packet count equal to the source (`ffprobe packet=size`, both files);
+2. format and video durations within 1 s, video (and copied audio) start within one frame;
+3. audio and subtitle tracks as the plan says (count, language, title, forced/SDH), chapter count;
+4. re-encode: HDR10/HLG colour tags and mastering metadata equal; copy: `dvProfile`, `dvBlSignalCompatId`, `dvRpuPresent` equal;
+5. `hvc1` in MP4 when planned; no `unknown` audio layout;
+6. re-encode: `Scan` on the output, no gap between keyframes above 6 s (a copied video keeps the source's GOP, so it is not checked);
+7. full software decode `-xerror` of the output (video 0 and every audio);
+8. mean SSIM >= 0.9 on three 5 s windows (ffmpeg's built-in `ssim`, not VMAF), for hardware outputs and `faithful`, when there is no crop.
+A hardware encode whose run fails, shows decoding errors or fails any check is redone on the CPU (`cpuFallback`); a second failure is final. Fallback does not wait for "the first second": any failed hardware run falls back.
+
+**Corrupt source.** The source is opened and stat'ed first (`ENOENT`/`EACCES`/`EROFS` -> `access`, `EIO` -> `io`). ffmpeg's stderr is read for failures (`classify_stderr`: `nospace`, `io`, `access`, `corrupt` for `moov atom not found`/`EBML header parsing failed`/`Invalid data found when processing input`, else `engine`) and its decode-error lines counted (`is_decode_error`, `non monotonically increasing dts` ignored). Any error on the final CPU run discards the output: `damaged` up to 10 errors per hour of film, `corrupt` beyond.
+
+**Verify.** The file is read whole in Rust (`access`/`io`), then decoded in software with `-v error -f null`, errors counted without `-xerror`; none -> `VerifyMeta`, else `damaged`/`corrupt` as above, with up to three error lines.
+
+**Time.** `Optimize` and `Verify` runs have no `RUN_TIMEOUT_MS` (`Ctx::run_timeout_ms`); the stall watchdog applies (stderr lines, `-progress` lines, CPU time, `pulse()`), and paused time never counts. Progress: 0-5 samples, 5-85 encode, 85-95 checks (decode, SSIM), then hash.
+
+**Not done / open**: `stale` is detected only by size and mtime; `OptimizeMeta` has no decode-error count (an error fails the job); the cover art of a video file is not mapped (the probe only reports it for audio files); position of a decode error in the film is not reported; VMAF is replaced by SSIM; no `staged` age sweep (server side).
+
+## 12. Adding a kind
 
 A variant of `core::api::JobKind` (and `JobResult` when it returns data), its validation in `engine::jobs::submit`, its pure part in `core::jobs`, a branch in `engine::jobs::run` calling its module. That module gets a `Ctx`: `ffmpeg(argv)` for one ffmpeg run and `pipeline(timeout, cmds, work)` for any tools (one background slot, pause, watchdog, stop on cancel; `Cmd` names the binary and whether its stdout is exposed; `work` drives them), `pulse()`, `progress(pct)`, `cancelled()`, `check_disk(dir)` before writing under the engine cache, `media_path()`.
 
-## 12. Deviations
+## 13. Deviations
 
 - Playback counts against the budget and preempts background runs; the TS pool held background work only, FIFO, with no pause. A shrunk budget pauses (TS: drains).
 - The sprite extractor follows the detected backend and render node (TS: `/dev/dri/renderD129`/`128` and `/dev/nvidiactl` existence, `THUMB_HWACCEL_DEVICE`); QSV crop only on a `qsv` host, nothing but software on Windows (as the TS).

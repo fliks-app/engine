@@ -5,6 +5,7 @@ pub mod cues;
 pub mod fingerprint;
 pub mod merge;
 pub mod ocr;
+pub mod optimize;
 pub mod scan;
 pub mod sprite;
 pub mod srt;

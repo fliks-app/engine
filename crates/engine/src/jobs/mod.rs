@@ -5,11 +5,13 @@ pub(crate) mod cover;
 mod fingerprint;
 mod merge;
 mod ocr;
+mod optimize;
 mod scan;
 mod sprite;
 mod srt;
 pub(crate) mod subtitles;
 mod sync;
+mod verify;
 
 use crate::AppState;
 use crate::lock::Locked;
@@ -150,8 +152,6 @@ impl Jobs {
     }
 }
 
-const NOT_IMPLEMENTED: &str = "optimize and verify jobs are not implemented by this engine";
-
 fn validate(kind: &JobKind) -> Result<(), String> {
     if let Some(family) = kind.info().and_then(MediaInfo::family)
         && !kind.families().contains(&family)
@@ -203,7 +203,8 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Merge { parts, output, .. } => {
             fliks_engine_core::jobs::merge::validate(parts, output)?;
         }
-        JobKind::Optimize { .. } | JobKind::Verify { .. } => return Err(NOT_IMPLEMENTED.into()),
+        JobKind::Optimize { payload } => optimize::validate(payload)?,
+        JobKind::Verify { payload } => verify::validate(payload)?,
     }
     Ok(())
 }
@@ -399,7 +400,8 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             .await
         }
         JobKind::SubtitleToSrt { info, source } => srt::run(ctx, info, source).await,
-        JobKind::Optimize { .. } | JobKind::Verify { .. } => Err(NOT_IMPLEMENTED.into()),
+        JobKind::Optimize { payload } => optimize::run(ctx, payload).await,
+        JobKind::Verify { payload } => verify::run(ctx, payload).await,
     }
 }
 
@@ -536,11 +538,20 @@ impl Ctx {
         self.job.activity.fetch_add(1, Relaxed);
     }
 
+    /// Unpaused time one run may last: optimisations and checks take hours and only the stall
+    /// watchdog stops them.
+    pub fn run_timeout_ms(&self) -> u64 {
+        match self.job.req.kind {
+            JobKind::Optimize { .. } | JobKind::Verify { .. } => u64::MAX,
+            _ => u64::from(RUN_TIMEOUT_MS),
+        }
+    }
+
     /// One ffmpeg run on a background slot: paused while preempted, killed when hung, past
-    /// `RUN_TIMEOUT_MS` of unpaused time, or on cancel.
+    /// `run_timeout_ms` of unpaused time, or on cancel.
     pub async fn ffmpeg(&self, argv: &[String]) -> Result<(), String> {
         let cmd = Cmd::new("ffmpeg", &self.rt.ffmpeg, argv, Pipes::default());
-        self.pipeline(u64::from(RUN_TIMEOUT_MS), vec![cmd], |p| async move {
+        self.pipeline(self.run_timeout_ms(), vec![cmd], |p| async move {
             let p = &p[0];
             match p.wait().await.code {
                 Some(0) => Ok(()),

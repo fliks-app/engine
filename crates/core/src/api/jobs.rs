@@ -1,7 +1,7 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
 use super::{
-    Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, OptimizePayload, SourceScan,
-    VerifyPayload,
+    Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, OptimizeLevel,
+    OptimizePayload, SourceScan, VerifyPayload,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -81,10 +81,11 @@ pub enum JobKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tags: Option<MediaTags>,
     },
-    /// Optimisation of one file by the plan; leased by a worker (`PROTOCOL.md`), not run by `/v1/jobs`.
+    /// Optimisation of one file by the plan (`docs/spec/jobs.md` section 11); the worker loop runs it
+    /// from a lease (`PROTOCOL.md`), `/v1/jobs` accepts it too.
     #[schema(title = "OptimizeJob")]
     Optimize { payload: OptimizePayload },
-    /// Integrity check of one file; leased by a worker, not run by `/v1/jobs`.
+    /// Integrity check of one file: full read, then a counted software decode.
     #[schema(title = "VerifyJob")]
     Verify { payload: VerifyPayload },
 }
@@ -216,6 +217,34 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("Merge", AUDIO_ONLY),
 ];
 
+/// The staged file of an `Optimize`, verified and hashed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OptimizeMeta {
+    /// Where the output is.
+    pub staged_path: String,
+    /// f64: no 64-bit integers on the wire.
+    pub out_size: f64,
+    pub out_sha256: String,
+    /// Probe of the output.
+    pub out_info: MediaInfo,
+    /// What was really done: a `reencode` whose video was copied reports `remux`.
+    pub level: OptimizeLevel,
+    /// Why a planned re-encode copied the video (`unsupported_source`, `low_savings`, `too_slow`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_reason: Option<String>,
+    /// The output was produced on the CPU after the hardware encoder failed its run or its check.
+    pub cpu_fallback: bool,
+}
+
+/// A source that read and decoded cleanly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyMeta {
+    pub bytes: f64,
+    pub duration_seconds: f64,
+}
+
 /// A job kind and the families of file it applies to.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -344,6 +373,13 @@ pub enum JobResult {
     /// The file is at the request's `output`.
     Merge {
         merge: MergeMeta,
+    },
+    Optimize {
+        optimize: Box<OptimizeMeta>,
+    },
+    /// A faulty file fails the job with class `damaged` or `corrupt`.
+    Verify {
+        verify: VerifyMeta,
     },
 }
 

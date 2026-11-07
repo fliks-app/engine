@@ -1,6 +1,7 @@
 //! Child process helpers shared by every ffmpeg/ffprobe/mkvmerge caller, and the lifecycle of
 //! long ffmpeg runs (`docs/spec/runtime.md` section 1).
 use crate::lock::Locked;
+use fliks_engine_core::jobs::optimize::is_decode_error;
 use fliks_engine_core::session::{PauseCapability, PauseCommand, pause_command};
 use std::collections::VecDeque;
 use std::io;
@@ -160,6 +161,7 @@ pub struct Ffmpeg {
     stdout: Mutex<Option<ChildStdout>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
     stderr_lines: Arc<AtomicU64>,
+    decode_errors: Arc<AtomicU64>,
     exit: watch::Receiver<Option<Exit>>,
     kill: mpsc::Sender<()>,
 }
@@ -228,14 +230,19 @@ impl Ffmpeg {
         assign_to_job(&child);
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
         let stderr_lines = Arc::new(AtomicU64::new(0));
+        let decode_errors = Arc::new(AtomicU64::new(0));
         let drain = child.stderr.take().map(|err| {
-            let (ring, count) = (stderr.clone(), stderr_lines.clone());
+            let (ring, count, errors) =
+                (stderr.clone(), stderr_lines.clone(), decode_errors.clone());
             tokio::spawn(async move {
                 let (mut err, mut buf) = (BufReader::new(err), Vec::new());
                 // A line past MAX_LINE bytes counts as several; invalid UTF-8 must not stop the drain.
                 while let Ok(1..) = (&mut err).take(MAX_LINE).read_until(b'\n', &mut buf).await {
                     count.fetch_add(1, Ordering::Relaxed);
                     let l = String::from_utf8_lossy(&buf);
+                    if is_decode_error(&l) {
+                        errors.fetch_add(1, Ordering::Relaxed);
+                    }
                     let mut r = ring.locked();
                     if r.len() == RING_LINES {
                         r.pop_front();
@@ -273,6 +280,7 @@ impl Ffmpeg {
             stdout: Mutex::new(stdout),
             stderr,
             stderr_lines,
+            decode_errors,
             exit,
             kill,
         })
@@ -305,6 +313,11 @@ impl Ffmpeg {
     /// Lines written to stderr so far: a progress signal for the watchdog.
     pub fn stderr_lines(&self) -> u64 {
         self.stderr_lines.load(Ordering::Relaxed)
+    }
+
+    /// Stderr lines so far that report a damaged stream (`jobs::optimize::is_decode_error`).
+    pub fn decode_errors(&self) -> u32 {
+        self.decode_errors.load(Ordering::Relaxed) as u32
     }
 
     /// CPU time (user + system, threads and reaped children) burnt so far.

@@ -3,7 +3,7 @@
 use super::{Cmd, Ctx};
 use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes};
-use fliks_engine_core::api::{JobResult, MediaInfo, SOURCE_SCAN_SCHEMA_VERSION};
+use fliks_engine_core::api::{JobResult, MediaInfo, SOURCE_SCAN_SCHEMA_VERSION, SourceScan};
 use fliks_engine_core::jobs::scan::*;
 use fliks_engine_core::mpegts::Demuxer;
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,13 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 const CHUNK: usize = 1 << 20;
 
 pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
-    let path = ctx.media_path();
+    let scan = scan_file(ctx, info, &ctx.media_path()).await?;
+    Ok(JobResult::Scan { scan })
+}
+
+/// The scan of the file at `path` (the job's own, or an output being checked).
+pub async fn scan_file(ctx: &Ctx, info: &MediaInfo, path: &str) -> Result<SourceScan, String> {
+    let path = path.to_string();
     let plan = ScanPlan::new(info, &path)?;
     let lead = match known_lead(&plan.video) {
         Some(l) => l,
@@ -39,15 +45,15 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
     };
     let mut scan = reader.finish(changes)?;
     scan.schema_version = Some(SOURCE_SCAN_SCHEMA_VERSION);
-    Ok(JobResult::Scan { scan })
+    Ok(scan)
 }
 
-fn ffprobe(ctx: &Ctx, argv: &[String]) -> Cmd {
+pub(super) fn ffprobe(ctx: &Ctx, argv: &[String]) -> Cmd {
     Cmd::new("ffprobe", &ctx.rt.ffprobe, argv, Pipes { stdout: true })
 }
 
 /// ffprobe's stdout by line until `on_line` says stop (true, the run is stopped); an exit not asked for fails.
-async fn lines(
+pub(super) async fn lines(
     ctx: &Ctx,
     p: &Ffmpeg,
     mut on_line: impl FnMut(&str) -> bool,
