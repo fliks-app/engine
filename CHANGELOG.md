@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/fliks-app/engine/compare/v1.11.0...v1.11.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **optimize:** honour tooSlow skip and keep the cover art of video files ([#173](https://github.com/fliks-app/engine/issues/173)) ([69d1339](https://github.com/fliks-app/engine/commit/69d1339fb1f8679c57ce00cd39e746708824cc74))
+
 ## [1.11.0](https://github.com/fliks-app/engine/compare/v1.10.0...v1.11.0) (2026-11-07)
 
 
