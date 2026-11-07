@@ -998,7 +998,7 @@ mod tests {
         assert_eq!(copy_video_reason(&i.video[0], &p, false), None);
         let a = argv_of(&i, &p, "hevc", false);
         assert!(
-            a.windows(2).any(|w| w == ["-pix_fmt", "yuv420p10le"]),
+            a.windows(2).any(|w| w == ["-pix_fmt:v:0", "yuv420p10le"]),
             "{a:?}"
         );
         assert!(
@@ -1007,7 +1007,7 @@ mod tests {
         );
         let a = argv_of(&info(), &p, "av1", false);
         assert!(
-            a.windows(2).any(|w| w == ["-pix_fmt", "yuv420p10le"]),
+            a.windows(2).any(|w| w == ["-pix_fmt:v:0", "yuv420p10le"]),
             "{a:?}"
         );
         let a = argv_of(&info(), &p, "hevc", false);
