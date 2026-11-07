@@ -255,7 +255,7 @@ impl Tools for ProcessTools {
                 let (cmd, args) = background(&ffmpeg, &a);
                 let slots = slots.clone();
                 set.spawn(async move {
-                    let _slot = slots.background(JobPriority::Normal).await;
+                    let _slot = slots.background(JobPriority::Normal, 1).await;
                     let r = capture(
                         &cmd,
                         &args,

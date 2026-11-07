@@ -214,7 +214,7 @@ pub fn build_file_args(
         "hwAccel": o.hw,
         "profile": { "name": "archive", "maxWidth": 16384, "maxHeight": 16384,
             "videoBitrate": "8M", "audioBitrate": "192k" },
-        "archive": { "quality": quality },
+        "archive": { "quality": quality, "capPools": true },
         "encodeThreads": o.threads,
         "sourceVideoCodec": v.codec,
         "videoVariant": { "codec": o.codec, "bitDepth": if ten { 10 } else { 8 }, "hdr": v.hdr_format },
@@ -257,6 +257,32 @@ pub fn windowed(mut argv: Vec<String>, input: &str, start: f64, len: f64) -> Vec
     }
     let out = argv.len().saturating_sub(1);
     argv.splice(out..out, ["-t".into(), format!("{len:.3}")]);
+    argv
+}
+
+/// The input options of a source read over HTTP, put before every `-i <url>` (or before the
+/// positional `url` of an ffprobe argv): the bearer token and reconnects on a dropped connection.
+pub fn http_input(mut argv: Vec<String>, url: &str, token: Option<&str>) -> Vec<String> {
+    let mut opts: Vec<String> = ["-reconnect", "1", "-reconnect_on_network_error", "1"]
+        .map(String::from)
+        .to_vec();
+    if let Some(t) = token {
+        opts.extend(["-headers".into(), format!("Authorization: Bearer {t}\r\n")]);
+    }
+    let inputs: Vec<usize> = argv
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| w[0] == "-i" && w[1] == url)
+        .map(|(i, _)| i)
+        .collect();
+    let inputs = if inputs.is_empty() {
+        argv.iter().rposition(|a| a == url).into_iter().collect()
+    } else {
+        inputs
+    };
+    for at in inputs.into_iter().rev() {
+        argv.splice(at..at, opts.iter().cloned());
+    }
     argv
 }
 
@@ -362,6 +388,25 @@ pub fn classify_stderr(lines: &[String]) -> JobErrorClass {
     } else {
         JobErrorClass::Engine
     }
+}
+
+/// Whether an ffmpeg failure text is a dropped or refused HTTP read.
+pub fn is_network_error(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    [
+        "connection reset",
+        "connection timed out",
+        "connection refused",
+        "connection closed",
+        "network is unreachable",
+        "server returned",
+        "http error",
+        "end of file",
+        "error in the pull function",
+        "broken pipe",
+    ]
+    .iter()
+    .any(|p| t.contains(p))
 }
 
 /// The `damaged` or `corrupt` failure of a source that showed `errors` decoding errors.
@@ -680,6 +725,36 @@ pub fn mkvpropedit_args(info: &MediaInfo, plan: &OptimizePlan, file: &str) -> Ve
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_dropped_http_read_is_a_network_error() {
+        assert!(super::is_network_error(
+            "ffmpeg exited with Some(1): Connection reset by peer"
+        ));
+        assert!(super::is_network_error(
+            "Server returned 503 Service Unavailable"
+        ));
+        assert!(!super::is_network_error(
+            "Invalid data found when processing input"
+        ));
+    }
+
+    #[test]
+    fn http_input_options_precede_each_url_input() {
+        let url = "http://h/f.mkv";
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let got = super::http_input(a(&["-i", url, "-i", url, "o.mkv"]), url, Some("tk"));
+        let at = got.iter().position(|x| x == "-headers").unwrap();
+        assert_eq!(got[at + 1], "Authorization: Bearer tk\r\n");
+        assert_eq!(got.iter().filter(|x| *x == "-reconnect").count(), 2);
+        assert_eq!(got.last().unwrap(), "o.mkv");
+        let probe = super::http_input(a(&["-v", "error", url]), url, None);
+        assert_eq!(
+            probe[2..6],
+            ["-reconnect", "1", "-reconnect_on_network_error", "1"]
+        );
+        assert_eq!(probe.last().unwrap(), url);
+    }
+
     use super::*;
     use crate::api::StreamEncode;
 

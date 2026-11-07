@@ -18,6 +18,7 @@ pub mod sessions;
 pub mod slots;
 pub mod supervise;
 pub mod token;
+pub mod worker;
 
 use crate::lock::Locked;
 use axum::{

@@ -67,6 +67,12 @@ pub struct WorkerSettings {
     pub heartbeat_s: u32,
     pub long_poll_s: u32,
     pub upload_chunk_bytes: u32,
+    /// CPU weight of a software optimization against the playback budget; absent: 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_weight: Option<u32>,
+    /// Hardware playback reads on a device that pause its background GPU jobs; absent: 1, 0 never.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_playback_before_pause: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -239,6 +245,12 @@ pub struct OptimizePayload {
     /// loop sets it from the lease's `stagedPath`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub staged_path: Option<String>,
+    /// Remote source read over HTTP, from the lease's `inputUrl`/`inputToken`; the token goes in
+    /// an `Authorization: Bearer` header. Absent: the local file of the job's `media.path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

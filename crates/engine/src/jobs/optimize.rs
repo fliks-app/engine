@@ -73,26 +73,49 @@ pub(super) fn io_err(what: &Path, e: std::io::Error) -> String {
 
 /// `Err` text of a run that did not end well: a cancel stays itself, the rest is an engine fault.
 fn pipeline_err(e: String) -> String {
-    if e == super::CANCELLED || e == "promoted" {
+    if e == super::CANCELLED || e == "promoted" || is_busy(&e) {
         e
     } else {
         Class::Engine.message(e)
     }
 }
 
+/// A run stopped for playback: the job goes back to the queue, no failure.
+fn is_busy(e: &str) -> bool {
+    Class::from_message(e).0 == Class::Busy && e.starts_with("busy: ")
+}
+
 pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
-    let src = PathBuf::from(ctx.media_path());
-    let staged = match &p.staged_path {
-        Some(s) => PathBuf::from(ctx.rt.map_media_path(s)),
-        None => src
+    let remote = p.input_url.is_some();
+    let src = match &p.input_url {
+        Some(url) => PathBuf::from(url),
+        None => PathBuf::from(ctx.media_path()),
+    };
+    let staged = match (&p.staged_path, remote) {
+        (Some(s), _) => PathBuf::from(ctx.rt.map_media_path(s)),
+        (None, true) => ctx
+            .rt
+            .cache
+            .root
+            .join("optimize")
+            .join(format!(".fliks-opt-{}.tmp", ctx.job.id)),
+        (None, false) => src
             .parent()
             .unwrap_or(Path::new("."))
             .join(format!(".fliks-opt-{}-1.tmp", ctx.job.id)),
     };
-    if !staged.is_absolute() || !src.is_absolute() {
+    if !staged.is_absolute() || (!remote && !src.is_absolute()) {
         return Err(Class::Access.message("paths must be absolute on this host"));
     }
-    let before = fingerprint(&src).map_err(|e| io_err(&src, e))?;
+    if remote && p.plan.level == OptimizeLevel::Metadata {
+        return Err(Class::Access.message("the metadata level edits a local file"));
+    }
+    // A remote source has no size and time to hold still: the host's lease fences it instead.
+    let before = if remote {
+        (0, None)
+    } else {
+        fingerprint(&src).map_err(|e| io_err(&src, e))?
+    };
     let mut w = Work {
         ctx,
         p,
@@ -100,10 +123,11 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
         staged: &staged,
         src_packets: None,
         created: false,
+        remote,
     };
     let out = w.start(before.0).await;
     let out = match out {
-        Ok(m) if fingerprint(&src).ok() != Some(before) => {
+        Ok(m) if !remote && fingerprint(&src).ok() != Some(before) => {
             drop(m);
             Err(Class::Stale.message("the source changed during the job"))
         }
@@ -133,6 +157,8 @@ struct Work<'a> {
     staged: &'a Path,
     src_packets: Option<PacketStats>,
     created: bool,
+    /// `src` holds the `inputUrl`, read over HTTP.
+    remote: bool,
 }
 
 /// What the output turned out to be, for the result.
@@ -158,6 +184,36 @@ impl Work<'_> {
             .unwrap_or(0.0)
     }
 
+    /// The HTTP input options on every input of `argv` when the source is remote.
+    fn net(&self, argv: Vec<String>) -> Vec<String> {
+        match &self.p.input_url {
+            Some(url) => opt::http_input(argv, url, self.p.input_token.as_deref()),
+            None => argv,
+        }
+    }
+
+    /// A failed read of a remote source is the network's: its text says so, or the read itself broke.
+    fn source_error(&self, e: String) -> String {
+        let (class, text) = Class::from_message(&e);
+        match class {
+            Class::Engine | Class::Io
+                if self.remote && (class == Class::Io || opt::is_network_error(text)) =>
+            {
+                Class::Network.message(text)
+            }
+            _ => e,
+        }
+    }
+
+    /// `-threads` of a run: a software optimization's weight in the cores, else the playback split.
+    fn threads(&self) -> u32 {
+        let slots = &self.ctx.rt.slots;
+        match self.ctx.lane() {
+            Some(l) if !l.gpu => slots.optimize_threads(),
+            _ => slots.encode_threads(),
+        }
+    }
+
     fn staged_text(&self) -> String {
         self.staged.to_string_lossy().into_owned()
     }
@@ -179,6 +235,9 @@ impl Work<'_> {
 
     async fn start(&mut self, src_len: u64) -> Result<OptimizeMeta, String> {
         let dir = self.staged.parent().ok_or("staged has no directory")?;
+        if self.remote {
+            std::fs::create_dir_all(dir).map_err(|e| io_err(dir, e))?;
+        }
         self.ctx
             .check_disk(dir)
             .await
@@ -192,8 +251,15 @@ impl Work<'_> {
             )));
         }
         let (src, staged) = (self.src.to_owned(), self.staged.to_owned());
-        let copy = self.plan().level == OptimizeLevel::Metadata;
+        let (copy, remote) = (self.plan().level == OptimizeLevel::Metadata, self.remote);
         tokio::task::spawn_blocking(move || {
+            if remote {
+                std::fs::File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(&staged)?;
+                return Ok(());
+            }
             let mut f = safe_write::create_staged(&src, &staged)?;
             if copy {
                 safe_write::copy_file(&src, &mut f)?;
@@ -262,7 +328,7 @@ impl Work<'_> {
                 path: &out,
                 codec: self.plan().codec.as_deref().unwrap_or("hevc"),
                 hw,
-                threads: rt.slots.encode_threads(),
+                threads: self.threads(),
                 copy_video,
             },
         )
@@ -282,7 +348,9 @@ impl Work<'_> {
         let rt = &self.ctx.rt;
         let caps = rt.caps().unwrap_or_default();
         let hw = hw_name(caps.hw_accel);
-        let mut hardware = !self.plan().software && hw != "none";
+        // A job leased on the CPU device never takes the GPU, whatever the plan says.
+        let on_cpu = self.ctx.lane().is_some_and(|l| !l.gpu);
+        let mut hardware = !self.plan().software && hw != "none" && !on_cpu;
         let v = opt::main_video(self.info())?;
         if let Some(r) = opt::copy_video_reason(v, self.plan(), hardware) {
             return self.copy(Some(r)).await;
@@ -324,7 +392,7 @@ impl Work<'_> {
             };
             match verdict {
                 Ok(f) => break f,
-                Err(_) if hardware && !self.ctx.cancelled() => {
+                Err(e) if hardware && !self.ctx.cancelled() && !is_busy(&e) => {
                     (hardware, cpu_fallback) = (false, true);
                 }
                 Err(e) => return Err(e),
@@ -364,7 +432,7 @@ impl Work<'_> {
                         path: &out.to_string_lossy(),
                         codec: self.plan().codec.as_deref().unwrap_or("hevc"),
                         hw: if copy { "none" } else { hw },
-                        threads: self.ctx.rt.slots.encode_threads(),
+                        threads: self.threads(),
                         copy_video: copy,
                     },
                 )
@@ -422,7 +490,10 @@ impl Work<'_> {
 
     /// One ffmpeg run with its progress mapped onto `pct`; its decoding errors and stderr tail.
     async fn run(&self, argv: &[String], total: f64, pct: (f64, f64)) -> Result<Ran, String> {
-        run_ffmpeg(self.ctx, &opt::runnable(argv.to_vec()), total, pct).await
+        let argv = self.net(argv.to_vec());
+        run_ffmpeg(self.ctx, &opt::runnable(argv), total, pct)
+            .await
+            .map_err(|e| self.source_error(e))
     }
 
     /// Verifies the staged output; the video packet stats of the output.
@@ -431,9 +502,10 @@ impl Work<'_> {
         let path = self.staged_text();
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;
-        let out_packets = packets(ctx, &path).await?;
+        let out_packets = packets(ctx, opt::packet_args(&path)).await?;
         if self.src_packets.is_none() {
-            self.src_packets = Some(packets(ctx, &self.src.to_string_lossy()).await?);
+            let argv = self.net(opt::packet_args(&self.src.to_string_lossy()));
+            self.src_packets = Some(packets(ctx, argv).await.map_err(|e| self.source_error(e))?);
         }
         let gap = if reencoded {
             keyframe_gap(ctx, &probed, &path).await?
@@ -483,8 +555,10 @@ impl Work<'_> {
         };
         let input = self.src.to_string_lossy().into_owned();
         for start in opt::sample_starts(self.duration()) {
-            let argv = opt::ssim_args(&input, path, start, 5.0, w, h);
-            let r = run_ffmpeg(self.ctx, &argv, 5.0, (95.0, 95.0)).await?;
+            let argv = self.net(opt::ssim_args(&input, path, start, 5.0, w, h));
+            let r = run_ffmpeg(self.ctx, &argv, 5.0, (95.0, 95.0))
+                .await
+                .map_err(|e| self.source_error(e))?;
             match opt::parse_ssim(&r.lines) {
                 Some(s) if s >= opt::MIN_SSIM => {}
                 other => {
@@ -624,8 +698,8 @@ pub(super) async fn probe_file(ctx: &Ctx, path: &str) -> Result<MediaInfo, Strin
 }
 
 /// Video packets of the first video stream of `path`.
-async fn packets(ctx: &Ctx, path: &str) -> Result<PacketStats, String> {
-    let cmd = ffprobe(ctx, &opt::packet_args(path));
+async fn packets(ctx: &Ctx, argv: Vec<String>) -> Result<PacketStats, String> {
+    let cmd = ffprobe(ctx, &argv);
     let c = ctx.clone();
     ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
         let mut s = PacketStats::default();
@@ -643,9 +717,7 @@ async fn packets(ctx: &Ctx, path: &str) -> Result<PacketStats, String> {
 
 /// Longest stretch between two keyframes of the output.
 async fn keyframe_gap(ctx: &Ctx, info: &MediaInfo, path: &str) -> Result<Option<f64>, String> {
-    let scan = scan_file(ctx, info, path)
-        .await
-        .map_err(|e| Class::Engine.message(e))?;
+    let scan = scan_file(ctx, info, path).await.map_err(pipeline_err)?;
     let mut at: Vec<f64> = scan.keyframes.iter().map(|k| k.pts).collect();
     at.push(scan.end);
     Ok(at.windows(2).map(|w| w[1] - w[0]).reduce(f64::max))

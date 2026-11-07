@@ -1999,6 +1999,11 @@
               "tonemapAlgo": "auto",
               "tonemapCurve": "mobius"
             }
+          },
+          "worker": {
+            "type": "boolean",
+            "description": "The host serves the worker protocol (`PROTOCOL.md`): this engine pulls optimize and verify\njobs from it. Absent or false: it never calls `/engine/workers/*`.",
+            "default": false
           }
         }
       },
@@ -4885,6 +4890,19 @@
             "$ref": "#/components/schemas/MediaInfo",
             "description": "Probe of the source at queue time."
           },
+          "inputToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Remote source read over HTTP, from the lease's `inputUrl`/`inputToken`; the token goes in\nan `Authorization: Bearer` header. Absent: the local file of the job's `media.path`."
+          },
           "plan": {
             "$ref": "#/components/schemas/OptimizePlan"
           },
@@ -7016,6 +7034,24 @@
           "uploadChunkBytes"
         ],
         "properties": {
+          "cpuWeight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "CPU weight of a software optimization against the playback budget; absent: 2.",
+            "minimum": 0
+          },
+          "gpuPlaybackBeforePause": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Hardware playback reads on a device that pause its background GPU jobs; absent: 1, 0 never.",
+            "minimum": 0
+          },
           "heartbeatS": {
             "type": "integer",
             "format": "int32",

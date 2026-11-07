@@ -52,6 +52,10 @@ pub struct ArchiveRate {
     /// VideoToolbox on Intel, which has no `-q:v`: the target bitrate instead.
     #[serde(default)]
     pub bitrate_bps: Option<f64>,
+    /// Bound x265 `pools` and SVT-AV1 `lp` to the encode threads: `-threads` alone leaves them on
+    /// every core. Off for the existing archive vectors.
+    #[serde(default)]
+    pub cap_pools: bool,
 }
 
 /// `filter` is the libass `-vf` step (`subtitles='...'`) of a text track; images overlay `streamIndex`.

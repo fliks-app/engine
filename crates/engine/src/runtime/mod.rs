@@ -199,6 +199,7 @@ impl Runtime {
         // A crashed engine's live windows must not be appended to. [ts:modules/livetv/services/livetv-session.service.ts:258-262]
         remove_dir(&crate::live::root(&self.cache));
         self.cache.sweep_merges();
+        crate::worker::start(self);
         let rt = self.clone();
         tokio::spawn(async move {
             let root = rt.cache.root.clone();
