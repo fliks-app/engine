@@ -99,16 +99,14 @@ mod tests {
 
     #[test]
     fn stable_needs_the_same_frame_everywhere() {
-        let a = Some(Sample {
+        let base = Sample {
             w: 480,
             h: 190,
             x: 0,
             y: 40,
-        });
-        let b = Some(Sample {
-            h: 192,
-            ..a.unwrap()
-        });
+        };
+        let a = Some(base);
+        let b = Some(Sample { h: 192, ..base });
         assert!(stable(&[a, a, a]));
         assert!(!stable(&[a, b, a]));
         assert!(!stable(&[a, None, a]));
