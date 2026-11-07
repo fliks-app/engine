@@ -113,6 +113,11 @@ struct Answer {
     body: Bytes,
 }
 
+/// The host's answer to a worker it does not know (it restarted).
+fn unknown_worker(a: &Answer) -> bool {
+    a.status == StatusCode::NOT_FOUND && String::from_utf8_lossy(&a.body).contains("unknown worker")
+}
+
 /// What one heartbeat answer means for the job.
 #[derive(Debug, PartialEq, Eq)]
 enum Beat {
@@ -309,7 +314,13 @@ impl Worker {
     /// Leases for one device while it has room; returns when the host forgot this worker.
     async fn lease_loop(self: Arc<Self>, device: WorkerDevice) {
         loop {
-            if self.held_on(&device.id) >= device.max_jobs as usize {
+            let lane = Lane {
+                device: device.id.clone(),
+                gpu: device.id == GPU_DEVICE,
+            };
+            if self.held_on(&device.id) >= device.max_jobs as usize
+                || !self.rt.slots.has_room(&lane)
+            {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
@@ -327,12 +338,7 @@ impl Worker {
                     }
                 },
                 Ok(a) if a.status == StatusCode::NO_CONTENT => {}
-                Ok(a)
-                    if a.status == StatusCode::NOT_FOUND
-                        && String::from_utf8_lossy(&a.body).contains("unknown worker") =>
-                {
-                    return;
-                }
+                Ok(a) if unknown_worker(&a) => return,
                 Ok(a) => {
                     tracing::warn!(status = %a.status, "lease refused");
                     tokio::time::sleep(RETRY).await;
@@ -426,8 +432,9 @@ impl Worker {
             }
         }
         if fenced || dropped.load(Relaxed) {
-            // The executor removes its staged file when it is cancelled.
+            // A cancel stops a run and its executor removes the file; a job already done leaves it.
             jobs::cancel(&self.rt, &job.id).await;
+            remove_staged(&job.snapshot());
         } else {
             let snap = job.snapshot();
             if snap.state != BgJobState::Cancelled {
@@ -449,6 +456,14 @@ impl Worker {
             {
                 Ok(a) if a.status.is_success() => return true,
                 Ok(a) if a.status == StatusCode::CONFLICT => return false,
+                Ok(a) if unknown_worker(&a) => {
+                    // The host restarted: introduce this worker again, then retry the result.
+                    let devices = self.devices().await;
+                    self.hello(&devices).await;
+                    if Instant::now() >= deadline {
+                        return false;
+                    }
+                }
                 Ok(a) if a.status.is_client_error() => {
                     tracing::warn!(job = id, status = %a.status, "result refused");
                     return false;
@@ -598,6 +613,36 @@ mod tests {
         assert_eq!(beat(&answer(503, "")), Beat::Unanswered);
         assert_eq!(beat(&answer(404, "")), Beat::Unanswered);
         assert_eq!(beat(&Err("connection refused".into())), Beat::Unanswered);
+    }
+
+    #[test]
+    fn a_404_unknown_worker_asks_for_a_new_hello() {
+        assert!(unknown_worker(&answer(404, "unknown worker").unwrap()));
+        assert!(!unknown_worker(&answer(404, "no such job").unwrap()));
+        assert!(!unknown_worker(&answer(409, "unknown worker").unwrap()));
+    }
+
+    #[test]
+    fn a_finished_output_of_a_fenced_job_is_removed() {
+        let dir = std::env::temp_dir().join(format!("fliks-fenced-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let staged = dir.join(".stage");
+        std::fs::write(&staged, b"x").unwrap();
+        let meta = OptimizeMeta {
+            staged_path: staged.to_string_lossy().into_owned(),
+            out_size: 1.0,
+            out_sha256: "ab".into(),
+            out_info: MediaInfo::default(),
+            level: OptimizeLevel::Remux,
+            copy_reason: None,
+            cpu_fallback: false,
+        };
+        let done = JobResult::Optimize {
+            optimize: Box::new(meta),
+        };
+        remove_staged(&snapshot(BgJobState::Done, Some(done), None));
+        assert!(!staged.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn snapshot(state: BgJobState, result: Option<JobResult>, error: Option<&str>) -> JobSnapshot {

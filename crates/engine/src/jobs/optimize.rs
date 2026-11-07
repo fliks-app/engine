@@ -5,6 +5,7 @@ use super::{Cmd, Ctx, free_bytes, tail};
 use crate::probe::run::ProcessTools;
 use crate::proc::{Ffmpeg, Pipes};
 use crate::safe_write;
+use crate::slots::{CPU_DEVICE, Lane};
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MEDIA_INFO_SCHEMA_VERSION, MediaInfo,
     OptimizeContainer, OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality,
@@ -16,7 +17,7 @@ use fliks_engine_core::jobs::optimize::{self as opt, Facts, OutputCheck, PacketS
 use fliks_engine_core::probe::{self, ProbeOpts};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 pub fn validate(p: &OptimizePayload) -> Result<(), String> {
@@ -82,6 +83,21 @@ fn pipeline_err(e: String) -> String {
     }
 }
 
+/// Whether a failed hardware attempt is worth redoing in software.
+fn software_may_help(e: &str) -> bool {
+    !is_busy(e) && matches!(Class::from_message(e).0, Class::Engine | Class::Verify)
+}
+
+/// The error of the output's decode run: a real ffmpeg exit is `verify`, any other end
+/// (a playback yield, a cancel, the watchdog) passes through.
+fn decode_verdict(e: String) -> String {
+    if e.contains("ffmpeg exited with") {
+        Class::Verify.message(format!("the output does not decode: {e}"))
+    } else {
+        e
+    }
+}
+
 /// A run stopped for playback: the job goes back to the queue, no failure.
 fn is_busy(e: &str) -> bool {
     Class::from_message(e).0 == Class::Busy && e.starts_with("busy: ")
@@ -125,6 +141,7 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
         src_packets: None,
         created: false,
         remote,
+        home: ctx.lane(),
     };
     let out = w.start(before.0).await;
     let out = match out {
@@ -160,6 +177,8 @@ struct Work<'a> {
     created: bool,
     /// `src` holds the `inputUrl`, read over HTTP.
     remote: bool,
+    /// The lane the job was leased on.
+    home: Option<Lane>,
 }
 
 /// What the output turned out to be, for the result.
@@ -213,6 +232,22 @@ impl Work<'_> {
             Some(l) if !l.gpu => slots.optimize_threads(),
             _ => slots.encode_threads(),
         }
+    }
+
+    /// A job leased on the GPU lane runs its software encodes on the CPU lane, weighed and
+    /// paused like any CPU run; its hardware encodes go back to its own lane.
+    fn enter_lane(&self, hardware: bool) {
+        let Some(home) = self.home.as_ref().filter(|h| h.gpu) else {
+            return;
+        };
+        self.ctx.set_lane(if hardware {
+            home.clone()
+        } else {
+            Lane {
+                device: CPU_DEVICE.into(),
+                gpu: false,
+            }
+        });
     }
 
     fn staged_text(&self) -> String {
@@ -375,7 +410,7 @@ impl Work<'_> {
         let caps = rt.caps().unwrap_or_default();
         let hw = hw_name(caps.hw_accel);
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
-        let on_cpu = self.ctx.lane().is_some_and(|l| !l.gpu);
+        let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
         let mut hardware = !self.plan().software && hw != "none" && !on_cpu;
         let v = opt::main_video(self.info())?;
         if let Some(r) = opt::copy_video_reason(v, self.plan(), hardware) {
@@ -385,7 +420,17 @@ impl Work<'_> {
             .plan()
             .max_software_hours
             .unwrap_or(opt::DEFAULT_MAX_SOFTWARE_HOURS);
-        match self.samples(if hardware { hw } else { "none" }).await? {
+        let mut cpu_fallback = false;
+        let sampled = loop {
+            self.enter_lane(hardware);
+            match self.samples(if hardware { hw } else { "none" }).await {
+                Err(e) if hardware && self.falls_back(&e) => {
+                    (hardware, cpu_fallback) = (false, true);
+                }
+                other => break other?,
+            }
+        };
+        match sampled {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
                 // The CPU lane never takes the GPU: the video is copied instead.
@@ -397,8 +442,8 @@ impl Work<'_> {
             Sampled::Hours(_) | Sampled::None => {}
         }
         let total = self.duration();
-        let mut cpu_fallback = false;
         let stats = loop {
+            self.enter_lane(hardware);
             let argv = match self.argv(
                 false,
                 if hardware { hw } else { "none" },
@@ -422,7 +467,7 @@ impl Work<'_> {
             };
             match verdict {
                 Ok(f) => break f,
-                Err(e) if hardware && !self.ctx.cancelled() && !is_busy(&e) => {
+                Err(e) if hardware && self.falls_back(&e) => {
                     (hardware, cpu_fallback) = (false, true);
                 }
                 Err(e) => return Err(e),
@@ -440,6 +485,12 @@ impl Work<'_> {
             copy_reason: None,
             cpu_fallback,
         })
+    }
+
+    /// A failed hardware attempt is redone in software only when the encoder or the output is at
+    /// fault: not a cancel, a playback yield, the network, the disk or a damaged source.
+    fn falls_back(&self, e: &str) -> bool {
+        !self.ctx.cancelled() && software_may_help(e)
     }
 
     /// Encodes the sample windows and the same windows copied: savings and software speed.
@@ -480,7 +531,6 @@ impl Work<'_> {
                 let argv = args::file(&file, &caps, &rt.device(&caps))
                     .map_err(|e| Class::Engine.message(e))?;
                 let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
-                let t = Instant::now();
                 let r = self
                     .run(
                         &argv,
@@ -489,7 +539,7 @@ impl Work<'_> {
                     )
                     .await?;
                 if !copy {
-                    wall += t.elapsed().as_secs_f64();
+                    wall += self.ctx.last_active_ms() as f64 / 1000.0;
                 }
                 let len = tokio::fs::metadata(&out)
                     .await
@@ -570,7 +620,8 @@ impl Work<'_> {
         )
         .await;
         if let Err(e) = r {
-            return Err(Class::Verify.message(format!("the output does not decode: {e}")));
+            // Only a real ffmpeg exit is a verdict; a busy, cancel or watchdog end is not.
+            return Err(decode_verdict(e));
         }
         let faithful = self.plan().quality == Some(OptimizeQuality::Faithful);
         if reencoded && (hardware || faithful) && self.plan().crop.is_none() {
@@ -639,10 +690,7 @@ enum Sampled {
 }
 
 fn mkvpropedit() -> String {
-    std::env::var("MKVPROPEDIT_PATH")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or("mkvpropedit".into())
+    crate::hw::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
 }
 
 fn hw_name(h: HwAccel) -> &'static str {
@@ -753,4 +801,39 @@ async fn keyframe_gap(ctx: &Ctx, info: &MediaInfo, path: &str) -> Result<Option<
     let mut at: Vec<f64> = scan.keyframes.iter().map(|k| k.pts).collect();
     at.push(scan.end);
     Ok(at.windows(2).map(|w| w[1] - w[0]).reduce(f64::max))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_engine_or_verify_failure_falls_back_to_software() {
+        assert!(software_may_help(
+            &Class::Engine.message("ffmpeg exited with Some(1)")
+        ));
+        assert!(software_may_help(
+            &Class::Verify.message("duration differs")
+        ));
+        for c in [Class::Network, Class::Nospace, Class::Access, Class::Busy] {
+            assert!(!software_may_help(&c.message("x")), "{c:?}");
+        }
+        assert!(!software_may_help(
+            &Class::Busy.message("stopped for playback")
+        ));
+    }
+
+    #[test]
+    fn a_decode_run_cut_short_is_not_a_verify_failure() {
+        let exit = Class::Engine.message("ffmpeg exited with Some(1): bad");
+        assert!(decode_verdict(exit).starts_with("verify: the output does not decode"));
+        let busy = Class::Busy.message("stopped for playback, the job starts over");
+        assert_eq!(decode_verdict(busy.clone()), busy);
+        assert_eq!(
+            decode_verdict(super::super::CANCELLED.into()),
+            super::super::CANCELLED
+        );
+        let stalled = Class::Engine.message("ffmpeg stalled");
+        assert_eq!(decode_verdict(stalled.clone()), stalled);
+    }
 }

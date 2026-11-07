@@ -237,7 +237,19 @@ pub(super) fn file(
         let mut e = o.clone();
         e.video_stream_index = ar.video_index;
         let e = encode(&e, caps, dev)?;
-        (e.args, e.video_map)
+        // Cover art is copied: the video options must target only the first output video stream.
+        let a = e
+            .args
+            .into_iter()
+            .map(|x| match x.as_str() {
+                "-vf" => "-filter:v:0".into(),
+                "-pix_fmt" => "-pix_fmt:v:0".into(),
+                "-profile:v" => "-profile:v:0".into(),
+                "-c:v" => "-c:v:0".into(),
+                _ => x,
+            })
+            .collect();
+        (a, e.video_map)
     };
     let mkv = f.format == FileFormat::Mkv;
     if let Some(at) = a

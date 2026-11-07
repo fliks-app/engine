@@ -200,6 +200,7 @@
       "video": [
         {
           "avgFrameRate": "24/1",
+          "bitDepth": 10,
           "bitRate": 166237,
           "codec": "hevc",
           "codecTag": "hvc1",

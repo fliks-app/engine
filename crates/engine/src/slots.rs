@@ -195,6 +195,21 @@ impl Slots {
         self.enter(OPTIMIZE_RANK, None, Some(lane)).await
     }
 
+    /// Whether an optimization on `lane` could start now: its device has a free place and the
+    /// GPU reserve or the CPU budget leaves it room.
+    pub fn has_room(&self, lane: &Lane) -> bool {
+        let st = self.st.locked();
+        let e = Entry {
+            id: 0,
+            rank: OPTIMIZE_RANK,
+            weight: if lane.gpu { 0 } else { st.cpu_weight },
+            lane: Some(lane.clone()),
+        };
+        let cost = e.cost(st.size);
+        let used: usize = st.running.iter().map(|h| h.e.cost(st.size)).sum();
+        device_ready(&st, &e) && (cost == 0 || used + cost <= st.size.saturating_sub(st.playback))
+    }
+
     async fn enter(
         self: &Arc<Self>,
         rank: u8,
@@ -554,6 +569,20 @@ mod tests {
         s.set_optimize(None, Some(0));
         drop(read);
         assert!(!*gpu.preempted.borrow());
+    }
+
+    #[tokio::test]
+    async fn a_lane_has_room_only_while_its_device_and_budget_allow() {
+        let s = Slots::new(4);
+        s.set_optimize(Some(2), Some(1));
+        assert!(s.has_room(&cpu_lane()) && s.has_room(&gpu_lane()));
+        let _p1 = s.playback(true);
+        let _p2 = s.playback(true);
+        let _p3 = s.playback(true);
+        assert!(!s.has_room(&cpu_lane()), "playback leaves 1 share");
+        assert!(s.has_room(&gpu_lane()), "a GPU run takes no CPU");
+        let _read = s.playback(false);
+        assert!(!s.has_room(&gpu_lane()), "the GPU reserve is reached");
     }
 
     #[test]

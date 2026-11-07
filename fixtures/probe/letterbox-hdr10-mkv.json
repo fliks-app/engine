@@ -180,6 +180,7 @@
       "video": [
         {
           "avgFrameRate": "24/1",
+          "bitDepth": 10,
           "codec": "hevc",
           "colorPrimaries": "bt2020",
           "colorRange": "tv",

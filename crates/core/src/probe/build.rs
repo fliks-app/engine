@@ -328,6 +328,22 @@ fn u32_of(v: Option<f64>) -> Option<u32> {
     v.map(|v| v as u32)
 }
 
+/// The bit depth a pixel format names (`yuv420p10le`, `p010le`); `None` when it names none.
+fn pix_fmt_depth(fmt: &str) -> Option<u32> {
+    let f = fmt.trim_end_matches("le").trim_end_matches("be");
+    if f.starts_with("nv") {
+        return None;
+    }
+    let tail = f.rsplit(|c: char| !c.is_ascii_digit()).next()?;
+    match tail {
+        "010" => Some(10),
+        "012" => Some(12),
+        "016" => Some(16),
+        "9" | "10" | "12" | "14" | "16" => tail.parse().ok(),
+        _ => None,
+    }
+}
+
 pub fn build(main: &Main, x: &Extras) -> Built {
     let duration = duration_seconds(main);
     let format_start = non_empty(&main.format.start_time).and_then(number);
@@ -377,7 +393,8 @@ pub fn build(main: &Main, x: &Extras) -> Built {
                 start_time_seconds: start_seconds(s),
                 end_seconds: stream_end_seconds(s),
                 bit_rate: u32_of(non_empty(&s.bit_rate).and_then(number)),
-                bit_depth: u32_of(non_empty(&s.bits_per_raw_sample).and_then(number)),
+                bit_depth: u32_of(non_empty(&s.bits_per_raw_sample).and_then(number))
+                    .or_else(|| s.pix_fmt.as_deref().and_then(pix_fmt_depth)),
                 color_space: s.color_space.clone(),
                 color_transfer: s.color_transfer.clone(),
                 color_primaries: s.color_primaries.clone(),
@@ -592,5 +609,25 @@ pub fn failure(message: &str) -> MediaInfo {
     MediaInfo {
         error: Some(message.to_string()),
         ..MediaInfo::default()
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::pix_fmt_depth;
+
+    #[test]
+    fn the_pixel_format_names_the_bit_depth() {
+        for (f, d) in [
+            ("yuv420p10le", Some(10)),
+            ("p010le", Some(10)),
+            ("yuv420p12le", Some(12)),
+            ("gbrp10le", Some(10)),
+            ("yuv420p", None),
+            ("nv12", None),
+            ("rgb24", None),
+        ] {
+            assert_eq!(pix_fmt_depth(f), d, "{f}");
+        }
     }
 }
