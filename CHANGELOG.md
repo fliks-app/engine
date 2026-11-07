@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.11.0](https://github.com/fliks-app/engine/compare/v1.10.0...v1.11.0) (2026-11-07)
+
+
+### Features
+
+* **args:** archive profile for optimizing library files ([#169](https://github.com/fliks-app/engine/issues/169)) ([0cd5add](https://github.com/fliks-app/engine/commit/0cd5add904c9ae1ef6d7512c63f63017ef63a2c0))
+* **jobs:** optimize and verify executors ([#171](https://github.com/fliks-app/engine/issues/171)) ([bd098a0](https://github.com/fliks-app/engine/commit/bd098a01f50cb0f90d9eea87f75596c23d43bf3d))
+* **worker:** pull optimize and verify jobs from the host ([#172](https://github.com/fliks-app/engine/issues/172)) ([1b7a261](https://github.com/fliks-app/engine/commit/1b7a261c224d186836943697c071ab025bc80bda))
+
 ## [1.10.0](https://github.com/fliks-app/engine/compare/v1.9.2...v1.10.0) (2026-11-07)
 
 
