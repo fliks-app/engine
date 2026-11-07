@@ -4317,6 +4317,13 @@
             "format": "double",
             "description": "Absent until the background scan ran; `null` when there is no break."
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The container's `title` tag (every family), absent when empty."
+          },
           "video": {
             "type": "array",
             "items": {
@@ -5015,7 +5022,7 @@
           },
           "stripStatisticsTags": {
             "type": "boolean",
-            "description": "Regenerate the per-track statistics tags (`mkvpropedit`) instead of carrying stale ones."
+            "description": "Ignored: the statistics tags of every Matroska output are regenerated (`mkvpropedit`)."
           },
           "tooSlow": {
             "$ref": "#/components/schemas/OptimizeTooSlow",
@@ -6418,8 +6425,23 @@
               "null"
             ]
           },
+          "endSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Where the track ends (Matroska `DURATION` tag, else its own duration), when known."
+          },
           "forced": {
             "type": "boolean"
+          },
+          "forcedFromTitle": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`forced` is true from the title only: the disposition is not set."
           },
           "hasStatisticsTags": {
             "type": [
@@ -6430,6 +6452,13 @@
           },
           "hearingImpaired": {
             "type": "boolean"
+          },
+          "hearingImpairedFromTitle": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`hearingImpaired` is true from the title only: neither disposition is set."
           },
           "isImageBased": {
             "type": "boolean",
@@ -6856,7 +6885,7 @@
               "boolean",
               "null"
             ],
-            "description": "Set when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all present and consistent."
+            "description": "Matroska only: `true` when `BPS`, `DURATION`, `NUMBER_OF_FRAMES` and `NUMBER_OF_BYTES` are all\npresent and consistent, `false` when missing or stale. Absent in other containers."
           },
           "hdr10Plus": {
             "type": [

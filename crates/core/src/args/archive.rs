@@ -162,6 +162,9 @@ pub struct ArchiveFile {
     /// Cover art streams, copied.
     #[serde(default)]
     pub cover_art: Vec<u32>,
+    /// Empties the global `title` (`-map_metadata 0` would carry it).
+    #[serde(default)]
+    pub clear_title: bool,
     pub audio: Vec<ArchiveAudio>,
     #[serde(default)]
     pub subtitles: Vec<ArchiveTrack>,
@@ -210,7 +213,8 @@ fn tags(kind: char, k: usize, t: &ArchiveTrack) -> Vec<String> {
     if let Some(d) = t.default {
         a.extend([
             format!("-disposition:{kind}:{k}"),
-            if d { "default" } else { "0" }.into(),
+            // Prefixed: a bare value would replace forced, comment, hearing_impaired...
+            if d { "+default" } else { "-default" }.into(),
         ]);
     }
     a
@@ -270,6 +274,9 @@ pub(super) fn file(
         "-max_muxing_queue_size",
         "4096",
     ]));
+    if ar.clear_title {
+        a.extend(strs(&["-metadata", "title="]));
+    }
     if ar.copy_video {
         a.extend(strs(&["-c:v", "copy"]));
     }

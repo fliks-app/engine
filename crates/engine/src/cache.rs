@@ -83,6 +83,23 @@ fn subdirs(dir: &Path) -> Vec<(String, PathBuf)> {
 }
 
 impl Cache {
+    /// Scratch files of optimize jobs (samples, remote staged output).
+    pub fn optimize_dir(&self) -> PathBuf {
+        self.root.join("optimize")
+    }
+
+    /// Removes the samples a crashed optimize job left; run at startup, under the cache lock.
+    pub fn remove_optimize_samples(&self) {
+        let Ok(rd) = std::fs::read_dir(self.optimize_dir()) else {
+            return;
+        };
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().contains(".sample") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
     /// `FLIKS_TRANSCODE_DIR`, else `FLIKS_CACHE_DIR`, else the OS temp dir.
     pub fn from_env() -> Self {
         let var = |k| {
@@ -328,6 +345,24 @@ pub fn remove_dir(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_removes_only_leftover_optimize_samples() {
+        let root = std::env::temp_dir().join(format!("fliks-samples-{}", std::process::id()));
+        let c = Cache { root: root.clone() };
+        let dir = c.optimize_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let (sample, staged) = (
+            dir.join(".fliks-opt-7.sample0s.mp4"),
+            dir.join(".fliks-opt-7.tmp"),
+        );
+        for f in [&sample, &staged] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        c.remove_optimize_samples();
+        assert!(!sample.exists() && staged.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn boot_deletes_only_the_journaled_file_that_is_still_ours() {

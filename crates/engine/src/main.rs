@@ -58,6 +58,7 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    cache.remove_optimize_samples();
     let token = fliks_engine::token::resolve();
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

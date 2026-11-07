@@ -123,8 +123,13 @@ pub fn create_staged(src: &Path, staged: &Path) -> std::io::Result<std::fs::File
     Ok(f)
 }
 
-/// Copies `src` into `dst`, as a reflink clone when the filesystem has them.
-pub fn copy_file(src: &Path, dst: &mut std::fs::File) -> std::io::Result<()> {
+/// Copies `src` into `dst`, as a reflink clone when the filesystem has them; `room` runs only
+/// before a full copy and can refuse it.
+pub fn copy_file(
+    src: &Path,
+    dst: &mut std::fs::File,
+    room: impl FnOnce() -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let mut from = std::fs::File::open(src)?;
     #[cfg(target_os = "linux")]
     {
@@ -135,6 +140,7 @@ pub fn copy_file(src: &Path, dst: &mut std::fs::File) -> std::io::Result<()> {
             return Ok(());
         }
     }
+    room()?;
     std::io::copy(&mut from, dst).map(|_| ())
 }
 
@@ -173,13 +179,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_full_copy_can_be_refused_before_it_starts() {
+        let d = std::env::temp_dir().join(format!("fliks-room-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let (src, dst) = (d.join("src.mkv"), d.join("dst.tmp"));
+        std::fs::write(&src, b"abc").unwrap();
+        let mut f = std::fs::File::create(&dst).unwrap();
+        let no = || Err(std::io::Error::new(ErrorKind::StorageFull, "full"));
+        // A reflink (btrfs, XFS) needs no room: the refusal then never runs.
+        match copy_file(&src, &mut f, no) {
+            Err(e) => {
+                assert_eq!(e.kind(), ErrorKind::StorageFull);
+                assert_eq!(std::fs::metadata(&dst).unwrap().len(), 0);
+            }
+            Ok(()) => assert_eq!(std::fs::read(&dst).unwrap(), b"abc"),
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn staged_files_are_created_exclusively_and_hash_hex() {
         let d = std::env::temp_dir().join(format!("fliks-staged-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let (src, staged) = (d.join("src.mkv"), d.join(".fliks-opt-1-1.tmp"));
         std::fs::write(&src, b"abc").unwrap();
         let mut f = create_staged(&src, &staged).unwrap();
-        copy_file(&src, &mut f).unwrap();
+        copy_file(&src, &mut f, || Ok(())).unwrap();
         assert_eq!(
             create_staged(&src, &staged).unwrap_err().kind(),
             ErrorKind::AlreadyExists

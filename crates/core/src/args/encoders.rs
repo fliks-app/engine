@@ -58,7 +58,8 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
     let t = &i.target;
     let (b, gop) = (js(t.video_bitrate_bps), js(t.gop_size));
     let fkf = i.force_keyframes_expr.clone();
-    let ten = e.hdr.is_some();
+    // SDR can be 10-bit too (archive output): bit depth is the variant's, not only HDR's.
+    let ten = e.hdr.is_some() || i.variant.bit_depth >= 10;
     let hdr10_args = || hdr_color_args(HdrFormat::Hdr10);
     // Descriptors built with `hlgFromHdr10`: the HDR10 argv with its transfer flipped.
     let hlg_from_hdr10 = matches!(
@@ -248,7 +249,7 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
         }
         None => cpu_args(e, i, &b, &fkf, &gop),
     };
-    if ten && e.hw != None {
+    if e.hdr.is_some() && e.hw != None {
         a.extend(hdr10_args());
     }
     if e.codec == Hevc && e.hw != None && arc.is_none() {
@@ -281,11 +282,8 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
         strs(&["-g", gop, "-keyint_min", gop, "-force_key_frames", fkf])
     };
     let hlg = e.hdr == Some(HdrFormat::Hlg);
-    let fmt = if e.hdr.is_some() {
-        "yuv420p10le"
-    } else {
-        "yuv420p"
-    };
+    let ten = e.hdr.is_some() || i.variant.bit_depth >= 10;
+    let fmt = if ten { "yuv420p10le" } else { "yuv420p" };
     let vf = cpu_chain(f, &w, !hlg, fmt);
     let threads = i.threads.max(1).to_string();
     match e.codec {
@@ -317,7 +315,7 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
             if arc.is_none() {
                 a.extend(strs(&["-preset", &i.preset]));
             }
-            if e.hdr.is_some() {
+            if ten {
                 a.extend(strs(&["-pix_fmt", "yuv420p10le"]));
             }
             match arc {
@@ -358,7 +356,7 @@ fn cpu_args(e: &Encoder, i: &EncoderInput, b: &str, fkf: &str, gop: &str) -> Vec
         VideoCodec::Av1 => {
             let bps = i.target.video_bitrate_bps.max(1.0);
             let mut a = strs(&["-c:v", "libsvtav1"]);
-            if e.hdr.is_some() {
+            if ten {
                 a.extend(strs(&["-pix_fmt", "yuv420p10le"]));
             }
             match arc {

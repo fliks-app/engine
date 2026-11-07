@@ -236,6 +236,7 @@
           "channelLayout": "stereo",
           "channels": 2,
           "codec": "aac",
+          "hasStatisticsTags": false,
           "isDefault": true,
           "language": "eng",
           "sampleRate": 48000,
@@ -252,6 +253,7 @@
         {
           "codec": "hdmv_pgs_subtitle",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": true,
           "language": "eng",
@@ -260,6 +262,8 @@
         {
           "codec": "dvd_subtitle",
           "forced": true,
+          "forcedFromTitle": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": true,
           "language": "fre",
@@ -269,6 +273,7 @@
         {
           "codec": "dvb_subtitle",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": true,
           "language": "eng",
@@ -277,6 +282,7 @@
         {
           "codec": "xsub",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": true,
           "language": "eng",
@@ -285,7 +291,9 @@
         {
           "codec": "ass",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": true,
+          "hearingImpairedFromTitle": true,
           "isImageBased": false,
           "language": "eng",
           "languageFromTitle": true,
@@ -295,6 +303,7 @@
         {
           "codec": "mov_text",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "und",
@@ -304,6 +313,7 @@
         {
           "codec": "unknown",
           "forced": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "eng",
@@ -312,6 +322,7 @@
         {
           "codec": "subrip",
           "forced": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": true,
           "isImageBased": false,
           "language": "und",
@@ -321,6 +332,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "spa",
@@ -330,6 +342,8 @@
         {
           "codec": "subrip",
           "forced": true,
+          "forcedFromTitle": true,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "und",
@@ -339,6 +353,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "fre",
@@ -349,6 +364,7 @@
         {
           "codec": "subrip",
           "forced": false,
+          "hasStatisticsTags": false,
           "hearingImpaired": false,
           "isImageBased": false,
           "language": "und",
@@ -367,6 +383,7 @@
           "dvRpuPresent": false,
           "firstFrameSeconds": 0,
           "frameRate": "23.976",
+          "hasStatisticsTags": false,
           "hdr10Plus": false,
           "height": 1080,
           "level": 41,
