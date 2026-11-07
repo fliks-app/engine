@@ -138,7 +138,7 @@ fn crop_falls_back_to_software_when_the_first_sample_fails() {
             hw_fails: fails,
             runs: Default::default(),
         };
-        let (crop, decode) = futures_lite_block(super::detect_crop(
+        let (crop, stable, decode) = futures_lite_block(super::detect_crop(
             &t,
             "/f",
             Some(100.0),
@@ -148,6 +148,7 @@ fn crop_falls_back_to_software_when_the_first_sample_fails() {
         ));
         assert_eq!(decode, name);
         assert_eq!(crop.unwrap().height, 190);
+        assert!(stable);
         let runs = t.runs.lock().unwrap();
         assert_eq!(runs.iter().filter(|h| **h).count(), hw_runs);
         assert_eq!(runs.len(), if fails { 7 } else { 6 });

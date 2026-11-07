@@ -33,8 +33,9 @@ use axum::{
 use fliks_engine_core::api::{
     CapabilitiesResponse, DecideBody, Decision, DeviceProfile, EngineConfig, EstimateSizesRequest,
     Fingerprint, Hello, IntroDetectRequest, IntroDetectResponse, IntroEpisode, IntroSegment,
-    JOB_FAMILIES, JobFamilies, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest,
-    ResolveResponse, SessionExpired, SourceScan,
+    JOB_FAMILIES, JobFamilies, JobHeartbeatRequest, JobHeartbeatResponse, JobResultRequest,
+    LeaseRequest, LeasedJob, MediaInfo, PROTOCOL_VERSION, QualityEstimate, ResolveRequest,
+    ResolveResponse, SessionExpired, SourceScan, UploadAck, WorkerHello, WorkerHelloResponse,
 };
 use fliks_engine_core::hw::selected_render_node;
 use std::sync::Arc;
@@ -64,7 +65,8 @@ pub fn random_hex(bytes: usize) -> String {
         jobs::delete, jobs::cover::get, intro::detect, live::open_handler, live::list_handler, live::get_handler),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, IntroDetectRequest,
         IntroDetectResponse, IntroEpisode, IntroSegment, ResolveRequest, ResolveResponse,
-        SessionExpired)),
+        SessionExpired, WorkerHello, WorkerHelloResponse, LeaseRequest, LeasedJob,
+        JobHeartbeatRequest, JobHeartbeatResponse, UploadAck, JobResultRequest)),
     modifiers(&Bearer)
 )]
 pub struct ApiDoc;

@@ -1,5 +1,8 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
-use super::{Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, SourceScan};
+use super::{
+    Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, OptimizePayload, SourceScan,
+    VerifyPayload,
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -78,6 +81,12 @@ pub enum JobKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tags: Option<MediaTags>,
     },
+    /// Optimisation of one file by the plan; leased by a worker (`PROTOCOL.md`), not run by `/v1/jobs`.
+    #[schema(title = "OptimizeJob")]
+    Optimize { payload: OptimizePayload },
+    /// Integrity check of one file; leased by a worker, not run by `/v1/jobs`.
+    #[schema(title = "VerifyJob")]
+    Verify { payload: VerifyPayload },
 }
 
 /// One audio file of a `Merge`, in listening order.
@@ -148,6 +157,8 @@ impl JobKind {
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
             JobKind::Cover { .. } => "Cover",
             JobKind::Merge { .. } => "Merge",
+            JobKind::Optimize { .. } => "Optimize",
+            JobKind::Verify { .. } => "Verify",
         }
     }
 
@@ -161,7 +172,10 @@ impl JobKind {
             | JobKind::SubtitleSync { info, .. }
             | JobKind::SubtitleToSrt { info, .. }
             | JobKind::Cover { info } => Some(info),
-            JobKind::Fingerprint { .. } | JobKind::Merge { .. } => None,
+            JobKind::Fingerprint { .. }
+            | JobKind::Merge { .. }
+            | JobKind::Optimize { .. }
+            | JobKind::Verify { .. } => None,
         }
     }
 
@@ -173,7 +187,9 @@ impl JobKind {
             | JobKind::Fingerprint { .. }
             | JobKind::SubtitleExtract { .. }
             | JobKind::SubtitleOcr { .. }
-            | JobKind::SubtitleToSrt { .. } => VIDEO_ONLY,
+            | JobKind::SubtitleToSrt { .. }
+            | JobKind::Optimize { .. }
+            | JobKind::Verify { .. } => VIDEO_ONLY,
             JobKind::SubtitleSync { .. } => ANY,
             JobKind::Cover { .. } | JobKind::Merge { .. } => AUDIO_ONLY,
         }
@@ -186,7 +202,8 @@ const AUDIO_ONLY: &[MediaFamily] = &[MediaFamily::Audio];
 const ANY: &[MediaFamily] = &[MediaFamily::Video, MediaFamily::Audio];
 
 /// Which families of file each job kind applies to (`hello.jobFamilies`); `families` is the
-/// per-request form, a test keeps the two equal.
+/// per-request form, a test keeps the two equal. `Optimize` and `Verify` are leased by workers,
+/// not queued through `/v1/jobs`, so they are not listed.
 pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("Sprite", VIDEO_ONLY),
     ("Scan", VIDEO_ONLY),

@@ -253,6 +253,7 @@
           "hearingImpaired": true,
           "isImageBased": false,
           "language": "ger",
+          "languageFromTitle": true,
           "streamIndex": 6,
           "title": "Deutsch"
         },
@@ -271,6 +272,7 @@
           "bitDepth": 8,
           "codec": "h264",
           "colorRange": "tv",
+          "cropStable": false,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,

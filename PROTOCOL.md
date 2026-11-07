@@ -44,6 +44,26 @@ The control plane is only on `--listen`. The data plane is served on `--listen` 
 
 `LiveUpstream.vetted` (opt-in): the engine refuses internal addresses (loopback, link-local, private, other non-public ones) on every hop. A direct fetch resolves once and pins each redirect hop; an ffmpeg/ffprobe input is http or https only (anything else is refused) and every request it makes (redirects, playlist entries, segments) goes through a loopback proxy of the engine that resolves, vets and dials. Detail: `docs/spec/live.md`.
 
+## Worker protocol (engine to host)
+
+A worker (the local engine or a remote one) pulls optimisation and verification work from the host, over HTTP it initiates, like `/engine/resolve`. Types: `crates/core/src/api/worker.rs` (`WorkerHello`, `LeasedJob`, `JobKind::Optimize`/`Verify`...), all in `openapi.json`. Bodies are JSON, camelCase. The job executor is not part of this contract yet: an engine answers an `Optimize` or `Verify` on `POST /v1/jobs` with a failure ("not implemented").
+
+Auth: `Authorization: Bearer`. The local engine sends its `hostToken`; a remote worker sends its own token (issued by the host, stored hashed, revocable), which is only valid on `/engine/workers/*` and `/engine/jobs/*` and only for the leases it holds. `workerId` is the `instanceId` of the worker's `hello`.
+
+| Route | Body -> answer |
+|---|---|
+| `POST /engine/workers/hello` | `WorkerHello` (`instanceId` generated at startup, `engineVersion`, `devices: [{ id, encoders, decoders, maxJobs, vramMiB?, pause: suspend\|restart }]`, `jobs: [{ id, attempt }]` still held) -> `WorkerHelloResponse` (`settings`: `leaseS` 60, `heartbeatS` 15, `longPollS` 30, `uploadChunkBytes` 8 MiB; `abandon`: job ids to drop). Every other lease of the instance is put back in the queue at once. Path access and mappings are set by the host's admin, never declared by the worker. |
+| `POST /engine/jobs/lease` | `LeaseRequest { workerId, deviceId }` -> `LeasedJob` or `204`. Long-poll: the host holds the call up to `longPollS`, answering `204` when nothing fits the device. `LeasedJob`: `id`, `attempt` (fencing, +1 per lease), `leaseS`, `kind` (`Optimize { payload }` or `Verify { payload }`), and either `inputPath` + `stagedPath` (shared filesystem) or `inputUrl` + `inputToken` (remote read). A response lost in transit costs no retry: only real failures count against the host's `maxFailures`. |
+| `POST /engine/jobs/{id}/heartbeat` | `JobHeartbeatRequest { workerId, attempt, progress, paused }` every `heartbeatS` -> `JobHeartbeatResponse { leaseUntil, cancel }`. |
+| `PUT /engine/jobs/{id}/output` | Remote workers only. Body: one raw chunk of the staged file (`uploadChunkBytes`). Headers: `Upload-Offset` (offset of the chunk, must equal the bytes the host holds, else `409` with `UploadAck.receivedBytes` to resume from), `Upload-Complete: ?1` on the last chunk, `X-Fliks-Attempt`, `X-Fliks-Worker-Id`. One upload per job at a time; the host hashes the stream as it receives it -> `UploadAck { receivedBytes }`. |
+| `POST /engine/jobs/{id}/result` | `JobResultRequest { workerId, attempt, ok, outSize, outSha256?, outInfo?, error?: { class, message, stderrTail? } }`. The host compares `outSize` and `outSha256` with what it received (remote) or read at `stagedPath`. |
+
+Fencing: `409` on `heartbeat`, `output` and `result` means only that `attempt` or `workerId` no longer match the lease (expired and re-leased, cancelled, abandoned). The worker kills its encoder and deletes its files. A network error or `5xx` kills nothing: the worker retries until its own lease expires locally (`leaseS` after the last answered heartbeat).
+
+Remote source: `inputUrl` is the main engine's data plane (`purpose: download`) with `inputToken` bound to the file; the worker sends it as a header (`ffmpeg -headers`) with `-reconnect 1 -reconnect_on_network_error 1`. The host's resolver answer is cached for `min(60 s, remaining lease)` and the host calls `POST /v1/revoke { credential }` on every `409` or requeue.
+
+Error classes (`JobErrorClass`): `access` (a path is unreadable or unwritable), `io` (read or write failed mid-job), `corrupt` (the source cannot be decoded), `damaged` (the output failed its own check), `nospace` (no room to stage), `engine` (encoder crash), `network` (transfer failed), `verify` (a `Verify` job found the file faulty), `busy` (device or file in use, goes back without counting as a failure), `stale` (the source no longer matches the queue-time snapshot).
+
 ## Resolver (implemented by the host)
 
 ```

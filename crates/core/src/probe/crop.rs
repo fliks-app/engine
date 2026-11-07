@@ -42,6 +42,13 @@ pub fn parse_sample(stderr: &str) -> Option<Sample> {
     })
 }
 
+/// Every sample read and all gave the same frame; a failed sample counts as a disagreement.
+pub fn stable(samples: &[Option<Sample>]) -> bool {
+    samples
+        .first()
+        .is_some_and(|f| f.is_some() && samples.iter().all(|s| s == f))
+}
+
 /// The loosest box over the samples (the union of content seen), kept only when it removes at
 /// least 40 px on one axis. `width`/`height` are the displayed size of the stream.
 pub fn aggregate(
@@ -88,6 +95,25 @@ mod tests {
             })
         );
         assert_eq!(parse_sample("crop=480:x"), None);
+    }
+
+    #[test]
+    fn stable_needs_the_same_frame_everywhere() {
+        let a = Some(Sample {
+            w: 480,
+            h: 190,
+            x: 0,
+            y: 40,
+        });
+        let b = Some(Sample {
+            h: 192,
+            ..a.unwrap()
+        });
+        assert!(stable(&[a, a, a]));
+        assert!(!stable(&[a, b, a]));
+        assert!(!stable(&[a, None, a]));
+        assert!(!stable(&[None, None]));
+        assert!(!stable(&[]));
     }
 
     #[test]

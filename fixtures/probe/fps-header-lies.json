@@ -272,6 +272,7 @@
           "avgFrameRate": "500/21",
           "bitDepth": 8,
           "codec": "h264",
+          "cropStable": false,
           "displayAspectRatio": "16:9",
           "dvBlPresent": false,
           "dvElPresent": false,
