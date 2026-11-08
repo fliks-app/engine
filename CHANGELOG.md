@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/fliks-app/engine/compare/v1.14.0...v1.14.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **worker:** reach an https host and fail a staged-read error as engine ([#185](https://github.com/fliks-app/engine/issues/185)) ([a8c0c0e](https://github.com/fliks-app/engine/commit/a8c0c0e7f5ee7ff2cfa010065f1cde94ee6912d8))
+
 ## [1.14.0](https://github.com/fliks-app/engine/compare/v1.13.0...v1.14.0) (2026-11-08)
 
 
