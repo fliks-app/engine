@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.0](https://github.com/fliks-app/engine/compare/v1.14.1...v1.15.0) (2026-11-08)
+
+
+### Features
+
+* **hw:** detect several GPUs and place playback and jobs per device ([#186](https://github.com/fliks-app/engine/issues/186)) ([123121a](https://github.com/fliks-app/engine/commit/123121ae0ceac04102ab1b5798cd90ff507a57d6))
+* **worker:** announce one device per GPU with a per-device playback reserve ([#189](https://github.com/fliks-app/engine/issues/189)) ([8ce514a](https://github.com/fliks-app/engine/commit/8ce514a68c9771e57a3c2aae4a49e5641fa6380a))
+
 ## [1.14.1](https://github.com/fliks-app/engine/compare/v1.14.0...v1.14.1) (2026-11-08)
 
 
