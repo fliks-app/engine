@@ -7,11 +7,13 @@ use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use crate::safe_write;
 use crate::slots::Lane;
+use crate::worker::optimize_encoders;
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MediaInfo, OptimizeContainer, OptimizeLevel,
     OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileArgs, FileFormat};
+use fliks_engine_core::hw::Detected;
 use fliks_engine_core::jobs::cover;
 use fliks_engine_core::jobs::optimize::{self as opt, CopyReason, Facts, OutputCheck, PacketStats};
 use std::io::ErrorKind;
@@ -136,6 +138,11 @@ fn fingerprint(p: &Path) -> std::io::Result<(u64, Option<SystemTime>)> {
     // Reading one byte proves the file is readable, not only listed.
     std::fs::File::open(p)?;
     Ok((m.len(), m.modified().ok()))
+}
+
+/// The device advertises an optimize encoder of `codec`: what the host may lease it.
+fn encodes(d: &Detected, codec: &str) -> bool {
+    optimize_encoders(d).iter().any(|e| e.starts_with(codec))
 }
 
 struct Work<'a> {
@@ -292,6 +299,7 @@ impl Work<'_> {
     }
 
     async fn metadata(&mut self) -> Result<Produced, String> {
+        self.ctx.job.enter_cpu_lane();
         let argv = opt::mkvpropedit_args(self.info(), self.plan(), &self.staged_text());
         self.mkvpropedit(argv).await?;
         Ok(Produced {
@@ -314,10 +322,10 @@ impl Work<'_> {
             Some(c) => {
                 let path = format!("{staged}.cover.{}", cover::extension(c));
                 let extract = cover::extract_args(&self.src.to_string_lossy(), c, &path);
-                self.ctx
-                    .ffmpeg(&extract)
-                    .await
-                    .map_err(|e| Class::Engine.message(e))?;
+                if let Err(e) = self.ctx.ffmpeg(&extract).await {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(Class::Engine.message(e));
+                }
                 argv.extend(opt::cover_attachment_args(&path));
                 Some(path)
             }
@@ -355,6 +363,7 @@ impl Work<'_> {
                 nothing_to_do: true,
             });
         }
+        self.ctx.job.enter_cpu_lane();
         let argv = self.argv(true, HwAccel::None, self.staged_text(), |_| {})?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
@@ -552,9 +561,7 @@ impl Work<'_> {
         let codec = self.codec();
         let other = rt.hw.snapshot().is_some_and(|s| {
             s.devices.iter().any(|d| {
-                d.id != l.device
-                    && rt.slots.device_usable(&d.id)
-                    && d.detected.encoders.iter().any(|e| e.starts_with(codec))
+                d.id != l.device && rt.slots.device_usable(&d.id) && encodes(&d.detected, codec)
             })
         });
         if other {
@@ -644,6 +651,8 @@ impl Work<'_> {
     /// Verifies the staged output; the video packet stats of the output.
     async fn check(&mut self, reencoded: bool, hardware: bool) -> Result<PacketStats, String> {
         let ctx = self.ctx;
+        // The output checks are software runs, whatever encoded the file.
+        ctx.job.enter_cpu_lane();
         let path = self.staged_text();
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;
@@ -813,6 +822,32 @@ mod tests {
         }
         assert!(!software_may_help(
             &Class::Busy.message("stopped for playback")
+        ));
+    }
+
+    #[test]
+    fn a_ten_bit_only_device_is_not_a_capable_other_device() {
+        use fliks_engine_core::api::{HwAccel, Platform};
+        let detected = |encoders: &[&str], disabled: &[&str]| Detected {
+            hw_accel: HwAccel::Nvenc,
+            platform: Platform::Linux,
+            libfdk_aac: false,
+            vaapi_writes_hdr_metadata: false,
+            probes: vec![],
+            encoders: encoders.iter().map(|s| s.to_string()).collect(),
+            decoders: vec![],
+            disabled_encoders: disabled.iter().map(|s| s.to_string()).collect(),
+            disabled_decoders: vec![],
+        };
+        let d = detected(&["hevc_nvenc_main10"], &["hevc_nvenc"]);
+        assert!(optimize_encoders(&d).is_empty());
+        assert!(!encodes(&d, "hevc"));
+        let ok = detected(&["hevc_nvenc", "hevc_nvenc_main10"], &[]);
+        assert_eq!(optimize_encoders(&ok), ["hevc_nvenc"]);
+        assert!(encodes(&ok, "hevc") && !encodes(&ok, "av1"));
+        assert!(!encodes(
+            &detected(&["hevc_nvenc"], &["hevc_nvenc"]),
+            "hevc"
         ));
     }
 

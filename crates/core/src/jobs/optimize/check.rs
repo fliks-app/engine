@@ -305,6 +305,12 @@ fn check_subtitles(bad: &mut Vec<String>, src: &MediaInfo, out: &MediaInfo, plan
 }
 
 fn check_container(bad: &mut Vec<String>, src: &MediaInfo, out: &MediaInfo, plan: &OptimizePlan) {
+    if src.cover.is_some() && out.cover.is_none() {
+        bad.push("cover missing".into());
+    }
+    if out.video.len() != 1 {
+        bad.push(format!("{} video streams, expected 1", out.video.len()));
+    }
     if container_of(src, plan) == OptimizeContainer::Mkv
         && source_container(src) == OptimizeContainer::Mkv
         && let Some(a) = src.attachments
@@ -452,6 +458,35 @@ mod tests {
             ..facts
         };
         assert!(check(&src, sparse)[0].contains("keyframes"));
+    }
+
+    #[test]
+    fn a_lost_cover_or_a_second_video_track_fails() {
+        let mut src = info();
+        src.cover = Some(crate::api::CoverArt {
+            stream_index: 3,
+            codec: "mjpeg".into(),
+            width: None,
+            height: None,
+        });
+        let facts = Facts::default();
+        let run = |src: &MediaInfo, out: &MediaInfo| {
+            verify_output(&OutputCheck {
+                src,
+                out,
+                plan: &plan(),
+                src_facts: facts,
+                out_facts: facts,
+                reencoded: false,
+            })
+        };
+        let mut out = src.clone();
+        assert_eq!(run(&src, &out), Vec::<String>::new());
+        out.cover = None;
+        assert_eq!(run(&src, &out), ["cover missing"]);
+        out.cover = src.cover.clone();
+        out.video.push(out.video[0].clone());
+        assert_eq!(run(&src, &out), ["2 video streams, expected 1"]);
     }
 
     #[test]

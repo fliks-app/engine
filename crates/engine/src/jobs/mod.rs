@@ -46,7 +46,7 @@ const KEEP_ENDED: usize = 200;
 const TICK: Duration = Duration::from_millis(200);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 pub const CANCELLED: &str = "cancelled";
-pub(super) const PROMOTED: &str = "promoted";
+const PROMOTED: &str = "promoted";
 /// A run that must yield and cannot be paused is killed: the job goes back to its queue.
 const REQUEUED: &str = "requeued";
 
@@ -91,6 +91,14 @@ pub struct BgJob {
 impl BgJob {
     fn priority(&self) -> JobPriority {
         self.req.priority.unwrap_or_default()
+    }
+
+    /// CPU-only work of a job leased on a GPU lane runs on the CPU lane: weighed and paused there.
+    pub fn enter_cpu_lane(&self) {
+        let mut l = self.lane.locked();
+        if l.as_ref().is_some_and(Lane::gpu) {
+            *l = Some(Lane::cpu());
+        }
     }
 
     fn base_state(&self) -> BgJobState {
@@ -586,5 +594,29 @@ pub async fn delete(State(s): S, UrlPath(id): UrlPath<String>) -> StatusCode {
         StatusCode::NO_CONTENT
     } else {
         StatusCode::NOT_FOUND
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(lane: Option<Lane>) -> Arc<BgJob> {
+        let req = serde_json::from_value(serde_json::json!({
+            "kind": { "type": "Verify", "payload": { "info": { "video": [], "audio": [], "subtitles": [] } } },
+            "media": { "mediaFileId": 1, "path": "/m/a.mkv" }
+        }))
+        .unwrap();
+        queue(&mut Queue::default(), req, "d".into(), false, lane)
+    }
+
+    #[test]
+    fn cpu_only_work_leaves_a_gpu_lane_and_never_creates_one() {
+        let j = job(Some(Lane::new("gpu0")));
+        j.enter_cpu_lane();
+        assert_eq!(*j.lane.locked(), Some(Lane::cpu()));
+        let unleased = job(None);
+        unleased.enter_cpu_lane();
+        assert_eq!(*unleased.lane.locked(), None);
     }
 }

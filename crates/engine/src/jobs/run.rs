@@ -1,4 +1,5 @@
-//! Helpers every ffmpeg-running job shares: the run supervisor, file error classes, file probe.
+//! Helpers every ffmpeg-running job shares: the run supervisor, file error classes, file probe,
+//! the pipeline error mapping.
 use super::{CANCELLED, Cmd, Ctx, tail};
 use crate::probe::run::probe_stamped;
 use crate::proc::{Ffmpeg, Pipes};
