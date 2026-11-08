@@ -292,6 +292,7 @@ impl Work<'_> {
     }
 
     async fn metadata(&mut self) -> Result<Produced, String> {
+        self.ctx.job.enter_cpu_lane();
         let argv = opt::mkvpropedit_args(self.info(), self.plan(), &self.staged_text());
         self.mkvpropedit(argv).await?;
         Ok(Produced {
@@ -355,6 +356,7 @@ impl Work<'_> {
                 nothing_to_do: true,
             });
         }
+        self.ctx.job.enter_cpu_lane();
         let argv = self.argv(true, HwAccel::None, self.staged_text(), |_| {})?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
@@ -644,6 +646,8 @@ impl Work<'_> {
     /// Verifies the staged output; the video packet stats of the output.
     async fn check(&mut self, reencoded: bool, hardware: bool) -> Result<PacketStats, String> {
         let ctx = self.ctx;
+        // The output checks are software runs, whatever encoded the file.
+        ctx.job.enter_cpu_lane();
         let path = self.staged_text();
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;

@@ -12,6 +12,7 @@ pub fn validate(p: &VerifyPayload) -> Result<(), String> {
 }
 
 pub async fn run(ctx: &Ctx, p: &VerifyPayload) -> Result<JobResult, String> {
+    ctx.job.enter_cpu_lane();
     let path = PathBuf::from(ctx.media_path());
     let (c, f) = (ctx.clone(), path.clone());
     // The Rust read classifies access and disk faults without parsing stderr.
