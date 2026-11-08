@@ -192,15 +192,11 @@ impl Decoder {
                 ]))
                 .chain(strs(&tail))
                 .collect(),
-            Kind::Cuda => strs(&[
-                "-hwaccel",
-                "cuda",
-                "-hwaccel_output_format",
-                "cuda",
-                "-threads",
-                "1",
-                "-noautorotate",
-            ]),
+            Kind::Cuda => d
+                .cuda_hwaccel(true)
+                .into_iter()
+                .chain(strs(&["-threads", "1", "-noautorotate"]))
+                .collect(),
             Kind::D3d11Cpu => strs(&["-hwaccel", "d3d11va", "-noautorotate"]),
             Kind::D3d11Native => Device::amf_d3d11_opencl_init()
                 .into_iter()

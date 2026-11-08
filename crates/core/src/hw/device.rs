@@ -17,6 +17,8 @@ pub struct Device {
     pub platform: Platform,
     pub render_node: Option<String>,
     pub opencl_device: Option<String>,
+    /// CUDA ordinal (PCI bus order) of the NVIDIA card to run on; `None` leaves ffmpeg's default.
+    pub cuda_index: Option<u32>,
 }
 
 impl Device {
@@ -26,6 +28,22 @@ impl Device {
 
     pub fn vaapi_init(&self) -> Vec<String> {
         strs(&["-init_hw_device", &format!("vaapi=va:{}", self.node())])
+    }
+
+    /// `-hwaccel cuda` input flags, on the card of `cuda_index`.
+    pub fn cuda_hwaccel(&self, output_cuda: bool) -> Vec<String> {
+        let mut a = vec![];
+        if let Some(n) = self.cuda_index {
+            a.extend(strs(&["-init_hw_device", &format!("cuda=cu:{n}")]));
+        }
+        a.extend(strs(&["-hwaccel", "cuda"]));
+        if let Some(n) = self.cuda_index {
+            a.extend(strs(&["-hwaccel_device", &n.to_string()]));
+        }
+        if output_cuda {
+            a.extend(strs(&["-hwaccel_output_format", "cuda"]));
+        }
+        a
     }
 
     pub fn qsv_init(&self) -> Vec<String> {
@@ -76,5 +94,38 @@ impl Device {
             _ => "opencl=ocl".to_string(),
         };
         strs(&["-init_hw_device", &spec, "-filter_hw_device", "ocl"])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev(cuda_index: Option<u32>) -> Device {
+        Device {
+            platform: Platform::Linux,
+            render_node: None,
+            opencl_device: None,
+            cuda_index,
+        }
+    }
+
+    #[test]
+    fn cuda_flags_pick_the_card_only_when_asked() {
+        assert_eq!(
+            dev(None).cuda_hwaccel(true),
+            ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+        );
+        assert_eq!(
+            dev(Some(1)).cuda_hwaccel(false),
+            [
+                "-init_hw_device",
+                "cuda=cu:1",
+                "-hwaccel",
+                "cuda",
+                "-hwaccel_device",
+                "1"
+            ]
+        );
     }
 }

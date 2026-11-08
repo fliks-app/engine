@@ -249,6 +249,7 @@ pub(super) async fn start(
                 .then(|| video0.map(String::from))
                 .flatten(),
             probes,
+            device: None,
             failover: Failover::new(order.len()),
             current: 0,
             proc: None,
@@ -353,7 +354,7 @@ pub(super) async fn probe(
             }
         }
     }
-    let _slot = rt.slots.playback(true);
+    let _slot = rt.slots.playback_on(None);
     let mut cmd = tokio::process::Command::new(&rt.ffprobe);
     cmd.args(core_live::probe_args(&u.url, &u.headers, proxy.as_deref()))
         .stdin(std::process::Stdio::null())

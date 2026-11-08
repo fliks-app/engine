@@ -1064,6 +1064,7 @@ mod tests {
                 platform: crate::api::Platform::Linux,
                 render_node: None,
                 opencl_device: None,
+                cuda_index: None,
             },
         )
         .unwrap();
@@ -1095,6 +1096,7 @@ mod tests {
             platform: crate::api::Platform::Linux,
             render_node: None,
             opencl_device: None,
+            cuda_index: None,
         };
         crate::args::file(&f, &Default::default(), &dev).unwrap()
     }

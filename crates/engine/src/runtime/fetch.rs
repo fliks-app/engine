@@ -95,7 +95,7 @@ impl Runtime {
                 }
             }
         }
-        self.spawn_job(s, quality, requested, hw, restarts, JobKind::Main)
+        self.spawn_job(s, quality, requested, hw, restarts, JobKind::Main, None)
             .await
     }
 
@@ -163,7 +163,7 @@ impl Runtime {
             let dir = e.dir.clone();
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         }
-        self.spawn_job(s, quality, 0, self.start_hw(), 0, JobKind::Early)
+        self.spawn_job(s, quality, 0, self.start_hw(), 0, JobKind::Early, None)
             .await
     }
 

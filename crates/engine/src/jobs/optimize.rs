@@ -403,16 +403,22 @@ impl Work<'_> {
     /// Capabilities and render node of the device the job was leased on.
     fn target(
         &self,
-    ) -> (
-        fliks_engine_core::api::HostCaps,
-        fliks_engine_core::hw::Device,
-    ) {
+    ) -> Result<
+        (
+            fliks_engine_core::api::HostCaps,
+            fliks_engine_core::hw::Device,
+        ),
+        String,
+    > {
         let gpu = self.home.as_ref().filter(|l| l.gpu);
-        self.ctx.rt.target(gpu.map(|l| l.device.as_str()))
+        self.ctx
+            .rt
+            .target(gpu.map(|l| l.device.as_str()))
+            .map_err(|e| Class::Busy.message(e))
     }
 
     fn argv(&self, copy_video: bool, hw: &str, out: String) -> Result<Vec<String>, String> {
-        let (caps, dev) = self.target();
+        let (caps, dev) = self.target()?;
         let file = opt::build_file_args(
             self.info(),
             self.plan(),
@@ -438,7 +444,7 @@ impl Work<'_> {
     }
 
     async fn reencode(&mut self) -> Result<Produced, String> {
-        let (caps, _) = self.target();
+        let (caps, _) = self.target()?;
         let hw = hw_name(caps.hw_accel);
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
         let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
@@ -558,7 +564,7 @@ impl Work<'_> {
                     (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
                         (vec![], vec![], vec![], false);
                 }
-                let (caps, dev) = self.target();
+                let (caps, dev) = self.target()?;
                 let argv = args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))?;
                 let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
                 let r = self

@@ -1,12 +1,12 @@
 //! Starting, watching and replacing the runs behind a session.
 
 use super::job::NO_MEDIA;
-use super::{Job, JobKind, JobMut, Runtime, Session, WATCH_EVERY, kill_all, now_ms};
+use super::{Job, JobKind, JobMut, Runtime, Session, WATCH_EVERY, can_encode, kill_all, now_ms};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
 use crate::remux::Remux;
-use fliks_engine_core::api::{EngineEvent, HwAccel, JobState};
+use fliks_engine_core::api::{EngineEvent, HostCaps, HwAccel, JobState};
 use fliks_engine_core::mp4::{remux_assembly_plan, remux_audio_grid, remux_run_start};
 use fliks_engine_core::session::{
     self as core_session, JobWatch, JobWatchInput, SegmentName, SegmentSet, early_run_seconds,
@@ -49,6 +49,7 @@ impl Runtime {
         (hw, requested_hw): (HwAccel, HwAccel),
         restarts: u32,
         kind: JobKind,
+        avoid: Option<&str>,
     ) -> Option<Arc<Job>> {
         let key = s.key(kind);
         if let Some(old) = self.job(&key)
@@ -76,17 +77,8 @@ impl Runtime {
             })
             .await;
         }
-        let mut caps = self.caps().unwrap_or_default();
-        let mut dev = self.device(&caps);
-        let mut hw = hw;
-        let mut slot = None;
-        if hw != HwAccel::None
-            && let Some(p) = self.place_gpu()
-        {
-            (caps, dev, hw, slot) = (p.caps, p.dev, p.hw, Some(p.slot));
-        }
         let dir_s = dir.to_string_lossy().into_owned();
-        let build = |hw| {
+        let build = |hw, caps: &HostCaps, dev: &fliks_engine_core::hw::Device| {
             let args = core_session::vod_args(&core_session::RunInput {
                 req: &s.req,
                 decision: &s.decision,
@@ -100,18 +92,44 @@ impl Runtime {
                 early: kind == JobKind::Early,
                 encode_threads: self.slots.encode_threads(),
             });
-            fliks_engine_core::args::vod(&args, &caps, &dev)
+            fliks_engine_core::args::vod(&args, caps, dev)
         };
-        let (argv, hw) = match build(hw) {
-            Ok(a) => (a, hw),
-            Err(e) if hw != HwAccel::None => {
-                tracing::warn!(key, "argv on {hw:?}: {e}; CPU instead");
-                slot = None;
-                (build(HwAccel::None).ok()?, HwAccel::None)
+        let mut placed = None;
+        if hw != HwAccel::None {
+            let sticky = s.m.locked().device.clone();
+            let variant = &s.decision.video_variant;
+            for d in self.gpu_candidates(sticky.as_deref(), avoid, |d| can_encode(d, variant)) {
+                match build(d.detected.hw_accel, &d.detected.host_caps(), &d.device()) {
+                    Ok(a) => {
+                        placed = Some((d, a));
+                        break;
+                    }
+                    Err(e) => tracing::warn!(key, device = d.id, "argv: {e}"),
+                }
             }
-            Err(e) => {
-                tracing::error!(key, "argv: {e}");
-                return None;
+        }
+        let (argv, hw, slot) = match placed {
+            Some((d, a)) => {
+                s.m.locked().device = Some(d.id.clone());
+                (
+                    a,
+                    d.detected.hw_accel,
+                    Some(self.slots.playback_on(Some(&d.id))),
+                )
+            }
+            None => {
+                if hw != HwAccel::None {
+                    tracing::warn!(key, "no device can run it, CPU instead");
+                }
+                let caps = self.caps().unwrap_or_default();
+                let dev = self.device(&caps);
+                match build(HwAccel::None, &caps, &dev) {
+                    Ok(a) => (a, HwAccel::None, None),
+                    Err(e) => {
+                        tracing::error!(key, "argv: {e}");
+                        return None;
+                    }
+                }
             }
         };
         let run = Run {
@@ -309,9 +327,8 @@ impl Runtime {
         }
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let slot = r
-            .slot
-            .unwrap_or_else(|| self.slots.playback(r.hw.0 == HwAccel::None));
+        let slot = r.slot.unwrap_or_else(|| self.slots.playback_on(None));
+        let device = slot.device().map(String::from);
         let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {
@@ -338,6 +355,7 @@ impl Runtime {
             duration: r.duration,
             item: r.item,
             restarts: r.restarts,
+            device,
             natural_end_ms: (r.kind == JobKind::Early)
                 .then(|| (early_run_seconds(s.plan.segment_duration) * 1000.0) as i64),
             proc,
@@ -510,6 +528,12 @@ impl Runtime {
                     .await;
             }
             let state = job.state();
+            if state != JobState::Failed
+                && let Some(d) = &job.device
+            {
+                self.slots.device_ok(d);
+                s.m.locked().hw_retried = false;
+            }
             if state == JobState::Failed {
                 tracing::warn!(
                     key = job.key,
@@ -537,22 +561,30 @@ impl Runtime {
         })
     }
 
+    /// A failed hardware run is retried once on another device, then on the CPU; the device that
+    /// failed counts against its health.
     async fn fall_back(self: Arc<Self>, job: &Arc<Job>, s: &Arc<Session>) {
         let lock = self.lock_for(&job.key);
         let _g = lock.lock().await;
         if !self.job(&job.key).is_some_and(|j| Arc::ptr_eq(&j, job)) {
             return;
         }
-        tracing::warn!(key = job.key, from = ?job.hw, "hardware run failed, CPU fallback");
+        if let Some(d) = &job.device {
+            self.slots.device_failed(d);
+        }
+        let retry = job.device.is_some() && !std::mem::replace(&mut s.m.locked().hw_retried, true);
+        let to = if retry { job.hw } else { HwAccel::None };
+        tracing::warn!(key = job.key, from = ?job.hw, ?to, "hardware run failed");
         self.events.emit(EngineEvent::HwFallback {
             job_key: job.key.clone(),
             from: job.hw,
-            to: HwAccel::None,
+            to,
             stderr_tail: job.proc.stderr_tail(),
         });
         let dir = job.dir.clone();
         let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
-        let hw = (HwAccel::None, job.requested_hw);
+        let hw = (to, job.requested_hw);
+        let avoid = job.device.as_deref().filter(|_| retry);
         self.spawn_job(
             s,
             &job.quality,
@@ -560,6 +592,7 @@ impl Runtime {
             hw,
             job.restarts + 1,
             job.kind,
+            avoid,
         )
         .await;
     }

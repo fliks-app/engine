@@ -18,6 +18,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
         platform: caps.platform,
         render_node: v["env"]["renderNode"].as_str().map(String::from),
         opencl_device: v["env"]["openclDevice"].as_str().map(String::from),
+        cuda_index: None,
     };
     let input = &v["input"];
     let out = match v["kind"].as_str() {

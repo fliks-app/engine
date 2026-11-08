@@ -112,6 +112,7 @@ fn gpus(env: &Value) -> Vec<GpuInfo> {
                 vendor_id: str_of(&d["vendor"]),
                 device_id: str_of(&d["device"]),
                 boot_vga: str_of(&d["bootVga"]),
+                pci_bus: None,
             };
             describe_gpu(n, &format!("/dev/dri/{n}"), &raw)
         })
@@ -163,6 +164,7 @@ fn run(f: &Value) -> (Detected, Vec<GpuInfo>, String, BTreeSet<String>) {
         platform,
         render_node: node,
         opencl_device: None,
+        cuda_index: None,
     };
     let d = block_on(detect(&dev, TMP, PID, &runner));
     let pause = pause_capability(stdin_pause_works(&f["pause"]["samples"]), platform);

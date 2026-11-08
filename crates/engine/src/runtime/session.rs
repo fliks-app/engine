@@ -26,6 +26,10 @@ pub(super) struct SessionMut {
     pub(super) last_requested_segment: Option<u32>,
     last_segment_at_ms: Option<i64>,
     pub(super) served: Option<(String, HwAccel)>,
+    /// Where its hardware runs land: kept while the device qualifies, so one rendition keeps one backend.
+    pub(super) device: Option<String>,
+    /// A hardware failure already retried on another device; cleared by a run that works.
+    pub(super) hw_retried: bool,
     /// What the client plays now: an ABR switch moves a DirectStream session to a rung.
     pub(super) kind: SessionKind,
 }
@@ -321,6 +325,8 @@ impl Runtime {
                     last_requested_segment: None,
                     last_segment_at_ms: None,
                     served: None,
+                    device: None,
+                    hw_retried: false,
                     kind: plan.kind,
                 }),
                 plan,
@@ -419,7 +425,7 @@ impl Runtime {
             let lock = rt.lock_for(&key);
             let _g = lock.lock().await;
             if rt.job(&key).is_none_or(|j| !j.producing()) {
-                rt.spawn_job(&s, &quality, start, rt.start_hw(), 0, JobKind::Main)
+                rt.spawn_job(&s, &quality, start, rt.start_hw(), 0, JobKind::Main, None)
                     .await;
             }
         });

@@ -629,7 +629,7 @@ impl Ctx {
         self.job.m.locked().waiting += 1;
         let (_background, playback, mut preempted) = tokio::select! {
             biased;
-            _ = urgent.wait_for(|u| *u) => (None, Some(self.rt.slots.playback(true)), unpreempted),
+            _ = urgent.wait_for(|u| *u) => (None, Some(self.rt.slots.playback_on(None)), unpreempted),
             s = self.slot() => {
                 let p = s.preempted.clone();
                 (Some(s), None, p)

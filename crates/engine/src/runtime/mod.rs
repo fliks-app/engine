@@ -14,11 +14,11 @@ pub use self::session::Session;
 use self::job::{JobMut, layout_path};
 use crate::cache::{Cache, remove_dir};
 use crate::events::Events;
-use crate::hw::Hw;
+use crate::hw::{Hw, HwDevice};
 use crate::lock::Locked;
 use crate::resolve::Resolver;
 use crate::slots::Slots;
-use fliks_engine_core::api::{EngineConfig, HostCaps, HwAccel, LifetimeConfig};
+use fliks_engine_core::api::{CodecVariant, EngineConfig, HostCaps, HwAccel, LifetimeConfig};
 use fliks_engine_core::session::{self as core_session, PauseCapability};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -191,38 +191,61 @@ impl Runtime {
             platform: caps.platform,
             render_node: self.hw.snapshot().map(|h| h.render_node),
             opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+            cuda_index: None,
         }
     }
 
-    /// Capabilities and render node of hardware device `id` (a leased job's lane); the primary
-    /// device's when `id` is `None` or unknown.
-    pub(crate) fn target(&self, id: Option<&str>) -> (HostCaps, fliks_engine_core::hw::Device) {
+    /// Capabilities and render node of hardware device `id` (a leased job's lane), the primary
+    /// device's for `None`. An id the host no longer has is an error, never another card's caps.
+    pub(crate) fn target(
+        &self,
+        id: Option<&str>,
+    ) -> Result<(HostCaps, fliks_engine_core::hw::Device), String> {
         let caps = self.caps().unwrap_or_default();
-        let mut dev = self.device(&caps);
-        let Some(d) = id.and_then(|id| self.hw.snapshot()?.device(id).cloned()) else {
-            return (caps, dev);
+        let Some(id) = id else {
+            let dev = self.device(&caps);
+            return Ok((caps, dev));
         };
-        dev.render_node = Some(d.render_node);
-        (d.detected.host_caps(), dev)
+        let d = self
+            .hw
+            .snapshot()
+            .and_then(|s| s.device(id).cloned())
+            .ok_or_else(|| format!("device {id} is gone"))?;
+        Ok((d.detected.host_caps(), d.device()))
     }
 
-    /// A hardware run's place: the least loaded device (see `Slots::playback_gpu`) with its own
-    /// capabilities and render node. `None` on a CPU-only host.
-    pub(crate) fn place_gpu(&self) -> Option<Placed> {
-        let snap = self.hw.snapshot()?;
-        let ids: Vec<String> = snap.devices.iter().map(|d| d.id.clone()).collect();
-        let slot = self.slots.playback_gpu(&ids)?;
-        let d = snap.device(slot.device()?)?;
-        Some(Placed {
-            caps: d.detected.host_caps(),
-            dev: fliks_engine_core::hw::Device {
-                platform: d.detected.platform,
-                render_node: Some(d.render_node.clone()),
-                opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
-            },
-            hw: d.detected.hw_accel,
-            slot,
-        })
+    /// The devices a hardware run may take, best first: its session's own (`sticky`) while it
+    /// qualifies, then by load. A device qualifies when it is not `avoid`, not skipped after
+    /// failures, and `capable`; the first device always is, it is what the decision read.
+    pub(crate) fn gpu_candidates(
+        &self,
+        sticky: Option<&str>,
+        avoid: Option<&str>,
+        capable: impl Fn(&HwDevice) -> bool,
+    ) -> Vec<HwDevice> {
+        let Some(snap) = self.hw.snapshot() else {
+            return vec![];
+        };
+        let ids: Vec<String> = snap
+            .devices
+            .iter()
+            .enumerate()
+            .filter(|(i, d)| {
+                Some(d.id.as_str()) != avoid
+                    && self.slots.device_usable(&d.id)
+                    && (*i == 0 || capable(d))
+            })
+            .map(|(_, d)| d.id.clone())
+            .collect();
+        let mut order = self.slots.rank_gpus(&ids);
+        if let Some(i) = order.iter().position(|d| Some(d.as_str()) == sticky) {
+            let own = order.remove(i);
+            order.insert(0, own);
+        }
+        order
+            .iter()
+            .filter_map(|id| snap.device(id).cloned())
+            .collect()
     }
 
     /// Boot purge, then the GC, throttle and cache loops.
@@ -299,12 +322,11 @@ async fn kill_all(jobs: Vec<Arc<Job>>) {
     }
 }
 
-/// A hardware run placed on one device: what to build its argv from, and the slot it holds.
-pub(crate) struct Placed {
-    pub slot: crate::slots::PlaybackSlot,
-    pub caps: HostCaps,
-    pub dev: fliks_engine_core::hw::Device,
-    pub hw: HwAccel,
+/// Whether `d` has an encoder for `variant` on its own backend.
+pub(crate) fn can_encode(d: &HwDevice, variant: &CodecVariant) -> bool {
+    let hw = d.detected.hw_accel;
+    fliks_engine_core::decide::codec::resolve_encoder(variant, hw, &d.detected.host_caps())
+        == Some(hw)
 }
 
 #[cfg(test)]
@@ -333,6 +355,90 @@ mod tests {
         assert_eq!(left, ["init_0.mp4", "seg-0001.m4s"]);
         assert!(d.join("1").is_dir());
         remove_dir(&d);
+    }
+
+    fn two_gpu_runtime() -> Arc<Runtime> {
+        use crate::hw::{HwDevice, Snapshot};
+        use fliks_engine_core::api::Platform;
+        use fliks_engine_core::hw::Detected;
+        let dev = |id: &str, hw, off: &[&str]| HwDevice {
+            id: id.into(),
+            render_node: format!("/dev/dri/{id}"),
+            name: None,
+            cuda_index: None,
+            detected: Detected {
+                hw_accel: hw,
+                platform: Platform::Linux,
+                libfdk_aac: false,
+                vaapi_writes_hdr_metadata: false,
+                probes: vec![],
+                encoders: vec![],
+                decoders: vec![],
+                disabled_encoders: off.iter().map(|s| s.to_string()).collect(),
+                disabled_decoders: vec![],
+            },
+        };
+        let devices = vec![
+            dev("gpu0", HwAccel::Qsv, &[]),
+            dev("gpu1", HwAccel::Vaapi, &["h264_vaapi"]),
+            dev("gpu2", HwAccel::Vaapi, &[]),
+        ];
+        let hw = Hw::fixed(Snapshot {
+            detected: devices[0].detected.clone(),
+            gpus: vec![],
+            pause_capability: "none".into(),
+            render_node: "/dev/dri/gpu0".into(),
+            devices,
+        });
+        Runtime::new(hw, Cache::from_env(), "ffmpeg".into())
+    }
+
+    fn ids(v: Vec<HwDevice>) -> Vec<String> {
+        v.into_iter().map(|d| d.id).collect()
+    }
+
+    #[tokio::test]
+    async fn placement_skips_a_device_without_the_encoder() {
+        let rt = two_gpu_runtime();
+        let h264 = CodecVariant {
+            codec: fliks_engine_core::api::VideoCodec::H264,
+            bit_depth: 8,
+            hdr: None,
+        };
+        let c = rt.gpu_candidates(None, None, |d| can_encode(d, &h264));
+        assert_eq!(ids(c), ["gpu0", "gpu2"], "gpu1 lacks h264_vaapi");
+    }
+
+    #[tokio::test]
+    async fn the_first_device_is_always_a_candidate() {
+        let rt = two_gpu_runtime();
+        let c = rt.gpu_candidates(None, None, |_| false);
+        assert_eq!(ids(c), ["gpu0"]);
+    }
+
+    #[tokio::test]
+    async fn a_session_keeps_its_device_and_a_failed_one_is_avoided_or_skipped() {
+        let rt = two_gpu_runtime();
+        let c = rt.gpu_candidates(Some("gpu2"), None, |_| true);
+        assert_eq!(ids(c)[0], "gpu2", "the session's own device leads");
+        let c = rt.gpu_candidates(Some("gpu2"), Some("gpu2"), |_| true);
+        assert!(!ids(c).contains(&"gpu2".to_string()));
+        for _ in 0..3 {
+            rt.slots.device_failed("gpu2");
+        }
+        let c = rt.gpu_candidates(Some("gpu2"), None, |_| true);
+        assert!(
+            !ids(c).contains(&"gpu2".to_string()),
+            "skipped after 3 failures"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_device_has_no_target() {
+        let rt = two_gpu_runtime();
+        assert!(rt.target(Some("gpu9")).is_err());
+        assert!(rt.target(Some("gpu2")).is_ok());
+        assert!(rt.target(None).is_ok());
     }
 
     #[tokio::test]

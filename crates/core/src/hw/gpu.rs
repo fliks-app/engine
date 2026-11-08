@@ -8,6 +8,8 @@ pub struct GpuRaw {
     pub vendor_id: Option<String>,
     pub device_id: Option<String>,
     pub boot_vga: Option<String>,
+    /// PCI address, the basename of the resolved `device` link (`0000:03:00.0`).
+    pub pci_bus: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +27,7 @@ pub struct GpuInfo {
     pub vendor: String,
     pub kind: GpuKind,
     pub label: String,
+    pub pci_bus: Option<String>,
 }
 
 impl From<&GpuInfo> for Gpu {
@@ -93,5 +96,6 @@ pub fn describe_gpu(name: &str, render_node: &str, raw: &GpuRaw) -> GpuInfo {
         vendor,
         kind,
         label,
+        pci_bus: raw.pci_bus.clone(),
     }
 }

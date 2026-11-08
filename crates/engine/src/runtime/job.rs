@@ -60,6 +60,8 @@ pub struct Job {
     /// One part's run of an item: bounded by itself, never throttled.
     pub item: bool,
     pub restarts: u32,
+    /// The hardware device the run holds a place on; `None` for software.
+    pub device: Option<String>,
     /// Media time a run with a natural end produces (the early companion's `-to`), in ms.
     pub(super) natural_end_ms: Option<i64>,
     pub(super) proc: Ffmpeg,

@@ -161,6 +161,8 @@ struct PipeMut {
     current: usize,
     proc: Option<Arc<Ffmpeg>>,
     slot: Option<PlaybackSlot>,
+    /// The GPU its transcodes stay on while it qualifies.
+    device: Option<String>,
     direct: Option<Direct>,
     content_type: Option<String>,
     tees: Vec<(String, mpsc::Sender<Bytes>)>,
