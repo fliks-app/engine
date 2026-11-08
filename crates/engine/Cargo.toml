@@ -14,9 +14,13 @@ name = "fliks_engine"
 name = "fliks-engine"
 path = "src/main.rs"
 
+[[example]]
+name = "provider-check"
+required-features = ["karaoke"]
+
 [features]
-# ONNX runtime, loaded at run time from `ORT_DYLIB_PATH` (the Docker image sets it). Off in the
-# desktop bundles: the model jobs then answer `unsupported`.
+# ONNX runtime, loaded at run time from `ORT_DYLIB_PATH` or the bundle's `karaoke/` directory; without
+# the library the model jobs answer `unsupported`.
 karaoke = ["dep:ort"]
 
 [dependencies]
@@ -42,7 +46,7 @@ alass-core = "2"
 ring = "0.17"
 webrtc-vad = "0.4"
 lofty = "0.25"
-ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-22", "cuda", "openvino"], optional = true }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-22", "cuda", "openvino", "coreml", "migraphx"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

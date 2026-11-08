@@ -1,0 +1,89 @@
+# The karaoke pack of the desktop bundles: ONNX Runtime, whisper-cli and ffmpeg-pitch with their
+# licences, in a `karaoke/` directory that sits next to the engine binary. Built on its own for a
+# PR that changes it, and by the release with a tag to attach it.
+name: Karaoke pack
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        default: ''
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/karaoke-pack/**'
+      - '.github/workflows/karaoke-pack.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: karaoke-pack-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: darwin-arm64, os: macos-15 }
+          - { name: windows-x64, os: windows-latest, msys: true }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.msys && 'msys2 {0}' || 'bash' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: MSYS2 toolchain
+        if: matrix.msys
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: >-
+            make nasm unzip zip
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-meson mingw-w64-x86_64-pkgconf
+      - name: Meson
+        if: ${{ !matrix.msys }}
+        run: pip3 install --break-system-packages meson ninja
+      - name: Build the pack
+        run: tools/karaoke-pack/build.sh ${{ matrix.name }} out
+      - name: Engine with the pack
+        if: ${{ !matrix.msys }}
+        run: |
+          cargo build --release -p fliks-engine --bin fliks-engine --example provider-check --features karaoke
+          cp target/release/fliks-engine target/release/examples/provider-check out/
+          FLIKS_ENGINE_TOKEN=t out/fliks-engine --listen 127.0.0.1:7411 & pid=$!
+          sleep 3
+          curl -fsS -H 'Authorization: Bearer t' http://127.0.0.1:7411/v1/models | python3 -c 'import json,sys; r=json.load(sys.stdin)["runtime"]; print(r); assert r["onnx"] and r["whisper"] and r["rubberband"] and "coreml" in r["providers"]'
+          kill $pid
+      - name: Smoke test the tools
+        run: |
+          cd out/karaoke
+          ./ffmpeg-pitch* -hide_banner -filters | grep -q ' rubberband '
+          ./whisper-cli* --help 2>&1 | grep -qi usage
+          ls -l
+      - name: Archive
+        run: |
+          cd out
+          if [ "${{ matrix.name }}" = windows-x64 ]; then A=fliks-engine-karaoke-${{ matrix.name }}.zip; zip -qr "$A" karaoke
+          else A=fliks-engine-karaoke-${{ matrix.name }}.tar.gz; tar -czf "$A" karaoke; fi
+          (sha256sum "$A" 2>/dev/null || shasum -a 256 "$A") > "$A.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: karaoke-pack-${{ matrix.name }}
+          path: |
+            out/fliks-engine-karaoke-*
+            out/fliks-engine
+            out/provider-check
+      - name: Attach to the release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" out/fliks-engine-karaoke-* --clobber --repo "$GITHUB_REPOSITORY"
