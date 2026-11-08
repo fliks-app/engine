@@ -4,7 +4,7 @@ Boot-time detection of what this host's ffmpeg and GPUs can do: the single sourc
 
 ## 0. Contract
 
-- `GET /v1/capabilities` -> `Capabilities`; `POST /v1/decide` without `hostCaps` reads `HostCaps` of the same snapshot. `[new]`
+- `GET /v1/capabilities` -> `Capabilities`; `POST /v1/decide` without `hostCaps` decides per device like a session open (the first capable device's caps). `[new]`
 - 503 + `Retry-After: 1` on both until the first detection run ends. A re-run (section 7) keeps serving the previous snapshot. `[new]` (TS: encoders read "usable" and probes false until the boot probe lands, `T/codec/encoder-probe.ts:34-37`; the engine fails closed instead of deciding on a half-known host.)
 - The binary is `FFMPEG_PATH` or `ffmpeg` on `PATH`. `[new]` (TS: `execFile('ffmpeg')`, PATH only.)
 - Every probe is one ffmpeg run; success = exit 0 within its timeout; anything else (spawn error, timeout, non-zero) = failure. `kill_on_drop`. `[ts:T/hw-detect.ts:127]`
