@@ -14,6 +14,7 @@ use fliks_engine_core::api::{
     JobRequest, JobResult, JobResultRequest, JobSnapshot, LeaseRef, LeaseRequest, LeasedJob,
     MediaRef, UploadAck, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
 };
+use fliks_engine_core::hw::Detected;
 use http_body_util::{BodyExt, Full};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
@@ -108,6 +109,18 @@ async fn supervise(rt: Arc<Runtime>) {
         }
         w.drop_all().await;
     }
+}
+
+/// The optimize encoders a GPU advertises, and the only ones `Work::hw_failed` counts: the
+/// backend's hevc/av1 encoders that passed detection and are not disabled.
+pub(crate) fn optimize_encoders(d: &Detected) -> Vec<String> {
+    gpu_encoders(d.hw_accel)
+        .iter()
+        .filter(|n| {
+            d.encoders.iter().any(|e| e == *n) && !d.disabled_encoders.iter().any(|x| x == *n)
+        })
+        .map(|n| n.to_string())
+        .collect()
 }
 
 fn gpu_encoders(hw: HwAccel) -> &'static [&'static str] {
@@ -315,12 +328,7 @@ impl Worker {
         }];
         let snap = self.rt.hw.snapshot();
         for d in snap.iter().flat_map(|s| &s.devices) {
-            let gone = d.detected.host_caps().disabled_encoders;
-            let encoders: Vec<String> = gpu_encoders(d.detected.hw_accel)
-                .iter()
-                .filter(|n| !gone.iter().any(|g| g == *n))
-                .map(|n| n.to_string())
-                .collect();
+            let encoders = optimize_encoders(&d.detected);
             if !encoders.is_empty() {
                 out.push(WorkerDevice {
                     id: d.id.clone(),

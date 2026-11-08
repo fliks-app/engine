@@ -7,11 +7,13 @@ use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use crate::safe_write;
 use crate::slots::Lane;
+use crate::worker::optimize_encoders;
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MediaInfo, OptimizeContainer, OptimizeLevel,
     OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileArgs, FileFormat};
+use fliks_engine_core::hw::Detected;
 use fliks_engine_core::jobs::cover;
 use fliks_engine_core::jobs::optimize::{self as opt, CopyReason, Facts, OutputCheck, PacketStats};
 use std::io::ErrorKind;
@@ -136,6 +138,11 @@ fn fingerprint(p: &Path) -> std::io::Result<(u64, Option<SystemTime>)> {
     // Reading one byte proves the file is readable, not only listed.
     std::fs::File::open(p)?;
     Ok((m.len(), m.modified().ok()))
+}
+
+/// The device advertises an optimize encoder of `codec`: what the host may lease it.
+fn encodes(d: &Detected, codec: &str) -> bool {
+    optimize_encoders(d).iter().any(|e| e.starts_with(codec))
 }
 
 struct Work<'a> {
@@ -554,9 +561,7 @@ impl Work<'_> {
         let codec = self.codec();
         let other = rt.hw.snapshot().is_some_and(|s| {
             s.devices.iter().any(|d| {
-                d.id != l.device
-                    && rt.slots.device_usable(&d.id)
-                    && d.detected.encoders.iter().any(|e| e.starts_with(codec))
+                d.id != l.device && rt.slots.device_usable(&d.id) && encodes(&d.detected, codec)
             })
         });
         if other {
@@ -817,6 +822,32 @@ mod tests {
         }
         assert!(!software_may_help(
             &Class::Busy.message("stopped for playback")
+        ));
+    }
+
+    #[test]
+    fn a_ten_bit_only_device_is_not_a_capable_other_device() {
+        use fliks_engine_core::api::{HwAccel, Platform};
+        let detected = |encoders: &[&str], disabled: &[&str]| Detected {
+            hw_accel: HwAccel::Nvenc,
+            platform: Platform::Linux,
+            libfdk_aac: false,
+            vaapi_writes_hdr_metadata: false,
+            probes: vec![],
+            encoders: encoders.iter().map(|s| s.to_string()).collect(),
+            decoders: vec![],
+            disabled_encoders: disabled.iter().map(|s| s.to_string()).collect(),
+            disabled_decoders: vec![],
+        };
+        let d = detected(&["hevc_nvenc_main10"], &["hevc_nvenc"]);
+        assert!(optimize_encoders(&d).is_empty());
+        assert!(!encodes(&d, "hevc"));
+        let ok = detected(&["hevc_nvenc", "hevc_nvenc_main10"], &[]);
+        assert_eq!(optimize_encoders(&ok), ["hevc_nvenc"]);
+        assert!(encodes(&ok, "hevc") && !encodes(&ok, "av1"));
+        assert!(!encodes(
+            &detected(&["hevc_nvenc"], &["hevc_nvenc"]),
+            "hevc"
         ));
     }
 
