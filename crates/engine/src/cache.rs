@@ -82,7 +82,22 @@ fn subdirs(dir: &Path) -> Vec<(String, PathBuf)> {
         .unwrap_or_default()
 }
 
+const OPT_PREFIX: &str = ".fliks-opt-";
+const SAMPLE_MARK: &str = ".sample";
+
 impl Cache {
+    /// The output a remote optimize job stages; `remove_remote_outputs` sweeps it.
+    pub fn remote_staged(&self, id: impl std::fmt::Display) -> PathBuf {
+        self.optimize_dir().join(format!("{OPT_PREFIX}{id}.tmp"))
+    }
+
+    /// Sample `k` of an optimize job (`kind` `s` copied, `e` encoded); `remove_optimize_samples`
+    /// sweeps it.
+    pub fn optimize_sample(&self, id: impl std::fmt::Display, k: usize, kind: &str) -> PathBuf {
+        self.optimize_dir()
+            .join(format!("{OPT_PREFIX}{id}{SAMPLE_MARK}{k}{kind}.mp4"))
+    }
+
     /// Scratch files of optimize jobs (samples, remote staged output).
     pub fn optimize_dir(&self) -> PathBuf {
         self.root.join("optimize")
@@ -94,7 +109,7 @@ impl Cache {
             return;
         };
         for e in rd.flatten() {
-            if e.file_name().to_string_lossy().contains(".sample") {
+            if e.file_name().to_string_lossy().contains(SAMPLE_MARK) {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -107,7 +122,7 @@ impl Cache {
         };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with(".fliks-opt-") && name.ends_with(".tmp") {
+            if name.starts_with(OPT_PREFIX) && name.ends_with(".tmp") {
                 let _ = std::fs::remove_file(e.path());
             }
         }

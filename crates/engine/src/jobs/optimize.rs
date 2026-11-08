@@ -75,11 +75,7 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
     };
     let staged = match (&p.staged_path, remote) {
         (Some(s), _) => PathBuf::from(ctx.rt.map_media_path(s)),
-        (None, true) => ctx
-            .rt
-            .cache
-            .optimize_dir()
-            .join(format!(".fliks-opt-{}.tmp", ctx.job.id)),
+        (None, true) => ctx.rt.cache.remote_staged(&ctx.job.id),
         (None, false) => src
             .parent()
             .unwrap_or(Path::new("."))
@@ -234,9 +230,7 @@ impl Work<'_> {
 
     /// Samples live in the engine cache, never beside the source.
     fn sample(&self, k: usize, kind: &str) -> PathBuf {
-        let id = &self.ctx.job.id;
-        let dir = self.ctx.rt.cache.optimize_dir();
-        dir.join(format!(".fliks-opt-{id}.sample{k}{kind}.mp4"))
+        self.ctx.rt.cache.optimize_sample(&self.ctx.job.id, k, kind)
     }
 
     async fn start(&mut self, src_len: u64) -> Result<OptimizeMeta, String> {
