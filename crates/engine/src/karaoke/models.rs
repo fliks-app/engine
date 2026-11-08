@@ -612,6 +612,15 @@ mod tests {
         (url, n)
     }
 
+    async fn reached(n: &std::sync::atomic::AtomicUsize, want: usize) {
+        for _ in 0..500 {
+            if n.load(Ordering::SeqCst) >= want {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     fn test_manager(url: String) -> Manager {
         let entry = Entry {
             id: "t",
@@ -642,6 +651,7 @@ mod tests {
             tokio::spawn(async move { a.start("t") }),
             tokio::spawn(async move { b.start("t") })
         );
+        reached(&n, 1).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(n.load(Ordering::SeqCst), 1);
         m.delete("t").await;
@@ -652,9 +662,10 @@ mod tests {
         let (url, n) = silent_server().await;
         let m = test_manager(url);
         m.start("t");
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        reached(&n, 1).await;
         m.delete("t").await;
         m.start("t");
+        reached(&n, 2).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(n.load(Ordering::SeqCst), 2);
         let info = m.get("t").unwrap();
