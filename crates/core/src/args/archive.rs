@@ -1,15 +1,15 @@
 //! Archival encodes: rate control per encoder, and the file's explicit stream mapping.
 //! Spec: `docs/spec/args.md` §Archive. [new]
 use super::encode::{encode, video_map};
-use super::{ArchiveQuality, ArchiveRate, FileArgs, FileFormat};
-use crate::api::{HostCaps, VideoCodec};
+use super::{ArchiveRate, FileArgs, FileFormat};
+use crate::api::{ExtraSubtitle, HostCaps, OptimizeQuality, VideoCodec};
 use crate::decide::codec::Encoder;
 use crate::hw::Device;
 use crate::strs;
 use serde::Deserialize;
 
 /// The value of `v` (small, balanced, faithful) for `q`.
-fn by<T: ToString>(q: ArchiveQuality, v: [T; 3]) -> String {
+fn by<T: ToString>(q: OptimizeQuality, v: [T; 3]) -> String {
     v[q as usize].to_string()
 }
 
@@ -76,8 +76,8 @@ pub(super) fn hw_rate(e: &Encoder, a: &ArchiveRate) -> Result<Vec<String>, Strin
 }
 
 /// `-crf` and `-preset` of libx265 / libsvtav1.
-pub(super) fn cpu_rate(codec: VideoCodec, q: ArchiveQuality) -> Vec<String> {
-    let faithful = q == ArchiveQuality::Faithful;
+pub(super) fn cpu_rate(codec: VideoCodec, q: OptimizeQuality) -> Vec<String> {
+    let faithful = q == OptimizeQuality::Faithful;
     match codec {
         VideoCodec::Av1 => strs(&[
             "-crf",
@@ -136,23 +136,6 @@ pub struct ArchiveAudio {
     pub action: ArchiveAudioEnc,
 }
 
-/// A text subtitle file added as an extra input (the OCR'd SRT of an image track).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArchiveExtraSub {
-    pub path: String,
-    #[serde(default)]
-    pub language: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub default: Option<bool>,
-    #[serde(default)]
-    pub forced: Option<bool>,
-    #[serde(default)]
-    pub hearing_impaired: Option<bool>,
-}
-
 /// Explicit mapping of an archival file: only what is listed is written.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,7 +160,7 @@ pub struct ArchiveFile {
     pub subtitles: Vec<ArchiveTrack>,
     /// Text files written as subtitle tracks after `subtitles`, one extra input each.
     #[serde(default)]
-    pub extra_subtitles: Vec<ArchiveExtraSub>,
+    pub extra_subtitles: Vec<ExtraSubtitle>,
 }
 
 /// `pan` that folds up to 5.1 into stereo with a boosted centre, no clipping (coefficients sum to 1).

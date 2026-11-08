@@ -5,14 +5,15 @@ mod encoders;
 mod filters;
 mod output;
 
-pub use archive::{ArchiveAudio, ArchiveAudioEnc, ArchiveExtraSub, ArchiveFile, ArchiveTrack};
+pub use archive::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack};
 pub(crate) use encode::{AudioEnc, ReportNeeds, audio_stream_args, stage_report};
 pub use encode::{Encoded, encode, live_h264_encoder};
 pub use encoders::encoder_args;
 pub use output::{LIVE_USER_AGENT, file, http_header_args, iframe, live, remux, vod};
 
 use crate::api::{
-    AudioPlan, CodecVariant, CropInfo, HdrMetadata, HwAccel, TonemapAlgo, TonemapCurve,
+    AudioPlan, CodecVariant, CropInfo, HdrMetadata, HwAccel, OptimizeQuality, TonemapAlgo,
+    TonemapCurve,
 };
 use crate::decide::tonemap::TonemapPath;
 use crate::hw::decoders::Surface;
@@ -36,19 +37,11 @@ pub enum BurnInKind {
     Image,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ArchiveQuality {
-    Small,
-    Balanced,
-    Faithful,
-}
-
 /// Archival rate control: quality-targeted, closed GOP, no live constraint (spec `args.md`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveRate {
-    pub quality: ArchiveQuality,
+    pub quality: OptimizeQuality,
     /// VideoToolbox on Intel, which has no `-q:v`: the target bitrate instead.
     #[serde(default)]
     pub bitrate_bps: Option<f64>,

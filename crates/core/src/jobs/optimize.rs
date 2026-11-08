@@ -4,9 +4,7 @@ use crate::api::{
     AudioStreamInfo, HwAccel, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan,
     OptimizeQuality, StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
 };
-use crate::args::{
-    ArchiveAudio, ArchiveAudioEnc, ArchiveExtraSub, ArchiveFile, ArchiveTrack, FileArgs,
-};
+use crate::args::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack, FileArgs};
 use serde_json::json;
 
 /// Samples encoded to estimate the savings and the speed.
@@ -246,18 +244,7 @@ pub fn archive_file(
                 ..track(s.stream_index, plan_of(plan, s.stream_index))
             })
             .collect(),
-        extra_subtitles: plan
-            .extra_subtitles
-            .iter()
-            .map(|x| ArchiveExtraSub {
-                path: x.path.clone(),
-                language: x.language.clone(),
-                title: x.title.clone(),
-                default: x.default,
-                forced: x.forced,
-                hearing_impaired: x.hearing_impaired,
-            })
-            .collect(),
+        extra_subtitles: plan.extra_subtitles.clone(),
     })
 }
 
@@ -287,11 +274,7 @@ pub fn build_file_args(
     o: &Output,
 ) -> Result<FileArgs, String> {
     let v = main_video(info)?;
-    let quality = match plan.quality.unwrap_or(OptimizeQuality::Balanced) {
-        OptimizeQuality::Small => "small",
-        OptimizeQuality::Balanced => "balanced",
-        OptimizeQuality::Faithful => "faithful",
-    };
+    let quality = plan.quality.unwrap_or(OptimizeQuality::Balanced);
     // HEVC keeps the source's depth, AV1 is always 10-bit.
     let ten = v.hdr_format.is_some() || v.bit_depth.is_some_and(|d| d > 8) || o.codec == "av1";
     let mut encode = json!({
