@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/fliks-app/engine/compare/v1.15.0...v1.15.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **hw:** capable-device placement, per-session device, NVENC cards and MKV covers ([#190](https://github.com/fliks-app/engine/issues/190)) ([b62d53c](https://github.com/fliks-app/engine/commit/b62d53c4a5867e6039f6d6e57851862f77aeedd0))
+
 ## [1.15.0](https://github.com/fliks-app/engine/compare/v1.14.1...v1.15.0) (2026-11-08)
 
 
