@@ -426,6 +426,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "libc",
+ "libloading",
  "lofty",
  "mimalloc",
  "ort",

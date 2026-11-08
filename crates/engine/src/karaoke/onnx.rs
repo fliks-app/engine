@@ -10,6 +10,9 @@ pub fn default_backend() -> Arc<dyn Backend> {
     return Arc::new(Absent);
 }
 
+#[cfg(feature = "karaoke")]
+pub use imp::{providers, with_provider};
+
 #[cfg(not(feature = "karaoke"))]
 struct Absent;
 
@@ -23,45 +26,68 @@ impl Backend for Absent {
         }
     }
 
-    fn load(&self, _: &std::path::Path) -> Result<super::Loaded, String> {
+    fn load(&self, _: &std::path::Path, _: Option<&[String]>) -> Result<super::Loaded, String> {
         Err("this engine build has no ONNX runtime".into())
     }
 }
 
 #[cfg(feature = "karaoke")]
 mod imp {
+    use crate::karaoke::winml;
     use crate::karaoke::{Backend, BackendInfo, Loaded, Net, PROVIDERS, Tensor, first_working};
     use ort::{
         environment::Environment,
         ep::{self, ExecutionProvider},
-        session::Session,
+        session::{Session, builder::SessionBuilder},
         value::Tensor as OrtTensor,
     };
     use std::path::Path;
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    /// ONNX Runtime from `ORT_DYLIB_PATH`, else `libonnxruntime` on the loader's path.
+    /// ONNX Runtime from `ORT_DYLIB_PATH`, else the bundle's, else `libonnxruntime` on the loader's path.
     #[derive(Default)]
     pub struct Ort {
-        env: OnceLock<Result<(Environment, Vec<String>), String>>,
+        env: OnceLock<Result<Environment, String>>,
+        preparing: AtomicBool,
     }
 
-    fn available(name: &str) -> bool {
+    /// Providers `ort` has a typed registration for (the runtime lists them when it has them).
+    fn classic(name: &str) -> bool {
         match name {
             "cuda" => ep::CUDA::is_available(),
             "migraphx" => ep::MIGraphX::is_available(),
             "openvino" => ep::OpenVINO::is_available(),
-            _ => ep::CoreML::is_available(),
+            "coreml" => ep::CoreML::is_available(),
+            "directml" => ep::DirectML::is_available(),
+            _ => Ok(false),
         }
         .unwrap_or(false)
     }
 
-    fn provider(name: &str) -> ep::ExecutionProviderDispatch {
-        match name {
+    fn available(env: &Environment, name: &str) -> bool {
+        winml::device(env, name).is_some() || classic(name)
+    }
+
+    pub fn with_provider(
+        b: SessionBuilder,
+        env: &Environment,
+        name: &str,
+    ) -> Result<SessionBuilder, String> {
+        if let Some(d) = winml::device(env, name) {
+            return b.with_devices([d], None).map_err(|e| e.to_string());
+        }
+        let p = match name {
             "cuda" => ep::CUDA::default().build(),
             "migraphx" => ep::MIGraphX::default().build(),
+            "openvino" => ep::OpenVINO::default().with_device_type("GPU").build(),
+            "directml" => ep::DirectML::default()
+                .with_performance_preference(ep::directml::PerformancePreference::HighPerformance)
+                .build(),
             _ => ep::CoreML::default().build(),
-        }
+        };
+        b.with_execution_providers([p.error_on_failure()])
+            .map_err(|e| e.to_string())
     }
 
     fn library() -> String {
@@ -78,36 +104,34 @@ mod imp {
     }
 
     impl Ort {
-        fn env(&self) -> &Result<(Environment, Vec<String>), String> {
+        fn env(&self) -> &Result<Environment, String> {
             self.env.get_or_init(|| {
                 let lib = library();
                 let env = ort::init_from(&lib)
                     .map_err(|e| format!("load {lib}: {e}"))?
                     .build()
                     .map_err(|e| format!("start ONNX Runtime: {e}"))?;
-                let providers = PROVIDERS
-                    .iter()
-                    .filter(|p| available(p))
-                    .map(|p| p.to_string())
-                    .collect();
-                Ok((env, providers))
+                winml::register(&env, false);
+                Ok(env)
             })
         }
     }
 
-    fn session(
-        env: &Environment,
-        file: &Path,
-        provider: Option<ep::ExecutionProviderDispatch>,
-    ) -> Result<Session, String> {
+    pub fn providers(env: &Environment) -> Vec<String> {
+        PROVIDERS
+            .iter()
+            .filter(|p| available(env, p))
+            .map(|p| p.to_string())
+            .collect()
+    }
+
+    fn session(env: &Environment, file: &Path, provider: Option<&str>) -> Result<Session, String> {
         let mut b = Session::builder(env).map_err(|e| e.to_string())?;
         b = b
             .with_intra_threads(crate::karaoke::threads())
             .map_err(|e| e.to_string())?;
         if let Some(p) = provider {
-            b = b
-                .with_execution_providers([p.error_on_failure()])
-                .map_err(|e| e.to_string())?;
+            b = with_provider(b, env, p)?;
         }
         b.commit_from_file(file).map_err(|e| e.to_string())
     }
@@ -115,10 +139,10 @@ mod imp {
     impl Backend for Ort {
         fn runtime(&self) -> BackendInfo {
             match self.env() {
-                Ok((_, providers)) => BackendInfo {
+                Ok(env) => BackendInfo {
                     onnx: true,
                     error: None,
-                    providers: providers.clone(),
+                    providers: providers(env),
                 },
                 Err(e) => BackendInfo {
                     onnx: false,
@@ -128,11 +152,21 @@ mod imp {
             }
         }
 
-        fn load(&self, file: &Path) -> Result<Loaded, String> {
-            let (env, providers) = self.env().as_ref().map_err(Clone::clone)?;
+        fn prepare(&self) {
+            let Ok(env) = self.env() else { return };
+            if self.preparing.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let env = env.clone();
+            std::thread::spawn(move || winml::register(&env, true));
+        }
+
+        fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String> {
+            let env = self.env().as_ref().map_err(Clone::clone)?;
             let (net, provider) = first_working(
-                providers,
-                |name| session(env, file, Some(provider(name))),
+                &providers(env),
+                allow,
+                |name| session(env, file, Some(name)),
                 || session(env, file, None),
             )?;
             Ok(Loaded {

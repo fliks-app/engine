@@ -215,7 +215,7 @@ impl Backend for NoOnnx {
         }
     }
 
-    fn load(&self, _: &Path) -> Result<Loaded, String> {
+    fn load(&self, _: &Path, _: Option<&[String]>) -> Result<Loaded, String> {
         Err("no runtime here".into())
     }
 }
@@ -392,7 +392,7 @@ impl Backend for Fake {
         }
     }
 
-    fn load(&self, file: &Path) -> Result<Loaded, String> {
+    fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String> {
         let name = file.file_name().unwrap().to_string_lossy();
         let net: Box<dyn Net> = match &*name {
             "vocals.onnx" => Box::new(SplitNet { keep_high: true }),
@@ -401,7 +401,9 @@ impl Backend for Fake {
         };
         Ok(Loaded {
             net,
-            provider: "cpu".into(),
+            provider: allow
+                .and_then(|a| a.first().cloned())
+                .unwrap_or_else(|| "cpu".into()),
         })
     }
 }
@@ -476,6 +478,29 @@ fn dir(e: &Engine, name: &str) -> PathBuf {
     let d = e.root.join(name);
     std::fs::create_dir_all(&d).unwrap();
     d
+}
+
+#[tokio::test]
+async fn separate_gives_the_session_the_providers_the_request_allows() {
+    let Some(e) = real().await else { return };
+    let d = dir(&e, "sep-providers");
+    let song = d.join("song.flac");
+    if !make(
+        &e,
+        &song,
+        "sine=frequency=440:sample_rate=44100:duration=1,aformat=channel_layouts=stereo[o]",
+    ) {
+        eprintln!("ffmpeg cannot make the tone: skipped");
+        return;
+    }
+    let kind = |out: &str, providers: Value| {
+        json!({ "type": "Separate", "info": audio_info(), "vocals": d.join(out),
+            "providers": providers })
+    };
+    let r = run_kind(&e, &song, kind("a.opus", json!(["directml"]))).await;
+    assert_eq!(r["result"]["separate"]["provider"], "directml", "{r}");
+    let r = run_kind(&e, &song, kind("b.opus", json!([]))).await;
+    assert_eq!(r["result"]["separate"]["provider"], "cpu", "{r}");
 }
 
 #[tokio::test]

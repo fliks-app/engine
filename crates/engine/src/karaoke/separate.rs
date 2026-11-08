@@ -38,6 +38,7 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
         guide,
         guide_vocals_gain,
         bitrate_kbps,
+        providers,
     } = kind
     else {
         return Err("not a Separate job".into());
@@ -73,6 +74,7 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
         &outs,
         guide_vocals_gain.unwrap_or(DEFAULT_GUIDE_VOCALS_GAIN) as f32,
         bitrate_kbps.unwrap_or(DEFAULT_BITRATE_KBPS),
+        providers.clone(),
     )
     .await;
     let published = match result {
@@ -117,6 +119,7 @@ async fn build(
     outs: &Outputs,
     gain: f32,
     kbps: u32,
+    allow: Option<Vec<String>>,
 ) -> Result<(String, f64), String> {
     let (vocals_file, acc_file) = (
         picked.file("vocals.onnx"),
@@ -124,7 +127,10 @@ async fn build(
     );
     let (vocals_net, acc_net, provider) = tokio::task::spawn_blocking({
         move || -> Result<_, String> {
-            let (v, a) = (backend.load(&vocals_file)?, backend.load(&acc_file)?);
+            let (v, a) = (
+                backend.load(&vocals_file, allow.as_deref())?,
+                backend.load(&acc_file, allow.as_deref())?,
+            );
             let provider = v.provider.clone();
             Ok((v.net, a.net, provider))
         }

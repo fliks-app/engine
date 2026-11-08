@@ -26,7 +26,8 @@ pub async fn run(
         return Err(unsupported(runtime.error.unwrap_or_default()));
     }
     let file = picked.file("model.onnx");
-    let loaded = tokio::task::spawn_blocking(move || backend.load(&file))
+    // SwiftF0 stays on the CPU: 10 ms a call, a GPU session costs more than it saves.
+    let loaded = tokio::task::spawn_blocking(move || backend.load(&file, Some(&[])))
         .await
         .map_err(|e| e.to_string())??;
     ctx.pulse();
