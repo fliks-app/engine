@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.19.1](https://github.com/fliks-app/engine/compare/v1.19.0...v1.19.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **karaoke:** catch gpu failures that only show in a run, cache migraphx programs ([#214](https://github.com/fliks-app/engine/issues/214)) ([8b32241](https://github.com/fliks-app/engine/commit/8b32241939425d00ceebaaf52447046f02db0e1b))
+* **runtime:** report the served rung, not the client's pick ([#215](https://github.com/fliks-app/engine/issues/215)) ([74d6020](https://github.com/fliks-app/engine/commit/74d602031bdd8599cd2c03962680ed6c95780a01))
+
 ## [1.19.0](https://github.com/fliks-app/engine/compare/v1.18.0...v1.19.0) (2026-11-08)
 
 
