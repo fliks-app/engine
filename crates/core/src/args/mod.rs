@@ -42,9 +42,6 @@ pub enum BurnInKind {
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveRate {
     pub quality: OptimizeQuality,
-    /// VideoToolbox on Intel, which has no `-q:v`: the target bitrate instead.
-    #[serde(default)]
-    pub bitrate_bps: Option<f64>,
     /// Bound x265 `pools` and SVT-AV1 `lp` to the encode threads: `-threads` alone leaves them on
     /// every core. Off for the existing archive vectors.
     #[serde(default)]
