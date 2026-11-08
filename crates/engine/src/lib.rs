@@ -203,6 +203,14 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     })
 }
 
+/// The binary named by env `var`, else `default` on PATH.
+pub fn tool_path(var: &str, default: &str) -> String {
+    std::env::var(var)
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| default.into())
+}
+
 /// Https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them), empty roots when
 /// none load: an https peer then fails at connect, plain http still works.
 pub(crate) fn tls_builder()

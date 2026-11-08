@@ -742,7 +742,7 @@ enum Sampled {
 }
 
 fn mkvpropedit() -> String {
-    crate::hw::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
+    crate::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
 }
 
 /// Video packets of the first video stream of `path`.

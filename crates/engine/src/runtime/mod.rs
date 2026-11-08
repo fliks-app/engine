@@ -107,7 +107,7 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(hw: Arc<Hw>, cache: Cache, ffmpeg: String) -> Arc<Self> {
-        let tool = crate::hw::tool_path;
+        let tool = crate::tool_path;
         let (ffprobe, fpcalc) = (
             tool("FFPROBE_PATH", "ffprobe"),
             tool("FPCALC_PATH", "fpcalc"),

@@ -44,7 +44,7 @@ async fn fixture(seconds: u32) -> Option<Fixture> {
 
 /// `cover`: a JPEG picture embedded as MP4 `covr` or MKV image attachment.
 async fn fixture_with(seconds: u32, ext: &str, cover: bool) -> Option<Fixture> {
-    let ffprobe = fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe");
+    let ffprobe = fliks_engine::tool_path("FFPROBE_PATH", "ffprobe");
     if !ok(&ffmpeg(), &["-version"]) || !ok(&ffprobe, &["-version"]) {
         eprintln!("ffmpeg or ffprobe not available: skipped");
         return None;
@@ -203,19 +203,18 @@ async fn cover_survives(ext: &str, id: u32, plan: Value) {
     let out = &v["result"]["optimize"]["outInfo"];
     assert_eq!(out["video"].as_array().unwrap().len(), 1, "{out}");
     assert_eq!(out["cover"]["codec"], "mjpeg", "{out}");
-    let pictures =
-        std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "stream=codec_name:stream_disposition=attached_pic",
-                "-of",
-                "csv=p=0",
-            ])
-            .arg(&staged)
-            .output()
-            .unwrap();
+    let pictures = std::process::Command::new(fliks_engine::tool_path("FFPROBE_PATH", "ffprobe"))
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_name:stream_disposition=attached_pic",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&staged)
+        .output()
+        .unwrap();
     let pictures = String::from_utf8_lossy(&pictures.stdout);
     assert_eq!(pictures.matches("mjpeg,1").count(), 1, "{pictures}");
     assert_eq!(pictures.matches("mjpeg").count(), 1, "{pictures}");
@@ -408,7 +407,7 @@ async fn a_demoted_default_keeps_forced_and_clear_title_empties_the_title() {
     assert_eq!(v["state"], "done", "{v}");
     let out = &v["result"]["optimize"]["outInfo"];
     assert_eq!(out["subtitles"][0]["forced"], true, "{out}");
-    let flags = std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
+    let flags = std::process::Command::new(fliks_engine::tool_path("FFPROBE_PATH", "ffprobe"))
         .args(["-v", "error", "-select_streams", "s:0", "-show_entries"])
         .args(["stream_disposition=default,forced", "-of", "csv=p=0"])
         .arg(&staged)

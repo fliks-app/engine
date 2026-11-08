@@ -237,7 +237,7 @@ pub fn temp_dir(tag: &str) -> TempDir {
 
 /// An engine on its own cache root, configured with the stub as host and `lifetime`.
 pub async fn engine_with(hw: Arc<Hw>, ffmpeg: &str, lifetime: Value) -> Engine {
-    let tool = fliks_engine::hw::tool_path;
+    let tool = fliks_engine::tool_path;
     let (probe, fpcalc) = (
         tool("FFPROBE_PATH", "ffprobe"),
         tool("FPCALC_PATH", "fpcalc"),

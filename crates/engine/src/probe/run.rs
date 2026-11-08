@@ -25,16 +25,11 @@ struct Binaries {
 
 impl Binaries {
     fn from_env() -> Self {
-        let var = |k: &str, d: &str| {
-            std::env::var(k)
-                .ok()
-                .filter(|v| !v.is_empty())
-                .unwrap_or(d.into())
-        };
+        use crate::tool_path;
         Self {
-            ffprobe: var("FFPROBE_PATH", "ffprobe"),
-            ffmpeg: var("FFMPEG_PATH", "ffmpeg"),
-            mkvmerge: var("MKVMERGE_PATH", "mkvmerge"),
+            ffprobe: tool_path("FFPROBE_PATH", "ffprobe"),
+            ffmpeg: tool_path("FFMPEG_PATH", "ffmpeg"),
+            mkvmerge: tool_path("MKVMERGE_PATH", "mkvmerge"),
         }
     }
 }

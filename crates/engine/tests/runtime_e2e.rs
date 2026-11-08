@@ -1373,7 +1373,7 @@ async fn fingerprint_job_matches_fpcalc_on_a_real_file() {
     )
     .await;
     assert_eq!(head["state"], "done", "{head}");
-    let fpcalc = fliks_engine::hw::tool_path("FPCALC_PATH", "fpcalc");
+    let fpcalc = fliks_engine::tool_path("FPCALC_PATH", "fpcalc");
     let out = std::process::Command::new(&fpcalc)
         .args(["-raw", "-length", "600"])
         .arg(&p.file)
