@@ -39,7 +39,7 @@ pub trait Net: Send {
 
 pub struct Loaded {
     pub net: Box<dyn Net>,
-    /// `cuda`, `openvino` or `cpu`.
+    /// One of `PROVIDERS`, or `cpu`.
     pub provider: String,
 }
 
@@ -53,8 +53,50 @@ pub trait Backend: Send + Sync {
 pub struct BackendInfo {
     pub onnx: bool,
     pub error: Option<String>,
-    /// Hardware execution providers available (`cuda`, `openvino`); the CPU is always there.
+    /// Hardware execution providers available (`PROVIDERS`); the CPU is always there.
     pub providers: Vec<String>,
+}
+
+/// Hardware execution providers in the order a session tries them.
+pub const PROVIDERS: [&str; 4] = ["cuda", "migraphx", "openvino", "coreml"];
+
+/// Providers sessions never use: OpenVINO's GPU gives wrong Spleeter output (see the spec).
+pub const UNUSED: [&str; 1] = ["openvino"];
+
+/// The first provider that gives a net, else the CPU's; the name says which ran.
+pub fn first_working<T>(
+    providers: &[String],
+    mut try_provider: impl FnMut(&str) -> Result<T, String>,
+    cpu: impl FnOnce() -> Result<T, String>,
+) -> Result<(T, String), String> {
+    for name in providers.iter().filter(|p| !UNUSED.contains(&p.as_str())) {
+        match try_provider(name) {
+            Ok(net) => return Ok((net, name.clone())),
+            Err(e) => tracing::warn!(provider = name, "execution provider unusable: {e}"),
+        }
+    }
+    Ok((cpu()?, "cpu".into()))
+}
+
+/// `name` in the `karaoke/` directory next to the executable, where the desktop bundles keep
+/// their tools and the ONNX library.
+pub fn bundled(name: &str) -> Option<String> {
+    let dir = std::env::current_exe().ok()?.parent()?.join("karaoke");
+    beside(&dir, name)
+}
+
+fn beside(dir: &Path, name: &str) -> Option<String> {
+    let p = dir.join(name);
+    p.is_file().then(|| p.to_string_lossy().into_owned())
+}
+
+fn tool(var: &str, name: &str) -> String {
+    let exe = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    std::env::var(var)
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| bundled(&exe))
+        .unwrap_or_else(|| name.into())
 }
 
 /// Tools the jobs spawn, looked up once.
@@ -151,10 +193,10 @@ impl Karaoke {
     pub async fn tools(&self, ffmpeg: &str) -> &Tools {
         self.tools
             .get_or_init(|| async {
-                let whisper = crate::tool_path("WHISPER_CLI_PATH", "whisper-cli");
+                let whisper = tool("WHISPER_CLI_PATH", "whisper-cli");
                 let mut pitch_ffmpeg = None;
                 for c in [
-                    crate::tool_path("FFMPEG_PITCH_PATH", "ffmpeg-pitch"),
+                    tool("FFMPEG_PITCH_PATH", "ffmpeg-pitch"),
                     ffmpeg.to_string(),
                 ] {
                     if exists(&c) && has_rubberband(&c).await {
@@ -190,7 +232,7 @@ impl Karaoke {
         let mut f = vec!["models".to_string()];
         if r.onnx {
             f.extend(["onnx", "karaoke-separate", "karaoke-melody"].map(String::from));
-            for p in ["cuda", "openvino"] {
+            for p in PROVIDERS {
                 if r.providers.iter().any(|x| x == p) {
                     f.push(format!("onnx-{p}"));
                 }
@@ -242,5 +284,98 @@ pub async fn delete(State(s): S, UrlPath(id): UrlPath<String>) -> StatusCode {
         StatusCode::NO_CONTENT
     } else {
         StatusCode::NOT_FOUND
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_session_takes_the_first_provider_that_works_and_reports_it() {
+        let got = first_working(
+            &names(&["cuda", "migraphx", "coreml"]),
+            |p| {
+                if p == "cuda" {
+                    Err("no".into())
+                } else {
+                    Ok(p.len())
+                }
+            },
+            || Ok(0),
+        );
+        assert_eq!(got, Ok((8, "migraphx".to_string())));
+    }
+
+    #[test]
+    fn a_session_falls_back_to_the_cpu_and_reports_cpu() {
+        let got = first_working(&names(&["coreml"]), |_| Err::<u8, _>("no".into()), || Ok(1));
+        assert_eq!(got, Ok((1, "cpu".to_string())));
+        let none = first_working(&[], |_| Ok(2), || Ok(1));
+        assert_eq!(none, Ok((1, "cpu".to_string())));
+        let broken = first_working(
+            &names(&["cuda"]),
+            |_| Err::<u8, _>("no".into()),
+            || Err("cpu too".into()),
+        );
+        assert_eq!(broken, Err("cpu too".to_string()));
+    }
+
+    #[test]
+    fn an_unused_provider_is_listed_but_never_tried() {
+        let got = first_working(&names(&["openvino"]), |_| Ok::<u8, String>(9), || Ok(1));
+        assert_eq!(got, Ok((1, "cpu".to_string())));
+    }
+
+    #[test]
+    fn providers_are_tried_cuda_then_migraphx_then_openvino() {
+        assert_eq!(&PROVIDERS[..3], ["cuda", "migraphx", "openvino"]);
+    }
+
+    #[test]
+    fn the_bundle_directory_is_searched_for_a_tool() {
+        let d = std::env::temp_dir().join(format!("fliks-bundle-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("whisper-cli"), b"x").unwrap();
+        assert!(beside(&d, "whisper-cli").is_some_and(|p| p.ends_with("whisper-cli")));
+        assert_eq!(beside(&d, "ffmpeg-pitch"), None);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    struct Gpus;
+
+    impl Backend for Gpus {
+        fn runtime(&self) -> BackendInfo {
+            BackendInfo {
+                onnx: true,
+                error: None,
+                providers: names(&["migraphx", "coreml"]),
+            }
+        }
+
+        fn load(&self, _: &Path) -> Result<Loaded, String> {
+            Err("unused".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn features_name_each_provider_the_library_has() {
+        let dir = std::env::temp_dir().join(format!("fliks-feat-{}", std::process::id()));
+        let k = Karaoke::new(dir.clone(), Events::default());
+        k.replace(
+            Manager::new(dir, models::manifest(), Events::default()),
+            Arc::new(Gpus),
+        );
+        let f = k.features("no-such-ffmpeg").await;
+        assert!(f.contains(&"onnx-migraphx".to_string()) && f.contains(&"onnx-coreml".to_string()));
+        assert!(!f.contains(&"onnx-cuda".to_string()) && !f.contains(&"onnx-openvino".to_string()));
+        assert_eq!(
+            k.runtime("no-such-ffmpeg").await.providers,
+            names(&["migraphx", "coreml", "cpu"])
+        );
     }
 }

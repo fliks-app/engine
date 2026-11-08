@@ -43,8 +43,8 @@ jobs:
         include:
           - { name: linux-x64, os: ubuntu-latest, target: x86_64-unknown-linux-musl }
           - { name: linux-arm64, os: ubuntu-latest, target: aarch64-unknown-linux-musl, cross: true }
-          - { name: darwin-arm64, os: macos-15, target: aarch64-apple-darwin }
-          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
+          - { name: darwin-arm64, os: macos-15, target: aarch64-apple-darwin, karaoke: true }
+          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe, karaoke: true }
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -72,7 +72,8 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ matrix.cross }}" ]; then B="cross"; else B="cargo"; fi
-          $B build --release -p fliks-engine --bin fliks-engine --target ${{ matrix.target }}
+          F=""; if [ -n "${{ matrix.karaoke }}" ]; then F="--features karaoke"; fi
+          $B build --release -p fliks-engine --bin fliks-engine --target ${{ matrix.target }} $F
       - name: Stage the binary and its checksum
         shell: bash
         run: |
@@ -92,6 +93,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag }}" out/* --clobber --repo "$GITHUB_REPOSITORY"
+
+  karaoke-pack:
+    needs: release-please
+    if: needs.release-please.outputs.tag != '' && !inputs.dry_run
+    uses: ./.github/workflows/karaoke-pack.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
 
   contract:
     needs: release-please

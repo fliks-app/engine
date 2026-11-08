@@ -30,7 +30,7 @@ impl Backend for Absent {
 
 #[cfg(feature = "karaoke")]
 mod imp {
-    use crate::karaoke::{Backend, BackendInfo, Loaded, Net, Tensor};
+    use crate::karaoke::{Backend, BackendInfo, Loaded, Net, PROVIDERS, Tensor, first_working};
     use ort::{
         environment::Environment,
         ep::{self, ExecutionProvider},
@@ -46,17 +46,35 @@ mod imp {
         env: OnceLock<Result<(Environment, Vec<String>), String>>,
     }
 
+    fn available(name: &str) -> bool {
+        match name {
+            "cuda" => ep::CUDA::is_available(),
+            "migraphx" => ep::MIGraphX::is_available(),
+            "openvino" => ep::OpenVINO::is_available(),
+            _ => ep::CoreML::is_available(),
+        }
+        .unwrap_or(false)
+    }
+
+    fn provider(name: &str) -> ep::ExecutionProviderDispatch {
+        match name {
+            "cuda" => ep::CUDA::default().build(),
+            "migraphx" => ep::MIGraphX::default().build(),
+            _ => ep::CoreML::default().build(),
+        }
+    }
+
     fn library() -> String {
+        let lib = format!(
+            "{}onnxruntime{}",
+            std::env::consts::DLL_PREFIX,
+            std::env::consts::DLL_SUFFIX
+        );
         std::env::var("ORT_DYLIB_PATH")
             .ok()
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| {
-                format!(
-                    "{}onnxruntime{}",
-                    std::env::consts::DLL_PREFIX,
-                    std::env::consts::DLL_SUFFIX
-                )
-            })
+            .or_else(|| crate::karaoke::bundled(&lib))
+            .unwrap_or(lib)
     }
 
     impl Ort {
@@ -67,13 +85,11 @@ mod imp {
                     .map_err(|e| format!("load {lib}: {e}"))?
                     .build()
                     .map_err(|e| format!("start ONNX Runtime: {e}"))?;
-                let mut providers = vec![];
-                if ep::CUDA::is_available().unwrap_or(false) {
-                    providers.push("cuda".to_string());
-                }
-                if ep::OpenVINO::is_available().unwrap_or(false) {
-                    providers.push("openvino".to_string());
-                }
+                let providers = PROVIDERS
+                    .iter()
+                    .filter(|p| available(p))
+                    .map(|p| p.to_string())
+                    .collect();
                 Ok((env, providers))
             })
         }
@@ -114,24 +130,14 @@ mod imp {
 
         fn load(&self, file: &Path) -> Result<Loaded, String> {
             let (env, providers) = self.env().as_ref().map_err(Clone::clone)?;
-            for name in providers {
-                let ep = match name.as_str() {
-                    "cuda" => ep::CUDA::default().build(),
-                    _ => ep::OpenVINO::default().with_device_type("GPU").build(),
-                };
-                match session(env, file, Some(ep)) {
-                    Ok(s) => {
-                        return Ok(Loaded {
-                            net: Box::new(OrtNet(s)),
-                            provider: name.clone(),
-                        });
-                    }
-                    Err(e) => tracing::warn!(provider = name, "execution provider unusable: {e}"),
-                }
-            }
+            let (net, provider) = first_working(
+                providers,
+                |name| session(env, file, Some(provider(name))),
+                || session(env, file, None),
+            )?;
             Ok(Loaded {
-                net: Box::new(OrtNet(session(env, file, None)?)),
-                provider: "cpu".into(),
+                net: Box::new(OrtNet(net)),
+                provider,
             })
         }
     }
