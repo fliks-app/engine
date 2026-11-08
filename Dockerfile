@@ -23,7 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF \
        -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON $ISA \
   && cmake --build build -j"$(nproc)" --target whisper-cli \
-  && strip build/bin/whisper-cli
+  && strip build/bin/whisper-cli \
+  && install -D -m 644 LICENSE /licenses/whisper.cpp/copyright
 
 # An ffmpeg with the `rubberband` filter (key changes): jellyfin-ffmpeg is built without it. Same
 # release as the main one; only the audio side matters, so nothing but opus is linked in.
@@ -39,7 +40,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && ./configure --disable-autodetect --disable-doc --disable-debug --disable-ffplay --disable-ffprobe \
        --disable-network --enable-gpl --enable-librubberband --enable-libopus \
   && make -j"$(nproc)" ffmpeg \
-  && strip ffmpeg
+  && strip ffmpeg \
+  && install -D -m 644 COPYING.GPLv3 /licenses/ffmpeg-pitch/COPYING.GPLv3 \
+  && RB="$(dpkg-query -W -f='${Version}' librubberband-dev)" \
+  && printf '%s\n' \
+     "ffmpeg-pitch is FFmpeg ${FFMPEG_VERSION} built with --enable-gpl --enable-librubberband --enable-libopus, under the GNU GPL v3 (COPYING.GPLv3)." \
+     "FFmpeg source: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz (sha256 ${FFMPEG_SHA256})." \
+     "Build options: see the configure line of the pitch-ffmpeg-build stage of https://github.com/fliks-app/engine/blob/main/Dockerfile." \
+     "librubberband (GPL-2.0-or-later) ${RB}, Ubuntu 24.04: source with 'apt source librubberband' or https://packages.ubuntu.com/source/noble/rubberband." \
+     > /licenses/ffmpeg-pitch/SOURCE
 
 FROM rust:1.99.0-bookworm AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
@@ -93,6 +102,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && echo "${ORT_SHA}  /tmp/ort.tgz" | sha256sum -c - \
   && tar -xzf /tmp/ort.tgz -C /tmp \
   && cp -a /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime*.so* /usr/local/lib/ \
+  && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/LICENSE /usr/share/doc/onnxruntime/LICENSE \
+  && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/ThirdPartyNotices.txt /usr/share/doc/onnxruntime/ThirdPartyNotices.txt \
   && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-* \
   && apt-get purge -y wget python3-pip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
@@ -100,7 +111,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
 COPY --from=vobsub-ocr-build /opt/subtile-ocr/bin/subtile-ocr /usr/local/bin/subtile-ocr
 COPY --from=whisper-build /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper-build /licenses/whisper.cpp /usr/share/doc/whisper.cpp
 COPY --from=pitch-ffmpeg-build /src/ffmpeg /usr/local/bin/ffmpeg-pitch
+COPY --from=pitch-ffmpeg-build /licenses/ffmpeg-pitch /usr/share/doc/ffmpeg-pitch
 ENV ORT_DYLIB_PATH=/usr/local/lib/libonnxruntime.so
 
 # The container toolkit mounts libnvidia-opencl.so on NVENC hosts but not its ICD entry (harmless elsewhere).

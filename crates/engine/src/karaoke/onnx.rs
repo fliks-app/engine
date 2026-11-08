@@ -117,7 +117,7 @@ mod imp {
             for name in providers {
                 let ep = match name.as_str() {
                     "cuda" => ep::CUDA::default().build(),
-                    _ => ep::OpenVINO::default().build(),
+                    _ => ep::OpenVINO::default().with_device_type("GPU").build(),
                 };
                 match session(env, file, Some(ep)) {
                     Ok(s) => {
