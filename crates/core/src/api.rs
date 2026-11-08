@@ -84,7 +84,7 @@ pub struct Capabilities {
     pub gpus: Vec<Gpu>,
     pub default_gpu: Option<String>,
     /// Hardware devices, each probed on its own; the fields above describe `devices[0]`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<GpuDevice>,
     pub platform: String,
     /// `signal` | `stdin` | `none`
