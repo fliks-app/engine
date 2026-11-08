@@ -1,5 +1,6 @@
 //! `POST /v1/probe`: runs ffprobe, mkvmerge and ffmpeg for the pure parser in `core::probe`.
 //! Spec: `docs/spec/probe.md`.
+mod audio_tags;
 pub(crate) mod run;
 
 use crate::AppState;
