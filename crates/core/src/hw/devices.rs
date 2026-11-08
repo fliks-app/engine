@@ -1,5 +1,5 @@
 //! Which hardware devices a host has: pure assembly of the per-node detection results.
-use super::{Detected, GpuInfo};
+use super::{Detected, Device, GpuInfo};
 use crate::api::HwAccel;
 
 /// One detection result: the node it ran on and the CUDA ordinal it used, if any.
@@ -19,6 +19,18 @@ pub struct DeviceEntry {
     pub name: Option<String>,
     pub cuda_index: Option<u32>,
     pub detected: Detected,
+}
+
+impl DeviceEntry {
+    /// What the argv builders vary on for a run placed on this device.
+    pub fn device(&self, opencl_device: Option<String>) -> Device {
+        Device {
+            platform: self.detected.platform,
+            render_node: Some(self.render_node.clone()),
+            opencl_device,
+            cuda_index: self.cuda_index,
+        }
+    }
 }
 
 /// Keeps the results with a hardware encoder, in the order given.

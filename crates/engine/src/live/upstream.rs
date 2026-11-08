@@ -161,7 +161,7 @@ async fn spawn_packaged(
             .into_iter()
             .next()
         {
-            (caps, dev) = (d.detected.host_caps(), d.device());
+            (caps, dev) = (d.detected.host_caps(), d.device(crate::hw::opencl_device()));
             slot = Some(rt.slots.playback_on(Some(&d.id)));
             pipe.m.locked().device = Some(d.id.clone());
             device = Some(d.id);

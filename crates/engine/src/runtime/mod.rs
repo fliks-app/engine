@@ -207,7 +207,7 @@ impl Runtime {
         fliks_engine_core::hw::Device {
             platform: caps.platform,
             render_node: self.hw.snapshot().map(|h| h.render_node),
-            opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+            opencl_device: crate::hw::opencl_device(),
             cuda_index: None,
         }
     }
@@ -228,7 +228,7 @@ impl Runtime {
             .snapshot()
             .and_then(|s| s.device(id).cloned())
             .ok_or_else(|| format!("device {id} is gone"))?;
-        Ok((d.detected.host_caps(), d.device()))
+        Ok((d.detected.host_caps(), d.device(crate::hw::opencl_device())))
     }
 
     /// The devices a hardware run may take, best first: its session's own (`sticky`) while it
