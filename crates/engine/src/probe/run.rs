@@ -39,6 +39,21 @@ pub async fn probe_stamped(path: &str, slots: Arc<Slots>, opts: &ProbeOpts) -> O
     let mut out = probe::probe(&ProcessTools::new(path, slots), path, opts).await;
     if out.ok {
         out.info.schema_version = Some(MEDIA_INFO_SCHEMA_VERSION);
+        let audio_file =
+            out.info.tags.is_some() || (out.info.video.is_empty() && !out.info.audio.is_empty());
+        if audio_file {
+            let (p, mut tags) = (
+                std::path::PathBuf::from(path),
+                out.info.tags.take().unwrap_or_default(),
+            );
+            tags = tokio::task::spawn_blocking(move || {
+                super::audio_tags::overlay(&p, &mut tags);
+                tags
+            })
+            .await
+            .unwrap_or_default();
+            out.info.tags = (tags != Default::default()).then_some(tags);
+        }
     }
     out
 }

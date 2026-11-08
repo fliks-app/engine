@@ -1,11 +1,31 @@
 //! Descriptive tags and cover of an audio file, as ffprobe prints the ID3, MP4 and Vorbis keys.
 use super::ffjson::{Stream, Tags};
-use crate::api::{CoverArt, MediaTags};
+use crate::api::{CoverArt, MediaTags, Performer};
 
 /// Tag sources in priority order: the container's, then the first audio stream's (Ogg only).
 struct Sources<'a>(&'a [&'a Tags]);
 
 impl Sources<'_> {
+    fn list(&self, keys: &[&str]) -> Vec<String> {
+        self.text(keys)
+            .as_deref()
+            .map(split_multi)
+            .unwrap_or_default()
+    }
+
+    fn float(&self, keys: &[&str]) -> Option<f64> {
+        self.text(keys).as_deref().and_then(leading_float)
+    }
+
+    /// The track or album gain: ReplayGain text, else Opus `R128_*` converted.
+    fn gain(&self, rg: &str, r128: &str) -> Option<f64> {
+        self.float(&[rg]).or_else(|| {
+            self.text(&[r128])
+                .and_then(|v| v.parse().ok())
+                .map(r128_to_rg)
+        })
+    }
+
     /// The first non-empty value, trying the keys in order and, per key, the sources in order.
     fn text(&self, keys: &[&str]) -> Option<String> {
         keys.iter()
@@ -35,6 +55,44 @@ fn digits(s: &str) -> Option<u32> {
     s[..s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len())]
         .parse()
         .ok()
+}
+
+/// A multi-valued tag ffprobe printed as one string: split on `;`, blanks dropped.
+pub fn split_multi(v: &str) -> Vec<String> {
+    v.split(';')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// `Name` or `Name (instrument)`.
+pub fn performer(v: &str) -> Option<Performer> {
+    let v = v.trim();
+    let (name, instrument) = match v.strip_suffix(')').and_then(|r| r.rsplit_once('(')) {
+        Some((n, i)) if !n.trim().is_empty() && !i.trim().is_empty() => {
+            (n.trim(), Some(i.trim().to_string()))
+        }
+        _ => (v, None),
+    };
+    (!name.is_empty()).then(|| Performer {
+        name: name.into(),
+        instrument,
+    })
+}
+
+/// Opus `R128_*_GAIN` (Q7.8 dB against -23 LUFS) as a ReplayGain dB against -18 LUFS.
+pub fn r128_to_rg(q78: i32) -> f64 {
+    f64::from(q78) / 256.0 + 5.0
+}
+
+/// A leading float: `-6.5 dB`, `0.98`.
+pub fn leading_float(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let end = s
+        .find(|c: char| !(c.is_ascii_digit() || matches!(c, '-' | '+' | '.')))
+        .unwrap_or(s.len());
+    s[..end].parse().ok().filter(|f: &f64| f.is_finite())
 }
 
 /// First run of four digits: `2021`, `2021-03-04`, `March 4, 2021`.
@@ -90,6 +148,64 @@ pub fn media_tags(
         track_total,
         disc,
         disc_total,
+        artists: t.list(&["artists", "artist"]),
+        album_artists: t.list(&[
+            "albumartists",
+            "album_artists",
+            "album_artist",
+            "albumartist",
+        ]),
+        genres: t.list(&["genre"]),
+        musicbrainz_recording_id: t.text(&["musicbrainz_trackid", "musicbrainz track id"]),
+        musicbrainz_track_id: t
+            .text(&["musicbrainz_releasetrackid", "musicbrainz release track id"]),
+        musicbrainz_release_id: t.text(&["musicbrainz_albumid", "musicbrainz album id"]),
+        musicbrainz_release_group_id: t
+            .text(&["musicbrainz_releasegroupid", "musicbrainz release group id"]),
+        musicbrainz_work_id: t.text(&["musicbrainz_workid", "musicbrainz work id"]),
+        musicbrainz_artist_ids: t.list(&["musicbrainz_artistid", "musicbrainz artist id"]),
+        musicbrainz_album_artist_ids: t
+            .list(&["musicbrainz_albumartistid", "musicbrainz album artist id"]),
+        work: t.text(&["work", "worktitle"]),
+        movement: t.text(&["movementname", "movement_name", "mvnm"]),
+        movement_number: t
+            .position(&["movement", "mvin"], &["movementtotal", "mvc"])
+            .0,
+        movement_total: t
+            .position(&["movement", "mvin"], &["movementtotal", "mvc"])
+            .1,
+        conductor: t.text(&["conductor"]),
+        performers: t
+            .list(&["performer"])
+            .iter()
+            .filter_map(|p| performer(p))
+            .collect(),
+        isrc: t.text(&["isrc", "tsrc"]),
+        original_date: t.text(&["originaldate", "originalyear", "tdor"]),
+        release_type: t.text(&[
+            "musicbrainz_albumtype",
+            "musicbrainz album type",
+            "releasetype",
+        ]),
+        release_status: t.text(&[
+            "musicbrainz_albumstatus",
+            "musicbrainz album status",
+            "releasestatus",
+        ]),
+        compilation: t
+            .text(&["compilation", "tcmp", "cpil"])
+            .map(|v| v.trim() == "1"),
+        disc_subtitle: t.text(&["discsubtitle", "tsst", "setsubtitle"]),
+        media: t.text(&["media", "tmed"]),
+        barcode: t.text(&["barcode"]),
+        catalog_number: t.text(&["catalognumber"]),
+        label: t.text(&["label", "publisher"]),
+        replay_gain_track_gain: t.gain("replaygain_track_gain", "r128_track_gain"),
+        replay_gain_track_peak: t.float(&["replaygain_track_peak"]),
+        replay_gain_album_gain: t.gain("replaygain_album_gain", "r128_album_gain"),
+        replay_gain_album_peak: t.float(&["replaygain_album_peak"]),
+        lyrics: t.text(&["lyrics", "unsyncedlyrics", "unsynced lyrics", "uslt"]),
+        synced_lyrics: None,
     };
     (tags != MediaTags::default()).then_some(tags)
 }
@@ -158,5 +274,25 @@ mod tests {
         let m = media_tags(&t, None, None).unwrap();
         assert_eq!(m.artist.as_deref(), Some("Ada Example; Bob Reader"));
         assert_eq!(m.narrator.as_deref(), Some("Bob Reader/Cy Voice"));
+    }
+
+    #[test]
+    fn music_keys_split_multi_values_and_convert_opus_gain() {
+        let t = tags(
+            r#"{"artists":"Ada Example; Bob Reader","MUSICBRAINZ_TRACKID":"r1","MUSICBRAINZ_ARTISTID":"a1;a2",
+            "performer":"Cy Voice (viola)","movement":"2/4","compilation":"1","R128_TRACK_GAIN":"-256",
+            "REPLAYGAIN_ALBUM_GAIN":"-6.5 dB","lyrics":"la","MUSICBRAINZ_ALBUMSTATUS":"official"}"#,
+        );
+        let m = media_tags(&t, None, None).unwrap();
+        assert_eq!(m.artists, ["Ada Example", "Bob Reader"]);
+        assert_eq!(m.musicbrainz_recording_id.as_deref(), Some("r1"));
+        assert_eq!(m.musicbrainz_artist_ids, ["a1", "a2"]);
+        assert_eq!(m.performers[0].instrument.as_deref(), Some("viola"));
+        assert_eq!((m.movement_number, m.movement_total), (Some(2), Some(4)));
+        assert_eq!(m.compilation, Some(true));
+        assert_eq!(m.replay_gain_track_gain, Some(4.0));
+        assert_eq!(m.replay_gain_album_gain, Some(-6.5));
+        assert_eq!(m.release_status.as_deref(), Some("official"));
+        assert_eq!(m.lyrics.as_deref(), Some("la"));
     }
 }

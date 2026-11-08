@@ -75,12 +75,21 @@
       "tags": {
         "album": "Synthetic Series",
         "albumArtist": "Ada Example",
+        "albumArtists": [
+          "Ada Example"
+        ],
         "artist": "Ada Example",
+        "artists": [
+          "Ada Example"
+        ],
         "composer": "Bob Reader",
         "description": "Synthetic story",
         "disc": 1,
         "discTotal": 2,
         "genre": "Audiobook",
+        "genres": [
+          "Audiobook"
+        ],
         "series": "Synthetic Saga",
         "title": "Tome Un",
         "track": 3,

@@ -62,13 +62,20 @@
       "tags": {
         "album": "Synthetic Series",
         "albumArtist": "Ada Example",
+        "albumArtists": [
+          "Ada Example"
+        ],
         "artist": "Ada Example",
+        "artists": [
+          "Ada Example"
+        ],
         "asin": "B000TEST00",
         "composer": "Bob Reader",
         "description": "Synthetic story",
         "disc": 1,
         "discTotal": 2,
         "isbn": "9780000000002",
+        "label": "Example House",
         "language": "fra",
         "narrator": "Bob Reader",
         "publisher": "Example House",

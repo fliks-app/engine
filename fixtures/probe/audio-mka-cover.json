@@ -72,6 +72,10 @@
       "subtitles": [],
       "tags": {
         "artist": "Ada Example; Bob Reader",
+        "artists": [
+          "Ada Example",
+          "Bob Reader"
+        ],
         "title": "Tome Un"
       },
       "title": "Tome Un",

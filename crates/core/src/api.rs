@@ -24,7 +24,7 @@ pub use runtime::*;
 pub use worker::*;
 
 pub const PROTOCOL_VERSION: u32 = 1;
-pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 7;
+pub const MEDIA_INFO_SCHEMA_VERSION: u32 = 8;
 pub const SOURCE_SCAN_SCHEMA_VERSION: u32 = 1;
 
 /// Distinguishes an absent key (None) from an explicit `null` (Some(None)).
@@ -464,6 +464,15 @@ pub struct CoverArt {
 }
 
 /// The descriptive tags of an audio file, normalised across ID3, MP4 and Vorbis comments.
+/// A credited performer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Performer {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrument: Option<String>,
+}
+
 /// Absent keys stay absent; text is trimmed and never empty.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -509,6 +518,79 @@ pub struct MediaTags {
     pub disc: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc_total: Option<u32>,
+    /// One entry per credited artist.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artists: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub album_artists: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>,
+    /// Vorbis `MUSICBRAINZ_TRACKID` is the recording; the release track is `musicbrainz_track_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musicbrainz_recording_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musicbrainz_track_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musicbrainz_release_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musicbrainz_release_group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musicbrainz_work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub musicbrainz_artist_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub musicbrainz_album_artist_ids: Vec<String>,
+    /// Classical work title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<String>,
+    /// Movement name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement_number: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement_total: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conductor: Option<String>,
+    /// Credited performers, with the instrument when the tag names one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub performers: Vec<Performer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isrc: Option<String>,
+    /// As tagged, `2021`, `2021-03` or `2021-03-04`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compilation: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barcode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_number: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// dB against the -18 LUFS reference; Opus `R128_*` is converted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_gain_track_gain: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_gain_track_peak: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_gain_album_gain: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_gain_album_peak: Option<f64>,
+    /// Raw unsynchronised lyrics (USLT, Vorbis `LYRICS`/`UNSYNCEDLYRICS`, MP4 `©lyr`), opaque.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lyrics: Option<String>,
+    /// ID3 SYLT in millisecond units as LRC lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synced_lyrics: Option<String>,
 }
 
 /// What a file is, from its streams. Video-only work (sprites, keyframe scan, subtitles) never

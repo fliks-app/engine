@@ -58,6 +58,7 @@
       "tags": {
         "asin": "B000TEST00",
         "isbn": "9780000000002",
+        "label": "Example House",
         "language": "fra",
         "narrator": "Bob Reader",
         "publisher": "Example House",

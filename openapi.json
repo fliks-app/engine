@@ -4464,7 +4464,7 @@
       },
       "MediaTags": {
         "type": "object",
-        "description": "The descriptive tags of an audio file, normalised across ID3, MP4 and Vorbis comments.\nAbsent keys stay absent; text is trimmed and never empty.",
+        "description": "Absent keys stay absent; text is trimmed and never empty.",
         "properties": {
           "album": {
             "type": [
@@ -4478,11 +4478,24 @@
               "null"
             ]
           },
+          "albumArtists": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "artist": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "artists": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One entry per credited artist."
           },
           "asin": {
             "type": [
@@ -4490,7 +4503,31 @@
               "null"
             ]
           },
+          "barcode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalogNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "compilation": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "composer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conductor": {
             "type": [
               "string",
               "null"
@@ -4510,6 +4547,12 @@
             "format": "int32",
             "minimum": 0
           },
+          "discSubtitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "discTotal": {
             "type": [
               "integer",
@@ -4524,7 +4567,25 @@
               "null"
             ]
           },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "isbn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isrc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
             "type": [
               "string",
               "null"
@@ -4537,17 +4598,151 @@
             ],
             "description": "As tagged, e.g. `fra` or `fr`."
           },
+          "lyrics": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw unsynchronised lyrics (USLT, Vorbis `LYRICS`/`UNSYNCEDLYRICS`, MP4 `©lyr`), opaque."
+          },
+          "media": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "movement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Movement name."
+          },
+          "movementNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "movementTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "musicbrainzAlbumArtistIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "musicbrainzArtistIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "musicbrainzRecordingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Vorbis `MUSICBRAINZ_TRACKID` is the recording; the release track is `musicbrainz_track_id`."
+          },
+          "musicbrainzReleaseGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "musicbrainzReleaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "musicbrainzTrackId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "musicbrainzWorkId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "narrator": {
             "type": [
               "string",
               "null"
             ]
           },
+          "originalDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As tagged, `2021`, `2021-03` or `2021-03-04`."
+          },
+          "performers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Performer"
+            },
+            "description": "Credited performers, with the instrument when the tag names one."
+          },
           "publisher": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "releaseStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "releaseType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replayGainAlbumGain": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "replayGainAlbumPeak": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "replayGainTrackGain": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "dB against the -18 LUFS reference; Opus `R128_*` is converted."
+          },
+          "replayGainTrackPeak": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "series": {
             "type": [
@@ -4561,6 +4756,13 @@
               "null"
             ],
             "description": "Text, a part can be `1.5`."
+          },
+          "syncedLyrics": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ID3 SYLT in millisecond units as LRC lines."
           },
           "title": {
             "type": [
@@ -4583,6 +4785,13 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "work": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Classical work title."
           },
           "year": {
             "type": [
@@ -5186,6 +5395,24 @@
           "suspend",
           "restart"
         ]
+      },
+      "Performer": {
+        "type": "object",
+        "description": "The descriptive tags of an audio file, normalised across ID3, MP4 and Vorbis comments.\nA credited performer.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "instrument": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        }
       },
       "PipelineStage": {
         "type": "object",
