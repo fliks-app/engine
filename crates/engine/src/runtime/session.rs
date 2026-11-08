@@ -51,6 +51,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// The device its hardware runs are placed on, once decided.
+    pub fn device(&self) -> Option<String> {
+        self.m.locked().device.clone()
+    }
+
     pub(super) fn variant(&self, kind: JobKind) -> SessionVariant {
         match kind {
             JobKind::Main => SessionVariant::Main,
@@ -172,11 +177,23 @@ impl Runtime {
         Ok(open)
     }
 
+    /// Decides once per usable device, best first, with that device's own caps, and keeps the
+    /// first decision whose video encode is hardware there; none: `first`'s caps, on the CPU.
+    fn decide_placed(
+        &self,
+        req: &DecideRequest,
+        first: &fliks_engine_core::api::HostCaps,
+        streaming: &StreamingConfig,
+    ) -> (Decision, fliks_engine_core::api::HostCaps, Option<String>) {
+        let devices = self.gpu_candidates(None, None, |_| true);
+        decide_on(&devices, first, req, streaming)
+    }
+
     fn opens_remux(&self, req: &OpenSessionRequest) -> bool {
-        let (Some(config), Some(caps)) = (self.config.locked().clone(), self.caps()) else {
+        let (Some(config), Some(first)) = (self.config.locked().clone(), self.caps()) else {
             return false;
         };
-        let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
+        let (decision, caps, _) = self.decide_placed(&req.decide, &first, &config.streaming);
         let plan = core_session::plan(req, &decision, &config.streaming, &caps);
         plan.kind == SessionKind::Remux && plan.item.is_none()
     }
@@ -221,7 +238,7 @@ impl Runtime {
         mut req: OpenSessionRequest,
     ) -> Result<OpenSessionResponse, OpenError> {
         let config = self.config.locked().clone().ok_or(OpenError::NoConfig)?;
-        let caps = self.caps().ok_or(OpenError::Detecting)?;
+        let first = self.caps().ok_or(OpenError::Detecting)?;
         if req.owner_id.as_deref().is_some_and(|o| !valid_owner(o)) {
             return Err(OpenError::BadRequest(
                 "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
@@ -247,7 +264,7 @@ impl Runtime {
             }
             *p = self.map_media_path(p);
         }
-        let decision = fliks_engine_core::decide::decide(&req.decide, &caps, &config.streaming);
+        let (decision, caps, device) = self.decide_placed(&req.decide, &first, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);
         if plan.item.is_some()
             && let Some(i) = req
@@ -325,7 +342,7 @@ impl Runtime {
                     last_requested_segment: None,
                     last_segment_at_ms: None,
                     served: None,
-                    device: None,
+                    device,
                     hw_retried: false,
                     kind: plan.kind,
                 }),
@@ -645,5 +662,76 @@ impl Runtime {
             Some(j) => j.pause(self.pause_capability(), pause).await,
             None => false,
         }
+    }
+}
+
+/// The decision of the first of `devices` that encodes in hardware, with its caps and id.
+pub(super) fn decide_on(
+    devices: &[crate::hw::HwDevice],
+    first: &fliks_engine_core::api::HostCaps,
+    req: &DecideRequest,
+    streaming: &StreamingConfig,
+) -> (Decision, fliks_engine_core::api::HostCaps, Option<String>) {
+    for d in devices {
+        let caps = d.detected.host_caps();
+        let decision = fliks_engine_core::decide::decide(req, &caps, streaming);
+        if decision.response.hw_accel != HwAccel::None {
+            return (decision, caps, Some(d.id.clone()));
+        }
+    }
+    let decision = fliks_engine_core::decide::decide(req, first, streaming);
+    (decision, first.clone(), None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hw::HwDevice;
+    use fliks_engine_core::api::HostCaps;
+    use fliks_engine_core::hw::Detected;
+
+    const FIXTURE: &str =
+        include_str!("../../../../fixtures/decide/web-chrome-hevc-hdr10-mkv-nvenc-auto.json");
+
+    fn device(id: &str, caps: &HostCaps) -> HwDevice {
+        HwDevice {
+            id: id.into(),
+            render_node: format!("/dev/dri/{id}"),
+            name: None,
+            cuda_index: None,
+            detected: Detected {
+                hw_accel: caps.hw_accel,
+                platform: caps.platform,
+                libfdk_aac: false,
+                vaapi_writes_hdr_metadata: false,
+                probes: caps.probes.clone(),
+                encoders: vec![],
+                decoders: vec![],
+                disabled_encoders: caps.disabled_encoders.clone(),
+                disabled_decoders: caps.disabled_decoders.clone(),
+            },
+        }
+    }
+
+    #[test]
+    fn an_av1_only_client_gets_the_device_that_encodes_av1() {
+        let f: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let mut req: DecideRequest = serde_json::from_value(f["input"].clone()).unwrap();
+        for p in &mut req.device.direct_play_profiles {
+            p.video_codecs = vec!["av1".into()];
+        }
+        let streaming: StreamingConfig = serde_json::from_value(f["config"].clone()).unwrap();
+        let nvenc: HostCaps = serde_json::from_value(f["hostCaps"].clone()).unwrap();
+        let mut vaapi = nvenc.clone();
+        vaapi.hw_accel = HwAccel::Vaapi;
+        vaapi.disabled_encoders = ["av1_vaapi", "av1_vaapi_hdr10", "av1_vaapi_hlg"]
+            .map(String::from)
+            .to_vec();
+        let devices = [device("gpu0", &vaapi), device("gpu1", &nvenc)];
+        let (d, caps, on) = decide_on(&devices, &vaapi, &req, &streaming);
+        assert_eq!(on.as_deref(), Some("gpu1"));
+        assert_eq!(caps.hw_accel, HwAccel::Nvenc);
+        assert_eq!(d.response.output_video_codec, "av1");
+        assert_eq!(d.response.hw_accel, HwAccel::Nvenc);
     }
 }

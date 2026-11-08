@@ -71,6 +71,7 @@ impl Snapshot {
         self.devices.iter().find(|d| d.id == id)
     }
 
+    /// The first device's caps: what a decision falls back to when no device takes the encode.
     pub fn host_caps(&self) -> HostCaps {
         self.detected.host_caps()
     }

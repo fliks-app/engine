@@ -84,7 +84,7 @@ pub fn enumerate_gpus(dri: &Path, sys_class_drm: &Path) -> Vec<GpuInfo> {
         })
         .collect();
     names.sort();
-    names
+    let mut gpus: Vec<GpuInfo> = names
         .into_iter()
         .map(|name| {
             let dev = sys_class_drm.join(&name).join("device");
@@ -96,7 +96,10 @@ pub fn enumerate_gpus(dri: &Path, sys_class_drm: &Path) -> Vec<GpuInfo> {
             };
             describe_gpu(&name, &dri.join(&name).to_string_lossy(), &raw)
         })
-        .collect()
+        .collect();
+    // Ids follow the PCI address, so a renumbered render node keeps its card's id.
+    gpus.sort_by(|a, b| (&a.pci_bus, &a.render_node).cmp(&(&b.pci_bus, &b.render_node)));
+    gpus
 }
 
 /// Does this ffmpeg pause on stdin `p` and resume on `u`? Gives up (false) after 12 s.
@@ -199,6 +202,30 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         assert_eq!(g[0].pci_bus.as_deref(), Some("0000:03:00.0"));
         assert_eq!(g[0].vendor, "nvidia");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ids_follow_the_pci_address_not_the_node_number() {
+        let root = std::env::temp_dir().join(format!("fliks-pci-order-{}", std::process::id()));
+        let (dri, sys) = (root.join("dri"), root.join("sys"));
+        for (node, pci) in [
+            ("renderD128", "0000:03:00.0"),
+            ("renderD129", "0000:00:02.0"),
+        ] {
+            write(&dri.join(node), "");
+            write(&root.join(format!("pci/{pci}/vendor")), "0x8086\n");
+            std::fs::create_dir_all(sys.join(node)).unwrap();
+            std::os::unix::fs::symlink(
+                root.join(format!("pci/{pci}")),
+                sys.join(node).join("device"),
+            )
+            .unwrap();
+        }
+        let g = enumerate_gpus(&dri, &sys);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(g[0].render_node.ends_with("renderD129"));
+        assert!(g[1].render_node.ends_with("renderD128"));
     }
 
     #[test]

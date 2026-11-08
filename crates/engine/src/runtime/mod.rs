@@ -176,6 +176,23 @@ impl Runtime {
         self.hw.snapshot().map(|s| s.host_caps())
     }
 
+    /// Caps of the device a session runs on (`device`), else the first device's.
+    pub(crate) fn session_caps(&self, device: Option<&str>) -> HostCaps {
+        let on = device.and_then(|id| {
+            self.hw
+                .snapshot()?
+                .device(id)
+                .map(|d| d.detected.host_caps())
+        });
+        on.or_else(|| self.caps()).unwrap_or_default()
+    }
+
+    /// Caps of the device a new hardware run would take first, else the first device's.
+    pub(crate) fn top_caps(&self) -> Option<HostCaps> {
+        let top = self.gpu_candidates(None, None, |_| true).into_iter().next();
+        top.map(|d| d.detected.host_caps()).or_else(|| self.caps())
+    }
+
     fn detected_hw(&self) -> HwAccel {
         self.caps().map_or(HwAccel::None, |c| c.hw_accel)
     }
@@ -216,7 +233,7 @@ impl Runtime {
 
     /// The devices a hardware run may take, best first: its session's own (`sticky`) while it
     /// qualifies, then by load. A device qualifies when it is not `avoid`, not skipped after
-    /// failures, and `capable`; the first device always is, it is what the decision read.
+    /// failures, and `capable`.
     pub(crate) fn gpu_candidates(
         &self,
         sticky: Option<&str>,
@@ -229,13 +246,10 @@ impl Runtime {
         let ids: Vec<String> = snap
             .devices
             .iter()
-            .enumerate()
-            .filter(|(i, d)| {
-                Some(d.id.as_str()) != avoid
-                    && self.slots.device_usable(&d.id)
-                    && (*i == 0 || capable(d))
+            .filter(|d| {
+                Some(d.id.as_str()) != avoid && self.slots.device_usable(&d.id) && capable(d)
             })
-            .map(|(_, d)| d.id.clone())
+            .map(|d| d.id.clone())
             .collect();
         let mut order = self.slots.rank_gpus(&ids);
         if let Some(i) = order.iter().position(|d| Some(d.as_str()) == sticky) {
@@ -410,10 +424,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_first_device_is_always_a_candidate() {
+    async fn no_capable_device_means_no_candidate() {
         let rt = two_gpu_runtime();
         let c = rt.gpu_candidates(None, None, |_| false);
-        assert_eq!(ids(c), ["gpu0"]);
+        assert!(c.is_empty());
     }
 
     #[tokio::test]

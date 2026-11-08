@@ -47,7 +47,7 @@ pub(super) async fn master(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let caps = rt.hw.snapshot().map(|h| h.host_caps()).unwrap_or_default();
+    let caps = rt.session_caps(s.device().as_deref());
     let token = token_param(&q);
     let only = q
         .get("startQuality")
