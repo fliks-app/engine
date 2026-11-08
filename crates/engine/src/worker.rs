@@ -15,6 +15,7 @@ use fliks_engine_core::api::{
     MediaRef, UploadAck, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
 };
 use http_body_util::{BodyExt, Full};
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
@@ -69,6 +70,20 @@ fn enabled(rt: &Runtime) -> Option<Host> {
     }
 }
 
+/// http and https with the platform's roots: a worker outside the LAN reaches its host over https.
+fn client() -> Client<HttpsConnector<HttpConnector>, Full<Bytes>> {
+    let tls = HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .unwrap_or_else(|e| {
+            tracing::warn!("no root certificates ({e}): an https host will fail");
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(rustls::RootCertStore::empty())
+                .with_no_client_auth();
+            HttpsConnectorBuilder::new().with_tls_config(config)
+        });
+    Client::builder(TokioExecutor::new()).build(tls.https_or_http().enable_http1().build())
+}
+
 fn same(a: &Host, b: &Option<Host>) -> bool {
     b.as_ref()
         .is_some_and(|b| a.url == b.url && a.token == b.token)
@@ -85,7 +100,7 @@ async fn supervise(rt: Arc<Runtime>) {
             rt: rt.clone(),
             host: host.clone(),
             instance: instance.clone(),
-            client: Client::builder(TokioExecutor::new()).build_http(),
+            client: client(),
             held: Mutex::new(HashMap::new()),
             settings: Mutex::new(default_settings()),
         });
@@ -124,7 +139,7 @@ struct Worker {
     rt: Arc<Runtime>,
     host: Host,
     instance: String,
-    client: Client<HttpConnector, Full<Bytes>>,
+    client: Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
     held: Mutex<HashMap<u32, Held>>,
     settings: Mutex<WorkerSettings>,
 }
@@ -155,7 +170,7 @@ enum Upload {
 }
 
 fn io_failed(e: std::io::Error) -> Upload {
-    Upload::Failed(JobErrorClass::Io.message(e.to_string()))
+    Upload::Failed(JobErrorClass::Engine.message(e.to_string()))
 }
 
 struct Answer {
@@ -561,11 +576,11 @@ impl Worker {
         let total = tokio::fs::metadata(path)
             .await
             .map_err(|e| {
-                Upload::Failed(JobErrorClass::Io.message(format!("{}: {e}", path.display())))
+                Upload::Failed(JobErrorClass::Engine.message(format!("{}: {e}", path.display())))
             })?
             .len();
         let mut file = tokio::fs::File::open(path).await.map_err(|e| {
-            Upload::Failed(JobErrorClass::Io.message(format!("{}: {e}", path.display())))
+            Upload::Failed(JobErrorClass::Engine.message(format!("{}: {e}", path.display())))
         })?;
         let mut offset = 0u64;
         loop {
@@ -793,6 +808,18 @@ mod tests {
     use fliks_engine_core::api::{JobPriority, MediaInfo, OptimizeLevel, OptimizeMeta};
 
     #[tokio::test]
+    async fn the_client_accepts_an_https_url() {
+        let req = Request::get("https://127.0.0.1:1/")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        let err = client().request(req).await.unwrap_err();
+        assert!(
+            !format!("{err:?}").contains("scheme is not http"),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn an_upload_resumes_from_the_offset_the_host_holds() {
         use axum::{Router, extract::State, http::HeaderMap, response::IntoResponse, routing::put};
         let held = Arc::new(Mutex::new(b"abc".to_vec()));
@@ -823,7 +850,7 @@ mod tests {
             rt,
             host: Host { url, token: None },
             instance: "w".into(),
-            client: Client::builder(TokioExecutor::new()).build_http(),
+            client: client(),
             held: Mutex::new(HashMap::new()),
             settings: Mutex::new(WorkerSettings {
                 upload_chunk_bytes: 4,
