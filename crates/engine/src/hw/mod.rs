@@ -71,23 +71,9 @@ impl Snapshot {
         self.devices.iter().find(|d| d.id == id)
     }
 
-    /// What the playback decision reads: the first device's caps, with an encoder or decoder
-    /// usable when any device has it (placement then picks a capable device).
+    /// The first device's caps: what a decision falls back to when no device takes the encode.
     pub fn host_caps(&self) -> HostCaps {
-        let mut caps = self.detected.host_caps();
-        for d in self.devices.iter().skip(1) {
-            let other = d.detected.host_caps();
-            caps.disabled_encoders
-                .retain(|e| other.disabled_encoders.contains(e));
-            caps.disabled_decoders
-                .retain(|e| other.disabled_decoders.contains(e));
-            for p in other.probes {
-                if !caps.probes.contains(&p) {
-                    caps.probes.push(p);
-                }
-            }
-        }
-        caps
+        self.detected.host_caps()
     }
 }
 
@@ -299,43 +285,5 @@ impl Hw {
                 }
             }
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn device(id: &str, disabled: &[&str]) -> HwDevice {
-        HwDevice {
-            id: id.into(),
-            render_node: format!("/dev/dri/{id}"),
-            name: None,
-            cuda_index: None,
-            detected: Detected {
-                hw_accel: HwAccel::Vaapi,
-                platform: fliks_engine_core::api::Platform::Linux,
-                libfdk_aac: false,
-                vaapi_writes_hdr_metadata: false,
-                probes: vec![],
-                encoders: vec![],
-                decoders: vec![],
-                disabled_encoders: disabled.iter().map(|s| s.to_string()).collect(),
-                disabled_decoders: vec![],
-            },
-        }
-    }
-
-    #[test]
-    fn the_decision_sees_an_encoder_any_device_has() {
-        let (a, b) = (device("gpu0", &["av1_vaapi", "x"]), device("gpu1", &["x"]));
-        let snap = Snapshot {
-            detected: a.detected.clone(),
-            gpus: vec![],
-            pause_capability: "signal".into(),
-            render_node: a.render_node.clone(),
-            devices: vec![a, b],
-        };
-        assert_eq!(snap.host_caps().disabled_encoders, ["x"]);
     }
 }

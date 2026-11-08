@@ -60,7 +60,7 @@ pub async fn open(
     mut req: OpenLiveRequest,
 ) -> Result<OpenLiveResponse, OpenError> {
     let config = rt.config.locked().clone().ok_or(OpenError::NoConfig)?;
-    let caps = rt.caps().ok_or(OpenError::Detecting)?;
+    let caps = rt.top_caps().ok_or(OpenError::Detecting)?;
     validate(&req)?;
     let mut order: Vec<usize> = (0..req.upstreams.len()).collect();
     order.sort_by_key(|i| req.upstreams[*i].priority);
