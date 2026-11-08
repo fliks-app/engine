@@ -573,7 +573,12 @@ impl Runtime {
         if let Some(d) = &job.device {
             self.slots.device_failed(d);
         }
-        let retry = job.device.is_some() && !std::mem::replace(&mut s.m.locked().hw_retried, true);
+        let variant = &s.decision.video_variant;
+        let other = job.device.is_some()
+            && !self
+                .gpu_candidates(None, job.device.as_deref(), |d| can_encode(d, variant))
+                .is_empty();
+        let retry = other && !std::mem::replace(&mut s.m.locked().hw_retried, true);
         let to = if retry { job.hw } else { HwAccel::None };
         tracing::warn!(key = job.key, from = ?job.hw, ?to, "hardware run failed");
         self.events.emit(EngineEvent::HwFallback {
