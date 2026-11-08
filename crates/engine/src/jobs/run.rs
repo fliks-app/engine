@@ -120,5 +120,5 @@ pub(super) fn pipeline_err(e: String) -> String {
 
 /// A run stopped for playback: the job goes back to the queue, no failure.
 pub(super) fn is_busy(e: &str) -> bool {
-    Class::from_message(e).0 == Class::Busy && e.starts_with("busy: ")
+    Class::from_message(e).0 == Class::Busy
 }

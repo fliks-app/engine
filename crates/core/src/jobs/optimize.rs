@@ -690,7 +690,7 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         }
         if !w.encoded {
             let title = match planned.and_then(|p| p.title.as_ref()) {
-                Some(t) if !w.encoded && !planned.is_some_and(|p| p.keep_original) => t.as_str(),
+                Some(t) if !planned.is_some_and(|p| p.keep_original) => t.as_str(),
                 _ => norm(&w.src.title),
             };
             if norm(&o.title) != title {
