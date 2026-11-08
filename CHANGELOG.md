@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/fliks-app/engine/compare/v1.16.0...v1.17.0) (2026-11-08)
+
+
+### Features
+
+* **karaoke:** add models, Separate, Align and Melody jobs, key change ([#202](https://github.com/fliks-app/engine/issues/202)) ([2be44cc](https://github.com/fliks-app/engine/commit/2be44cccf26ce1ff29f6f24fd30c3ffa3272562e))
+
 ## [1.16.0](https://github.com/fliks-app/engine/compare/v1.15.4...v1.16.0) (2026-11-08)
 
 
