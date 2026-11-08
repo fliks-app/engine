@@ -88,16 +88,26 @@ impl Cache {
         self.root.join("optimize")
     }
 
-    /// Removes the samples and remote outputs a crashed optimize job left; run at startup, under the cache lock.
+    /// Removes the samples a crashed optimize job left; run at startup, under the cache lock.
     pub fn remove_optimize_samples(&self) {
         let Ok(rd) = std::fs::read_dir(self.optimize_dir()) else {
             return;
         };
         for e in rd.flatten() {
+            if e.file_name().to_string_lossy().contains(".sample") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
+    /// Removes the outputs a remote worker staged before it stopped: its leases are gone with it.
+    pub fn remove_remote_outputs(&self) {
+        let Ok(rd) = std::fs::read_dir(self.optimize_dir()) else {
+            return;
+        };
+        for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.contains(".sample")
-                || (name.starts_with(".fliks-opt-") && name.ends_with(".tmp"))
-            {
+            if name.starts_with(".fliks-opt-") && name.ends_with(".tmp") {
                 let _ = std::fs::remove_file(e.path());
             }
         }

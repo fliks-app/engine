@@ -46,6 +46,10 @@ pub fn set_remote(url: String, token: String) {
     });
 }
 
+pub fn is_remote() -> bool {
+    REMOTE.get().is_some()
+}
+
 /// Starts the loop; it idles until the host's config says `worker: true` (unless remote).
 pub fn start(rt: &Arc<Runtime>) {
     tokio::spawn(supervise(rt.clone()));

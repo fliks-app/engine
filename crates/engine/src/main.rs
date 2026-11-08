@@ -67,6 +67,7 @@ async fn main() -> std::process::ExitCode {
         }
         fliks_engine::worker::set_remote(url, token);
     }
+    let worker_remote = fliks_engine::worker::is_remote();
     let cache = fliks_engine::cache::Cache::from_env();
     let _cache_lock = match cache.lock_exclusive() {
         Ok(l) => l,
@@ -76,6 +77,9 @@ async fn main() -> std::process::ExitCode {
         }
     };
     cache.remove_optimize_samples();
+    if worker_remote {
+        cache.remove_remote_outputs();
+    }
     let token = fliks_engine::token::resolve();
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await
