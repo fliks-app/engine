@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/fliks-app/engine/compare/v1.18.0...v1.19.0) (2026-11-08)
+
+
+### Features
+
+* **karaoke:** run the model jobs on Windows ML, DirectML or the CPU ([#210](https://github.com/fliks-app/engine/issues/210)) ([e9d4191](https://github.com/fliks-app/engine/commit/e9d419157a6e246edcca79509fd7304eb2866f56))
+
 ## [1.18.0](https://github.com/fliks-app/engine/compare/v1.17.1...v1.18.0) (2026-11-08)
 
 
