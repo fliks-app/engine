@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/fliks-app/engine/compare/v1.17.1...v1.18.0) (2026-11-08)
+
+
+### Features
+
+* **karaoke:** ship the karaoke tools in the macOS and Windows bundles ([#207](https://github.com/fliks-app/engine/issues/207)) ([c6c93e2](https://github.com/fliks-app/engine/commit/c6c93e21397bcef6c6414bad6c55bbe3831bc610))
+
 ## [1.17.1](https://github.com/fliks-app/engine/compare/v1.17.0...v1.17.1) (2026-11-08)
 
 
