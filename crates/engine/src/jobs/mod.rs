@@ -46,7 +46,7 @@ const KEEP_ENDED: usize = 200;
 const TICK: Duration = Duration::from_millis(200);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 pub const CANCELLED: &str = "cancelled";
-pub(super) const PROMOTED: &str = "promoted";
+const PROMOTED: &str = "promoted";
 /// A run that must yield and cannot be paused is killed: the job goes back to its queue.
 const REQUEUED: &str = "requeued";
 

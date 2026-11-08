@@ -467,7 +467,10 @@ impl Worker {
                         dropped: dropped.clone(),
                     },
                 );
-                tokio::spawn(self.clone().watch(id, attempt, job, dropped, remote));
+                tokio::spawn(
+                    self.clone()
+                        .watch(id, attempt, lease_s, job, dropped, remote),
+                );
             }
             Err(e) => {
                 tracing::warn!(job = id, "leased job refused: {e}");
@@ -483,12 +486,13 @@ impl Worker {
         self: Arc<Self>,
         id: u32,
         attempt: u32,
+        lease_s: u32,
         job: Arc<BgJob>,
         dropped: Arc<AtomicBool>,
         remote: bool,
     ) {
         let mut pulse = Pulse::new(
-            self.setting(|s| u64::from(s.lease_s)),
+            u64::from(lease_s),
             self.setting(|s| u64::from(s.heartbeat_s)),
         );
         let mut fenced = false;

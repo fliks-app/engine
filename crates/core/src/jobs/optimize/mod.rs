@@ -351,9 +351,7 @@ pub fn windowed(mut argv: Vec<String>, input: &str, start: f64, len: f64) -> Vec
 /// The input options of a source read over HTTP, put before every `-i <url>` (or before the
 /// positional `url` of an ffprobe argv): the bearer token and reconnects on a dropped connection.
 pub fn http_input(mut argv: Vec<String>, url: &str, token: Option<&str>) -> Vec<String> {
-    let mut opts: Vec<String> = ["-reconnect", "1", "-reconnect_on_network_error", "1"]
-        .map(String::from)
-        .to_vec();
+    let mut opts = crate::strs(&["-reconnect", "1", "-reconnect_on_network_error", "1"]);
     if let Some(t) = token {
         opts.extend(["-headers".into(), format!("Authorization: Bearer {t}\r\n")]);
     }

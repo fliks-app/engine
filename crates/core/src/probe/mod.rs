@@ -13,7 +13,7 @@ mod tags;
 pub use build::{apply_late_audio, build, first_frame_stream, measure_fps, parse_main};
 pub use ffjson::Frame;
 pub(crate) use lang::converts_to_ass;
-pub use mkv::is_matroska;
+pub(crate) use mkv::is_matroska;
 pub use moviehash::moviehash;
 
 #[cfg(test)]
