@@ -322,10 +322,10 @@ impl Work<'_> {
             Some(c) => {
                 let path = format!("{staged}.cover.{}", cover::extension(c));
                 let extract = cover::extract_args(&self.src.to_string_lossy(), c, &path);
-                self.ctx
-                    .ffmpeg(&extract)
-                    .await
-                    .map_err(|e| Class::Engine.message(e))?;
+                if let Err(e) = self.ctx.ffmpeg(&extract).await {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(Class::Engine.message(e));
+                }
                 argv.extend(opt::cover_attachment_args(&path));
                 Some(path)
             }
