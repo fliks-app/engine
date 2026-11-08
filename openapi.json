@@ -2860,13 +2860,6 @@
             "format": "double",
             "default": null
           },
-          "quality": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
           "state": {
             "type": [
               "string",
@@ -7172,7 +7165,7 @@
               "string",
               "null"
             ],
-            "description": "Last rung served or reported by a heartbeat."
+            "description": "Last rung served, else the one negotiated at open (`auto` when the client runs ABR)."
           },
           "sessionId": {
             "type": "string"
