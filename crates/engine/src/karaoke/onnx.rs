@@ -3,9 +3,10 @@
 use super::Backend;
 use std::sync::Arc;
 
-pub fn default_backend() -> Arc<dyn Backend> {
+#[cfg_attr(not(feature = "karaoke"), allow(unused_variables))]
+pub fn default_backend(models_dir: &std::path::Path) -> Arc<dyn Backend> {
     #[cfg(feature = "karaoke")]
-    return Arc::new(imp::Ort::default());
+    return Arc::new(imp::Ort::new(models_dir));
     #[cfg(not(feature = "karaoke"))]
     return Arc::new(Absent);
 }
@@ -26,7 +27,12 @@ impl Backend for Absent {
         }
     }
 
-    fn load(&self, _: &std::path::Path, _: Option<&[String]>) -> Result<super::Loaded, String> {
+    fn load(
+        &self,
+        _: &std::path::Path,
+        _: Option<&[String]>,
+        _: &[super::Warm],
+    ) -> Result<super::Loaded, String> {
         Err("this engine build has no ONNX runtime".into())
     }
 }
@@ -34,22 +40,24 @@ impl Backend for Absent {
 #[cfg(feature = "karaoke")]
 mod imp {
     use crate::karaoke::winml;
-    use crate::karaoke::{Backend, BackendInfo, Loaded, Net, PROVIDERS, Tensor, first_working};
+    use crate::karaoke::{
+        Backend, BackendInfo, Loaded, Net, PROVIDERS, Tensor, Warm, first_working, warm_up,
+    };
     use ort::{
         environment::Environment,
         ep::{self, ExecutionProvider},
         session::{Session, builder::SessionBuilder},
         value::Tensor as OrtTensor,
     };
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// ONNX Runtime from `ORT_DYLIB_PATH`, else the bundle's, else `libonnxruntime` on the loader's path.
-    #[derive(Default)]
     pub struct Ort {
         env: OnceLock<Result<Environment, String>>,
         preparing: AtomicBool,
+        models_dir: PathBuf,
     }
 
     /// Providers `ort` has a typed registration for (the runtime lists them when it has them).
@@ -78,7 +86,7 @@ mod imp {
             return b.with_devices([d], None).map_err(|e| e.to_string());
         }
         let p = match name {
-            "cuda" => ep::CUDA::default().build(),
+            "cuda" => ep::CUDA::default().with_tf32(false).build(),
             "migraphx" => ep::MIGraphX::default().build(),
             "openvino" => ep::OpenVINO::default().with_device_type("GPU").build(),
             "directml" => ep::DirectML::default()
@@ -104,8 +112,17 @@ mod imp {
     }
 
     impl Ort {
+        pub fn new(models_dir: &Path) -> Self {
+            Self {
+                env: OnceLock::new(),
+                preparing: AtomicBool::new(false),
+                models_dir: models_dir.to_owned(),
+            }
+        }
+
         fn env(&self) -> &Result<Environment, String> {
             self.env.get_or_init(|| {
+                migraphx_cache(&self.models_dir);
                 let lib = library();
                 let env = ort::init_from(&lib)
                     .map_err(|e| format!("load {lib}: {e}"))?
@@ -115,6 +132,21 @@ mod imp {
                 Ok(env)
             })
         }
+    }
+
+    /// MIGraphX compiles a network per run shape: keep the programs on the models volume.
+    fn migraphx_cache(models_dir: &Path) {
+        const VAR: &str = "ORT_MIGRAPHX_MODEL_CACHE_PATH";
+        if std::env::var_os(VAR).is_some_and(|v| !v.is_empty()) {
+            return;
+        }
+        let dir = models_dir.join(".migraphx");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!("MIGraphX program cache {}: {e}", dir.display());
+            return;
+        }
+        // Runs before the library loads, so no ONNX Runtime thread reads the environment yet.
+        unsafe { std::env::set_var(VAR, dir) };
     }
 
     pub fn providers(env: &Environment) -> Vec<String> {
@@ -161,16 +193,21 @@ mod imp {
             std::thread::spawn(move || winml::register(&env, true));
         }
 
-        fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String> {
+        fn load(
+            &self,
+            file: &Path,
+            allow: Option<&[String]>,
+            warm: &[Warm],
+        ) -> Result<Loaded, String> {
             let env = self.env().as_ref().map_err(Clone::clone)?;
             let (net, provider) = first_working(
                 &providers(env),
                 allow,
-                |name| session(env, file, Some(name)),
-                || session(env, file, None),
+                |name| warm_up(OrtNet(session(env, file, Some(name))?), warm),
+                || session(env, file, None).map(OrtNet),
             )?;
             Ok(Loaded {
-                net: Box::new(OrtNet(net)),
+                net: Box::new(net),
                 provider,
             })
         }

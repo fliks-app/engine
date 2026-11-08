@@ -39,6 +39,9 @@ pub trait Net: Send {
     fn run(&mut self, inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String>;
 }
 
+/// An input a GPU session is run on before it is kept: its name and shape.
+pub type Warm = (&'static str, &'static [i64]);
+
 pub struct Loaded {
     pub net: Box<dyn Net>,
     /// One of `PROVIDERS`, or `cpu`.
@@ -48,8 +51,9 @@ pub struct Loaded {
 /// What can run ONNX files.
 pub trait Backend: Send + Sync {
     fn runtime(&self) -> BackendInfo;
-    /// A network on the first provider of `allow` that gives one (`None`: see `allowed`), else the CPU.
-    fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String>;
+    /// A network on the first provider of `allow` that gives one (`None`: see `allowed`) and runs
+    /// once on zeros of the `warm` inputs, else the CPU.
+    fn load(&self, file: &Path, allow: Option<&[String]>, warm: &[Warm]) -> Result<Loaded, String>;
     /// The user turned karaoke on: fetch what the runtime needs from the network, if anything.
     fn prepare(&self) {}
 }
@@ -83,6 +87,26 @@ fn allowed(allow: Option<&[String]>, name: &str) -> bool {
     allow.map_or(!DEFAULT_OFF.contains(&name), |a| {
         a.iter().any(|p| p == name)
     })
+}
+
+/// Runs `net` once on zeros of `warm`: a GPU failure that only shows in a run (missing kernels,
+/// memory, a graph compiled on first use) surfaces here, where a fallback is still possible.
+pub fn warm_up<N: Net>(mut net: N, warm: &[Warm]) -> Result<N, String> {
+    if !warm.is_empty() {
+        let zeros = |s: &[i64]| vec![0.0; s.iter().product::<i64>() as usize];
+        let inputs = warm
+            .iter()
+            .map(|(name, shape)| {
+                let t = Tensor {
+                    shape: shape.to_vec(),
+                    data: zeros(shape),
+                };
+                (*name, t)
+            })
+            .collect();
+        net.run(inputs)?;
+    }
+    Ok(net)
 }
 
 /// The first allowed provider that gives a net, else the CPU's; the name says which ran.
@@ -186,10 +210,11 @@ pub fn models_dir(cache_root: &Path) -> PathBuf {
 
 impl Karaoke {
     pub fn new(dir: PathBuf, events: Events) -> Self {
+        let backend = onnx::default_backend(&dir);
         Self {
             parts: Mutex::new(Parts {
                 models: Manager::new(dir, models::manifest(), events),
-                backend: onnx::default_backend(),
+                backend,
             }),
             tools: OnceCell::new(),
         }
@@ -356,6 +381,37 @@ mod tests {
         assert_eq!(broken, Err("cpu too".to_string()));
     }
 
+    struct Failing(bool);
+
+    impl Net for Failing {
+        fn run(&mut self, inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+            assert_eq!(inputs[0].1.shape, [2, 1, 4]);
+            assert!(inputs[0].1.data.len() == 8 && inputs[0].1.data.iter().all(|v| *v == 0.0));
+            if self.0 {
+                Err("no kernel image".into())
+            } else {
+                Ok(vec![])
+            }
+        }
+    }
+
+    #[test]
+    fn a_gpu_that_fails_its_first_run_falls_through_to_the_next_provider_then_the_cpu() {
+        let warm: &[Warm] = &[("x", &[2, 1, 4])];
+        let by = |broken: &'static [&'static str]| {
+            first_working(
+                &names(&["cuda", "migraphx"]),
+                None,
+                |p| warm_up(Failing(broken.contains(&p)), warm),
+                || Ok(Failing(false)),
+            )
+            .map(|(_, p)| p)
+        };
+        assert_eq!(by(&[]), Ok("cuda".to_string()));
+        assert_eq!(by(&["cuda"]), Ok("migraphx".to_string()));
+        assert_eq!(by(&["cuda", "migraphx"]), Ok("cpu".to_string()));
+    }
+
     #[test]
     fn openvino_runs_only_when_the_request_names_it() {
         let ov = names(&["openvino"]);
@@ -407,7 +463,7 @@ mod tests {
             }
         }
 
-        fn load(&self, _: &Path, _: Option<&[String]>) -> Result<Loaded, String> {
+        fn load(&self, _: &Path, _: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
             Err("unused".into())
         }
     }

@@ -1,7 +1,7 @@
 //! The `Separate` job: the decoded track through a two-stem mask network in chunks, the stems
 //! written as PCM, then encoded to Opus in one run. Spec: `docs/spec/karaoke.md` section 3.
 use super::run::{Outputs, StopOnDrop, unsupported};
-use super::{Net, Tensor};
+use super::{Net, Tensor, Warm};
 use crate::jobs::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use fliks_engine_core::api::{JobKind, JobResult, MediaInfo, ModelKind, SeparateMeta, StemFile};
@@ -15,6 +15,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
+
+/// The network's input: `[channels, splits, frames, bins]`, one split a chunk.
+const NET_INPUT: [i64; 4] = [2, 1, CHUNK_FRAMES as i64, MODEL_BINS as i64];
 
 /// One output: which stem and where.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -127,11 +130,16 @@ async fn build(
     );
     let (vocals_net, acc_net, provider) = tokio::task::spawn_blocking({
         move || -> Result<_, String> {
+            let warm: &[Warm] = &[("x", &NET_INPUT)];
             let (v, a) = (
-                backend.load(&vocals_file, allow.as_deref())?,
-                backend.load(&acc_file, allow.as_deref())?,
+                backend.load(&vocals_file, allow.as_deref(), warm)?,
+                backend.load(&acc_file, allow.as_deref(), warm)?,
             );
-            let provider = v.provider.clone();
+            let provider = if a.provider == "cpu" {
+                a.provider
+            } else {
+                v.provider
+            };
             Ok((v.net, a.net, provider))
         }
     })
@@ -302,7 +310,7 @@ fn drive(
         let s = stft.analyse([&l[at.min(l.len())..], &r[at.min(r.len())..]]);
         progress(((from + CHUNK_SAMPLES).min(have)) as f64 / f64::from(SAMPLE_RATE));
         let mags = Tensor {
-            shape: vec![2, 1, CHUNK_FRAMES as i64, MODEL_BINS as i64],
+            shape: NET_INPUT.to_vec(),
             data: s.magnitudes(),
         };
         let again = || Tensor {
