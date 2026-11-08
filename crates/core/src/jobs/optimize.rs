@@ -5,6 +5,7 @@ use crate::api::{
     OptimizeQuality, StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
 };
 use crate::args::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack, FileArgs};
+use crate::decide::timeline::parse_source_fps;
 use serde_json::json;
 
 /// Samples encoded to estimate the savings and the speed.
@@ -12,10 +13,10 @@ pub const SAMPLE_COUNT: usize = 3;
 pub const SAMPLE_SECONDS: f64 = 20.0;
 pub const DEFAULT_MAX_SOFTWARE_HOURS: f64 = 12.0;
 /// Longest gap between two keyframes of an output the engine's HLS remux can still cut.
-pub const MAX_KEYFRAME_GAP_SECONDS: f64 = 6.0;
-pub const DURATION_TOLERANCE_SECONDS: f64 = 1.0;
+const MAX_KEYFRAME_GAP_SECONDS: f64 = 6.0;
+const DURATION_TOLERANCE_SECONDS: f64 = 1.0;
 /// Decoding errors per hour of film below which a readable source is `damaged`, not `corrupt`.
-pub const DAMAGED_ERRORS_PER_HOUR: f64 = 10.0;
+const DAMAGED_ERRORS_PER_HOUR: f64 = 10.0;
 /// Mean SSIM under which a hardware output is taken for green or black frames.
 pub const MIN_SSIM: f64 = 0.9;
 const FALLBACK_FRAME_SECONDS: f64 = 0.05;
@@ -92,9 +93,7 @@ pub fn is_noop_copy(info: &MediaInfo, plan: &OptimizePlan) -> bool {
 }
 
 pub fn is_matroska(info: &MediaInfo) -> bool {
-    info.format_name
-        .as_deref()
-        .is_some_and(|f| f.contains("matroska"))
+    crate::probe::is_matroska(info.format_name.as_deref())
 }
 
 /// The main video: the first one (the probe leaves attached pictures out).
@@ -171,13 +170,13 @@ fn in_plan_order<'a, T>(
 
 /// One output audio track: the source stream it comes from and whether it is encoded.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AudioOut<'a> {
+struct AudioOut<'a> {
     pub src: &'a AudioStreamInfo,
     pub encoded: bool,
 }
 
 /// The audio tracks of the output, in order.
-pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'a>> {
+fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'a>> {
     let mut out = vec![];
     for a in in_plan_order(&info.audio, plan, |a| a.stream_index) {
         let sp = plan_of(plan, a.stream_index);
@@ -207,7 +206,7 @@ pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'
 }
 
 /// The subtitle tracks of the output (source streams kept), in order.
-pub fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a SubtitleStreamInfo> {
+fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a SubtitleStreamInfo> {
     in_plan_order(&info.subtitles, plan, |s| s.stream_index)
         .into_iter()
         .filter(|s| plan_of(plan, s.stream_index).is_none_or(|p| p.keep))
@@ -215,7 +214,7 @@ pub fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a Su
 }
 
 /// The explicit mapping of the output for `args::file`.
-pub fn archive_file(
+fn archive_file(
     info: &MediaInfo,
     plan: &OptimizePlan,
     copy_video: bool,
@@ -266,13 +265,6 @@ pub fn archive_file(
     })
 }
 
-fn fps(v: &VideoStreamInfo) -> Option<f64> {
-    let s = v.avg_frame_rate.as_deref().or(v.frame_rate.as_deref())?;
-    let (n, d) = s.split_once('/').unwrap_or((s, "1"));
-    let (n, d) = (n.parse::<f64>().ok()?, d.parse::<f64>().ok()?);
-    (n > 0.0 && d > 0.0).then_some(n / d)
-}
-
 /// What `build_file_args` writes and how.
 pub struct Output<'a> {
     pub input_path: &'a str,
@@ -315,7 +307,12 @@ pub fn build_file_args(
     };
     set("sourceWidth", json!(v.width));
     set("sourceHeight", json!(v.height));
-    set("sourceFps", json!(fps(v)));
+    set(
+        "sourceFps",
+        json!(parse_source_fps(
+            v.avg_frame_rate.as_deref().or(v.frame_rate.as_deref())
+        )),
+    );
     set("sourceBitDepth", json!(v.bit_depth));
     set("sourceVideoBitrateBps", json!(v.bit_rate));
     set("sourceHdrMetadata", json!(v.hdr_metadata));
@@ -420,7 +417,7 @@ pub fn estimated_hours(sample_wall_seconds: f64, sampled_seconds: f64, duration:
 }
 
 /// Decoding errors tolerated before `damaged` becomes `corrupt`.
-pub fn damaged_limit(duration_seconds: f64) -> u32 {
+fn damaged_limit(duration_seconds: f64) -> u32 {
     (DAMAGED_ERRORS_PER_HOUR * duration_seconds.max(0.0) / 3600.0).ceil() as u32
 }
 
@@ -524,7 +521,7 @@ impl PacketStats {
 }
 
 pub fn packet_args(file: &str) -> Vec<String> {
-    [
+    crate::strs(&[
         "-v",
         "error",
         "-select_streams",
@@ -534,32 +531,25 @@ pub fn packet_args(file: &str) -> Vec<String> {
         "-of",
         "csv=p=0",
         file,
-    ]
-    .map(String::from)
-    .to_vec()
+    ])
 }
 
 /// A full software decode that stops at the first error: only for an output.
 pub fn decode_args(file: &str, xerror: bool) -> Vec<String> {
-    let mut a: Vec<String> = [
+    let mut a = crate::strs(&[
         "-hide_banner",
         "-v",
         "error",
         "-nostats",
         "-progress",
         "pipe:1",
-    ]
-    .map(String::from)
-    .to_vec();
+    ]);
     if xerror {
         a.push("-xerror".into());
     }
-    a.extend(
-        [
-            "-i", file, "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-",
-        ]
-        .map(String::from),
-    );
+    a.extend(crate::strs(&[
+        "-i", file, "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-",
+    ]));
     a
 }
 
@@ -569,7 +559,7 @@ pub fn ssim_args(src: &str, out: &str, start: f64, len: f64, w: u32, h: u32) -> 
     let g = format!(
         "[0:v:0]scale={w}:{h}:flags=bicubic,format=yuv420p[a];[1:v:0]format=yuv420p[b];[a][b]ssim"
     );
-    [
+    crate::strs(&[
         "-hide_banner",
         "-nostats",
         "-ss",
@@ -591,9 +581,7 @@ pub fn ssim_args(src: &str, out: &str, start: f64, len: f64, w: u32, h: u32) -> 
         "-f",
         "null",
         "-",
-    ]
-    .map(String::from)
-    .to_vec()
+    ])
 }
 
 /// `All:0.97` of ffmpeg's final `SSIM Y:... All:...` line.
@@ -665,7 +653,8 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
             }
         }
     }
-    let frame = fps(sv).map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
+    let frame = parse_source_fps(sv.avg_frame_rate.as_deref().or(sv.frame_rate.as_deref()))
+        .map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
     if let (Some(a), Some(b)) = (sv.start_time_seconds, ov.start_time_seconds)
         && (a - b).abs() > frame
     {
@@ -897,16 +886,14 @@ pub fn cover_attachment_args(picture: &str) -> Vec<String> {
     } else {
         ("cover.jpg", "image/jpeg")
     };
-    [
+    crate::strs(&[
         "--attachment-name",
         name,
         "--attachment-mime-type",
         mime,
         "--add-attachment",
         picture,
-    ]
-    .map(String::from)
-    .into()
+    ])
 }
 
 #[cfg(test)]
