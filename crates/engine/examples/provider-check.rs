@@ -1,6 +1,11 @@
 //! Runs one model on a fixed input with the CPU and with a provider and prints how far the outputs
-//! differ. `ORT_DYLIB_PATH=<lib> provider-check <coreml|cuda|migraphx|openvino> <model.onnx> <spleeter|swiftf0>`
-use ort::{environment::Environment, ep, session::Session, value::Tensor};
+//! differ. `ORT_DYLIB_PATH=<lib> provider-check <provider> <model.onnx> <spleeter|swiftf0>`, a provider
+//! of `PROVIDERS` (`coreml`, `cuda`, `directml`, `nvtensorrtrtx`...); `list` instead prints them.
+use fliks_engine::karaoke::{
+    onnx::{providers, with_provider},
+    winml,
+};
+use ort::{environment::Environment, session::Session, value::Tensor};
 
 fn noise(n: usize) -> Vec<f32> {
     let mut s = 0x2545_f491_u32;
@@ -26,15 +31,7 @@ fn run(
 ) -> Result<(Vec<Vec<f32>>, Vec<std::time::Duration>), String> {
     let mut b = Session::builder(env).map_err(e)?;
     if let Some(p) = provider {
-        let d = match p {
-            "coreml" => ep::CoreML::default().build(),
-            "cuda" => ep::CUDA::default().build(),
-            "migraphx" => ep::MIGraphX::default().build(),
-            _ => ep::OpenVINO::default().with_device_type("GPU").build(),
-        };
-        b = b
-            .with_execution_providers([d.error_on_failure()])
-            .map_err(e)?;
+        b = with_provider(b, env, p)?;
     }
     let mut s = b.commit_from_file(file).map_err(e)?;
     let mut times = vec![];
@@ -81,6 +78,20 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let lib = std::env::var("ORT_DYLIB_PATH").expect("ORT_DYLIB_PATH");
     let env = ort::init_from(&lib).unwrap().build().unwrap();
+    winml::register(&env, true);
+    if a[1] == "list" {
+        for d in env.devices() {
+            let hw = d.hardware_device();
+            println!(
+                "device {} {:?} {}",
+                d.ep().unwrap_or("?"),
+                hw.ty(),
+                hw.vendor().unwrap_or_default()
+            );
+        }
+        println!("providers {:?}", providers(&env));
+        return;
+    }
     let (cpu, t_cpu) = run(&env, None, &a[2], &a[3]).unwrap();
     let (got, t_got) = run(&env, Some(&a[1]), &a[2], &a[3]).unwrap();
     println!(

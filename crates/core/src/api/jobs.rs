@@ -111,6 +111,10 @@ pub enum JobKind {
             skip_serializing_if = "Option::is_none"
         )]
         bitrate_kbps: Option<u32>,
+        /// Hardware providers the networks may run on (`cpu` always may); absent: every one the
+        /// runtime lists but `openvino`; empty: the CPU only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        providers: Option<Vec<String>>,
     },
     /// Times the words of `lines` on the vocal stem `media` names: speech recognition gives word
     /// times, the known words are matched onto them. Lines with times keep within them. Needs an

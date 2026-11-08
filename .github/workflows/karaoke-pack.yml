@@ -1,4 +1,4 @@
-# The karaoke pack of the desktop bundles: ONNX Runtime, whisper-cli and ffmpeg-pitch with their
+# The karaoke pack of the desktop bundles: ONNX Runtime (Windows ML on Windows), whisper-cli and ffmpeg-pitch with their
 # licences, in a `karaoke/` directory that sits next to the engine binary. Built on its own for a
 # PR that changes it, and by the release with a tag to attach it.
 name: Karaoke pack
@@ -63,6 +63,35 @@ jobs:
           sleep 3
           curl -fsS -H 'Authorization: Bearer t' http://127.0.0.1:7411/v1/models | python3 -c 'import json,sys; r=json.load(sys.stdin)["runtime"]; print(r); assert r["onnx"] and r["whisper"] and r["rubberband"] and "coreml" in r["providers"]'
           kill $pid
+      - name: Engine with the pack (Windows)
+        if: matrix.msys
+        shell: pwsh
+        run: |
+          cargo build --release -p fliks-engine --bin fliks-engine --example provider-check --features karaoke
+          Copy-Item target/release/fliks-engine.exe, target/release/examples/provider-check.exe out/
+          $env:FLIKS_ENGINE_TOKEN = 't'
+          $env:FLIKS_MODELS_DIR = "$PWD\models"
+          $env:ORT_DYLIB_PATH = "$PWD\out\karaoke\onnxruntime.dll"
+          $h = @{ Authorization = 'Bearer t' }
+          $p = Start-Process out/fliks-engine.exe -ArgumentList '--listen', '127.0.0.1:7411' -PassThru -NoNewWindow -RedirectStandardError engine.log
+          Start-Sleep 5
+          $r = (Invoke-RestMethod -Headers $h http://127.0.0.1:7411/v1/models).runtime
+          $r | ConvertTo-Json
+          foreach ($m in 'spleeter-2stems', 'swiftf0') { Invoke-RestMethod -Method Post -Headers $h "http://127.0.0.1:7411/v1/models/$m/download" | Out-Null }
+          for ($i = 0; $i -lt 90; $i++) {
+            $left = (Invoke-RestMethod -Headers $h http://127.0.0.1:7411/v1/models).models | Where-Object { $_.id -in 'spleeter-2stems', 'swiftf0' -and $_.state -ne 'installed' }
+            if (-not $left) { break }
+            Start-Sleep 5
+          }
+          Stop-Process $p
+          Get-Content engine.log
+          out/provider-check.exe list
+          # DirectML runs on the runner's software adapter: informative only, hardware is the check that counts.
+          out/provider-check.exe directml models/spleeter-2stems/vocals.onnx spleeter
+          out/provider-check.exe directml models/spleeter-2stems/accompaniment.onnx spleeter
+          out/provider-check.exe directml models/swiftf0/model.onnx swiftf0
+          if (-not ($r.onnx -and $r.whisper -and $r.rubberband -and ($r.providers -contains 'directml'))) { throw 'the engine does not run the pack' }
+          exit 0
       - name: Smoke test the tools
         run: |
           cd out/karaoke
@@ -82,6 +111,8 @@ jobs:
             out/fliks-engine-karaoke-*
             out/fliks-engine
             out/provider-check
+            out/fliks-engine.exe
+            out/provider-check.exe
       - name: Attach to the release
         if: inputs.tag != ''
         env:

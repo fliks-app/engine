@@ -8,7 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/pins.env"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 dest="$out/karaoke"; lic="$dest/licenses"
-mkdir -p "$dest" "$lic"/{onnxruntime,whisper.cpp,ffmpeg-pitch}
+mkdir -p "$dest" "$lic"/{whisper.cpp,ffmpeg-pitch}
 jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 
 fetch() { # url sha256 file
@@ -17,24 +17,30 @@ fetch() { # url sha256 file
 }
 
 case "$platform" in
-darwin-arm64) ort="onnxruntime-osx-arm64-$ONNXRUNTIME_VERSION.tgz"; ort_sha=$ORT_SHA256_DARWIN_ARM64; exe=""
+darwin-arm64) exe=""
     whisper_flags="-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON"; ffmpeg_flags="--extra-libs=-lc++" ;;
-windows-x64) ort="onnxruntime-win-x64-$ONNXRUNTIME_VERSION.zip"; ort_sha=$ORT_SHA256_WINDOWS_X64; exe=".exe"
+windows-x64) exe=".exe"
     cmake_gen="-G Ninja"; whisper_flags="-G Ninja -DCMAKE_EXE_LINKER_FLAGS=-static"; ffmpeg_flags="--extra-ldflags=-static --pkg-config-flags=--static --extra-libs=-lstdc++" ;;
 *) echo "unknown platform $platform" >&2; exit 2 ;;
 esac
 
-# ONNX Runtime: the official release, CoreML compiled in on macOS (DirectML is not in the Windows one).
-fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/$ort" "$ort_sha" "$ort"
+# ONNX Runtime: the official release on macOS (CoreML compiled in); on Windows the Windows ML runtime
+# (self-contained NuGet package: ONNX Runtime with DirectML, DirectML.dll and the EP catalog library).
 mkdir "$work/ort"
-if [ "$platform" = windows-x64 ]; then unzip -q "$work/$ort" -d "$work/ort"; else tar -xzf "$work/$ort" -C "$work/ort"; fi
-o="$(echo "$work"/ort/*)" # the one extracted directory
 if [ "$platform" = windows-x64 ]; then
-    cp "$o/lib/onnxruntime.dll" "$o/lib/onnxruntime_providers_shared.dll" "$dest/"
+    fetch "https://api.nuget.org/v3-flatcontainer/microsoft.windows.ai.machinelearning/$WINML_VERSION/microsoft.windows.ai.machinelearning.$WINML_VERSION.nupkg" "$WINML_SHA256" winml.zip
+    mkdir -p "$lic/windows-ml"
+    unzip -q "$work/winml.zip" -d "$work/ort"
+    for f in onnxruntime.dll DirectML.dll Microsoft.Windows.AI.MachineLearning.dll; do cp "$work/ort/runtimes/win-x64/native/$f" "$dest/"; done
+    cp "$work/ort/license.txt" "$work/ort/ThirdPartyNotices.txt" "$lic/windows-ml/"
 else
+    mkdir -p "$lic/onnxruntime"
+    fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-osx-arm64-$ONNXRUNTIME_VERSION.tgz" "$ORT_SHA256_DARWIN_ARM64" ort.tgz
+    tar -xzf "$work/ort.tgz" -C "$work/ort"
+    o="$(echo "$work"/ort/*)" # the one extracted directory
     cp "$o/lib/libonnxruntime.$ONNXRUNTIME_VERSION.dylib" "$dest/libonnxruntime.dylib"
+    cp "$o/LICENSE" "$o/ThirdPartyNotices.txt" "$lic/onnxruntime/"
 fi
-cp "$o/LICENSE" "$o/ThirdPartyNotices.txt" "$lic/onnxruntime/"
 
 # whisper-cli from the same release as the image.
 fetch "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/$WHISPER_CPP_VERSION.tar.gz" "$WHISPER_CPP_SHA256" whisper.tgz

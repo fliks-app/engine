@@ -3,9 +3,11 @@
 mod align;
 mod melody;
 pub mod models;
-mod onnx;
+pub mod onnx;
 mod run;
 mod separate;
+#[cfg(feature = "karaoke")]
+pub mod winml;
 
 pub use align::run as run_align;
 pub use melody::run as run_melody;
@@ -46,7 +48,10 @@ pub struct Loaded {
 /// What can run ONNX files.
 pub trait Backend: Send + Sync {
     fn runtime(&self) -> BackendInfo;
-    fn load(&self, file: &Path) -> Result<Loaded, String>;
+    /// A network on the first provider of `allow` that gives one (`None`: see `allowed`), else the CPU.
+    fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String>;
+    /// The user turned karaoke on: fetch what the runtime needs from the network, if anything.
+    fn prepare(&self) {}
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -57,19 +62,37 @@ pub struct BackendInfo {
     pub providers: Vec<String>,
 }
 
-/// Hardware execution providers in the order a session tries them.
-pub const PROVIDERS: [&str; 4] = ["cuda", "migraphx", "openvino", "coreml"];
+/// Hardware execution providers in the order a session tries them (the spec's section 1).
+pub const PROVIDERS: [&str; 10] = [
+    "cuda",
+    "nvtensorrtrtx",
+    "amdgpu",
+    "migraphx",
+    "coreml",
+    "openvino",
+    "qnn",
+    "vitisai",
+    "webgpu",
+    "directml",
+];
 
-/// Providers sessions never use: OpenVINO's GPU gives wrong Spleeter output (see the spec).
-pub const UNUSED: [&str; 1] = ["openvino"];
+/// Providers a request that names none does not get: OpenVINO's GPU computed Spleeter wrong on Linux.
+const DEFAULT_OFF: [&str; 1] = ["openvino"];
 
-/// The first provider that gives a net, else the CPU's; the name says which ran.
+fn allowed(allow: Option<&[String]>, name: &str) -> bool {
+    allow.map_or(!DEFAULT_OFF.contains(&name), |a| {
+        a.iter().any(|p| p == name)
+    })
+}
+
+/// The first allowed provider that gives a net, else the CPU's; the name says which ran.
 pub fn first_working<T>(
     providers: &[String],
+    allow: Option<&[String]>,
     mut try_provider: impl FnMut(&str) -> Result<T, String>,
     cpu: impl FnOnce() -> Result<T, String>,
 ) -> Result<(T, String), String> {
-    for name in providers.iter().filter(|p| !UNUSED.contains(&p.as_str())) {
+    for name in providers.iter().filter(|p| allowed(allow, p)) {
         match try_provider(name) {
             Ok(net) => return Ok((net, name.clone())),
             Err(e) => tracing::warn!(provider = name, "execution provider unusable: {e}"),
@@ -267,6 +290,7 @@ pub async fn list(State(s): S) -> Json<ModelsResponse> {
     (status = 202, body = ModelInfo, description = "downloading (follow it with `GET /v1/models` or the `ModelChanged` events)"),
     (status = 404, description = "unknown model")))]
 pub async fn download(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
+    s.rt.karaoke.backend().prepare();
     match s.rt.karaoke.models().start(&id) {
         None => StatusCode::NOT_FOUND.into_response(),
         Some(m) if m.state == fliks_engine_core::api::ModelState::Installed => {
@@ -299,6 +323,7 @@ mod tests {
     fn a_session_takes_the_first_provider_that_works_and_reports_it() {
         let got = first_working(
             &names(&["cuda", "migraphx", "coreml"]),
+            None,
             |p| {
                 if p == "cuda" {
                     Err("no".into())
@@ -313,12 +338,18 @@ mod tests {
 
     #[test]
     fn a_session_falls_back_to_the_cpu_and_reports_cpu() {
-        let got = first_working(&names(&["coreml"]), |_| Err::<u8, _>("no".into()), || Ok(1));
+        let got = first_working(
+            &names(&["coreml"]),
+            None,
+            |_| Err::<u8, _>("no".into()),
+            || Ok(1),
+        );
         assert_eq!(got, Ok((1, "cpu".to_string())));
-        let none = first_working(&[], |_| Ok(2), || Ok(1));
+        let none = first_working(&[], None, |_| Ok(2), || Ok(1));
         assert_eq!(none, Ok((1, "cpu".to_string())));
         let broken = first_working(
             &names(&["cuda"]),
+            None,
             |_| Err::<u8, _>("no".into()),
             || Err("cpu too".into()),
         );
@@ -326,14 +357,33 @@ mod tests {
     }
 
     #[test]
-    fn an_unused_provider_is_listed_but_never_tried() {
-        let got = first_working(&names(&["openvino"]), |_| Ok::<u8, String>(9), || Ok(1));
+    fn openvino_runs_only_when_the_request_names_it() {
+        let ov = names(&["openvino"]);
+        let got = first_working(&ov, None, |_| Ok::<u8, String>(9), || Ok(1));
+        assert_eq!(got, Ok((1, "cpu".to_string())));
+        let got = first_working(&ov, Some(&ov), |_| Ok::<u8, String>(9), || Ok(1));
+        assert_eq!(got, Ok((9, "openvino".to_string())));
+    }
+
+    #[test]
+    fn a_request_lists_the_providers_a_session_may_use() {
+        let all = names(&["cuda", "directml"]);
+        let got = first_working(
+            &all,
+            Some(&names(&["directml"])),
+            |p| Ok::<_, String>(p.len()),
+            || Ok(0),
+        );
+        assert_eq!(got, Ok((8, "directml".to_string())));
+        let got = first_working(&all, Some(&[]), |_| Ok::<u8, String>(9), || Ok(1));
         assert_eq!(got, Ok((1, "cpu".to_string())));
     }
 
     #[test]
-    fn providers_are_tried_cuda_then_migraphx_then_openvino() {
-        assert_eq!(&PROVIDERS[..3], ["cuda", "migraphx", "openvino"]);
+    fn a_windows_provider_comes_after_the_vendor_ones_and_directml_last() {
+        let at = |n: &str| PROVIDERS.iter().position(|p| *p == n).unwrap();
+        assert!(at("cuda") < at("nvtensorrtrtx") && at("amdgpu") < at("migraphx"));
+        assert_eq!(at("directml"), PROVIDERS.len() - 1);
     }
 
     #[test]
@@ -357,7 +407,7 @@ mod tests {
             }
         }
 
-        fn load(&self, _: &Path) -> Result<Loaded, String> {
+        fn load(&self, _: &Path, _: Option<&[String]>) -> Result<Loaded, String> {
             Err("unused".into())
         }
     }

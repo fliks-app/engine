@@ -3617,6 +3617,16 @@
                 ],
                 "description": "A `separation` model id; absent: the default one."
               },
+              "providers": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Hardware providers the networks may run on (`cpu` always may); absent: every one the\nruntime lists but `openvino`; empty: the CPU only."
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4310,7 +4320,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Execution providers that can run a model, `cpu` last: `cuda`, `openvino`."
+            "description": "Execution providers that can run a model, `cpu` last: `cuda`, `coreml`, `directml`..."
           },
           "rubberband": {
             "type": "boolean",
@@ -7012,7 +7022,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "`cuda`, `openvino` or `cpu`."
+            "description": "The execution provider that ran the networks, or `cpu`."
           },
           "vocals": {
             "oneOf": [

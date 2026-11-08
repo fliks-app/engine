@@ -79,7 +79,7 @@ pub struct KaraokeRuntime {
     /// Why `onnx` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onnx_error: Option<String>,
-    /// Execution providers that can run a model, `cpu` last: `cuda`, `openvino`.
+    /// Execution providers that can run a model, `cpu` last: `cuda`, `coreml`, `directml`...
     pub providers: Vec<String>,
     /// The speech recogniser `Align` runs is installed.
     pub whisper: bool,
@@ -114,7 +114,7 @@ pub struct SeparateMeta {
     /// The model that ran and its version.
     pub model: String,
     pub model_version: String,
-    /// `cuda`, `openvino` or `cpu`.
+    /// The execution provider that ran the networks, or `cpu`.
     pub provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vocals: Option<StemFile>,
