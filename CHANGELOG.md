@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.3](https://github.com/fliks-app/engine/compare/v1.15.2...v1.15.3) (2026-11-08)
+
+
+### Bug Fixes
+
+* **engine:** fix the audit's bugs and drop two dead wire fields ([#196](https://github.com/fliks-app/engine/issues/196)) ([8e92d65](https://github.com/fliks-app/engine/commit/8e92d65e281f9f98c74e72b89146617d5c8b123f))
+
 ## [1.15.2](https://github.com/fliks-app/engine/compare/v1.15.1...v1.15.2) (2026-11-08)
 
 
