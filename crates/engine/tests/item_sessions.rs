@@ -319,6 +319,7 @@ async fn a_key_change_runs_the_rubberband_filter_on_the_ffmpeg_that_has_it() {
     e.rt.karaoke.set_tools(fliks_engine::karaoke::Tools {
         whisper: None,
         pitch_ffmpeg: None,
+        whisper_backend: "cpu",
     });
     let r = e.get(&path, "alice-jwt", &[]).await;
     assert_ne!(r.status, 200, "{}", r.text());
@@ -327,6 +328,7 @@ async fn a_key_change_runs_the_rubberband_filter_on_the_ffmpeg_that_has_it() {
     e.rt.karaoke.set_tools(fliks_engine::karaoke::Tools {
         whisper: None,
         pitch_ffmpeg: Some(fake("item")),
+        whisper_backend: "cpu",
     });
     let r = open_pitched(&e, &paths, 2.0).await;
     let sid = r.json()["sessionId"].as_str().unwrap().to_string();

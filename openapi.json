@@ -894,10 +894,15 @@
         "required": [
           "model",
           "modelVersion",
+          "backend",
           "lines",
           "matched"
         ],
         "properties": {
+          "backend": {
+            "type": "string",
+            "description": "What ran the recogniser: `vulkan`, `metal` or `cpu`."
+          },
           "lines": {
             "type": "array",
             "items": {

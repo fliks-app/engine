@@ -17,9 +17,8 @@ pub async fn run(
 ) -> Result<JobResult, String> {
     let k = &ctx.rt.karaoke;
     let picked = k.models().pick(model, ModelKind::Alignment)?;
-    let whisper = k
-        .tools(&ctx.rt.ffmpeg)
-        .await
+    let tools = k.tools(&ctx.rt.ffmpeg).await;
+    let whisper = tools
         .whisper
         .clone()
         .ok_or_else(|| unsupported("no speech recogniser (whisper-cli) is installed"))?;
@@ -34,14 +33,17 @@ pub async fn run(
         &scratch,
         lines,
         language,
+        tools.whisper_backend,
     )
     .await;
     let _ = tokio::fs::remove_dir_all(&scratch).await;
-    let (aligned, matched) = align(lines, &result?);
+    let (heard, backend) = result?;
+    let (aligned, matched) = align(lines, &heard);
     Ok(JobResult::Align {
         align: AlignMeta {
             model: picked.id.into(),
             model_version: picked.version.into(),
+            backend: backend.into(),
             lines: aligned,
             matched,
         },
@@ -55,7 +57,8 @@ async fn heard(
     scratch: &std::path::Path,
     lines: &[AlignLine],
     language: Option<&str>,
-) -> Result<Vec<fliks_engine_core::jobs::align::Heard>, String> {
+    backend: &'static str,
+) -> Result<(Vec<fliks_engine_core::jobs::align::Heard>, &'static str), String> {
     let wav = scratch.join("vocals.wav");
     let decode: Vec<String> = [
         "-hide_banner",
@@ -81,20 +84,34 @@ async fn heard(
     .to_vec();
     ctx.ffmpeg(&decode).await?;
     let prefix = scratch.join("words");
-    let argv = whisper_argv(model, &wav, &prefix, language, lines);
-    let cmd = Cmd::new("whisper", whisper, &argv, Pipes::default());
-    ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
-        let p = &p[0];
-        match p.wait().await.code {
-            Some(0) => Ok(()),
-            code => Err(format!("whisper exited with {code:?}: {}", tail(p, 3))),
+    let run = |gpu: bool| {
+        let argv = whisper_argv(model, &wav, &prefix, language, lines, gpu);
+        let cmd = Cmd::new("whisper", whisper, &argv, Pipes::default());
+        ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
+            let p = &p[0];
+            match p.wait().await.code {
+                Some(0) => Ok(()),
+                code => Err(format!("whisper exited with {code:?}: {}", tail(p, 3))),
+            }
+        })
+    };
+    let mut backend = backend;
+    // A cancel or a stall is the pipeline's error and ends the job; only a failed run falls back.
+    if let Err(e) = run(backend != "cpu").await? {
+        if backend == "cpu" {
+            return Err(e);
         }
-    })
-    .await??;
+        tracing::warn!(
+            backend,
+            "recogniser failed on the GPU, repeating on the CPU: {e}"
+        );
+        backend = "cpu";
+        run(false).await??;
+    }
     let json = tokio::fs::read_to_string(prefix.with_extension("json"))
         .await
         .map_err(|e| format!("whisper wrote no words: {e}"))?;
-    heard_from_json(&json)
+    Ok((heard_from_json(&json)?, backend))
 }
 
 /// The lyrics' first words, as one line.
@@ -122,8 +139,9 @@ pub fn whisper_argv(
     prefix: &std::path::Path,
     language: Option<&str>,
     lines: &[AlignLine],
+    gpu: bool,
 ) -> Vec<String> {
-    [
+    let mut argv: Vec<String> = [
         "-m",
         &model.to_string_lossy(),
         "-f",
@@ -139,9 +157,12 @@ pub fn whisper_argv(
         "-np",
         "-t",
         &super::threads().to_string(),
-        "--prompt",
-        &prompt(lines),
     ]
     .map(String::from)
-    .to_vec()
+    .to_vec();
+    if !gpu {
+        argv.push("-ng".into());
+    }
+    argv.extend(["--prompt".into(), prompt(lines)]);
+    argv
 }

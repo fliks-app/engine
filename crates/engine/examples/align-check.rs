@@ -24,7 +24,14 @@ fn main() {
     let dir = std::env::temp_dir().join(format!("align-check-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let prefix = dir.join("words");
-    let argv = whisper_argv(&model, &wav, &prefix, a.get(4).map(String::as_str), &lines);
+    let argv = whisper_argv(
+        &model,
+        &wav,
+        &prefix,
+        a.get(4).map(String::as_str),
+        &lines,
+        true,
+    );
     let tool = std::env::var("WHISPER_CLI_PATH").unwrap_or("whisper-cli".into());
     let t = Instant::now();
     let out = Command::new(&tool).args(&argv).output().unwrap();

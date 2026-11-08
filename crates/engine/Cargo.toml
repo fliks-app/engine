@@ -21,7 +21,7 @@ required-features = ["karaoke"]
 [features]
 # ONNX runtime, loaded at run time from `ORT_DYLIB_PATH` or the bundle's `karaoke/` directory; without
 # the library the model jobs answer `unsupported`.
-karaoke = ["dep:ort", "dep:libloading"]
+karaoke = ["dep:ort"]
 
 [dependencies]
 fliks-engine-core = { path = "../core" }
@@ -48,12 +48,14 @@ webrtc-vad = "0.4"
 lofty = "0.25"
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-22", "cuda", "openvino", "coreml", "migraphx", "directml"], optional = true }
 
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+libloading = "0.9"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading"] }
-libloading = { version = "0.9", optional = true }
 
 [dev-dependencies]
 tokio-tungstenite = "0.30"

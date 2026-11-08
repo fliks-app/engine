@@ -6,6 +6,7 @@ pub mod models;
 pub mod onnx;
 mod run;
 mod separate;
+pub mod vulkan;
 #[cfg(feature = "karaoke")]
 pub mod winml;
 
@@ -152,6 +153,8 @@ pub struct Tools {
     pub whisper: Option<String>,
     /// An ffmpeg with the `rubberband` filter.
     pub pitch_ffmpeg: Option<String>,
+    /// What runs the recogniser: `vulkan`, `metal` or `cpu`.
+    pub whisper_backend: &'static str,
 }
 
 struct Parts {
@@ -162,6 +165,8 @@ struct Parts {
 pub struct Karaoke {
     parts: Mutex<Parts>,
     tools: OnceCell<Tools>,
+    /// Where the models volume keeps the shader cache of a GPU recogniser.
+    cache_dir: PathBuf,
 }
 
 fn on_path(name: &str) -> bool {
@@ -211,12 +216,15 @@ pub fn models_dir(cache_root: &Path) -> PathBuf {
 impl Karaoke {
     pub fn new(dir: PathBuf, events: Events) -> Self {
         let backend = onnx::default_backend(&dir);
+        models::remove_retired(&dir);
+        let cache_dir = dir.join(".shader-cache");
         Self {
             parts: Mutex::new(Parts {
                 models: Manager::new(dir, models::manifest(), events),
                 backend,
             }),
             tools: OnceCell::new(),
+            cache_dir,
         }
     }
 
@@ -252,12 +260,38 @@ impl Karaoke {
                         break;
                     }
                 }
+                let whisper = exists(&whisper).then_some(whisper);
+                let whisper_backend = match whisper {
+                    Some(_) => self.whisper_backend().await,
+                    None => "cpu",
+                };
                 Tools {
-                    whisper: exists(&whisper).then_some(whisper),
+                    whisper,
                     pitch_ffmpeg,
+                    whisper_backend,
                 }
             })
             .await
+    }
+
+    async fn whisper_backend(&self) -> &'static str {
+        if !cfg!(target_os = "linux") {
+            return if cfg!(target_os = "macos") {
+                "metal"
+            } else {
+                "cpu"
+            };
+        }
+        if std::env::var_os("MESA_SHADER_CACHE_DIR").is_none_or(|v| v.is_empty())
+            && std::fs::create_dir_all(&self.cache_dir).is_ok()
+        {
+            // Set before the probe loads a driver and before any whisper-cli is spawned.
+            unsafe { std::env::set_var("MESA_SHADER_CACHE_DIR", &self.cache_dir) };
+        }
+        match tokio::task::spawn_blocking(vulkan::real_device).await {
+            Ok(true) => "vulkan",
+            _ => "cpu",
+        }
     }
 
     pub async fn runtime(&self, ffmpeg: &str) -> KaraokeRuntime {
@@ -288,6 +322,9 @@ impl Karaoke {
         }
         if r.whisper {
             f.push("karaoke-align".into());
+            if self.tools(ffmpeg).await.whisper_backend == "vulkan" {
+                f.push("align-vulkan".into());
+            }
         }
         if r.rubberband {
             f.push("pitch-shift".into());
