@@ -9,7 +9,7 @@ mod separate;
 #[cfg(feature = "karaoke")]
 pub mod winml;
 
-pub use align::run as run_align;
+pub use align::{run as run_align, whisper_argv};
 pub use melody::run as run_melody;
 pub use separate::run as run_separate;
 
