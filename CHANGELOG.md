@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/fliks-app/engine/compare/v1.15.4...v1.16.0) (2026-11-08)
+
+
+### Features
+
+* **probe:** read audio tags with lofty for music files ([#200](https://github.com/fliks-app/engine/issues/200)) ([6d8c070](https://github.com/fliks-app/engine/commit/6d8c0701a7332ffbed755fb7645ead6c2cef0ef6))
+
 ## [1.15.4](https://github.com/fliks-app/engine/compare/v1.15.3...v1.15.4) (2026-11-08)
 
 
