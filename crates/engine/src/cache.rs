@@ -162,7 +162,8 @@ impl Cache {
         self.root.join("covers/v1").join(file.to_string())
     }
 
-    /// Scratch files of one `Merge` job: the concat list and the metadata file.
+    /// Scratch files of one `Merge` job (the concat list and the metadata file) or of an audio
+    /// job (`Separate`, `Align`, `Melody`: PCM and recogniser files).
     pub fn merge_dir(&self, job: &str) -> PathBuf {
         self.root.join("merge/v1").join(job)
     }
@@ -176,10 +177,11 @@ impl Cache {
         };
         for e in rd.flatten() {
             if let Ok(j) = std::fs::read_to_string(e.path().join(MERGE_JOURNAL)) {
-                let mut l = j.lines();
-                if let (Some(out), Some(tmp), Some(id)) = (l.next(), l.next(), l.next()) {
-                    let (out, tmp) = (Path::new(out), Path::new(tmp));
-                    if is_merge_tmp(out, tmp) && file_id(tmp).as_deref() == Some(id) {
+                // One output, temporary file and identity per three lines.
+                let lines: Vec<&str> = j.lines().collect();
+                for g in lines.as_chunks::<3>().0 {
+                    let (out, tmp) = (Path::new(g[0]), Path::new(g[1]));
+                    if is_merge_tmp(out, tmp) && file_id(tmp).as_deref() == Some(g[2]) {
                         let _ = std::fs::remove_file(tmp);
                     }
                 }

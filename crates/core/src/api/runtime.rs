@@ -445,6 +445,9 @@ pub enum EngineEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// A model's download started, progressed (at most once per second), ended or was deleted.
+    #[serde(rename_all = "camelCase")]
+    ModelChanged { model: Box<super::ModelInfo> },
     /// One attempt at feeding a live session from an upstream: `error` absent = it feeds the
     /// session now, present = it failed.
     #[serde(rename_all = "camelCase")]

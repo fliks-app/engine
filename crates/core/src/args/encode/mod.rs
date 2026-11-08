@@ -93,6 +93,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         end: o.source_end_seconds,
         use_ts: o.use_ts,
         libfdk_aac: caps.libfdk_aac,
+        pitch_semitones: 0.0,
     };
 
     let mut args = strs(&["-hide_banner", "-loglevel", "warning"]);

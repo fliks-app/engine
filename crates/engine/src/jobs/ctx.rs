@@ -66,11 +66,15 @@ impl Ctx {
         self.job.activity.fetch_add(1, Relaxed);
     }
 
-    /// Unpaused time one run may last: optimisations and checks take hours and only the stall
-    /// watchdog stops them.
+    /// Unpaused time one run may last: optimisations, checks and model runs take hours and only
+    /// the stall watchdog stops them.
     pub fn run_timeout_ms(&self) -> u64 {
         match self.job.req.kind {
-            JobKind::Optimize { .. } | JobKind::Verify { .. } => u64::MAX,
+            JobKind::Optimize { .. }
+            | JobKind::Verify { .. }
+            | JobKind::Separate { .. }
+            | JobKind::Align { .. }
+            | JobKind::Melody { .. } => u64::MAX,
             _ => u64::from(RUN_TIMEOUT_MS),
         }
     }

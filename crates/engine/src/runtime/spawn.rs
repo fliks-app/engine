@@ -196,6 +196,7 @@ impl Runtime {
             plan: &s.decision.response.audio_plan,
             use_ts: s.plan.use_ts,
             libfdk_aac: self.caps().unwrap_or_default().libfdk_aac,
+            pitch_semitones: item.pitch_semitones,
         });
         let run = Run {
             key,
@@ -334,10 +335,29 @@ impl Runtime {
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
         let slot = r.slot.unwrap_or_else(|| self.slots.playback_on(None));
         let device = slot.device().map(String::from);
-        let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
+        // A key change needs an ffmpeg with the `rubberband` filter, not always the main one.
+        let pitched = r.item
+            && s.plan
+                .item
+                .as_ref()
+                .is_some_and(|i| i.pitch_semitones != 0.0);
+        let bin = if pitched {
+            let tools = self.karaoke.tools(&self.ffmpeg).await;
+            let Some(bin) = tools.pitch_ffmpeg.as_deref() else {
+                tracing::error!(
+                    key,
+                    "pitch shift asked and no ffmpeg has the rubberband filter"
+                );
+                return None;
+            };
+            bin
+        } else {
+            &self.ffmpeg
+        };
+        let proc = match Ffmpeg::spawn(bin, argv).await {
             Ok(p) => p,
             Err(e) => {
-                tracing::error!(key, "spawn {}: {e}", self.ffmpeg);
+                tracing::error!(key, "spawn {bin}: {e}");
                 return None;
             }
         };

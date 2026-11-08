@@ -1,8 +1,8 @@
 //! Items: ordered parts played as one timeline (an audiobook's files). Pure: the timeline and its
 //! seek map, the session plan, and the ffmpeg argv of one part's run. Spec: `docs/spec/item.md`.
 use crate::api::{
-    AudioPlan, DecideRequest, Decision, HostCaps, ItemPart, MuxFlavour, OpenSessionRequest,
-    PlayMethod, QoePipeline, QoeSource,
+    AudioPlan, DecideRequest, DecideSelection, Decision, HostCaps, ItemPart, MuxFlavour,
+    OpenSessionRequest, PlayMethod, QoePipeline, QoeSource,
 };
 use crate::args::{AudioEnc, audio_stream_args};
 use crate::decide::audio::REMUX_STEREO_BPS;
@@ -27,6 +27,16 @@ const HLS_TIME_MARGIN: f64 = 0.0001;
 /// The item's parts: `media.parts`.
 pub fn parts_of(req: &DecideRequest) -> &[ItemPart] {
     &req.media.parts
+}
+
+/// Largest key change of an item, in semitones.
+pub const MAX_PITCH_SEMITONES: f64 = 12.0;
+
+/// The key change a selection asks for, clamped to +-12 semitones; 0 for none or a non-number.
+pub fn pitch_shift(sel: &DecideSelection) -> f64 {
+    sel.pitch_semitones
+        .filter(|p| p.is_finite())
+        .map_or(0.0, |p| p.clamp(-MAX_PITCH_SEMITONES, MAX_PITCH_SEMITONES))
 }
 
 /// A request for an item: it names its parts. A plain audio file keeps the file path.
@@ -169,6 +179,8 @@ impl ItemTimeline {
 pub struct ItemPlan {
     pub timeline: ItemTimeline,
     pub parts: Vec<PartRun>,
+    /// Key change of every run, in semitones.
+    pub pitch_semitones: f64,
 }
 
 /// One part as a run reads it.
@@ -198,7 +210,16 @@ pub fn plan(req: &OpenSessionRequest, d: &Decision, caps: &HostCaps) -> SessionP
                 .map(|a| a.stream_index),
         })
         .collect();
-    let canonical = canonical(parts, &runs, &d.response.audio_plan, use_ts, caps, req);
+    let pitch_semitones = pitch_shift(&req.decide.selection);
+    let canonical = canonical(
+        parts,
+        &runs,
+        &d.response.audio_plan,
+        use_ts,
+        caps,
+        req,
+        pitch_semitones,
+    );
     SessionPlan {
         kind: session_kind(d.response.play_method),
         profile_hash: fnv_hex(&canonical),
@@ -218,6 +239,7 @@ pub fn plan(req: &OpenSessionRequest, d: &Decision, caps: &HostCaps) -> SessionP
         item: (d.response.play_method != PlayMethod::DirectPlay).then_some(ItemPlan {
             timeline,
             parts: runs,
+            pitch_semitones,
         }),
     }
 }
@@ -230,6 +252,7 @@ fn canonical(
     use_ts: bool,
     caps: &HostCaps,
     req: &OpenSessionRequest,
+    pitch_semitones: f64,
 ) -> String {
     let (codec, channels, encoder) = match plan {
         AudioPlan::Copy {
@@ -254,8 +277,13 @@ fn canonical(
             )
         })
         .collect();
+    let pitch = if pitch_semitones == 0.0 {
+        String::new()
+    } else {
+        format!("|pitch={pitch_semitones}")
+    };
     format!(
-        "{}|item=1|tl={SEGMENT_TIMELINE_VERSION}|mux={}|a={codec}|ac={channels}|ae={encoder}|sd={}|sv={}|p={}",
+        "{}|item=1|tl={SEGMENT_TIMELINE_VERSION}|mux={}|a={codec}|ac={channels}|ae={encoder}|sd={}|sv={}|p={}{pitch}",
         CACHE_NAMESPACE,
         if use_ts { "ts" } else { "fmp4" },
         SEGMENT_SECONDS,
@@ -306,6 +334,8 @@ pub struct RunArgs<'a> {
     pub plan: &'a AudioPlan,
     pub use_ts: bool,
     pub libfdk_aac: bool,
+    /// Key change in semitones; 0 leaves the pitch.
+    pub pitch_semitones: f64,
 }
 
 /// ffmpeg argv of one part's run into HLS segments, `seg-%04d` numbered from `start_segment`.
@@ -331,7 +361,9 @@ pub fn run_args(a: &RunArgs) -> Vec<String> {
             align_start: 0.0,
             end: None,
             use_ts: a.use_ts,
-            libfdk_aac: a.libfdk_aac,
+            // The pitch-shifting ffmpeg is not the one that carries libfdk.
+            libfdk_aac: a.libfdk_aac && a.pitch_semitones == 0.0,
+            pitch_semitones: a.pitch_semitones,
         },
     ));
     let (ext, dir) = (if a.use_ts { "ts" } else { "m4s" }, a.output_dir);
@@ -447,10 +479,12 @@ mod tests {
                 plan: &plan,
                 use_ts: false,
                 libfdk_aac: false,
+                pitch_semitones: 0.0,
             })
         };
         let at = |v: &[String], k: &str| v[v.iter().position(|a| a == k).unwrap() + 1].clone();
         let v = run(0, 100.0);
+        assert!(!v.iter().any(|a| a.contains("rubberband")));
         assert!(!v.contains(&"-ss".to_string()));
         assert_eq!(at(&v, "-t"), "100");
         let v = run(10, 1000.0);

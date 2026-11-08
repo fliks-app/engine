@@ -5,6 +5,7 @@ pub mod gateway;
 pub mod hw;
 pub mod intro;
 pub mod jobs;
+pub mod karaoke;
 pub mod live;
 pub mod lock;
 pub mod probe;
@@ -64,7 +65,7 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
-        jobs::delete, jobs::cover::get, intro::detect, live::open_handler, live::list_handler, live::get_handler),
+        jobs::delete, jobs::cover::get, karaoke::list, karaoke::download, karaoke::delete, intro::detect, live::open_handler, live::list_handler, live::get_handler),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, IntroDetectRequest,
         IntroDetectResponse, IntroEpisode, IntroSegment, ResolveRequest, ResolveResponse,
         SessionExpired, WorkerHello, WorkerHelloResponse, LeaseRequest, LeasedJob,
@@ -130,6 +131,9 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
         .route("/v1/covers/{id}", get(jobs::cover::get))
+        .route("/v1/models", get(karaoke::list))
+        .route("/v1/models/{id}", axum::routing::delete(karaoke::delete))
+        .route("/v1/models/{id}/download", post(karaoke::download))
         .route("/v1/intro-detect", post(intro::detect))
         .route("/v1/live", get(live::list_handler).post(live::open_handler))
         .route("/v1/live/{sid}", get(live::get_handler))
@@ -190,6 +194,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "device-credentials".into(),
             ];
             features.extend(jobs::optional_features());
+            features.extend(s.rt.karaoke.features(&s.rt.ffmpeg).await);
             features
         },
         instance_id: s.instance_id.clone(),

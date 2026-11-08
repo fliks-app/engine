@@ -123,6 +123,10 @@ pub struct DecideSelection {
     /// Position in `info.audio`, not a stream index.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_stream_index: Option<i32>,
+    /// Key change of an item's audio, in semitones within +-12 (karaoke): the item is encoded,
+    /// never copied, through ffmpeg's `rubberband` filter (`hello.features` lists `pitch-shift`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pitch_semitones: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -528,6 +528,75 @@
         }
       }
     },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "the manifest with each model's state, and what this engine can run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models/{id}": {
+      "delete": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "delete_model",
+        "responses": {
+          "204": {
+            "description": "removed, a download stopped"
+          },
+          "404": {
+            "description": "unknown model"
+          }
+        }
+      }
+    },
+    "/v1/models/{id}/download": {
+      "post": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "download_model",
+        "responses": {
+          "200": {
+            "description": "installed already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "downloading (follow it with `GET /v1/models` or the `ModelChanged` events)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown model"
+          }
+        }
+      }
+    },
     "/v1/probe": {
       "post": {
         "tags": [
@@ -790,6 +859,141 @@
   },
   "components": {
     "schemas": {
+      "AlignLine": {
+        "type": "object",
+        "description": "One lyric line to time. A line with no times is placed by the audio alone.",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "endMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "startMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Where the line is known to start and end, in milliseconds of the stem.",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "AlignMeta": {
+        "type": "object",
+        "description": "What an `Align` found.",
+        "required": [
+          "model",
+          "modelVersion",
+          "lines",
+          "matched"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlignedLine"
+            }
+          },
+          "matched": {
+            "type": "number",
+            "format": "double",
+            "description": "Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means\nthe timing is mostly interpolated."
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "AlignedLine": {
+        "type": "object",
+        "description": "A line placed on the audio. A line marked `x2` (or `(x2)`, `[x2]`, `2x`) comes back once per\nrepeat, in order, each with its own times and its `repeat` ordinal.",
+        "required": [
+          "line",
+          "repeat",
+          "startMs",
+          "endMs",
+          "words"
+        ],
+        "properties": {
+          "endMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "line": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Index of the request line.",
+            "minimum": 0
+          },
+          "repeat": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "startMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlignedWord"
+            }
+          }
+        }
+      },
+      "AlignedWord": {
+        "type": "object",
+        "required": [
+          "text",
+          "byteStart",
+          "byteEnd",
+          "startMs",
+          "endMs"
+        ],
+        "properties": {
+          "byteEnd": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "byteStart": {
+            "type": "integer",
+            "format": "int32",
+            "description": "UTF-8 byte range of the word inside the request line's `text`.",
+            "minimum": 0
+          },
+          "endMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "startMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string",
+            "description": "The word as written in the line (whitespace-separated)."
+          }
+        }
+      },
       "AudioCodec": {
         "type": "string",
         "enum": [
@@ -1658,6 +1862,15 @@
             "default": null,
             "minimum": 0
           },
+          "pitchSemitones": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Key change of an item's audio, in semitones within +-12 (karaoke): the item is encoded,\nnever copied, through ffmpeg's `rubberband` filter (`hello.features` lists `pitch-shift`).",
+            "default": null
+          },
           "requestedQuality": {
             "type": [
               "string",
@@ -2307,6 +2520,25 @@
                 "type": "string",
                 "enum": [
                   "BgJobDone"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A model's download started, progressed (at most once per second), ended or was deleted.",
+            "required": [
+              "model",
+              "type"
+            ],
+            "properties": {
+              "model": {
+                "$ref": "#/components/schemas/ModelInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ModelChanged"
                 ]
               }
             }
@@ -3339,6 +3571,135 @@
           },
           {
             "type": "object",
+            "title": "SeparateJob",
+            "description": "The vocals and the accompaniment of the audio file `media` names, as Opus files written at\nthe absolute paths given (at least one). `guide` is the accompaniment with the vocals\nkept low, to sing along. Needs a separation model (`GET /v1/models`) and an ONNX runtime.",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "bitrateKbps": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "Opus bitrate of every output; absent: 96.",
+                "minimum": 0
+              },
+              "guide": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "guideVocalsGain": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double",
+                "description": "Share of the vocals mixed into `guide`, 0 to 1; absent: 0.25."
+              },
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "instrumental": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "A `separation` model id; absent: the default one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Separate"
+                ]
+              },
+              "vocals": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "AlignJob",
+            "description": "Times the words of `lines` on the vocal stem `media` names: speech recognition gives word\ntimes, the known words are matched onto them. Lines with times keep within them. Needs an\n`alignment` model and the speech recogniser.",
+            "required": [
+              "lines",
+              "type"
+            ],
+            "properties": {
+              "language": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "ISO 639-1 code of the singing; absent: detected."
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AlignLine"
+                }
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "An `alignment` model id; absent: the default one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Align"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "MelodyJob",
+            "description": "The notes sung in each of `spans` of the vocal stem `media` names. Needs a `melody` model\nand an ONNX runtime.",
+            "required": [
+              "spans",
+              "type"
+            ],
+            "properties": {
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "A `melody` model id; absent: the default one."
+              },
+              "spans": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MelodySpan"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Melody"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "title": "OptimizeJob",
             "description": "Optimisation of one file by the plan (`docs/spec/jobs.md` section 11); the worker loop runs it\nfrom a lease (`PROTOCOL.md`), `/v1/jobs` accepts it too.",
             "required": [
@@ -3588,6 +3949,61 @@
                 "type": "string",
                 "enum": [
                   "Merge"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The stems are at the request's paths.",
+            "required": [
+              "separate",
+              "type"
+            ],
+            "properties": {
+              "separate": {
+                "$ref": "#/components/schemas/SeparateMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Separate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "align",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "$ref": "#/components/schemas/AlignMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Align"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "melody",
+              "type"
+            ],
+            "properties": {
+              "melody": {
+                "$ref": "#/components/schemas/MelodyMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Melody"
                 ]
               }
             }
@@ -3865,6 +4281,44 @@
           "transcodePercent": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "KaraokeRuntime": {
+        "type": "object",
+        "description": "What this engine build can run.",
+        "required": [
+          "onnx",
+          "providers",
+          "whisper",
+          "rubberband"
+        ],
+        "properties": {
+          "onnx": {
+            "type": "boolean",
+            "description": "An ONNX runtime is built in and loaded (`Separate` and `Melody` need it)."
+          },
+          "onnxError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why `onnx` is false."
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Execution providers that can run a model, `cpu` last: `cuda`, `openvino`."
+          },
+          "rubberband": {
+            "type": "boolean",
+            "description": "An ffmpeg with the `rubberband` filter is installed (pitch shift)."
+          },
+          "whisper": {
+            "type": "boolean",
+            "description": "The speech recogniser `Align` runs is installed."
           }
         }
       },
@@ -4804,6 +5258,79 @@
           }
         }
       },
+      "MelodyMeta": {
+        "type": "object",
+        "description": "What a `Melody` found.",
+        "required": [
+          "model",
+          "modelVersion",
+          "spans"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "modelVersion": {
+            "type": "string"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/MelodyNote"
+              }
+            },
+            "description": "The notes of each request span, in order; an unvoiced span has none."
+          }
+        }
+      },
+      "MelodyNote": {
+        "type": "object",
+        "description": "One sustained pitch inside a span.",
+        "required": [
+          "startMs",
+          "endMs",
+          "midi"
+        ],
+        "properties": {
+          "endMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "midi": {
+            "type": "number",
+            "format": "double",
+            "description": "MIDI pitch, fractional: 69 is A4 at 440 Hz."
+          },
+          "startMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "MelodySpan": {
+        "type": "object",
+        "description": "A span of the vocal stem whose notes a `Melody` looks for (a word cue).",
+        "required": [
+          "startMs",
+          "endMs"
+        ],
+        "properties": {
+          "endMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "startMs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "MergeMeta": {
         "type": "object",
         "description": "The `.m4b` a `Merge` wrote.",
@@ -4855,6 +5382,155 @@
           "path": {
             "type": "string",
             "description": "Absolute path, already authorised by the host."
+          }
+        }
+      },
+      "ModelFile": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "sha256",
+          "sizeBytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "File name inside the model's directory."
+          },
+          "sha256": {
+            "type": "string",
+            "description": "Lowercase hex SHA-256 of the file, checked before it is kept."
+          },
+          "sizeBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "f64: no 64-bit integers on the wire."
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "version",
+          "licence",
+          "default",
+          "files",
+          "state",
+          "downloadedBytes"
+        ],
+        "properties": {
+          "default": {
+            "type": "boolean",
+            "description": "What the job picks when its request names no model of this kind."
+          },
+          "downloadedBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Bytes fetched so far while `downloading`, else the installed size."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelFile"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable identifier, the `model` of a job request."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ModelKind"
+          },
+          "licence": {
+            "$ref": "#/components/schemas/ModelLicence"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ModelState"
+          },
+          "version": {
+            "type": "string",
+            "description": "Changes when the weights do; the host stamps it on what a job produced."
+          }
+        }
+      },
+      "ModelKind": {
+        "type": "string",
+        "description": "What a model does.",
+        "enum": [
+          "separation",
+          "alignment",
+          "melody"
+        ]
+      },
+      "ModelLicence": {
+        "type": "object",
+        "description": "The licence a model's weights are distributed under, to show before a download.",
+        "required": [
+          "name",
+          "text",
+          "clear"
+        ],
+        "properties": {
+          "clear": {
+            "type": "boolean",
+            "description": "False when the weights' terms are not settled: the host must show `text` and ask first."
+          },
+          "name": {
+            "type": "string",
+            "description": "SPDX identifier or a short name."
+          },
+          "text": {
+            "type": "string",
+            "description": "The licence text, or what the engine knows about the weights' terms."
+          }
+        }
+      },
+      "ModelState": {
+        "type": "string",
+        "enum": [
+          "absent",
+          "downloading",
+          "installed",
+          "failed"
+        ]
+      },
+      "ModelsResponse": {
+        "type": "object",
+        "description": "`GET /v1/models`.",
+        "required": [
+          "runtime",
+          "modelsDir",
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelInfo"
+            }
+          },
+          "modelsDir": {
+            "type": "string",
+            "description": "Where the models live (`FLIKS_MODELS_DIR`)."
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/KaraokeRuntime"
           }
         }
       },
@@ -6292,6 +6968,64 @@
           }
         }
       },
+      "SeparateMeta": {
+        "type": "object",
+        "description": "What a `Separate` wrote.",
+        "required": [
+          "model",
+          "modelVersion",
+          "provider",
+          "durationSeconds"
+        ],
+        "properties": {
+          "durationSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Length of the stems."
+          },
+          "guide": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StemFile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instrumental": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StemFile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "The model that ran and its version."
+          },
+          "modelVersion": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "description": "`cuda`, `openvino` or `cpu`."
+          },
+          "vocals": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StemFile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "SessionAction": {
         "type": "string",
         "enum": [
@@ -6574,6 +7308,25 @@
           }
         ],
         "description": "Where the SRT conversion reads. `file` is an absolute sidecar; `stream` is a text track of the job's media."
+      },
+      "StemFile": {
+        "type": "object",
+        "description": "One written audio file of a `Separate`.",
+        "required": [
+          "path",
+          "bytes"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "format": "double",
+            "description": "f64: no 64-bit integers on the wire."
+          },
+          "path": {
+            "type": "string",
+            "description": "The request's path."
+          }
+        }
       },
       "StreamEncode": {
         "type": "string",

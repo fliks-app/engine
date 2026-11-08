@@ -64,3 +64,53 @@ fn the_picked_audio_track_forks_the_cache_hash() {
     assert_ne!(hash(0), hash(1));
     assert_eq!(hash(1), hash(1));
 }
+
+/// A key change is never played as it is nor copied: it is encoded through the `rubberband`
+/// filter, in a cache directory of its own.
+#[test]
+fn a_key_change_forces_a_transcode_and_forks_the_cache_hash() {
+    let f = Fixture::load(&dir().join("mp3-parts-direct-play.json"));
+    let caps: HostCaps = serde_json::from_value(f.root["hostCaps"].clone()).unwrap();
+    let config: StreamingConfig = serde_json::from_value(f.root["config"].clone()).unwrap();
+    let of = |pitch: Option<f64>| {
+        let mut input = f.root["input"].clone();
+        if let Some(p) = pitch {
+            input["selection"]["pitchSemitones"] = p.into();
+        }
+        let req: OpenSessionRequest =
+            serde_json::from_value(serde_json::json!({ "decide": input })).unwrap();
+        let d = decide(&req.decide, &caps, &config);
+        let p = plan(&req, &d, &config, &caps);
+        (d, p)
+    };
+    let (plain, plain_plan) = of(None);
+    assert_eq!(
+        plain.response.play_method,
+        fliks_engine_core::api::PlayMethod::DirectPlay
+    );
+    for (pitch, same) in [(Some(0.0), true), (Some(2.0), false), (Some(-3.0), false)] {
+        let (d, p) = of(pitch);
+        let shifted = pitch != Some(0.0);
+        assert_eq!(
+            d.response.play_method == fliks_engine_core::api::PlayMethod::Transcode,
+            shifted
+        );
+        assert_eq!(
+            d.response
+                .transcode_reasons
+                .iter()
+                .any(|r| r.flag == "PitchShifted"),
+            shifted
+        );
+        assert_eq!(p.profile_hash == plain_plan.profile_hash, same, "{pitch:?}");
+        assert_eq!(
+            p.item.as_ref().map(|i| i.pitch_semitones),
+            shifted
+                .then(|| pitch.unwrap())
+                .or(p.item.as_ref().map(|_| 0.0))
+        );
+    }
+    assert_ne!(of(Some(2.0)).1.profile_hash, of(Some(3.0)).1.profile_hash);
+    // Out of range values are clamped, so a host cannot fill the cache with variants.
+    assert_eq!(of(Some(40.0)).1.profile_hash, of(Some(12.0)).1.profile_hash);
+}
