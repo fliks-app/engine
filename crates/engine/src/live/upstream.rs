@@ -15,7 +15,7 @@ use fliks_engine_core::args;
 use fliks_engine_core::args::LiveArgs;
 use fliks_engine_core::live as core_live;
 use http_body_util::{BodyExt, Empty};
-use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::path::Path;
 use std::sync::Arc;
@@ -24,16 +24,7 @@ use tokio::time::Instant;
 
 /// http and https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them).
 pub(super) fn https(vetted: bool) -> HttpsConnector<HttpConnector<Resolver>> {
-    let tls = HttpsConnectorBuilder::new()
-        .with_native_roots()
-        .unwrap_or_else(|e| {
-            tracing::warn!("no root certificates ({e}): https upstreams will fail");
-            let roots = rustls::RootCertStore::empty();
-            let config = rustls::ClientConfig::builder()
-                .with_root_certificates(roots)
-                .with_no_client_auth();
-            HttpsConnectorBuilder::new().with_tls_config(config)
-        });
+    let tls = crate::tls_builder();
     let mut http = HttpConnector::new_with_resolver(Resolver { vetted });
     http.enforce_http(false);
     tls.https_or_http().enable_http1().wrap_connector(http)

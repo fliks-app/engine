@@ -15,7 +15,7 @@ use fliks_engine_core::api::{
     MediaRef, UploadAck, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
 };
 use http_body_util::{BodyExt, Full};
-use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
@@ -72,16 +72,10 @@ fn enabled(rt: &Runtime) -> Option<Host> {
 
 /// http and https with the platform's roots: a worker outside the LAN reaches its host over https.
 fn client() -> Client<HttpsConnector<HttpConnector>, Full<Bytes>> {
-    let tls = HttpsConnectorBuilder::new()
-        .with_native_roots()
-        .unwrap_or_else(|e| {
-            tracing::warn!("no root certificates ({e}): an https host will fail");
-            let config = rustls::ClientConfig::builder()
-                .with_root_certificates(rustls::RootCertStore::empty())
-                .with_no_client_auth();
-            HttpsConnectorBuilder::new().with_tls_config(config)
-        });
-    Client::builder(TokioExecutor::new()).build(tls.https_or_http().enable_http1().build())
+    let mut http = HttpConnector::new();
+    http.enforce_http(false);
+    let tls = crate::tls_builder().https_or_http().enable_http1();
+    Client::builder(TokioExecutor::new()).build(tls.wrap_connector(http))
 }
 
 fn same(a: &Host, b: &Option<Host>) -> bool {
