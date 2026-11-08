@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.4](https://github.com/fliks-app/engine/compare/v1.15.3...v1.15.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* **optimize:** cpu lane for cpu-only work, cover and stream checks, one encoder list ([#198](https://github.com/fliks-app/engine/issues/198)) ([d1cb3dc](https://github.com/fliks-app/engine/commit/d1cb3dc49a06d8bd8ffe4baa25051755e2503240))
+
 ## [1.15.3](https://github.com/fliks-app/engine/compare/v1.15.2...v1.15.3) (2026-11-08)
 
 
