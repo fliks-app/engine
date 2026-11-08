@@ -27,6 +27,10 @@ struct Cli {
     /// JSON route table replacing the default (docs/spec/gateway.md).
     #[arg(long, requires = "upstream")]
     gateway_routes: Option<std::path::PathBuf>,
+    /// Run as a remote worker of this host (http://host[:port]); FLIKS_WORKER_TOKEN holds its token.
+    /// No library access: sources are read over HTTP and outputs uploaded.
+    #[arg(long)]
+    worker_url: Option<String>,
     #[arg(last = true)]
     cmd: Vec<String>,
 }
@@ -49,6 +53,19 @@ async fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
     if cli.engine_upstream.is_some() {
         return run_remote_gateway(cli).await;
+    }
+    let worker_url = cli
+        .worker_url
+        .clone()
+        .or_else(|| std::env::var("FLIKS_WORKER_URL").ok())
+        .filter(|u| !u.is_empty());
+    if let Some(url) = worker_url {
+        let token = std::env::var("FLIKS_WORKER_TOKEN").unwrap_or_default();
+        if token.is_empty() {
+            eprintln!("a remote worker requires FLIKS_WORKER_TOKEN");
+            return std::process::ExitCode::FAILURE;
+        }
+        fliks_engine::worker::set_remote(url, token);
     }
     let cache = fliks_engine::cache::Cache::from_env();
     let _cache_lock = match cache.lock_exclusive() {
