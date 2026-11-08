@@ -190,7 +190,7 @@ impl Slots {
     /// Never waits: playback runs first, past the size if need be. A hardware encode (`cpu` false)
     /// barely uses the quota, so it takes no slot from background work.
     pub fn playback(self: &Arc<Self>, cpu: bool) -> PlaybackSlot {
-        self.playback_on(Some(GPU_DEVICE).filter(|_| !cpu))
+        self.playback_on((!cpu).then_some(GPU_DEVICE))
     }
 
     /// A playback run on `device` (`None` = software, on the CPU budget).

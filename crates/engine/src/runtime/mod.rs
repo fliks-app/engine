@@ -299,6 +299,14 @@ async fn kill_all(jobs: Vec<Arc<Job>>) {
     }
 }
 
+/// A hardware run placed on one device: what to build its argv from, and the slot it holds.
+pub(crate) struct Placed {
+    pub slot: crate::slots::PlaybackSlot,
+    pub caps: HostCaps,
+    pub dev: fliks_engine_core::hw::Device,
+    pub hw: HwAccel,
+}
+
 #[cfg(test)]
 mod tests {
     use super::spawn::purge_from;
@@ -338,12 +346,4 @@ mod tests {
         assert!(rt.locks.locked().len() <= LOCKS_PRUNE_AT);
         assert!(Arc::ptr_eq(&held, &rt.lock_for("held")));
     }
-}
-
-/// A hardware run placed on one device: what to build its argv from, and the slot it holds.
-pub(crate) struct Placed {
-    pub slot: crate::slots::PlaybackSlot,
-    pub caps: HostCaps,
-    pub dev: fliks_engine_core::hw::Device,
-    pub hw: HwAccel,
 }
