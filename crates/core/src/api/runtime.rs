@@ -208,8 +208,6 @@ pub struct HeartbeatRequest {
     /// Player state, opaque (`playing`, `paused`, ...).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quality: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -278,7 +276,7 @@ pub struct SessionSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_hash: Option<String>,
     pub kind: SessionKind,
-    /// Last rung served or reported by a heartbeat.
+    /// Last rung served, else the one negotiated at open (`auto` when the client runs ABR).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<String>,
     pub client: ClientInfo,

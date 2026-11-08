@@ -35,7 +35,7 @@ A job is one ffmpeg run of one session key: `<file>-u<owner>|anon-<profileHash>`
 - Owner cap: at `maxSessionsPerOwner` the owner's oldest-beaten session is evicted (`session_to_evict`, `SessionEnded{reason: "evicted"}`). [ts:live:434-450]
 - `playPath` = `decision.response.playUrl` + `sid=<sid>` (`?` or `&`). [ts:ctl:1236-1245]
 - Prewarm: Transcode with a `startQuality` other than `auto`, `remux`, `original` spawns the pinned rung (`hls::pinned_rung_name`) at the segment of `startAtS`. [ts:ctl:612-690]
-- Heartbeat `{ ownerId?, positionS?, state?, quality? }`: unknown sid (and not revivable) answers `{ sessionLost: true }`; an owner other than the session's is 403. [ts:live:462-520]
+- Heartbeat `{ ownerId?, positionS?, state? }`: unknown sid (and not revivable) answers `{ sessionLost: true }`; an owner other than the session's is 403. [ts:live:462-520]
 - Touch: every data-plane request with a known `sid` refreshes `lastBeat`; segment requests record the index (throttle playhead). [ts:live:524-547]
 - GC: past `liveSessionTtlMs` (`pinnedSessionTtlMs` when pinned) a session becomes a tombstone (`SessionEnded{reason: "expired"}`); a presented sid revives it within `sessionReviveTtlMs` (`tombstone_revivable`). [ts:live:571-590,642-670]
 - Command `stop` = DELETE; `pauseJob`/`resumeJob` apply section 1 to the session's job. DELETE is idempotent (`?reason=`, default `stopped`): the session and its tombstone go and its jobs stop (section 2, Ownership). [ts:live:553-558]

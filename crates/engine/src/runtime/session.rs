@@ -501,9 +501,6 @@ impl Runtime {
         if let Some(st) = &hb.state {
             m.state = st.clone();
         }
-        if hb.quality.is_some() {
-            m.quality = hb.quality.clone();
-        }
     }
 
     /// A video request names what the client plays: the remux variant or a rung.
