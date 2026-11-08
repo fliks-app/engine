@@ -9,7 +9,7 @@ use axum::{
     routing::get,
 };
 use fliks_engine::karaoke::models::{Entry, FileEntry, Manager};
-use fliks_engine::karaoke::{Backend, BackendInfo, Loaded, Net, Tensor, Tools};
+use fliks_engine::karaoke::{Backend, BackendInfo, Loaded, Net, Tensor, Tools, Warm};
 use fliks_engine_core::api::{EngineEvent, HwAccel, ModelKind};
 use runtime_common::*;
 use serde_json::{Value, json};
@@ -215,7 +215,7 @@ impl Backend for NoOnnx {
         }
     }
 
-    fn load(&self, _: &Path, _: Option<&[String]>) -> Result<Loaded, String> {
+    fn load(&self, _: &Path, _: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
         Err("no runtime here".into())
     }
 }
@@ -392,7 +392,7 @@ impl Backend for Fake {
         }
     }
 
-    fn load(&self, file: &Path, allow: Option<&[String]>) -> Result<Loaded, String> {
+    fn load(&self, file: &Path, allow: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
         let name = file.file_name().unwrap().to_string_lossy();
         let net: Box<dyn Net> = match &*name {
             "vocals.onnx" => Box::new(SplitNet { keep_high: true }),

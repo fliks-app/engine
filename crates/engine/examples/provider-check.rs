@@ -1,6 +1,9 @@
 //! Runs one model on a fixed input with the CPU and with a provider and prints how far the outputs
 //! differ. `ORT_DYLIB_PATH=<lib> provider-check <provider> <model.onnx> <spleeter|swiftf0>`, a provider
-//! of `PROVIDERS` (`coreml`, `cuda`, `directml`, `nvtensorrtrtx`...); `list` instead prints them.
+//! of `PROVIDERS` (`coreml`, `cuda`, `directml`, `nvtensorrtrtx`...); `list` instead prints them. Spleeter
+//! runs on the production shape (one split) and on four splits. A provider that is not clearly faster
+//! than the CPU may have given the whole graph to it: with MIGraphX, `ORT_MIGRAPHX_DUMP_MODEL_OPS=1`
+//! lists the nodes it left out.
 use fliks_engine::karaoke::{
     onnx::{providers, with_provider},
     winml,
@@ -23,12 +26,15 @@ fn e<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+type Case = (Vec<Vec<f32>>, Vec<std::time::Duration>);
+
 fn run(
     env: &Environment,
     provider: Option<&str>,
     file: &str,
     kind: &str,
-) -> Result<(Vec<Vec<f32>>, Vec<std::time::Duration>), String> {
+    splits: usize,
+) -> Result<Case, String> {
     let mut b = Session::builder(env).map_err(e)?;
     if let Some(p) = provider {
         b = with_provider(b, env, p)?;
@@ -39,11 +45,11 @@ fn run(
     for _ in 0..4 {
         let t = std::time::Instant::now();
         let out = if kind == "spleeter" {
-            let x: Vec<f32> = noise(2 * 4 * 512 * 1024)
+            let x: Vec<f32> = noise(2 * splits * 512 * 1024)
                 .iter()
                 .map(|v| v.abs() * 40.0)
                 .collect();
-            s.run(ort::inputs!["x" => Tensor::from_array(([2usize, 4, 512, 1024], x)).map_err(e)?])
+            s.run(ort::inputs!["x" => Tensor::from_array(([2usize, splits, 512, 1024], x)).map_err(e)?])
         } else {
             let audio: Vec<f32> = noise(48000)
                 .iter()
@@ -92,13 +98,35 @@ fn main() {
         println!("providers {:?}", providers(&env));
         return;
     }
-    let (cpu, t_cpu) = run(&env, None, &a[2], &a[3]).unwrap();
-    let (got, t_got) = run(&env, Some(&a[1]), &a[2], &a[3]).unwrap();
-    println!(
-        "{} {}\ncpu runs {t_cpu:?}\n{} runs {t_got:?}",
-        a[3], a[2], a[1]
-    );
-    for (i, (c, g)) in cpu.iter().zip(&got).enumerate() {
+    let cases: &[usize] = if a[3] == "spleeter" { &[1, 4] } else { &[0] };
+    for &n in cases {
+        let (cpu, t_cpu) = run(&env, None, &a[2], &a[3], n).unwrap();
+        let (got, t_got) = run(&env, Some(&a[1]), &a[2], &a[3], n).unwrap();
+        println!(
+            "{} {} splits {n}\ncpu runs {t_cpu:?}\n{} runs {t_got:?}",
+            a[3], a[2], a[1]
+        );
+        let (c, g) = (steady(&t_cpu), steady(&t_got));
+        println!("steady run: cpu {c:?}, {} {g:?}", a[1]);
+        if g.as_secs_f64() > 0.7 * c.as_secs_f64() {
+            println!(
+                "WARNING: {} is not clearly faster than the CPU, it may run the whole graph there",
+                a[1]
+            );
+        }
+        compare(&cpu, &got);
+    }
+}
+
+/// The median run after the first, which builds or compiles.
+fn steady(times: &[std::time::Duration]) -> std::time::Duration {
+    let mut t = times[1..].to_vec();
+    t.sort();
+    t[t.len() / 2]
+}
+
+fn compare(cpu: &[Vec<f32>], got: &[Vec<f32>]) {
+    for (i, (c, g)) in cpu.iter().zip(got).enumerate() {
         let diff = c.iter().zip(g).map(|(x, y)| (x - y).abs());
         let max = diff.clone().fold(0.0f32, f32::max);
         let share = |tol: f32| diff.clone().filter(|d| *d > tol).count() as f64 / c.len() as f64;
