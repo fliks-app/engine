@@ -1,8 +1,9 @@
 //! The `Optimize` job: one library file rewritten into `staged` (metadata edit, remux or
 //! re-encode), checked against the source, hashed. Spec: `docs/spec/jobs.md` section 11.
+use super::disk::free_bytes;
 use super::run::{Ran, io_err, is_busy, pipeline_err, probe_file, run_ffmpeg};
 use super::scan::{ffprobe, lines, scan_file};
-use super::{Cmd, Ctx, free_bytes, tail};
+use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use crate::safe_write;
 use crate::slots::Lane;
@@ -438,19 +439,9 @@ impl Work<'_> {
             .max_software_hours
             .unwrap_or(opt::DEFAULT_MAX_SOFTWARE_HOURS);
         let mut cpu_fallback = false;
-        let sampled = loop {
-            self.enter_lane(hardware);
-            match self
-                .samples(if hardware { hw } else { HwAccel::None })
-                .await
-            {
-                Err(e) if hardware && self.falls_back(&e) => {
-                    self.hw_failed()?;
-                    (hardware, cpu_fallback) = (false, true);
-                }
-                other => break other?,
-            }
-        };
+        let sampled = self
+            .sample_or_fallback(hw, &mut hardware, &mut cpu_fallback)
+            .await?;
         match sampled {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
@@ -462,45 +453,9 @@ impl Work<'_> {
             }
             Sampled::Hours(_) | Sampled::None => {}
         }
-        let total = self.duration();
-        let stats = loop {
-            self.enter_lane(hardware);
-            let argv = match self.argv(
-                false,
-                if hardware { hw } else { HwAccel::None },
-                self.staged_text(),
-                |_| {},
-            ) {
-                Ok(a) => a,
-                Err(_) if hardware => {
-                    (hardware, cpu_fallback) = (false, true);
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
-            let run = self.run(&argv, total, (5.0, 85.0)).await;
-            let verdict = match run {
-                Ok(r) if r.errors > 0 => Err(self.damage(&r).unwrap_err()),
-                Ok(_) => match self.statistics_tags().await {
-                    Ok(()) => self.check(true, hardware).await.map(Some),
-                    Err(e) => return Err(e),
-                },
-                Err(e) => Err(e),
-            };
-            match verdict {
-                Ok(f) => {
-                    if let Some(l) = self.home.as_ref().filter(|_| hardware) {
-                        self.ctx.rt.slots.device_ok(&l.device);
-                    }
-                    break f;
-                }
-                Err(e) if hardware && self.falls_back(&e) => {
-                    self.hw_failed()?;
-                    (hardware, cpu_fallback) = (false, true);
-                }
-                Err(e) => return Err(e),
-            }
-        };
+        let stats = self
+            .encode_or_fallback(hw, &mut hardware, &mut cpu_fallback)
+            .await?;
         // The produced video track must still save what the samples promised.
         if let (Some(f), Some(min)) = (stats, self.plan().min_savings_pct)
             && let Some(src) = self.src_packets
@@ -514,6 +469,76 @@ impl Work<'_> {
             cpu_fallback,
             nothing_to_do: false,
         })
+    }
+
+    /// Samples the video, retrying on the CPU when a hardware run fails.
+    async fn sample_or_fallback(
+        &mut self,
+        hw: HwAccel,
+        hardware: &mut bool,
+        cpu_fallback: &mut bool,
+    ) -> Result<Sampled, String> {
+        loop {
+            self.enter_lane(*hardware);
+            match self
+                .samples(if *hardware { hw } else { HwAccel::None })
+                .await
+            {
+                Err(e) if *hardware && self.falls_back(&e) => {
+                    self.hw_failed()?;
+                    (*hardware, *cpu_fallback) = (false, true);
+                }
+                other => return other,
+            }
+        }
+    }
+
+    /// Encodes the file, retrying on the CPU when a hardware run fails; the packet stats of the output.
+    async fn encode_or_fallback(
+        &mut self,
+        hw: HwAccel,
+        hardware: &mut bool,
+        cpu_fallback: &mut bool,
+    ) -> Result<Option<PacketStats>, String> {
+        let total = self.duration();
+        loop {
+            self.enter_lane(*hardware);
+            let argv = match self.argv(
+                false,
+                if *hardware { hw } else { HwAccel::None },
+                self.staged_text(),
+                |_| {},
+            ) {
+                Ok(a) => a,
+                Err(_) if *hardware => {
+                    (*hardware, *cpu_fallback) = (false, true);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            let run = self.run(&argv, total, (5.0, 85.0)).await;
+            let verdict = match run {
+                Ok(r) if r.errors > 0 => Err(self.damage(&r).unwrap_err()),
+                Ok(_) => match self.statistics_tags().await {
+                    Ok(()) => self.check(true, *hardware).await.map(Some),
+                    Err(e) => return Err(e),
+                },
+                Err(e) => Err(e),
+            };
+            match verdict {
+                Ok(f) => {
+                    if let Some(l) = self.home.as_ref().filter(|_| *hardware) {
+                        self.ctx.rt.slots.device_ok(&l.device);
+                    }
+                    return Ok(f);
+                }
+                Err(e) if *hardware && self.falls_back(&e) => {
+                    self.hw_failed()?;
+                    (*hardware, *cpu_fallback) = (false, true);
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     /// A hardware run failed on the job's device: it counts against the device, and the job goes
