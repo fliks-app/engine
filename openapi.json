@@ -1265,6 +1265,13 @@
               "null"
             ]
           },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuDevice"
+            },
+            "description": "Hardware devices, each probed on its own; the fields above describe `devices[0]`."
+          },
           "encoders": {
             "type": "array",
             "items": {
@@ -2521,6 +2528,54 @@
           },
           "renderNode": {
             "type": "string"
+          }
+        }
+      },
+      "GpuDevice": {
+        "type": "object",
+        "description": "One hardware device the engine encodes on (`gpu0`, `gpu1`, ...), probed on its own.",
+        "required": [
+          "id",
+          "renderNode",
+          "hwAccel",
+          "encoders",
+          "decoders",
+          "tonemapAlgos"
+        ],
+        "properties": {
+          "decoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "encoders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hwAccel": {
+            "type": "string",
+            "description": "`vaapi` | `nvenc` | `qsv` | `amf` | `videotoolbox`"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "renderNode": {
+            "type": "string"
+          },
+          "tonemapAlgos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

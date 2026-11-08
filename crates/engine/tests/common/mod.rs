@@ -20,5 +20,6 @@ pub fn cpu_host() -> Arc<Hw> {
         gpus: vec![],
         pause_capability: "none".into(),
         render_node: "/dev/dri/renderD128".into(),
+        devices: vec![],
     })
 }

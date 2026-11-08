@@ -194,6 +194,37 @@ impl Runtime {
         }
     }
 
+    /// Capabilities and render node of hardware device `id` (a leased job's lane); the primary
+    /// device's when `id` is `None` or unknown.
+    pub(crate) fn target(&self, id: Option<&str>) -> (HostCaps, fliks_engine_core::hw::Device) {
+        let caps = self.caps().unwrap_or_default();
+        let mut dev = self.device(&caps);
+        let Some(d) = id.and_then(|id| self.hw.snapshot()?.device(id).cloned()) else {
+            return (caps, dev);
+        };
+        dev.render_node = Some(d.render_node);
+        (d.detected.host_caps(), dev)
+    }
+
+    /// A hardware run's place: the least loaded device (see `Slots::playback_gpu`) with its own
+    /// capabilities and render node. `None` on a CPU-only host.
+    pub(crate) fn place_gpu(&self) -> Option<Placed> {
+        let snap = self.hw.snapshot()?;
+        let ids: Vec<String> = snap.devices.iter().map(|d| d.id.clone()).collect();
+        let slot = self.slots.playback_gpu(&ids)?;
+        let d = snap.device(slot.device()?)?;
+        Some(Placed {
+            caps: d.detected.host_caps(),
+            dev: fliks_engine_core::hw::Device {
+                platform: d.detected.platform,
+                render_node: Some(d.render_node.clone()),
+                opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+            },
+            hw: d.detected.hw_accel,
+            slot,
+        })
+    }
+
     /// Boot purge, then the GC, throttle and cache loops.
     pub fn start(self: &Arc<Self>) {
         // A crashed engine's live windows must not be appended to. [ts:modules/livetv/services/livetv-session.service.ts:258-262]
@@ -307,4 +338,12 @@ mod tests {
         assert!(rt.locks.locked().len() <= LOCKS_PRUNE_AT);
         assert!(Arc::ptr_eq(&held, &rt.lock_for("held")));
     }
+}
+
+/// A hardware run placed on one device: what to build its argv from, and the slot it holds.
+pub(crate) struct Placed {
+    pub slot: crate::slots::PlaybackSlot,
+    pub caps: HostCaps,
+    pub dev: fliks_engine_core::hw::Device,
+    pub hw: HwAccel,
 }

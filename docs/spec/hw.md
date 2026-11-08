@@ -58,6 +58,12 @@ None passes: `none`. The render node is `gpuRenderNode` when pinned, else `/dev/
 
 `ffmpeg -hide_banner -encoders` (10 s); `libfdk_aac` as a whole word (`\b`, `_` counts as a word char). The TS reads no other listing: `-decoders`, `-filters`, `-hwaccels` are not parsed (the test encodes are the truth).
 
+## 5b. Several devices `[new]`
+
+With `gpuRenderNode` auto on Linux, the primary node (`renderD128`) is probed as above, then every other non-NVIDIA render node gets its own full chain (decoders, encoders, tone-map, deinterlace) with `-init_hw_device` on that node. A node whose chain finds no hardware encoder is not a device. Devices are `gpu0..gpuN` in node order; a pinned node is the only device. `capabilities.devices` lists them (`id`, `renderNode`, `name`, `hwAccel`, `encoders`, `decoders`, `tonemapAlgos`); the other `capabilities`/`hostCaps` fields describe `gpu0`, which the playback decision reads. NVIDIA cards are one device (`-gpu` selection per card is not done).
+
+A hardware playback run (VOD, live transcode) is placed on the device with the fewest hardware reads, then on one without a background job (`Slots::playback_gpu`), and its argv uses that device's capabilities and render node; a failed argv falls back to the CPU. An optimization job runs on the device it was leased on. The GPU reserve and the background job limit are per device (`Slots::set_device_reserve`, `set_device_limit`).
+
 ## 6. GPUs `[ts:T/gpu-registry.ts:71-125]`
 
 `/dev/dri` entries `^renderD\d+$`, sorted; vendor/device/boot_vga from `/sys/class/drm/<name>/device/` (trimmed; missing = empty). Vendor `0x8086` intel, `0x10de` nvidia, `0x1002` amd, else the raw id. Kind: nvidia, amd, intel+`boot_vga=1` iGPU, intel otherwise dGPU, else unknown. Label: `<Vendor> <model> · <kind> · <node>` for `0xa7a8` (Raptor Lake UHD Graphics) and `0x5693` (Arc A370M), else `<Vendor> <kind> · <node> (<vendorId>:<deviceId>)` with `?` for an empty id. No `/dev/dri` (Windows, macOS): empty.

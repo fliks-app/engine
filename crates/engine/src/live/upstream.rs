@@ -125,7 +125,9 @@ async fn spawn_packaged(
             }
         }
     }
-    let Some(caps) = rt.caps() else { return false };
+    let Some(mut caps) = rt.caps() else {
+        return false;
+    };
     let dir = pipe.dir.clone().expect("packaged pipe");
     let (mode, video, audio, fresh) = {
         let mut m = pipe.m.locked();
@@ -144,6 +146,14 @@ async fn spawn_packaged(
             .unwrap_or(false);
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
+    let mut dev = rt.device(&caps);
+    let mut slot = None;
+    if transcode
+        && caps.hw_accel != fliks_engine_core::api::HwAccel::None
+        && let Some(p) = rt.place_gpu()
+    {
+        (caps, dev, slot) = (p.caps, p.dev, Some(p.slot));
+    }
     let hw_accel = if transcode {
         caps.hw_accel
     } else {
@@ -173,7 +183,7 @@ async fn spawn_packaged(
             encode_threads: rt.slots.encode_threads(),
         },
         &caps,
-        &rt.device(&caps),
+        &dev,
     );
     let spawned = if vet_proxy.is_some() {
         Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
@@ -191,10 +201,10 @@ async fn spawn_packaged(
         let mut m = pipe.m.locked();
         if !m.ended {
             m.proc = Some(proc.clone());
-            m.slot = Some(
+            m.slot = Some(slot.unwrap_or_else(|| {
                 rt.slots
-                    .playback(hw_accel == fliks_engine_core::api::HwAccel::None),
-            );
+                    .playback(hw_accel == fliks_engine_core::api::HwAccel::None)
+            }));
             m.last_segment_at = Instant::now();
             m.last_seg = None;
         }

@@ -34,6 +34,8 @@ struct Run {
     pub(super) remux: Option<Remux>,
     pub(super) duration: f64,
     pub(super) item: bool,
+    /// The GPU slot taken at placement; a software run takes its own at launch.
+    pub(super) slot: Option<crate::slots::PlaybackSlot>,
 }
 
 impl Runtime {
@@ -74,8 +76,15 @@ impl Runtime {
             })
             .await;
         }
-        let caps = self.caps().unwrap_or_default();
-        let dev = self.device(&caps);
+        let mut caps = self.caps().unwrap_or_default();
+        let mut dev = self.device(&caps);
+        let mut hw = hw;
+        let mut slot = None;
+        if hw != HwAccel::None
+            && let Some(p) = self.place_gpu()
+        {
+            (caps, dev, hw, slot) = (p.caps, p.dev, p.hw, Some(p.slot));
+        }
         let dir_s = dir.to_string_lossy().into_owned();
         let build = |hw| {
             let args = core_session::vod_args(&core_session::RunInput {
@@ -97,6 +106,7 @@ impl Runtime {
             Ok(a) => (a, hw),
             Err(e) if hw != HwAccel::None => {
                 tracing::warn!(key, "argv on {hw:?}: {e}; CPU instead");
+                slot = None;
                 (build(HwAccel::None).ok()?, HwAccel::None)
             }
             Err(e) => {
@@ -118,6 +128,7 @@ impl Runtime {
             remux: None,
             duration: s.plan.duration,
             item: false,
+            slot,
         };
         self.launch(s, run, &argv).await
     }
@@ -177,6 +188,7 @@ impl Runtime {
             remux: None,
             duration: span.duration_s,
             item: true,
+            slot: None,
         };
         self.launch(s, run, &argv).await
     }
@@ -274,6 +286,7 @@ impl Runtime {
             remux: Some(Remux::new(asm_plan, dir, gop_dir)),
             duration: plan.duration,
             item: false,
+            slot: None,
         };
         self.launch(s, run, &argv).await
     }
@@ -296,7 +309,9 @@ impl Runtime {
         }
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let slot = self.slots.playback(r.hw.0 == HwAccel::None);
+        let slot = r
+            .slot
+            .unwrap_or_else(|| self.slots.playback(r.hw.0 == HwAccel::None));
         let proc = match Ffmpeg::spawn(&self.ffmpeg, argv).await {
             Ok(p) => p,
             Err(e) => {
