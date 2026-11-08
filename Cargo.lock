@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "fliks-engine"
-version = "1.19.1"
+version = "1.20.0"
 dependencies = [
  "alass-core",
  "axum",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "fliks-engine-core"
-version = "1.19.1"
+version = "1.20.0"
 dependencies = [
  "serde",
  "serde_json",

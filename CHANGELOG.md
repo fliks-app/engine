@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/fliks-app/engine/compare/v1.19.1...v1.20.0) (2026-11-08)
+
+
+### Features
+
+* **karaoke:** run the recogniser on Vulkan, drop whisper base ([#217](https://github.com/fliks-app/engine/issues/217)) ([1e525d5](https://github.com/fliks-app/engine/commit/1e525d5464d8d2b7a84f2bc3dcbf705764645bd3))
+
 ## [1.19.1](https://github.com/fliks-app/engine/compare/v1.19.0...v1.19.1) (2026-11-08)
 
 
