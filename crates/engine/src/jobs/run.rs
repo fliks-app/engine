@@ -46,7 +46,15 @@ pub(super) async fn run_ffmpeg(
     total: f64,
     (from, to): (f64, f64),
 ) -> Result<Ran, String> {
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, argv, Pipes { stdout: true });
+    let cmd = Cmd::new(
+        "ffmpeg",
+        &ctx.rt.ffmpeg,
+        argv,
+        Pipes {
+            decode_errors: true,
+            ..Pipes::stdout()
+        },
+    );
     let c = ctx.clone();
     ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
         let p = &p[0];

@@ -137,7 +137,7 @@ async fn build(
 
 /// The run, its `-progress` lines on stdout as progress.
 async fn ffmpeg(ctx: &Ctx, argv: &[String], total: f64) -> Result<(), String> {
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, argv, Pipes { stdout: true });
+    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, argv, Pipes::stdout());
     let c = ctx.clone();
     ctx.pipeline(timeout_ms(total), vec![cmd], |p| async move {
         let p = &p[0];

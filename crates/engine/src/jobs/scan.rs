@@ -49,7 +49,7 @@ pub async fn scan_file(ctx: &Ctx, info: &MediaInfo, path: &str) -> Result<Source
 }
 
 pub(super) fn ffprobe(ctx: &Ctx, argv: &[String]) -> Cmd {
-    Cmd::new("ffprobe", &ctx.rt.ffprobe, argv, Pipes { stdout: true })
+    Cmd::new("ffprobe", &ctx.rt.ffprobe, argv, Pipes::stdout())
 }
 
 /// ffprobe's stdout by line until `on_line` says stop (true, the run is stopped); an exit not asked for fails.
