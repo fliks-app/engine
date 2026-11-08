@@ -59,6 +59,20 @@ pub struct Gpu {
     pub name: String,
 }
 
+/// One hardware device the engine encodes on (`gpu0`, `gpu1`, ...), probed on its own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuDevice {
+    pub id: String,
+    pub render_node: String,
+    pub name: Option<String>,
+    /// `vaapi` | `nvenc` | `qsv` | `amf` | `videotoolbox`
+    pub hw_accel: String,
+    pub encoders: Vec<String>,
+    pub decoders: Vec<String>,
+    pub tonemap_algos: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
@@ -69,6 +83,9 @@ pub struct Capabilities {
     pub tonemap_algos: Vec<String>,
     pub gpus: Vec<Gpu>,
     pub default_gpu: Option<String>,
+    /// Hardware devices, each probed on its own; the fields above describe `devices[0]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<GpuDevice>,
     pub platform: String,
     /// `signal` | `stdin` | `none`
     pub pause_capability: String,

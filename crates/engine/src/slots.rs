@@ -19,7 +19,8 @@ pub fn cpu_quota() -> usize {
         .max(1)
 }
 
-/// The one GPU of this engine; hardware playback reads and GPU optimization are counted on it.
+/// The first GPU of this engine (`gpu1`, `gpu2`... follow); hardware reads and GPU optimization
+/// are counted per device.
 pub const GPU_DEVICE: &str = "gpu0";
 /// The CPU as an optimization device.
 pub const CPU_DEVICE: &str = "cpu";
@@ -83,6 +84,8 @@ struct State {
     cpu_weight: usize,
     /// Hardware reads on a device that pause its GPU optimization; 0 never pauses.
     gpu_reserve: usize,
+    /// Per-device override of `gpu_reserve`.
+    device_reserve: HashMap<String, usize>,
     /// Optimizations at once per device, outside the background job limit.
     device_limit: HashMap<String, usize>,
 }
@@ -103,6 +106,7 @@ impl Slots {
                 next_id: 0,
                 cpu_weight: DEFAULT_CPU_WEIGHT,
                 gpu_reserve: DEFAULT_GPU_RESERVE,
+                device_reserve: HashMap::new(),
                 device_limit: HashMap::new(),
             }),
         })
@@ -128,6 +132,26 @@ impl Slots {
         st.cpu_weight = cpu_weight.map_or(DEFAULT_CPU_WEIGHT, |w| (w as usize).max(1));
         st.gpu_reserve = gpu_reserve.map_or(DEFAULT_GPU_RESERVE, |n| n as usize);
         rebalance(&mut st);
+    }
+
+    /// Hardware reads on `device` that pause its GPU optimization; `None` goes back to the
+    /// global reserve, 0 never pauses.
+    pub fn set_device_reserve(&self, device: &str, reserve: Option<u32>) {
+        let mut st = self.st.locked();
+        match reserve {
+            Some(n) => st.device_reserve.insert(device.into(), n as usize),
+            None => st.device_reserve.remove(device),
+        };
+        rebalance(&mut st);
+    }
+
+    /// Hardware reads and optimization runs on `device`, the load placement compares.
+    pub fn device_load(&self, device: &str) -> (usize, usize) {
+        let st = self.st.locked();
+        (
+            st.gpu_reads.get(device).copied().unwrap_or(0),
+            on_device(&st, device),
+        )
     }
 
     /// Optimizations a device runs at once (default 1).
@@ -166,12 +190,34 @@ impl Slots {
     /// Never waits: playback runs first, past the size if need be. A hardware encode (`cpu` false)
     /// barely uses the quota, so it takes no slot from background work.
     pub fn playback(self: &Arc<Self>, cpu: bool) -> PlaybackSlot {
-        self.playback_delta(true, cpu);
+        self.playback_on((!cpu).then_some(GPU_DEVICE))
+    }
+
+    /// A playback run on `device` (`None` = software, on the CPU budget).
+    pub fn playback_on(self: &Arc<Self>, device: Option<&str>) -> PlaybackSlot {
+        let device = device.map(String::from);
+        self.playback_delta(true, device.as_deref());
         PlaybackSlot {
             slots: self.clone(),
             idle: Mutex::new(false),
-            cpu,
+            device,
         }
+    }
+
+    /// A hardware playback run on the least loaded of `devices`: fewest reads first, then no
+    /// background job over one, then the order given. `None` when `devices` is empty.
+    pub fn playback_gpu(self: &Arc<Self>, devices: &[String]) -> Option<PlaybackSlot> {
+        let best = {
+            let st = self.st.locked();
+            devices
+                .iter()
+                .min_by_key(|d| {
+                    let reads = st.gpu_reads.get(*d).copied().unwrap_or(0);
+                    (reads, on_device(&st, d) > 0)
+                })?
+                .clone()
+        };
+        Some(self.playback_on(Some(&best)))
     }
 
     /// Waits for a background slot of `weight` CPU shares: FIFO within a priority. Dropping the
@@ -268,24 +314,32 @@ impl Slots {
         rebalance(&mut st);
     }
 
-    fn playback_delta(&self, up: bool, cpu: bool) {
+    fn playback_delta(&self, up: bool, device: Option<&str>) {
         let mut st = self.st.locked();
-        if cpu {
-            st.playback = if up {
-                st.playback + 1
-            } else {
-                st.playback.saturating_sub(1)
-            };
-        } else {
-            let n = st.gpu_reads.entry(GPU_DEVICE.into()).or_default();
-            *n = if up { *n + 1 } else { n.saturating_sub(1) };
+        match device {
+            None => {
+                st.playback = if up {
+                    st.playback + 1
+                } else {
+                    st.playback.saturating_sub(1)
+                };
+            }
+            Some(d) => {
+                let n = st.gpu_reads.entry(d.into()).or_default();
+                *n = if up { *n + 1 } else { n.saturating_sub(1) };
+            }
         }
         rebalance(&mut st);
     }
 }
 
 fn gpu_paused(st: &State, device: &str) -> bool {
-    st.gpu_reserve > 0 && st.gpu_reads.get(device).copied().unwrap_or(0) >= st.gpu_reserve
+    let reserve = st
+        .device_reserve
+        .get(device)
+        .copied()
+        .unwrap_or(st.gpu_reserve);
+    reserve > 0 && st.gpu_reads.get(device).copied().unwrap_or(0) >= reserve
 }
 
 fn on_device(st: &State, device: &str) -> usize {
@@ -368,16 +422,21 @@ pub struct BackgroundSlot {
 pub struct PlaybackSlot {
     slots: Arc<Slots>,
     idle: Mutex<bool>,
-    cpu: bool,
+    /// The GPU this run holds; `None` for a software run.
+    device: Option<String>,
 }
 
 impl PlaybackSlot {
+    pub fn device(&self) -> Option<&str> {
+        self.device.as_deref()
+    }
+
     /// A paused (throttled) playback run lends its slot back to background work.
     pub fn set_idle(&self, idle: bool) {
         let mut i = self.idle.locked();
         if *i != idle {
             *i = idle;
-            self.slots.playback_delta(!idle, self.cpu);
+            self.slots.playback_delta(!idle, self.device.as_deref());
         }
     }
 }
@@ -385,7 +444,7 @@ impl PlaybackSlot {
 impl Drop for PlaybackSlot {
     fn drop(&mut self) {
         if !*self.idle.locked() {
-            self.slots.playback_delta(false, self.cpu);
+            self.slots.playback_delta(false, self.device.as_deref());
         }
     }
 }
@@ -569,6 +628,36 @@ mod tests {
         s.set_optimize(None, Some(0));
         drop(read);
         assert!(!*gpu.preempted.borrow());
+    }
+
+    #[tokio::test]
+    async fn a_hardware_read_goes_to_the_least_loaded_device_without_a_job() {
+        let s = Slots::new(4);
+        let devs: Vec<String> = vec!["gpu0".into(), "gpu1".into()];
+        let _job = s.optimize(gpu_lane()).await;
+        let a = s.playback_gpu(&devs).unwrap();
+        assert_eq!(a.device(), Some("gpu1"), "gpu0 runs a background job");
+        let b = s.playback_gpu(&devs).unwrap();
+        assert_eq!(
+            b.device(),
+            Some("gpu0"),
+            "one read each, the job is the tie-break"
+        );
+        assert!(s.playback_gpu(&[]).is_none());
+    }
+
+    #[tokio::test]
+    async fn the_reserve_of_a_device_overrides_the_global_one() {
+        let s = Slots::new(4);
+        s.set_device_reserve("gpu0", Some(0));
+        let gpu = s.optimize(gpu_lane()).await;
+        let _r = s.playback_on(Some("gpu0"));
+        assert!(!*gpu.preempted.borrow(), "0 never pauses");
+        s.set_device_reserve("gpu0", None);
+        assert!(
+            *gpu.preempted.borrow(),
+            "the global reserve of 1 applies again"
+        );
     }
 
     #[tokio::test]

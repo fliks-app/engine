@@ -28,6 +28,7 @@ fn snap(hw: HwAccel, node: &str) -> Snapshot {
         gpus: vec![],
         pause_capability: "stdin".into(),
         render_node: node.into(),
+        devices: vec![],
     }
 }
 

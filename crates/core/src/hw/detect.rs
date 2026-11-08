@@ -6,7 +6,7 @@ use super::device::Device;
 use super::encoders::ENCODERS;
 use super::parse;
 use super::probe::{self, Cmd};
-use crate::api::{Capabilities, Gpu, HostCaps, HwAccel, Platform};
+use crate::api::{Capabilities, Gpu, GpuDevice, HostCaps, HwAccel, Platform};
 use std::future::Future;
 use std::path::Path;
 
@@ -307,6 +307,19 @@ impl Detected {
         }
     }
 
+    /// This detection as the hardware device `id` on `render_node`.
+    pub fn device_caps(&self, id: &str, render_node: &str, name: Option<String>) -> GpuDevice {
+        GpuDevice {
+            id: id.into(),
+            render_node: render_node.into(),
+            name,
+            hw_accel: hw_name(self.hw_accel).into(),
+            encoders: self.encoders.clone(),
+            decoders: self.decoders.clone(),
+            tonemap_algos: self.tonemap_algos(),
+        }
+    }
+
     /// Tone-map algorithms this host can run; `auto` is always there.
     /// [ts:backend/src/modules/streaming/transcoding/transcoding.service.ts:377-395]
     pub fn tonemap_algos(&self) -> Vec<String> {
@@ -339,6 +352,7 @@ impl Detected {
             tonemap_algos: self.tonemap_algos(),
             gpus: gpus.iter().map(Gpu::from).collect(),
             default_gpu: (!gpus.is_empty()).then(|| render_node.to_string()),
+            devices: vec![],
             platform: platform_name(self.platform).into(),
             pause_capability: pause_capability.into(),
         }

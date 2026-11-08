@@ -163,21 +163,32 @@ pub async fn listen(app: Router) -> String {
 }
 
 pub fn host(hw: HwAccel, render_node: &str, pause: &str) -> Arc<Hw> {
+    let detected = Detected {
+        hw_accel: hw,
+        platform: Platform::Linux,
+        libfdk_aac: false,
+        vaapi_writes_hdr_metadata: false,
+        probes: vec![],
+        encoders: vec![],
+        decoders: vec![],
+        disabled_encoders: vec![],
+        disabled_decoders: vec![],
+    };
+    let devices = (hw != HwAccel::None)
+        .then(|| fliks_engine::hw::HwDevice {
+            id: "gpu0".into(),
+            render_node: render_node.into(),
+            name: None,
+            detected: detected.clone(),
+        })
+        .into_iter()
+        .collect();
     Hw::fixed(Snapshot {
-        detected: Detected {
-            hw_accel: hw,
-            platform: Platform::Linux,
-            libfdk_aac: false,
-            vaapi_writes_hdr_metadata: false,
-            probes: vec![],
-            encoders: vec![],
-            decoders: vec![],
-            disabled_encoders: vec![],
-            disabled_decoders: vec![],
-        },
+        detected,
         gpus: vec![],
         pause_capability: pause.into(),
         render_node: render_node.into(),
+        devices,
     })
 }
 
