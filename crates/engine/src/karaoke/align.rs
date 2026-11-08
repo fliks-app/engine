@@ -81,27 +81,7 @@ async fn heard(
     .to_vec();
     ctx.ffmpeg(&decode).await?;
     let prefix = scratch.join("words");
-    let argv: Vec<String> = [
-        "-m",
-        &model.to_string_lossy(),
-        "-f",
-        &wav.to_string_lossy(),
-        "-l",
-        language.unwrap_or("auto"),
-        "-ml",
-        "1",
-        "-sow",
-        "-oj",
-        "-of",
-        &prefix.to_string_lossy(),
-        "-np",
-        "-t",
-        &super::threads().to_string(),
-        "--prompt",
-        &prompt(lines),
-    ]
-    .map(String::from)
-    .to_vec();
+    let argv = whisper_argv(model, &wav, &prefix, language, lines);
     let cmd = Cmd::new("whisper", whisper, &argv, Pipes::default());
     ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
         let p = &p[0];
@@ -133,4 +113,35 @@ fn prompt(lines: &[AlignLine]) -> String {
         }
     }
     out
+}
+
+/// The `whisper-cli` arguments of an `Align` run: words as JSON entries at `<prefix>.json`.
+pub fn whisper_argv(
+    model: &std::path::Path,
+    wav: &std::path::Path,
+    prefix: &std::path::Path,
+    language: Option<&str>,
+    lines: &[AlignLine],
+) -> Vec<String> {
+    [
+        "-m",
+        &model.to_string_lossy(),
+        "-f",
+        &wav.to_string_lossy(),
+        "-l",
+        language.unwrap_or("auto"),
+        "-ml",
+        "1",
+        "-sow",
+        "-oj",
+        "-of",
+        &prefix.to_string_lossy(),
+        "-np",
+        "-t",
+        &super::threads().to_string(),
+        "--prompt",
+        &prompt(lines),
+    ]
+    .map(String::from)
+    .to_vec()
 }
