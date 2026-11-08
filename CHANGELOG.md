@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/fliks-app/engine/compare/v1.17.0...v1.17.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **karaoke:** openvino on the gpu, one download per model, licence notices ([#204](https://github.com/fliks-app/engine/issues/204)) ([f1913a6](https://github.com/fliks-app/engine/commit/f1913a638b055e9560c50acc8c4d38fda8817691))
+
 ## [1.17.0](https://github.com/fliks-app/engine/compare/v1.16.0...v1.17.0) (2026-11-08)
 
 
