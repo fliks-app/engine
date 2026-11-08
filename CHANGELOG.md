@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/fliks-app/engine/compare/v1.13.0...v1.14.0) (2026-11-08)
+
+
+### Features
+
+* **worker:** add remote worker mode with resumable output upload ([#183](https://github.com/fliks-app/engine/issues/183)) ([e151c80](https://github.com/fliks-app/engine/commit/e151c808fbde6a130ff098d9995d5c60ce7e592d))
+
 ## [1.13.0](https://github.com/fliks-app/engine/compare/v1.12.1...v1.13.0) (2026-11-07)
 
 
