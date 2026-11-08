@@ -57,6 +57,9 @@
       "subtitles": [],
       "tags": {
         "artist": "Ada Example",
+        "artists": [
+          "Ada Example"
+        ],
         "title": "Tome Un",
         "track": 3,
         "trackTotal": 12,

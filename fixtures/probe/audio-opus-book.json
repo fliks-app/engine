@@ -63,6 +63,9 @@
       "tags": {
         "album": "Synthetic Series",
         "artist": "Ada Example",
+        "artists": [
+          "Ada Example"
+        ],
         "series": "Synthetic Saga",
         "seriesPart": "2",
         "title": "Tome Un",
