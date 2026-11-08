@@ -7,20 +7,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && cargo install subtile-ocr --version 0.2.6 --locked --root /opt/subtile-ocr \
   && rm -rf /var/lib/apt/lists/* "$HOME/.cargo/registry" "$HOME/.rustup"
 
-# Speech recogniser of the `Align` job (MIT). A generic build for the architecture: the image runs
-# on whatever CPU the host has, so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
+# Speech recogniser of the `Align` job (MIT), with the Vulkan backend (a GPU when the host passes one,
+# else the CPU). A generic build for the architecture: the image runs on whatever CPU the host has,
+# so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
 FROM ubuntu:24.04 AS whisper-build
 ARG TARGETARCH
 ARG WHISPER_CPP_VERSION=v1.9.5
 ARG WHISPER_CPP_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl build-essential cmake \
+    ca-certificates curl build-essential cmake libvulkan-dev glslc spirv-headers \
   && curl -fsSL -o /tmp/whisper.tar.gz "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/${WHISPER_CPP_VERSION}.tar.gz" \
   && echo "${WHISPER_CPP_SHA256}  /tmp/whisper.tar.gz" | sha256sum -c - \
   && mkdir /src && tar -xzf /tmp/whisper.tar.gz -C /src --strip-components=1 \
   && cd /src \
   && ISA=""; if [ "$TARGETARCH" = "amd64" ]; then ISA="-DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"; fi \
-  && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF \
+  && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DGGML_VULKAN=ON \
        -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON $ISA \
   && cmake --build build -j"$(nproc)" --target whisper-cli \
   && strip build/bin/whisper-cli \
@@ -79,7 +80,7 @@ ARG ONNXRUNTIME_SHA256_AMD64=c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae
 ARG ONNXRUNTIME_SHA256_ARM64=5317505e2da99be65f8e2775ba3c2afd6d2961fd78aba1bd8f56159f48820c78
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 \
+    ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 libvulkan1 mesa-vulkan-drivers \
     python3 python3-pip tesseract-ocr \
     tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-spa tesseract-ocr-deu tesseract-ocr-ita \
     tesseract-ocr-por tesseract-ocr-nld tesseract-ocr-swe tesseract-ocr-dan tesseract-ocr-nor \
@@ -105,6 +106,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/LICENSE /usr/share/doc/onnxruntime/LICENSE \
   && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/ThirdPartyNotices.txt /usr/share/doc/onnxruntime/ThirdPartyNotices.txt \
   && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-* \
+  && rm -f /usr/share/vulkan/icd.d/lvp_icd*.json \
   && apt-get purge -y wget python3-pip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 

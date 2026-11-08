@@ -138,23 +138,17 @@ pub fn manifest() -> Vec<Entry> {
                 size: 190_085_487,
             }],
         },
-        Entry {
-            id: "whisper-base-q5_1",
-            kind: ModelKind::Alignment,
-            name: "Whisper base, 5-bit (60 MB, faster and less exact)",
-            version: "1",
-            licence: "MIT",
-            licence_text: with_mit(WHISPER),
-            clear: true,
-            default: false,
-            files: vec![FileEntry {
-                name: "model.bin",
-                url: whisper_url("ggml-base-q5_1.bin"),
-                sha256: "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
-                size: 59_707_625,
-            }],
-        },
     ]
+}
+
+/// Manifest ids that were dropped: their directory is removed at start.
+const RETIRED: &[&str] = &["whisper-base-q5_1"];
+
+/// Deletes what a retired model left in the models directory.
+pub fn remove_retired(dir: &Path) {
+    for id in RETIRED {
+        let _ = std::fs::remove_dir_all(dir.join(id));
+    }
 }
 
 /// The copyright line of a licence note followed by the MIT terms.
@@ -583,6 +577,18 @@ mod tests {
         }
         let ids: std::collections::HashSet<_> = m.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), m.len());
+    }
+
+    #[test]
+    fn a_retired_model_is_removed_and_not_listed() {
+        let d = std::env::temp_dir().join(format!("retired-{}", std::process::id()));
+        let old = d.join(RETIRED[0]);
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("model.bin"), b"x").unwrap();
+        remove_retired(&d);
+        assert!(!old.exists());
+        assert!(manifest().iter().all(|e| !RETIRED.contains(&e.id)));
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

@@ -304,6 +304,7 @@ async fn jobs_name_the_missing_model_or_runtime_in_a_typed_error() {
     e.rt.karaoke.set_tools(Tools {
         whisper: None,
         pitch_ffmpeg: None,
+        whisper_backend: "cpu",
     });
     for kind in &kinds {
         let v = run_kind(&e, &media, kind.clone()).await;
@@ -702,6 +703,7 @@ async fn align_times_the_lyrics_from_what_the_recogniser_heard() {
     e.rt.karaoke.set_tools(Tools {
         whisper: Some(script.to_string_lossy().into_owned()),
         pitch_ffmpeg: None,
+        whisper_backend: "cpu",
     });
     let kind = json!({ "type": "Align", "language": "en", "lines": [
         { "text": "Hello, world" }, { "text": "again (x2)" }] });
@@ -738,9 +740,53 @@ async fn align_times_the_lyrics_from_what_the_recogniser_heard() {
     );
     assert_eq!(lines[1]["words"][0]["startMs"], 2500);
     assert!(a["matched"].as_f64().unwrap() > 0.7, "{a}");
+    assert_eq!(a["backend"], "cpu");
+    assert!(
+        std::fs::read_to_string(&args)
+            .unwrap()
+            .lines()
+            .any(|l| l == "-ng"),
+        "a CPU backend passes -ng"
+    );
     let given = std::fs::read_to_string(&args).unwrap();
     for want in ["-ml", "1", "-l", "en", "--prompt", "Hello, world again"] {
         assert!(given.lines().any(|l| l == want), "{want} in {given}");
     }
     assert!(!d.join("words.json").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn align_repeats_a_failed_gpu_run_on_the_cpu() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(e) = real().await else { return };
+    let d = dir(&e, "align-gpu");
+    let stem = d.join("vocals.flac");
+    if !make(
+        &e,
+        &stem,
+        "sine=frequency=220:sample_rate=16000:duration=2[o]",
+    ) {
+        eprintln!("ffmpeg cannot make the tone: skipped");
+        return;
+    }
+    // A recogniser whose GPU run dies and whose `-ng` run hears one word.
+    let script = d.join("whisper-cli");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ngpu=1\nwhile [ $# -gt 0 ]; do [ \"$1\" = -of ] && of=\"$2\"; [ \"$1\" = -ng ] && gpu=0; shift; done\n\
+         [ $gpu = 1 ] && { echo device lost >&2; exit 1; }\n\
+         echo '{\"transcription\":[{\"offsets\":{\"from\":100,\"to\":500},\"text\":\" Hello\"}]}' > \"$of.json\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    e.rt.karaoke.set_tools(Tools {
+        whisper: Some(script.to_string_lossy().into_owned()),
+        pitch_ffmpeg: None,
+        whisper_backend: "vulkan",
+    });
+    let kind = json!({ "type": "Align", "language": "en", "lines": [{ "text": "Hello" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    assert_eq!(r["result"]["align"]["backend"], "cpu");
 }

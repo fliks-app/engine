@@ -169,6 +169,8 @@ pub struct AlignedLine {
 pub struct AlignMeta {
     pub model: String,
     pub model_version: String,
+    /// What ran the recogniser: `vulkan`, `metal` or `cpu`.
+    pub backend: String,
     pub lines: Vec<AlignedLine>,
     /// Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means
     /// the timing is mostly interpolated.
