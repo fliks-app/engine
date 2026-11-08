@@ -267,7 +267,9 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
             let now = q.waiting.remove(&(j.priority(), j.seq)).is_some() && begin(&mut q, &j);
             (j.id.clone(), now.then_some(j))
         } else {
-            let j = queue(&mut q, req, dedupe, urgent, None);
+            let lane = matches!(req.kind, JobKind::Optimize { .. } | JobKind::Verify { .. })
+                .then(Lane::cpu);
+            let j = queue(&mut q, req, dedupe, urgent, lane);
             let now = urgent && begin(&mut q, &j);
             if !now {
                 q.waiting.insert((j.priority(), j.seq), j.clone());

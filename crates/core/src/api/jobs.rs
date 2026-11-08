@@ -203,8 +203,8 @@ const AUDIO_ONLY: &[MediaFamily] = &[MediaFamily::Audio];
 const ANY: &[MediaFamily] = &[MediaFamily::Video, MediaFamily::Audio];
 
 /// Which families of file each job kind applies to (`hello.jobFamilies`); `families` is the
-/// per-request form, a test keeps the two equal. `Optimize` and `Verify` are leased by workers,
-/// not queued through `/v1/jobs`, so they are not listed.
+/// per-request form, a test keeps the two equal. `Optimize` and `Verify` are leased by workers
+/// (accepted on the cpu lane through `/v1/jobs`, tests only), so they are not listed.
 pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("Sprite", VIDEO_ONLY),
     ("Scan", VIDEO_ONLY),
