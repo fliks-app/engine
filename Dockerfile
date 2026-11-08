@@ -7,6 +7,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && cargo install subtile-ocr --version 0.2.6 --locked --root /opt/subtile-ocr \
   && rm -rf /var/lib/apt/lists/* "$HOME/.cargo/registry" "$HOME/.rustup"
 
+# Speech recogniser of the `Align` job (MIT). A generic build for the architecture: the image runs
+# on whatever CPU the host has, so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
+FROM ubuntu:24.04 AS whisper-build
+ARG TARGETARCH
+ARG WHISPER_CPP_VERSION=v1.9.5
+ARG WHISPER_CPP_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential cmake \
+  && curl -fsSL -o /tmp/whisper.tar.gz "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/${WHISPER_CPP_VERSION}.tar.gz" \
+  && echo "${WHISPER_CPP_SHA256}  /tmp/whisper.tar.gz" | sha256sum -c - \
+  && mkdir /src && tar -xzf /tmp/whisper.tar.gz -C /src --strip-components=1 \
+  && cd /src \
+  && ISA=""; if [ "$TARGETARCH" = "amd64" ]; then ISA="-DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"; fi \
+  && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF \
+       -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON $ISA \
+  && cmake --build build -j"$(nproc)" --target whisper-cli \
+  && strip build/bin/whisper-cli
+
+# An ffmpeg with the `rubberband` filter (key changes): jellyfin-ffmpeg is built without it. Same
+# release as the main one; only the audio side matters, so nothing but opus is linked in.
+FROM ubuntu:24.04 AS pitch-ffmpeg-build
+ARG FFMPEG_VERSION=8.1.2
+ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576eb7
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential pkg-config nasm librubberband-dev libopus-dev \
+  && curl -fsSL -o /tmp/ffmpeg.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz" \
+  && echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.gz" | sha256sum -c - \
+  && mkdir /src && tar -xzf /tmp/ffmpeg.tar.gz -C /src --strip-components=1 \
+  && cd /src \
+  && ./configure --disable-autodetect --disable-doc --disable-debug --disable-ffplay --disable-ffprobe \
+       --disable-network --enable-gpl --enable-librubberband --enable-libopus \
+  && make -j"$(nproc)" ffmpeg \
+  && strip ffmpeg
+
 FROM rust:1.99.0-bookworm AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
@@ -19,19 +53,24 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS build
 ARG CARGO_BUILD_JOBS
 COPY --from=planner /src/recipe.json recipe.json
-RUN cargo chef cook --release --locked --recipe-path recipe.json -p fliks-engine --bin fliks-engine
+RUN cargo chef cook --release --locked --recipe-path recipe.json -p fliks-engine --bin fliks-engine --features karaoke
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
-RUN cargo build --release --locked -p fliks-engine --bin fliks-engine
+RUN cargo build --release --locked -p fliks-engine --bin fliks-engine --features karaoke
 
 FROM ubuntu:24.04
 
 # Per-arch deb; Intel OpenCL (tonemap_opencl) is amd64-only, arm64 is CPU-only.
 ARG TARGETARCH
 ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
+# ONNX Runtime (CPU) for the model jobs, loaded at run time by the engine. A CUDA or OpenVINO build
+# of the same library can be mounted over it (`ORT_DYLIB_PATH`).
+ARG ONNXRUNTIME_VERSION=1.31.1
+ARG ONNXRUNTIME_SHA256_AMD64=c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9
+ARG ONNXRUNTIME_SHA256_ARM64=5317505e2da99be65f8e2775ba3c2afd6d2961fd78aba1bd8f56159f48820c78
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget libchromaprint-tools mkvtoolnix \
+    ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 \
     python3 python3-pip tesseract-ocr \
     tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-spa tesseract-ocr-deu tesseract-ocr-ita \
     tesseract-ocr-por tesseract-ocr-nld tesseract-ocr-swe tesseract-ocr-dan tesseract-ocr-nor \
@@ -49,18 +88,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && rm -f /tmp/jellyfin-ffmpeg.deb \
+  && if [ "$TARGETARCH" = "amd64" ]; then ORT_ARCH=x64; ORT_SHA="$ONNXRUNTIME_SHA256_AMD64"; else ORT_ARCH=aarch64; ORT_SHA="$ONNXRUNTIME_SHA256_ARM64"; fi \
+  && wget -q -O /tmp/ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
+  && echo "${ORT_SHA}  /tmp/ort.tgz" | sha256sum -c - \
+  && tar -xzf /tmp/ort.tgz -C /tmp \
+  && cp -a /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime*.so* /usr/local/lib/ \
+  && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-* \
   && apt-get purge -y wget python3-pip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/target/release/fliks-engine /usr/local/bin/fliks-engine
 COPY --from=vobsub-ocr-build /opt/subtile-ocr/bin/subtile-ocr /usr/local/bin/subtile-ocr
+COPY --from=whisper-build /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=pitch-ffmpeg-build /src/ffmpeg /usr/local/bin/ffmpeg-pitch
+ENV ORT_DYLIB_PATH=/usr/local/lib/libonnxruntime.so
 
 # The container toolkit mounts libnvidia-opencl.so on NVENC hosts but not its ICD entry (harmless elsewhere).
 RUN mkdir -p /etc/OpenCL/vendors && echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd
 
 # group=root + g=u: writable by an arbitrary uid with gid 0 (`--user <uid> --group-add 0`); mount a volume to keep it.
 ENV FLIKS_TRANSCODE_DIR=/transcode
-RUN mkdir -p /transcode && chgrp 0 /transcode && chmod g=u /transcode
+# Downloaded models (`/v1/models`); a volume here keeps them across container replacements.
+ENV FLIKS_MODELS_DIR=/models
+RUN mkdir -p /transcode /models && chgrp 0 /transcode /models && chmod g=u /transcode /models
 
 EXPOSE 7400 4848
 ENTRYPOINT ["fliks-engine"]

@@ -1,0 +1,65 @@
+# Spec: karaoke (model manager, `Separate`, `Align`, `Melody`, key change)
+
+What a karaoke host needs from the engine and nothing of what karaoke is: stems of a track, word times for known lyrics, the notes sung, and a key change. Code: `core::api::karaoke` (wire), `core::jobs::{separate,align,melody}` (pure), `engine::karaoke` (manager, runtime, executors). [new]
+
+## 1. What runs where
+
+| Piece | Runs as | In the image | In the desktop bundles |
+|---|---|---|---|
+| ONNX runtime (`Separate`, `Melody`) | `ort` with `load-dynamic`, cargo feature `karaoke` | CPU library at `ORT_DYLIB_PATH` | not built: the jobs answer `unsupported` |
+| Speech recogniser (`Align`) | `whisper-cli` (whisper.cpp, MIT) spawned as a tool, `WHISPER_CLI_PATH` | built from a pinned release | absent unless installed |
+| Key change | ffmpeg `rubberband` filter on `ffmpeg-pitch` (`FFMPEG_PITCH_PATH`), the main ffmpeg when it has the filter | an ffmpeg of the same release built with librubberband | whatever ffmpeg has it |
+| Models | files under `FLIKS_MODELS_DIR` (default `<cache root>/models`) | none shipped, `/models` volume | none shipped |
+
+`hello.features` (additive): `models` always; `onnx`, `karaoke-separate`, `karaoke-melody` when the runtime loads; `onnx-cuda`, `onnx-openvino` when the loaded library has that provider; `karaoke-align` when the recogniser is installed; `pitch-shift` when an ffmpeg has the filter. `GET /v1/models` answers the same as `runtime` (`onnx`, `onnxError`, `providers`, `whisper`, `rubberband`). The three job kinds are in `hello.jobFamilies` as audio kinds whatever the features say: a host checks the features before it queues one.
+
+The image ships the CPU library only. CUDA needs cuDNN and cuBLAS, which the NVIDIA container toolkit does not inject, and OpenVINO has no ONNX Runtime build of its own to download: a host that has either mounts its own `libonnxruntime.so` and points `ORT_DYLIB_PATH` at it. A session tries `cuda`, then `openvino` when the library lists them, and falls back to the CPU when one cannot be created. `FLIKS_ORT_THREADS` sets the threads of a run (default half the cores, 2 to 8).
+
+## 2. Model manager (`engine::karaoke::models`)
+
+1. The manifest is built in. An entry has `id`, `kind` (`separation`, `alignment`, `melody`), `name`, `version`, `licence` (`name`, `text`, `clear`), `default` (the model a job takes when its request names none: one per kind) and `files[]` (`name`, `url`, `sha256`, `sizeBytes`). Every URL names a revision of its repository, so a moved file fails its hash instead of changing what runs. An entry whose weights have an unsettled licence has `licence.clear: false`; none is listed today.
+2. `GET /v1/models` lists the manifest with each model's `state` (`absent`, `downloading`, `installed`, `failed`), `downloadedBytes` and `error`.
+3. `POST /v1/models/{id}/download` starts the download (`202`, the model; `200` when it is installed already or running; `404` for an unknown id). Files are fetched one after the other into `<dir>/<id>/<name>.part` through redirects (at most five), hashed as they arrive and renamed once size and sha256 match; a mismatch or any failure removes the part file and leaves the model `failed` with the reason. A transfer that moves no byte for 60 s fails.
+4. `DELETE /v1/models/{id}` stops a download and removes the model's directory (`204`; `404` for an unknown id).
+5. `ModelChanged { model }` events (SSE) follow a download: at its start, at most once a second while it runs, and at its end, a delete included.
+6. A model is `installed` when every file is on disk with its manifest size (the hash was checked before the file was kept). A job picks its model at the start: the request's `model`, else the kind's default. An unknown id, a model of another kind or one not installed fails the job with `model_missing: <text>`.
+
+Manifest today: `spleeter-2stems` (separation, default, MIT), `swiftf0` (melody, default, MIT), `whisper-small-q5_1` (alignment, default, MIT) and `whisper-base-q5_1` (alignment, MIT, faster and less exact).
+
+## 3. `Separate`
+
+Request: `{ type: "Separate", info, model?, vocals?, instrumental?, guide?, guideVocalsGain?, bitrateKbps? }` on `media` = the source. At least one output path; every path absolute, without control characters, distinct; `guideVocalsGain` 0 to 1 (default 0.25); `bitrateKbps` 16 to 512 (default 96). `info` must be an audio file (job families).
+
+1. The model is Spleeter's 2-stem U-Net (`vocals.onnx`, `accompaniment.onnx`): a magnitude spectrogram `[2 channels, splits, 512 frames, 1024 bins]` in, a stem estimate of the same shape out. Input is 44.1 kHz stereo: the source's first audio stream decoded by ffmpeg (`-ac 2 -ar 44100`, f32) and streamed to the engine.
+2. STFT: 4096 window (periodic Hann), hop 1024; `LEAD` = 3072 zeros in front so the first samples sit under the whole overlap. Chunks of 512 frames go through both networks one at a time, so memory does not grow with the track. The masks are the energy shares `(v^2 + e/2) / (v^2 + a^2 + e)`, `e = 1e-10`, so the two stems sum to the mix. The network sees bins below 1024 (about 11 kHz); above, the vocal mask is 0 and the instrumental mask 1, so the instrumental keeps the top of the mix. The stems are the masked spectra of the left and right channels through the inverse STFT and overlap-add, normalised by the window gain.
+3. A stem is written as 16-bit PCM in the job's scratch directory as its chunk finishes; `guide` = instrumental + `guideVocalsGain` x vocals. One ffmpeg run then encodes every output to Opus (`libopus`, `-vbr on`, Ogg) at `bitrateKbps`.
+4. Atomic outputs, like `Merge` (`docs/spec/jobs.md` section 10): each output gets an exclusive `.<name>.merge-<8 hex>.tmp` beside it first, journaled with its file identity in the job's scratch (a boot removes those a crash left); a name that is taken fails the job before anything runs; at the end every file is fsynced and hard-linked to its name without replacing; when one publish fails, the ones already published are taken back. The job never overwrites a file, so the host names fresh paths.
+5. Result `{ type: "Separate", separate: { model, modelVersion, provider, vocals?, instrumental?, guide?, durationSeconds } }`, each file `{ path, bytes }` with the request's path. `provider` is what ran the network: `cuda`, `openvino` or `cpu`. Progress follows the decoded seconds (0 to 95), then the encode.
+6. Stalls are watched, there is no overall timeout: a long track on a slow CPU takes as long as it takes. A cancel stops the decoder and the worker thread between chunks and removes the temporary files.
+
+## 4. `Align`
+
+Request: `{ type: "Align", lines: [{ text, startMs?, endMs? }], language?, model? }` on `media` = the vocal stem (or any audio holding the singing). At most 3000 lines and 6000 words; a line's `endMs` is not before its `startMs`; `language` is a lowercase ISO 639 code of two or three letters (absent: detected).
+
+1. The stem is decoded to 16 kHz mono WAV in the scratch directory; `whisper-cli -m <model> -f <wav> -l <language|auto> -ml 1 -sow -oj -of <prefix> -np -t <threads> --prompt <first 400 characters of the lyrics>` gives one word per JSON entry with millisecond offsets. The prompt makes the recogniser hear the known words. Bracketed or parenthesised entries (`[MUSIC]`) and empty ones are not words.
+2. Lyric words are the whitespace-separated tokens of a line, with their UTF-8 byte ranges in the line's `text`. A line ending in `x2`, `(x2)`, `[x2]`, `2x` (also with `x` as `×`, up to 9) is sung that many times: it is expanded before the matching, the marker is not a word, and a line with times shares them evenly between its copies.
+3. Matching is an order-preserving pairing of lyric words with heard words, best total similarity (a word is compared lowercased with only letters and digits kept: equal scores 3, a misreading within a quarter of the length, for words of four or more letters, scores 1). A lyric word of a line with times only pairs with a heard word within 1.5 s of the line.
+4. A paired word takes the heard word's times. A run of unpaired words shares the time between its neighbours by length (70 ms a character, 120 ms at least), inside the line's times when it has them; a heard word that outlasts the next is cut at its start. The result never runs backwards.
+5. Result `{ type: "Align", align: { model, modelVersion, lines, matched } }`. `lines[]` has one entry per copy, in order: `{ line, repeat, startMs, endMs, words: [{ text, byteStart, byteEnd, startMs, endMs }] }`; `line` is the request index, `repeat` the copy's ordinal. `matched` (0 to 1) is the share of lyric words found in what was heard: low means the timing is mostly interpolated. An audio with no words still answers (`matched` 0, the words spread inside the line times, or one after another from 0).
+6. Failure modes: no recogniser installed is `unsupported`, a model not installed is `model_missing`, a recogniser that exits non-zero fails the job with its stderr tail.
+
+## 5. `Melody`
+
+Request: `{ type: "Melody", spans: [{ startMs, endMs }], model? }` on `media` = the vocal stem. A span ends after it starts; at most 100000 spans.
+
+1. The stem is decoded to 16 kHz mono f32 and run through SwiftF0 (`audio [1, n]`, `fmin` 46.875, `fmax` 2093.75, out `pitch` and `confidence` per 256-sample frame, 16 ms) in windows of 1875 frames with 11 frames of left context and 10 of look-ahead, so each frame is what one pass over the file gives. A frame whose 256 samples peak under 0.001 has confidence 0 (the network answers digital silence at random). A frame is voiced from confidence 0.5.
+2. Per span, the voiced frames in it become MIDI pitch (`69 + 12 log2(f / 440)`), smoothed by a median over three frames. A note ends when the pitch stays more than 0.8 semitone from the note's median for three frames, or the voice stops for more than five frames (80 ms; shorter gaps, a consonant, are bridged). A note under three frames (48 ms) is dropped. A note is `{ startMs, endMs, midi }` within the span, `midi` the median of its frames (fractional, two decimals).
+3. Result `{ type: "Melody", melody: { model, modelVersion, spans } }`: `spans[i]` is the notes of request span `i`; an unvoiced span has none.
+
+## 6. Key change
+
+`DecideSelection.pitchSemitones` (item sessions, `media.parts` as for any item; clamped to +-12; absent or 0: none) makes the item a Transcode (reason `PitchShifted`) whatever the client could play or copy, and adds `rubberband=pitch=2^(n/12):pitchq=quality` to the audio filter chain of every run, after the alignment and downmix, before the padding. The session's cache directory has its own hash for a non-zero shift (a zero shift keeps the hash it always had), so each key has its own cache. Runs are spawned through the ffmpeg that has the filter (`hello.features` `pitch-shift`); with none, the segment request fails and the run never starts. That ffmpeg is not the one with libfdk, so a shifted AAC item is always encoded with the native encoder. The key of a running session does not change: the host opens another session.
+
+## 7. Errors of jobs
+
+A job that cannot start for want of something the host can fix ends `failed` with `error` = `<code>: <text>`: `model_missing` (unknown id, wrong kind, not installed; the text names the download route) or `unsupported` (no ONNX runtime in this build or host, no recogniser). Those fail before any file is written. Other failures follow `docs/spec/jobs.md`; a source with no decodable audio is `corrupt: no audio decoded`.

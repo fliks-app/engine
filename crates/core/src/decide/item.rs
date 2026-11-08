@@ -91,6 +91,7 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
     let id = req.media.media_file_id;
     let token = sel.token_param.as_deref().unwrap_or("");
     let rejects_copy = device.reject_copy == Some(true);
+    let pitch = crate::item::pitch_shift(sel);
     let mut reasons: Vec<TranscodeReason> = vec![];
 
     let profiles = &device.direct_play_profiles;
@@ -108,6 +109,13 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
         flag_reason(
             "ClientRequiresHls",
             "Client requires an HLS container (no raw direct play)",
+            &mut reasons,
+        );
+    }
+    if pitch != 0.0 {
+        flag_reason(
+            "PitchShifted",
+            &format!("Pitch shifted by {pitch} semitones"),
             &mut reasons,
         );
     }
@@ -151,7 +159,7 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
     let all_copy = decisions
         .iter()
         .all(|d| matches!(d.plan, AudioPlan::Copy { .. }));
-    let copy = all_copy && uniform && !rejects_copy && !streams.is_empty();
+    let copy = all_copy && uniform && !rejects_copy && pitch == 0.0 && !streams.is_empty();
     let as_is = |a: &AudioStreamInfo| AudioPlan::Copy {
         codec: a.codec.to_lowercase(),
         channels: a.channels,

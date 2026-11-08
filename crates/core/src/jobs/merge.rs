@@ -22,7 +22,7 @@ pub fn argv_chars(argv: &[String]) -> usize {
 }
 
 /// `/x`, `\\x` or `C:\x` on every platform: the same verdict wherever the core runs.
-fn absolute(path: &str) -> bool {
+pub(crate) fn absolute(path: &str) -> bool {
     let b = path.as_bytes();
     matches!(b.first(), Some(b'/' | b'\\'))
         || (b.len() > 2
@@ -32,7 +32,7 @@ fn absolute(path: &str) -> bool {
 }
 
 /// A path ffmpeg or the concat list could read as something else: a newline starts a directive.
-fn plain(path: &str) -> bool {
+pub(crate) fn plain(path: &str) -> bool {
     !path.chars().any(char::is_control)
 }
 

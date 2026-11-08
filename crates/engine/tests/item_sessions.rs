@@ -72,6 +72,24 @@ async fn open_parts(e: &Engine, paths: &[String], infos: &[Value], start_at: f64
     e.control("POST", "/v1/sessions", Some(req)).await
 }
 
+/// Opens item 1 with a key change of `semitones`.
+async fn open_pitched(e: &Engine, paths: &[String], semitones: f64) -> Res {
+    let parts: Vec<Value> = paths
+        .iter()
+        .map(|p| json!({ "path": p, "info": info(30.0) }))
+        .collect();
+    let req = json!({
+        "decide": {
+            "media": { "mediaFileId": 1, "path": paths[0], "ext": ".mp3", "contentType": "audio/mpeg", "parts": parts },
+            "info": info(30.0),
+            "device": { "directPlayProfiles": [{ "containers": ["mp3"], "videoCodecs": [], "audioCodecs": ["mp3"] }], "useTs": true },
+            "selection": { "pitchSemitones": semitones },
+        },
+        "ownerId": "alice",
+    });
+    e.control("POST", "/v1/sessions", Some(req)).await
+}
+
 /// An item of fake parts lasting `seconds`.
 async fn open(seconds: &[f64], start_at: f64) -> Item {
     let paths: Vec<String> = (0..seconds.len())
@@ -285,4 +303,38 @@ async fn parts_are_ranged_gated_by_owner_and_served_while_the_host_is_down() {
     e.stub.set_down(true);
     let r = part(1, "alice2-jwt", "", "bytes=0-1").await;
     assert_eq!((r.status, r.text().as_str()), (206, "01"));
+}
+
+#[tokio::test]
+async fn a_key_change_runs_the_rubberband_filter_on_the_ffmpeg_that_has_it() {
+    let paths = vec!["/books/p0.mp3".to_string()];
+    // The pitch ffmpeg is another binary: its run is the one that logs the argv.
+    let e = engine_of(&paths).await;
+    let r = open_pitched(&e, &paths, 2.0).await;
+    assert_eq!(r.status, 200, "{}", r.text());
+    assert_eq!(r.json()["decision"]["response"]["playMethod"], "Transcode");
+    let sid = r.json()["sessionId"].as_str().unwrap().to_string();
+    let path = format!("/api/stream/1/item/seg-0000.ts?sid={sid}");
+    // No ffmpeg has the filter: the run is never started.
+    e.rt.karaoke.set_tools(fliks_engine::karaoke::Tools {
+        whisper: None,
+        pitch_ffmpeg: None,
+    });
+    let r = e.get(&path, "alice-jwt", &[]).await;
+    assert_ne!(r.status, 200, "{}", r.text());
+
+    let e = engine_of(&paths).await;
+    e.rt.karaoke.set_tools(fliks_engine::karaoke::Tools {
+        whisper: None,
+        pitch_ffmpeg: Some(fake("item")),
+    });
+    let r = open_pitched(&e, &paths, 2.0).await;
+    let sid = r.json()["sessionId"].as_str().unwrap().to_string();
+    let it = Item { e, sid };
+    assert_eq!(it.get("seg-0000.ts").await.status, 200);
+    let runs = it.runs(0);
+    assert_eq!(runs.len(), 1);
+    let filter = arg(&runs[0], "-filter:a");
+    assert!(filter.contains("rubberband=pitch=1.122462"), "{filter}");
+    assert!(!runs[0].contains(&"libfdk_aac".to_string()));
 }

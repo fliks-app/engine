@@ -337,6 +337,22 @@ fn every_wire_key_is_in_its_schema() {
         WorkerHello,
         WorkerHelloResponse,
         WorkerSettings,
+        AlignLine,
+        AlignMeta,
+        AlignedLine,
+        AlignedWord,
+        KaraokeRuntime,
+        MelodyMeta,
+        MelodyNote,
+        MelodySpan,
+        ModelFile,
+        ModelInfo,
+        ModelKind,
+        ModelLicence,
+        ModelState,
+        ModelsResponse,
+        SeparateMeta,
+        StemFile,
     );
     let mut all: Vec<&str> = doc["components"]["schemas"]
         .as_object()

@@ -220,6 +220,7 @@ pub fn remux(o: &RemuxArgs, caps: &HostCaps) -> Result<Vec<String>, String> {
         end: o.source_end_seconds,
         use_ts: o.use_ts,
         libfdk_aac: caps.libfdk_aac,
+        pitch_semitones: 0.0,
     };
     let plan = o.audio_plan.as_ref().unwrap_or(&DEFAULT_AUDIO_PLAN);
     a.extend(["-i".into(), o.input_path.clone()]);

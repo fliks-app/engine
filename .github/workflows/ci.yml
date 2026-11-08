@@ -35,6 +35,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy -p fliks-engine --all-targets --features karaoke -- -D warnings
       - run: cargo test
       - name: Regenerate openapi.json
         run: cargo run -q --bin gen-openapi
@@ -96,7 +97,7 @@ jobs:
           ENGINE_E2E: '1'
         run: |
           FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe FPCALC_PATH=$(command -v fpcalc) \
-            cargo test -p fliks-engine --no-fail-fast --test runtime_e2e --test live_e2e --test runtime_sync --test item_e2e
+            cargo test -p fliks-engine --no-fail-fast --test runtime_e2e --test live_e2e --test runtime_sync --test item_e2e --test karaoke
           FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe \
             cargo test -p fliks-engine --test runtime_jobs merge_job_with_the_real_ffmpeg
           FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe \

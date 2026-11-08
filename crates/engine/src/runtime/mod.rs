@@ -98,6 +98,7 @@ pub struct Runtime {
     /// Bounds the on-demand ffmpeg runs of the data plane (trick play, subtitle extraction).
     pub capture: tokio::sync::Semaphore,
     pub jobs: crate::jobs::Jobs,
+    pub karaoke: crate::karaoke::Karaoke,
     pub live: crate::live::Live,
     /// Per rendition directory: its init file, that file's stamp and the tracks it declares.
     pub(crate) init_tracks: Mutex<HashMap<PathBuf, InitTracks>>,
@@ -122,11 +123,15 @@ impl Runtime {
         ffprobe: String,
         fpcalc: String,
     ) -> Arc<Self> {
+        let events = Events::default();
+        let karaoke =
+            crate::karaoke::Karaoke::new(crate::karaoke::models_dir(&cache.root), events.clone());
         Arc::new(Self {
             config: Mutex::new(None),
             hw,
             cache,
-            events: Events::default(),
+            events,
+            karaoke,
             resolver: Resolver::default(),
             ffmpeg,
             ffprobe,

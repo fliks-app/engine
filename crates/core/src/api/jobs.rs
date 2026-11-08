@@ -1,7 +1,8 @@
 //! Background jobs (M5): `POST /v1/jobs` and the `BgJob*` events. Spec: `docs/spec/jobs.md`.
 use super::{
-    Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags, OptimizeLevel,
-    OptimizePayload, SourceScan, VerifyPayload,
+    AlignLine, AlignMeta, Chapter, Fingerprint, MediaFamily, MediaInfo, MediaRef, MediaTags,
+    MelodyMeta, MelodySpan, OptimizeLevel, OptimizePayload, SeparateMeta, SourceScan,
+    VerifyPayload,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -81,6 +82,58 @@ pub enum JobKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tags: Option<MediaTags>,
     },
+    /// The vocals and the accompaniment of the audio file `media` names, as Opus files written at
+    /// the absolute paths given (at least one). `guide` is the accompaniment with the vocals
+    /// kept low, to sing along. Needs a separation model (`GET /v1/models`) and an ONNX runtime.
+    #[schema(title = "SeparateJob")]
+    Separate {
+        info: MediaInfo,
+        /// A `separation` model id; absent: the default one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vocals: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        instrumental: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide: Option<String>,
+        /// Share of the vocals mixed into `guide`, 0 to 1; absent: 0.25.
+        #[serde(
+            default,
+            rename = "guideVocalsGain",
+            skip_serializing_if = "Option::is_none"
+        )]
+        guide_vocals_gain: Option<f64>,
+        /// Opus bitrate of every output; absent: 96.
+        #[serde(
+            default,
+            rename = "bitrateKbps",
+            skip_serializing_if = "Option::is_none"
+        )]
+        bitrate_kbps: Option<u32>,
+    },
+    /// Times the words of `lines` on the vocal stem `media` names: speech recognition gives word
+    /// times, the known words are matched onto them. Lines with times keep within them. Needs an
+    /// `alignment` model and the speech recogniser.
+    #[schema(title = "AlignJob")]
+    Align {
+        lines: Vec<AlignLine>,
+        /// ISO 639-1 code of the singing; absent: detected.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+        /// An `alignment` model id; absent: the default one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
+    /// The notes sung in each of `spans` of the vocal stem `media` names. Needs a `melody` model
+    /// and an ONNX runtime.
+    #[schema(title = "MelodyJob")]
+    Melody {
+        spans: Vec<MelodySpan>,
+        /// A `melody` model id; absent: the default one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
     /// Optimisation of one file by the plan (`docs/spec/jobs.md` section 11); the worker loop runs it
     /// from a lease (`PROTOCOL.md`), `/v1/jobs` accepts it too.
     #[schema(title = "OptimizeJob")]
@@ -158,6 +211,9 @@ impl JobKind {
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
             JobKind::Cover { .. } => "Cover",
             JobKind::Merge { .. } => "Merge",
+            JobKind::Separate { .. } => "Separate",
+            JobKind::Align { .. } => "Align",
+            JobKind::Melody { .. } => "Melody",
             JobKind::Optimize { .. } => "Optimize",
             JobKind::Verify { .. } => "Verify",
         }
@@ -172,9 +228,12 @@ impl JobKind {
             | JobKind::SubtitleOcr { info, .. }
             | JobKind::SubtitleSync { info, .. }
             | JobKind::SubtitleToSrt { info, .. }
+            | JobKind::Separate { info, .. }
             | JobKind::Cover { info } => Some(info),
             JobKind::Fingerprint { .. }
             | JobKind::Merge { .. }
+            | JobKind::Align { .. }
+            | JobKind::Melody { .. }
             | JobKind::Optimize { .. }
             | JobKind::Verify { .. } => None,
         }
@@ -192,7 +251,11 @@ impl JobKind {
             | JobKind::Optimize { .. }
             | JobKind::Verify { .. } => VIDEO_ONLY,
             JobKind::SubtitleSync { .. } => ANY,
-            JobKind::Cover { .. } | JobKind::Merge { .. } => AUDIO_ONLY,
+            JobKind::Cover { .. }
+            | JobKind::Merge { .. }
+            | JobKind::Separate { .. }
+            | JobKind::Align { .. }
+            | JobKind::Melody { .. } => AUDIO_ONLY,
         }
     }
 }
@@ -215,6 +278,9 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("SubtitleToSrt", VIDEO_ONLY),
     ("Cover", AUDIO_ONLY),
     ("Merge", AUDIO_ONLY),
+    ("Separate", AUDIO_ONLY),
+    ("Align", AUDIO_ONLY),
+    ("Melody", AUDIO_ONLY),
 ];
 
 /// The staged file of an `Optimize`, verified and hashed.
@@ -377,6 +443,16 @@ pub enum JobResult {
     Merge {
         merge: MergeMeta,
     },
+    /// The stems are at the request's paths.
+    Separate {
+        separate: SeparateMeta,
+    },
+    Align {
+        align: AlignMeta,
+    },
+    Melody {
+        melody: MelodyMeta,
+    },
     Optimize {
         optimize: Box<OptimizeMeta>,
     },
@@ -442,6 +518,9 @@ mod tests {
                 "index": 0 } }),
             json!({ "type": "Cover", "info": info() }),
             json!({ "type": "Merge", "parts": [], "output": "/a.m4b" }),
+            json!({ "type": "Separate", "info": info(), "vocals": "/v.opus" }),
+            json!({ "type": "Align", "lines": [] }),
+            json!({ "type": "Melody", "spans": [] }),
         ];
         assert_eq!(kinds.len(), JOB_FAMILIES.len());
         for k in kinds {

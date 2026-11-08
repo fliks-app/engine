@@ -13,6 +13,8 @@ pub struct AudioEnc {
     pub end: Option<f64>,
     pub use_ts: bool,
     pub libfdk_aac: bool,
+    /// Key change in semitones; 0 leaves the pitch.
+    pub pitch_semitones: f64,
 }
 
 pub const DEFAULT_AUDIO_PLAN: AudioPlan = AudioPlan::Transcode {
@@ -32,8 +34,19 @@ pub fn video_map(index: Option<u32>) -> String {
     index.map_or("0:v:0".into(), |i| format!("0:{i}"))
 }
 
+/// ffmpeg's `rubberband` filter for a key change of `semitones`, or nothing at 0.
+fn pitch_filter(semitones: f64) -> String {
+    if semitones == 0.0 {
+        return String::new();
+    }
+    format!(
+        ",rubberband=pitch={:.6}:pitchq=quality",
+        (semitones / 12.0).exp2()
+    )
+}
+
 /// Aligns the audio to the video's first frame and pads it to `end`; `stereo` downmixes.
-fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
+fn align_filter(start: f64, end: Option<f64>, stereo: bool, semitones: f64) -> String {
     let st = seconds(start.abs());
     let (to, back) = if start < 0.0 { ("+", "-") } else { ("-", "+") };
     let pad = match end {
@@ -46,8 +59,9 @@ fn align_filter(start: f64, end: Option<f64>, stereo: bool) -> String {
     } else {
         ""
     };
+    let pitch = pitch_filter(semitones);
     format!(
-        "asetpts=PTS{to}{st}/TB,aresample=async=1:first_pts=0{down}{pad},asetpts=PTS{back}{st}/TB"
+        "asetpts=PTS{to}{st}/TB,aresample=async=1:first_pts=0{down}{pitch}{pad},asetpts=PTS{back}{st}/TB"
     )
 }
 
@@ -99,7 +113,12 @@ pub fn audio_stream_args(spec: &str, plan: &AudioPlan, a: &AudioEnc) -> Vec<Stri
             let bps = output_bitrate_bps(plan, a.stereo_bps);
             let mut v = audio_encode_args(spec, *codec, *channels, bps, a.libfdk_aac);
             v.push(format!("-filter:a{spec}"));
-            v.push(align_filter(a.align_start, a.end, *channels == 2));
+            v.push(align_filter(
+                a.align_start,
+                a.end,
+                *channels == 2,
+                a.pitch_semitones,
+            ));
             v
         }
     }
@@ -116,12 +135,27 @@ mod tests {
             end: None,
             use_ts: false,
             libfdk_aac: false,
+            pitch_semitones: 0.0,
         };
         let plan = AudioPlan::Transcode {
             codec: AudioCodec::Aac,
             channels,
         };
         audio_stream_args("", &plan, &a).pop().unwrap()
+    }
+
+    #[test]
+    fn a_key_change_adds_the_rubberband_filter_only_when_set() {
+        assert_eq!(pitch_filter(0.0), "");
+        assert_eq!(
+            pitch_filter(12.0),
+            ",rubberband=pitch=2.000000:pitchq=quality"
+        );
+        assert_eq!(
+            pitch_filter(-12.0),
+            ",rubberband=pitch=0.500000:pitchq=quality"
+        );
+        assert!(align_filter(0.0, None, true, 2.0).contains("alimiter=limit=0.977:attack=5:release=50:level=disabled:latency=1,rubberband=pitch=1.122462"));
     }
 
     #[test]

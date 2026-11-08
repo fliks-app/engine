@@ -15,6 +15,7 @@
   - [spec/subtitle-jobs.md](spec/subtitle-jobs.md): the M8 subtitle jobs (`SubtitleOcr`, `SubtitleSync`): optional kinds on the job system, tool argv (pgsrip/subtile-ocr/mkvextract/ffsubsync + the alass-crate fallback), text-as-data results.
   - [spec/intro.md](spec/intro.md): intro/outro detection (`POST /v1/intro-detect`, `core::intro`): chapter shortcut, reference search, pairwise chromaprint matching, clustering and consensus over fingerprints sent as data.
   - [spec/item.md](spec/item.md): items, ordered audio parts on one timeline (`core::item`, `core::decide::item`, `engine::{runtime,serve}::item`): the resolver's `parts`, the decision (byte-range parts, copy, AAC), the timeline and seek map, one bounded run per part, the item routes.
+  - [spec/karaoke.md](spec/karaoke.md): the model manager (`/v1/models`), the `Separate`, `Align` and `Melody` jobs on an ONNX runtime and a speech recogniser built for the image only, and the key change of an item (`rubberband`).
   - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
 
 ## Tags

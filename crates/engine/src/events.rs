@@ -5,6 +5,7 @@ use futures_util::Stream;
 use std::convert::Infallible;
 use tokio::sync::broadcast;
 
+#[derive(Clone)]
 pub struct Events(broadcast::Sender<EngineEvent>);
 
 impl Default for Events {
@@ -24,6 +25,7 @@ fn name(e: &EngineEvent) -> &'static str {
         EngineEvent::HwFallback { .. } => "HwFallback",
         EngineEvent::BgJobProgress { .. } => "BgJobProgress",
         EngineEvent::BgJobDone { .. } => "BgJobDone",
+        EngineEvent::ModelChanged { .. } => "ModelChanged",
         EngineEvent::LiveAttempt { .. } => "LiveAttempt",
         EngineEvent::LiveReleased { .. } => "LiveReleased",
     }

@@ -228,6 +228,9 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Merge { parts, output, .. } => {
             fliks_engine_core::jobs::merge::validate(parts, output)?;
         }
+        JobKind::Separate { .. } => fliks_engine_core::jobs::separate::validate(kind)?,
+        JobKind::Align { .. } => fliks_engine_core::jobs::align::validate(kind)?,
+        JobKind::Melody { .. } => fliks_engine_core::jobs::melody::validate(kind)?,
         JobKind::Optimize { payload } => optimize::validate(payload)?,
         JobKind::Verify { payload } => verify::validate(payload)?,
     }
@@ -455,6 +458,15 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             .await
         }
         JobKind::SubtitleToSrt { info, source } => srt::run(ctx, info, source).await,
+        JobKind::Separate { .. } => crate::karaoke::run_separate(ctx, &job.req.kind).await,
+        JobKind::Align {
+            lines,
+            language,
+            model,
+        } => crate::karaoke::run_align(ctx, lines, language.as_deref(), model.as_deref()).await,
+        JobKind::Melody { spans, model } => {
+            crate::karaoke::run_melody(ctx, spans, model.as_deref()).await
+        }
         JobKind::Optimize { payload } => optimize::run(ctx, payload).await,
         JobKind::Verify { payload } => verify::run(ctx, payload).await,
     }
