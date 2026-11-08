@@ -418,6 +418,7 @@ impl Worker {
             };
             if self.held_on(&device.id) >= device.max_jobs as usize
                 || !self.rt.slots.has_room(&lane)
+                || (lane.gpu && !self.rt.slots.device_usable(&lane.device))
             {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;

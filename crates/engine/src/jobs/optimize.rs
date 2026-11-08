@@ -482,6 +482,7 @@ impl Work<'_> {
             self.enter_lane(hardware);
             match self.samples(if hardware { hw } else { "none" }).await {
                 Err(e) if hardware && self.falls_back(&e) => {
+                    self.hw_failed()?;
                     (hardware, cpu_fallback) = (false, true);
                 }
                 other => break other?,
@@ -523,8 +524,14 @@ impl Work<'_> {
                 Err(e) => Err(e),
             };
             match verdict {
-                Ok(f) => break f,
+                Ok(f) => {
+                    if let Some(l) = self.home.as_ref().filter(|_| hardware) {
+                        self.ctx.rt.slots.device_ok(&l.device);
+                    }
+                    break f;
+                }
                 Err(e) if hardware && self.falls_back(&e) => {
+                    self.hw_failed()?;
                     (hardware, cpu_fallback) = (false, true);
                 }
                 Err(e) => return Err(e),
@@ -543,6 +550,30 @@ impl Work<'_> {
             cpu_fallback,
             nothing_to_do: false,
         })
+    }
+
+    /// A hardware run failed on the job's device: it counts against the device, and the job goes
+    /// back to the queue (`busy`) when another usable device can encode its codec.
+    fn hw_failed(&self) -> Result<(), String> {
+        let Some(l) = self.home.as_ref().filter(|l| l.gpu) else {
+            return Ok(());
+        };
+        let rt = &self.ctx.rt;
+        rt.slots.device_failed(&l.device);
+        let codec = self.plan().codec.as_deref().unwrap_or("hevc");
+        let other = rt.hw.snapshot().is_some_and(|s| {
+            s.devices.iter().any(|d| {
+                d.id != l.device
+                    && rt.slots.device_usable(&d.id)
+                    && d.detected.encoders.iter().any(|e| e.starts_with(codec))
+            })
+        });
+        if other {
+            return Err(
+                Class::Busy.message(format!("{} failed, another device can take it", l.device))
+            );
+        }
+        Ok(())
     }
 
     /// A failed hardware attempt is redone in software only when the encoder or the output is at
