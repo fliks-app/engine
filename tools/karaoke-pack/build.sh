@@ -57,7 +57,7 @@ fetch "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$FFMPEG_VERSION.tar.g
 mkdir "$work/ffmpeg" && tar -xzf "$work/ffmpeg.tgz" -C "$work/ffmpeg" --strip-components=1
 (cd "$work/ffmpeg" && PKG_CONFIG_PATH="$deps/lib/pkgconfig" ./configure --disable-autodetect --disable-doc \
     --disable-debug --disable-ffplay --disable-ffprobe --disable-network --enable-gpl --enable-librubberband \
-    $ffmpeg_flags && make -j"$jobs" ffmpeg)
+    $ffmpeg_flags && make -j"$jobs" "ffmpeg$exe")
 cp "$work/ffmpeg/ffmpeg$exe" "$dest/ffmpeg-pitch$exe"
 strip "$dest/ffmpeg-pitch$exe" 2>/dev/null || true
 cp "$work/ffmpeg/COPYING.GPLv3" "$lic/ffmpeg-pitch/"

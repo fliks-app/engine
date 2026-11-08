@@ -14,6 +14,10 @@ name = "fliks_engine"
 name = "fliks-engine"
 path = "src/main.rs"
 
+[[example]]
+name = "provider-check"
+required-features = ["karaoke"]
+
 [features]
 # ONNX runtime, loaded at run time from `ORT_DYLIB_PATH` or the bundle's `karaoke/` directory; without
 # the library the model jobs answer `unsupported`.
