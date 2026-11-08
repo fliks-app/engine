@@ -284,6 +284,7 @@ fn every_wire_key_is_in_its_schema() {
         VerifyMeta,
         OptimizePlan,
         PathMapping,
+        Performer,
         PauseMode,
         PipelineStage,
         Platform,

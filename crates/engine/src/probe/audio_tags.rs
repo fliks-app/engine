@@ -45,7 +45,7 @@ fn apply(tag: &Tag, b: &mut MediaTags) {
     let one = |k: ItemKey| strings(k).into_iter().next();
     let many = |keys: &[ItemKey]| -> Vec<String> {
         keys.iter()
-            .map(|k| strings(k.clone()))
+            .map(|k| strings(*k))
             .find(|v| !v.is_empty())
             .map(|v| v.iter().flat_map(|s| split_multi(s)).collect())
             .unwrap_or_default()
