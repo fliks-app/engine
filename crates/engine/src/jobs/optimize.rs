@@ -12,6 +12,7 @@ use fliks_engine_core::api::{
     OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileFormat};
+use fliks_engine_core::jobs::cover;
 use fliks_engine_core::jobs::merge::progress_seconds;
 use fliks_engine_core::jobs::optimize::{self as opt, Facts, OutputCheck, PacketStats};
 use fliks_engine_core::probe::{self, ProbeOpts};
@@ -356,8 +357,27 @@ impl Work<'_> {
         if opt::container_of(self.info(), self.plan()) != OptimizeContainer::Mkv {
             return Ok(());
         }
-        self.mkvpropedit(opt::statistics_tags_args(&self.staged_text()))
-            .await
+        let staged = self.staged_text();
+        let mut argv = opt::statistics_tags_args(&staged);
+        // A Matroska output has no cover stream: the picture goes in as an attachment.
+        let picture = match &self.info().cover {
+            Some(c) => {
+                let path = format!("{staged}.cover.{}", cover::extension(c));
+                let extract = cover::extract_args(&self.src.to_string_lossy(), c, &path);
+                self.ctx
+                    .ffmpeg(&extract)
+                    .await
+                    .map_err(|e| Class::Engine.message(e))?;
+                argv.extend(opt::cover_attachment_args(&path));
+                Some(path)
+            }
+            None => None,
+        };
+        let done = self.mkvpropedit(argv).await;
+        if let Some(p) = picture {
+            let _ = tokio::fs::remove_file(p).await;
+        }
+        done
     }
 
     async fn mkvpropedit(&self, argv: Vec<String>) -> Result<(), String> {

@@ -24,7 +24,7 @@ docker run --rm --device /dev/dri -p 4848:4848 \
   ghcr.io/fliks-app/engine --listen 0.0.0.0:7400 --public-listen 0.0.0.0:4848 --upstream http://host:port
 ```
 
-Mount the media at the same paths as the host sees them (the engine reads the paths the host sends). `/dev/dri` is only for hardware transcoding (every render node it holds becomes a device; pass `--device /dev/dri/renderD128 --device /dev/dri/renderD129` to expose some only); with a non-root `--user`, add `--group-add 0` (and the render group) so `/transcode` is writable.
+Mount the media at the same paths as the host sees them (the engine reads the paths the host sends). `/dev/dri` is only for hardware transcoding (every render node it holds with a hardware encoder becomes a device, NVIDIA cards included; pass `--device /dev/dri/renderD128 --device /dev/dri/renderD129` to expose some only); with a non-root `--user`, add `--group-add 0` (and the render group) so `/transcode` is writable.
 
 ## Protocol
 
