@@ -33,7 +33,22 @@ const OPTIMIZE_RANK: u8 = 3;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lane {
     pub device: String,
-    pub gpu: bool,
+}
+
+impl Lane {
+    pub fn new(device: impl Into<String>) -> Self {
+        Self {
+            device: device.into(),
+        }
+    }
+
+    pub fn cpu() -> Self {
+        Self::new(CPU_DEVICE)
+    }
+
+    pub fn gpu(&self) -> bool {
+        self.device != CPU_DEVICE
+    }
 }
 
 struct Entry {
@@ -53,7 +68,7 @@ impl Entry {
     fn gpu_device(&self) -> Option<&str> {
         self.lane
             .as_ref()
-            .filter(|l| l.gpu)
+            .filter(|l| l.gpu())
             .map(|l| l.device.as_str())
     }
 }
@@ -258,12 +273,10 @@ impl Slots {
         let e = Entry {
             id: 0,
             rank: OPTIMIZE_RANK,
-            weight: if lane.gpu { 0 } else { st.cpu_weight },
+            weight: lane_weight(&st, Some(lane)),
             lane: Some(lane.clone()),
         };
-        let cost = e.cost(st.size);
-        let used: usize = st.running.iter().map(|h| h.e.cost(st.size)).sum();
-        device_ready(&st, &e) && (cost == 0 || used + cost <= st.size.saturating_sub(st.playback))
+        device_ready(&st, &e) && fits(&st, &e)
     }
 
     async fn enter(
@@ -277,13 +290,7 @@ impl Slots {
             let mut st = self.st.locked();
             let id = st.next_id;
             st.next_id += 1;
-            let weight = weight.unwrap_or_else(|| {
-                if lane.as_ref().is_some_and(|l| l.gpu) {
-                    0
-                } else {
-                    st.cpu_weight
-                }
-            });
+            let weight = weight.unwrap_or_else(|| lane_weight(&st, lane.as_ref()));
             let at = st
                 .queue
                 .iter()
@@ -359,11 +366,35 @@ fn on_device(st: &State, device: &str) -> usize {
         .count()
 }
 
+/// CPU weight of an entry: a GPU lane takes none.
+fn lane_weight(st: &State, lane: Option<&Lane>) -> usize {
+    if lane.is_some_and(Lane::gpu) {
+        0
+    } else {
+        st.cpu_weight
+    }
+}
+
+/// Whether the CPU budget `size - playback` has room for `e`; a non-optimization run only
+/// competes with its peers: it pauses an optimization.
+fn fits(st: &State, e: &Entry) -> bool {
+    let cost = e.cost(st.size);
+    cost == 0 || {
+        let used: usize = st
+            .running
+            .iter()
+            .filter(|h| e.lane.is_some() || h.e.lane.is_none())
+            .map(|h| h.e.cost(st.size))
+            .sum();
+        used + cost <= st.size.saturating_sub(st.playback)
+    }
+}
+
 /// Whether the waiter may start now on its own device's terms; CPU weight is checked apart.
 fn device_ready(st: &State, e: &Entry) -> bool {
     let Some(lane) = &e.lane else { return true };
     let limit = st.device_limit.get(&lane.device).copied().unwrap_or(1);
-    on_device(st, &lane.device) < limit && !(lane.gpu && gpu_paused(st, &lane.device))
+    on_device(st, &lane.device) < limit && !(lane.gpu() && gpu_paused(st, &lane.device))
 }
 
 /// Grants waiters while the CPU budget `size - playback` and the devices allow, then flags the
@@ -376,16 +407,7 @@ fn rebalance(st: &mut State) {
     let mut kept = Vec::with_capacity(st.queue.len());
     for w in std::mem::take(&mut st.queue) {
         let cost = w.e.cost(size);
-        let fits = cost == 0 || {
-            // A non-optimization run only competes with its peers: it pauses an optimization.
-            let used: usize = st
-                .running
-                .iter()
-                .filter(|h| w.e.lane.is_some() || h.e.lane.is_none())
-                .map(|h| h.e.cost(size))
-                .sum();
-            used + cost <= allowed
-        };
+        let fits = fits(st, &w.e);
         if (cost > 0 && cpu_blocked) || !device_ready(st, &w.e) || !fits {
             cpu_blocked |= cost > 0 && !fits;
             kept.push(w);
@@ -562,17 +584,11 @@ mod tests {
     }
 
     fn cpu_lane() -> Lane {
-        Lane {
-            device: CPU_DEVICE.into(),
-            gpu: false,
-        }
+        Lane::cpu()
     }
 
     fn gpu_lane() -> Lane {
-        Lane {
-            device: "gpu0".into(),
-            gpu: true,
-        }
+        Lane::new("gpu0")
     }
 
     #[tokio::test]

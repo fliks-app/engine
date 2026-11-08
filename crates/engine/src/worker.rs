@@ -406,13 +406,10 @@ impl Worker {
     /// Leases for one device while it has room; returns when the host forgot this worker.
     async fn lease_loop(self: Arc<Self>, device: WorkerDevice) {
         loop {
-            let lane = Lane {
-                device: device.id.clone(),
-                gpu: device.id != CPU_DEVICE,
-            };
+            let lane = Lane::new(device.id.clone());
             if self.held_on(&device.id) >= device.max_jobs as usize
                 || !self.rt.slots.has_room(&lane)
-                || (lane.gpu && !self.rt.slots.device_usable(&lane.device))
+                || (lane.gpu() && !self.rt.slots.device_usable(&lane.device))
             {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
@@ -447,10 +444,7 @@ impl Worker {
     /// Runs the leased job on its device's lane and watches it until its result is delivered.
     async fn accept(self: &Arc<Self>, leased: LeasedJob, device: &WorkerDevice) {
         let (id, attempt) = (leased.id, leased.attempt);
-        let lane = Lane {
-            device: device.id.clone(),
-            gpu: device.id != CPU_DEVICE,
-        };
+        let lane = Lane::new(device.id.clone());
         let remote = leased.input_path.is_none();
         let started = request(leased).and_then(|req| {
             jobs::submit_leased(&self.rt, req, lane, &format!("lease:{id}:{attempt}"))

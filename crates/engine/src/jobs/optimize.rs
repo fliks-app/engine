@@ -5,7 +5,7 @@ use super::scan::{ffprobe, lines, scan_file};
 use super::{Cmd, Ctx, free_bytes, tail};
 use crate::proc::Pipes;
 use crate::safe_write;
-use crate::slots::{CPU_DEVICE, Lane};
+use crate::slots::Lane;
 use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MediaInfo, OptimizeContainer, OptimizeLevel,
     OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
@@ -204,7 +204,7 @@ impl Work<'_> {
     fn threads(&self) -> u32 {
         let slots = &self.ctx.rt.slots;
         match self.ctx.lane() {
-            Some(l) if !l.gpu => slots.optimize_threads(),
+            Some(l) if !l.gpu() => slots.optimize_threads(),
             _ => slots.encode_threads(),
         }
     }
@@ -212,17 +212,11 @@ impl Work<'_> {
     /// A job leased on the GPU lane runs its software encodes on the CPU lane, weighed and
     /// paused like any CPU run; its hardware encodes go back to its own lane.
     fn enter_lane(&self, hardware: bool) {
-        let Some(home) = self.home.as_ref().filter(|h| h.gpu) else {
+        let Some(home) = self.home.as_ref().filter(|h| h.gpu()) else {
             return;
         };
-        self.ctx.set_lane(if hardware {
-            home.clone()
-        } else {
-            Lane {
-                device: CPU_DEVICE.into(),
-                gpu: false,
-            }
-        });
+        self.ctx
+            .set_lane(if hardware { home.clone() } else { Lane::cpu() });
     }
 
     fn staged_text(&self) -> String {
@@ -391,7 +385,7 @@ impl Work<'_> {
         ),
         String,
     > {
-        let gpu = self.home.as_ref().filter(|l| l.gpu);
+        let gpu = self.home.as_ref().filter(|l| l.gpu());
         self.ctx
             .rt
             .target(gpu.map(|l| l.device.as_str()))
@@ -428,7 +422,7 @@ impl Work<'_> {
         let (caps, _) = self.target()?;
         let hw = caps.hw_accel;
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
-        let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
+        let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu());
         let mut hardware = !self.plan().software && hw != HwAccel::None && !on_cpu;
         let v = opt::main_video(self.info())?;
         if let Some(r) = opt::copy_video_reason(v, self.plan(), hardware) {
@@ -519,7 +513,7 @@ impl Work<'_> {
     /// A hardware run failed on the job's device: it counts against the device, and the job goes
     /// back to the queue (`busy`) when another usable device can encode its codec.
     fn hw_failed(&self) -> Result<(), String> {
-        let Some(l) = self.home.as_ref().filter(|l| l.gpu) else {
+        let Some(l) = self.home.as_ref().filter(|l| l.gpu()) else {
             return Ok(());
         };
         let rt = &self.ctx.rt;
