@@ -13,6 +13,7 @@ use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
@@ -162,6 +163,8 @@ fn with_mit(note: &str) -> String {
 }
 
 struct Download {
+    /// Tells a task's own entry from a later one of the same model.
+    generation: u64,
     bytes: u64,
     error: Option<String>,
     cancel: watch::Sender<bool>,
@@ -172,6 +175,7 @@ struct Inner {
     dir: PathBuf,
     entries: Vec<Entry>,
     downloads: Mutex<HashMap<String, Download>>,
+    generations: AtomicU64,
     events: Events,
 }
 
@@ -197,6 +201,7 @@ impl Manager {
             dir,
             entries,
             downloads: Mutex::new(HashMap::new()),
+            generations: AtomicU64::new(0),
             events,
         }))
     }
@@ -318,25 +323,33 @@ impl Manager {
     /// unknown id. The hash of every file is checked before the file is kept.
     pub fn start(&self, id: &str) -> Option<ModelInfo> {
         let e = self.entry(id)?;
-        let busy = self.0.downloads.locked().get(id).is_some_and(|d| d.running);
-        if !busy && !self.installed(e) {
+        if !self.installed(e) {
             let (tx, rx) = watch::channel(false);
-            self.0.downloads.locked().insert(
-                id.into(),
-                Download {
-                    bytes: 0,
-                    error: None,
-                    cancel: tx,
-                    running: true,
-                },
-            );
+            let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
+            {
+                let mut dl = self.0.downloads.locked();
+                if dl.get(id).is_some_and(|d| d.running) {
+                    drop(dl);
+                    return self.get(id);
+                }
+                dl.insert(
+                    id.into(),
+                    Download {
+                        generation,
+                        bytes: 0,
+                        error: None,
+                        cancel: tx,
+                        running: true,
+                    },
+                );
+            }
             let me = self.clone();
             let id = e.id;
             tokio::spawn(async move {
-                let result = me.fetch(id, rx).await;
+                let result = me.fetch(id, generation, rx).await;
                 {
                     let mut dl = me.0.downloads.locked();
-                    if let Some(d) = dl.get_mut(id) {
+                    if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
                         d.running = false;
                         d.error = result.err();
                     }
@@ -362,28 +375,42 @@ impl Manager {
         true
     }
 
-    async fn fetch(&self, id: &'static str, cancel: watch::Receiver<bool>) -> Result<(), String> {
+    async fn fetch(
+        &self,
+        id: &'static str,
+        generation: u64,
+        cancel: watch::Receiver<bool>,
+    ) -> Result<(), String> {
         let e = self.entry(id).ok_or("unknown model")?;
         let dir = self.model_dir(e);
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| format!("create {}: {e}", dir.display()))?;
-        let total: u64 = e.files.iter().map(|f| f.size).sum();
         let client = client();
         let mut done_before = 0u64;
         for f in &e.files {
             let dest = dir.join(f.name);
             if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size) {
                 done_before += f.size;
-                self.set_bytes(id, done_before);
+                self.set_bytes(id, generation, done_before);
                 continue;
             }
             let part = dir.join(format!("{}.part", f.name));
             let r = self
-                .fetch_file(&client, f, &part, done_before, total, id, cancel.clone())
+                .fetch_file(
+                    &client,
+                    f,
+                    &part,
+                    done_before,
+                    id,
+                    generation,
+                    cancel.clone(),
+                )
                 .await;
             if let Err(err) = r {
-                let _ = tokio::fs::remove_file(&part).await;
+                if self.is_current(id, generation) {
+                    let _ = tokio::fs::remove_file(&part).await;
+                }
                 return Err(err);
             }
             tokio::fs::rename(&part, &dest)
@@ -394,10 +421,17 @@ impl Manager {
         Ok(())
     }
 
-    fn set_bytes(&self, id: &str, bytes: u64) {
-        if let Some(d) = self.0.downloads.locked().get_mut(id) {
+    fn set_bytes(&self, id: &str, generation: u64, bytes: u64) {
+        let mut dl = self.0.downloads.locked();
+        if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
             d.bytes = bytes;
         }
+    }
+
+    /// False once the model was deleted (and maybe restarted) since this task began.
+    fn is_current(&self, id: &str, generation: u64) -> bool {
+        let dl = self.0.downloads.locked();
+        dl.get(id).is_some_and(|d| d.generation == generation)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -407,8 +441,8 @@ impl Manager {
         f: &FileEntry,
         part: &Path,
         done_before: u64,
-        _total: u64,
         id: &'static str,
+        generation: u64,
         mut cancel: watch::Receiver<bool>,
     ) -> Result<(), String> {
         let mut body = open(client, &f.url).await?;
@@ -436,7 +470,7 @@ impl Manager {
             file.write_all(chunk)
                 .await
                 .map_err(|e| format!("write {}: {e}", part.display()))?;
-            self.set_bytes(id, done_before + got);
+            self.set_bytes(id, generation, done_before + got);
             if last.elapsed() >= PROGRESS_EVERY {
                 last = Instant::now();
                 self.emit(id);
@@ -490,7 +524,11 @@ async fn open(
                 .get(hyper::header::LOCATION)
                 .and_then(|v| v.to_str().ok())
                 .ok_or_else(|| format!("{url}: redirect without a location"))?;
-            url = absolute(&uri, to)?;
+            let next = absolute(&uri, to)?;
+            if uri.scheme_str() == Some("https") && next.starts_with("http://") {
+                return Err(format!("{url}: redirect to http refused"));
+            }
+            url = next;
             continue;
         }
         if status != StatusCode::OK {
@@ -556,5 +594,72 @@ mod tests {
             absolute(&base, "http://b.test/c").unwrap(),
             "http://b.test/c"
         );
+    }
+
+    /// A server that accepts and never answers, with its accepted-connection count.
+    async fn silent_server() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/m.bin", l.local_addr().unwrap());
+        let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c = n.clone();
+        tokio::spawn(async move {
+            let mut held = vec![];
+            while let Ok((s, _)) = l.accept().await {
+                c.fetch_add(1, Ordering::SeqCst);
+                held.push(s);
+            }
+        });
+        (url, n)
+    }
+
+    fn test_manager(url: String) -> Manager {
+        let entry = Entry {
+            id: "t",
+            kind: ModelKind::Melody,
+            name: "t",
+            version: "1",
+            licence: "MIT",
+            licence_text: "MIT".into(),
+            clear: true,
+            default: true,
+            files: vec![FileEntry {
+                name: "m.bin",
+                url,
+                sha256: "",
+                size: 4,
+            }],
+        };
+        let dir = std::env::temp_dir().join(format!("fliks-models-{}", std::process::id()));
+        Manager::new(dir, vec![entry], Events::default())
+    }
+
+    #[tokio::test]
+    async fn two_quick_starts_download_once() {
+        let (url, n) = silent_server().await;
+        let m = test_manager(url);
+        let (a, b) = (m.clone(), m.clone());
+        let _ = tokio::join!(
+            tokio::spawn(async move { a.start("t") }),
+            tokio::spawn(async move { b.start("t") })
+        );
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+        m.delete("t").await;
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_task_leaves_the_restarted_entry_alone() {
+        let (url, n) = silent_server().await;
+        let m = test_manager(url);
+        m.start("t");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        m.delete("t").await;
+        m.start("t");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(n.load(Ordering::SeqCst), 2);
+        let info = m.get("t").unwrap();
+        assert_eq!(info.state, ModelState::Downloading);
+        assert!(info.error.is_none());
+        m.delete("t").await;
     }
 }
