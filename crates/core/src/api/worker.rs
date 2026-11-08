@@ -36,8 +36,6 @@ pub struct WorkerDevice {
     pub encoders: Vec<String>,
     pub decoders: Vec<String>,
     pub max_jobs: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vram_mib: Option<u32>,
     pub pause: PauseMode,
 }
 
@@ -227,9 +225,6 @@ pub struct OptimizePlan {
     /// Write `hvc1` instead of `hev1` on HEVC in MP4.
     #[serde(default)]
     pub hvc1_tag: bool,
-    /// Ignored: the statistics tags of every Matroska output are regenerated (`mkvpropedit`).
-    #[serde(default)]
-    pub strip_statistics_tags: bool,
     /// Quality of a `reencode`; absent: balanced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<OptimizeQuality>,

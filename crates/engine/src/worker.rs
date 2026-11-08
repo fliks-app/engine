@@ -311,7 +311,6 @@ impl Worker {
             encoders: usable(&["libx265", "libsvtav1"]),
             decoders: decoders.clone(),
             max_jobs: (self.rt.slots.size() / 2).max(1) as u32,
-            vram_mib: None,
             pause,
         }];
         let snap = self.rt.hw.snapshot();
@@ -329,7 +328,6 @@ impl Worker {
                     encoders,
                     decoders: decoders.clone(),
                     max_jobs: 1,
-                    vram_mib: None,
                     pause,
                 });
             }
@@ -443,7 +441,7 @@ impl Worker {
 
     /// Runs the leased job on its device's lane and watches it until its result is delivered.
     async fn accept(self: &Arc<Self>, leased: LeasedJob, device: &WorkerDevice) {
-        let (id, attempt) = (leased.id, leased.attempt);
+        let (id, attempt, lease_s) = (leased.id, leased.attempt, leased.lease_s);
         let lane = Lane::new(device.id.clone());
         let remote = leased.input_path.is_none();
         let started = request(leased).and_then(|req| {
@@ -465,7 +463,7 @@ impl Worker {
             }
             Err(e) => {
                 tracing::warn!(job = id, "leased job refused: {e}");
-                let end = Instant::now() + Duration::from_secs(LEASE_S);
+                let end = Instant::now() + Duration::from_secs(u64::from(lease_s));
                 self.deliver(id, error_result(&self.instance, attempt, &e), end)
                     .await;
             }

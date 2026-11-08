@@ -120,7 +120,7 @@ A whole-file encode or remux for the library optimizer: `VodArgs.archive` (rate 
 | *_qsv | `-preset veryslow -look_ahead_depth 40 -extbrc 1 -global_quality 26/23/20 -forced_idr 1` |
 | *_vaapi | `-rc_mode ICQ -global_quality 26/23/20` |
 | *_amf | `-usage high_quality -quality quality -rc qvbr -qvbr_quality_level 30/26/22 -preanalysis 1 -forced_idr 1` |
-| *_videotoolbox | `-q:v 55/65/75`; `bitrateBps` set (Intel) -> `-b:v` instead |
+| *_videotoolbox | `-q:v 55/65/75` (macOS: Apple Silicon only) |
 
 - **Size**: the width is the source (or cropped) width brought down to even; the height follows from the aspect (`ceil(..)*2`). Crop is the usual `crop=` prefix.
 - **Mapping** (`ArchiveFile`): `-map` main video (`videoIndex`, else `0:v:0`), cover art (`coverArt`, `-c:v:k copy`), every listed audio then subtitle track by absolute index, `0:t?` (MKV only); `-dn -map_chapters 0 -map_metadata 0 -fps_mode passthrough -max_muxing_queue_size 4096`. A source audio stream listed twice is copied and encoded (`add`); listed once with an encode action it is replaced.

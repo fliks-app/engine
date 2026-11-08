@@ -179,7 +179,7 @@ impl Runtime {
 
     /// Decides once per usable device, best first, with that device's own caps, and keeps the
     /// first decision whose video encode is hardware there; none: `first`'s caps, on the CPU.
-    fn decide_placed(
+    pub(crate) fn decide_placed(
         &self,
         req: &DecideRequest,
         first: &fliks_engine_core::api::HostCaps,

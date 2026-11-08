@@ -67,10 +67,7 @@ pub(super) fn hw_rate(e: &Encoder, a: &ArchiveRate) -> Result<Vec<String>, Strin
             "-forced_idr",
             "1",
         ]),
-        Videotoolbox => match a.bitrate_bps {
-            Some(b) => strs(&["-b:v", &crate::jsnum::js_string(b)]),
-            _ => strs(&["-q:v", &by(q, [55, 65, 75])]),
-        },
+        Videotoolbox => strs(&["-q:v", &by(q, [55, 65, 75])]),
         None => return Err("archive: not a hardware encoder".into()),
     })
 }

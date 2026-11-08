@@ -277,17 +277,20 @@ async fn decide(State(s): State<Arc<AppState>>, Json(body): Json<DecideBody>) ->
     let Some(config) = s.rt.config.locked().clone() else {
         return not_ready().into_response();
     };
-    let caps = match (body.host_caps, s.hw.snapshot()) {
-        (Some(c), _) => c,
-        (None, Some(snap)) => snap.host_caps(),
-        (None, None) => return not_ready().into_response(),
+    if let Some(caps) = body.host_caps {
+        return Json(fliks_engine_core::decide::decide(
+            &body.request,
+            &caps,
+            &config.streaming,
+        ))
+        .into_response();
+    }
+    let Some(snap) = s.hw.snapshot() else {
+        return not_ready().into_response();
     };
-    Json(fliks_engine_core::decide::decide(
-        &body.request,
-        &caps,
-        &config.streaming,
-    ))
-    .into_response()
+    let (decision, ..) =
+        s.rt.decide_placed(&body.request, &snap.host_caps(), &config.streaming);
+    Json(decision).into_response()
 }
 
 #[utoipa::path(post, path = "/v1/estimate-sizes", request_body = EstimateSizesRequest,

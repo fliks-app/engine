@@ -5140,10 +5140,6 @@
               "$ref": "#/components/schemas/StreamPlan"
             }
           },
-          "stripStatisticsTags": {
-            "type": "boolean",
-            "description": "Ignored: the statistics tags of every Matroska output are regenerated (`mkvpropedit`)."
-          },
           "tooSlow": {
             "$ref": "#/components/schemas/OptimizeTooSlow",
             "description": "What a software encode beyond `maxSoftwareHours` does; absent: `hardware`."
@@ -7137,14 +7133,6 @@
           },
           "pause": {
             "$ref": "#/components/schemas/PauseMode"
-          },
-          "vramMib": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
           }
         }
       },

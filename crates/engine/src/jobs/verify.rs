@@ -34,7 +34,7 @@ pub async fn run(ctx: &Ctx, p: &VerifyPayload) -> Result<JobResult, String> {
     let duration = p.info.duration_seconds.unwrap_or(0.0);
     // No `-xerror`: the errors are counted, not fatal.
     let argv = opt::decode_args(&path.to_string_lossy(), false);
-    let r = run_ffmpeg(ctx, &opt::runnable(argv), duration, (0.0, 99.0)).await?;
+    let r = run_ffmpeg(ctx, &argv, duration, (0.0, 99.0)).await?;
     if r.errors > 0 {
         return Err(opt::decode_failure(r.errors, duration, &r.excerpt));
     }
