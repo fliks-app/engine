@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.2](https://github.com/fliks-app/engine/compare/v1.15.1...v1.15.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **hw:** place on the capable GPU, id devices by PCI, hand failing-GPU jobs to another device ([#192](https://github.com/fliks-app/engine/issues/192)) ([764af2d](https://github.com/fliks-app/engine/commit/764af2d688780ba358dc779400beab8bd8fcdcba))
+
 ## [1.15.1](https://github.com/fliks-app/engine/compare/v1.15.0...v1.15.1) (2026-11-08)
 
 
