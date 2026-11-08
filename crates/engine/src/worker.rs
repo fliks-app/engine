@@ -9,35 +9,56 @@ use crate::slots::{CPU_DEVICE, GPU_DEVICE, Lane};
 use axum::body::Bytes;
 use axum::http::{Request, StatusCode, header};
 use fliks_engine_core::api::{
-    BgJobState, HwAccel, JobError, JobErrorClass, JobHeartbeatRequest, JobHeartbeatResponse,
-    JobKind, JobRequest, JobResult, JobResultRequest, JobSnapshot, LeaseRef, LeaseRequest,
-    LeasedJob, MediaRef, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
+    BgJobState, HEADER_ATTEMPT, HEADER_UPLOAD_COMPLETE, HEADER_UPLOAD_OFFSET, HEADER_WORKER_ID,
+    HwAccel, JobError, JobErrorClass, JobHeartbeatRequest, JobHeartbeatResponse, JobKind,
+    JobRequest, JobResult, JobResultRequest, JobSnapshot, LeaseRef, LeaseRequest, LeasedJob,
+    MediaRef, UploadAck, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
 };
 use http_body_util::{BodyExt, Full};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::task::JoinSet;
 
 const HEARTBEAT_S: u64 = 15;
 const LEASE_S: u64 = 60;
 const LONG_POLL_S: u64 = 30;
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const RETRY: Duration = Duration::from_secs(5);
 /// A host without the worker protocol is asked again this rarely.
 const UNSUPPORTED_RETRY: Duration = Duration::from_secs(300);
 
-/// Starts the loop; it idles until the host's config says `worker: true`.
+/// The host of a remote worker (no disk access to the library), fixed at startup.
+static REMOTE: OnceLock<Host> = OnceLock::new();
+
+/// Makes this engine a remote worker of `url`: it leases over `inputUrl` and uploads its outputs.
+pub fn set_remote(url: String, token: String) {
+    let _ = REMOTE.set(Host {
+        url,
+        token: Some(token),
+    });
+}
+
+pub fn is_remote() -> bool {
+    REMOTE.get().is_some()
+}
+
+/// Starts the loop; it idles until the host's config says `worker: true` (unless remote).
 pub fn start(rt: &Arc<Runtime>) {
     tokio::spawn(supervise(rt.clone()));
 }
 
 fn enabled(rt: &Runtime) -> Option<Host> {
+    if let Some(h) = REMOTE.get() {
+        return Some(h.clone());
+    }
     let c = rt.current_config();
     match (&c.host_url, c.worker) {
         (Some(url), true) => Some(Host {
@@ -108,6 +129,35 @@ struct Worker {
     settings: Mutex<WorkerSettings>,
 }
 
+/// Heartbeat timing of one lease: `deadline` is when it ends locally without an answer.
+struct Pulse {
+    lease: Duration,
+    every: Duration,
+    deadline: Instant,
+    next: Instant,
+}
+
+impl Pulse {
+    fn new(lease_s: u64, every_s: u64) -> Self {
+        let (lease, every) = (Duration::from_secs(lease_s), Duration::from_secs(every_s));
+        Self {
+            lease,
+            every,
+            deadline: Instant::now() + lease,
+            next: Instant::now() + every,
+        }
+    }
+}
+
+enum Upload {
+    Fenced,
+    Failed(String),
+}
+
+fn io_failed(e: std::io::Error) -> Upload {
+    Upload::Failed(JobErrorClass::Io.message(e.to_string()))
+}
+
 struct Answer {
     status: StatusCode,
     body: Bytes,
@@ -151,14 +201,24 @@ impl Worker {
         timeout: Duration,
     ) -> Result<Answer, String> {
         let body = serde_json::to_vec(body).map_err(|e| e.to_string())?;
-        let mut req = Request::post(format!("{}{path}", self.host.url.trim_end_matches('/')))
-            .header(header::CONTENT_TYPE, "application/json");
+        let req = Request::post(self.url(path)).header(header::CONTENT_TYPE, "application/json");
+        self.send(req, Bytes::from(body), timeout).await
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.host.url.trim_end_matches('/'))
+    }
+
+    async fn send(
+        &self,
+        mut req: axum::http::request::Builder,
+        body: Bytes,
+        timeout: Duration,
+    ) -> Result<Answer, String> {
         if let Some(t) = &self.host.token {
             req = req.header(header::AUTHORIZATION, format!("Bearer {t}"));
         }
-        let req = req
-            .body(Full::new(Bytes::from(body)))
-            .map_err(|e| e.to_string())?;
+        let req = req.body(Full::new(body)).map_err(|e| e.to_string())?;
         let call = async {
             let res = self.client.request(req).await.map_err(|e| e.to_string())?;
             let status = res.status();
@@ -358,6 +418,7 @@ impl Worker {
             device: device.id.clone(),
             gpu: device.id == GPU_DEVICE,
         };
+        let remote = leased.input_path.is_none();
         let started = request(leased).and_then(|req| {
             jobs::submit_leased(&self.rt, req, lane, &format!("lease:{id}:{attempt}"))
         });
@@ -373,7 +434,7 @@ impl Worker {
                         dropped: dropped.clone(),
                     },
                 );
-                tokio::spawn(self.clone().watch(id, attempt, job, dropped));
+                tokio::spawn(self.clone().watch(id, attempt, job, dropped, remote));
             }
             Err(e) => {
                 tracing::warn!(job = id, "leased job refused: {e}");
@@ -391,60 +452,177 @@ impl Worker {
         attempt: u32,
         job: Arc<BgJob>,
         dropped: Arc<AtomicBool>,
+        remote: bool,
     ) {
-        let lease = Duration::from_secs(self.setting(|s| u64::from(s.lease_s)));
-        let every = Duration::from_secs(self.setting(|s| u64::from(s.heartbeat_s)));
-        let mut deadline = Instant::now() + lease;
-        let mut next = Instant::now() + every;
+        let mut pulse = Pulse::new(
+            self.setting(|s| u64::from(s.lease_s)),
+            self.setting(|s| u64::from(s.heartbeat_s)),
+        );
         let mut fenced = false;
         while !job.snapshot().state.ended() {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            if Instant::now() < next {
-                continue;
-            }
-            next = Instant::now() + every;
             let snap = job.snapshot();
-            let req = JobHeartbeatRequest {
-                worker_id: self.instance.clone(),
-                attempt,
-                progress: (snap.pct / 100.0).clamp(0.0, 1.0),
-                paused: snap.state == BgJobState::Paused,
-            };
-            let answer = self
-                .post(&format!("/engine/jobs/{id}/heartbeat"), &req, CALL_TIMEOUT)
-                .await;
-            match beat(&answer) {
-                Beat::Renewed => deadline = Instant::now() + lease,
-                Beat::Fenced => {
-                    fenced = true;
-                    break;
-                }
-                Beat::Unanswered => {
-                    if let Err(e) = &answer {
-                        tracing::warn!(job = id, "heartbeat failed: {e}");
-                    }
-                    if Instant::now() >= deadline {
-                        tracing::warn!(job = id, "lease expired locally: stopping");
-                        fenced = true;
-                        break;
-                    }
-                }
+            let progress = (snap.pct / 100.0).clamp(0.0, 1.0);
+            if self
+                .pulse(
+                    id,
+                    attempt,
+                    &mut pulse,
+                    progress,
+                    snap.state == BgJobState::Paused,
+                )
+                .await
+            {
+                fenced = true;
+                break;
+            }
+        }
+        let snap = job.snapshot();
+        let mut body = None;
+        if !fenced && !dropped.load(Relaxed) && remote {
+            match self.upload(id, attempt, &snap, &mut pulse).await {
+                Ok(()) => {}
+                Err(Upload::Fenced) => fenced = true,
+                Err(Upload::Failed(e)) => body = Some(error_result(&self.instance, attempt, &e)),
             }
         }
         if fenced || dropped.load(Relaxed) {
             // A cancel stops a run and its executor removes the file; a job already done leaves it.
             jobs::cancel(&self.rt, &job.id).await;
-            remove_staged(&job.snapshot());
-        } else {
-            let snap = job.snapshot();
-            if snap.state != BgJobState::Cancelled {
-                let body = result_request(&self.instance, attempt, &snap);
-                if !self.deliver(id, body, deadline).await {
-                    remove_staged(&snap);
-                }
+            remove_staged(&snap);
+        } else if snap.state != BgJobState::Cancelled {
+            let body = body.unwrap_or_else(|| result_request(&self.instance, attempt, &snap));
+            let delivered = self.deliver(id, body, pulse.deadline).await;
+            // A remote output was copied to the host; a local one is the host's to take.
+            if remote || !delivered {
+                remove_staged(&snap);
             }
         }
         self.held.locked().remove(&id);
+    }
+
+    /// Heartbeats when one is due; true when the host fenced the job or the lease ran out locally.
+    async fn pulse(
+        &self,
+        id: u32,
+        attempt: u32,
+        p: &mut Pulse,
+        progress: f64,
+        paused: bool,
+    ) -> bool {
+        if Instant::now() < p.next {
+            return false;
+        }
+        p.next = Instant::now() + p.every;
+        let req = JobHeartbeatRequest {
+            worker_id: self.instance.clone(),
+            attempt,
+            progress,
+            paused,
+        };
+        let answer = self
+            .post(&format!("/engine/jobs/{id}/heartbeat"), &req, CALL_TIMEOUT)
+            .await;
+        match beat(&answer) {
+            Beat::Renewed => {
+                p.deadline = Instant::now() + p.lease;
+                false
+            }
+            Beat::Fenced => true,
+            Beat::Unanswered => {
+                if let Err(e) = &answer {
+                    tracing::warn!(job = id, "heartbeat failed: {e}");
+                }
+                let expired = Instant::now() >= p.deadline;
+                if expired {
+                    tracing::warn!(job = id, "lease expired locally: stopping");
+                }
+                expired
+            }
+        }
+    }
+
+    /// Sends a remote job's output in `uploadChunkBytes` chunks, resuming from what the host holds.
+    async fn upload(
+        &self,
+        id: u32,
+        attempt: u32,
+        snap: &JobSnapshot,
+        pulse: &mut Pulse,
+    ) -> Result<(), Upload> {
+        let Some(JobResult::Optimize { optimize }) = &snap.result else {
+            return Ok(());
+        };
+        if optimize.nothing_to_do {
+            return Ok(());
+        }
+        let chunk = self.setting(|s| u64::from(s.upload_chunk_bytes)).max(1);
+        let path = Path::new(&optimize.staged_path);
+        let total = tokio::fs::metadata(path)
+            .await
+            .map_err(|e| {
+                Upload::Failed(JobErrorClass::Io.message(format!("{}: {e}", path.display())))
+            })?
+            .len();
+        let mut file = tokio::fs::File::open(path).await.map_err(|e| {
+            Upload::Failed(JobErrorClass::Io.message(format!("{}: {e}", path.display())))
+        })?;
+        let mut offset = 0u64;
+        loop {
+            if self.pulse(id, attempt, pulse, 1.0, false).await {
+                return Err(Upload::Fenced);
+            }
+            if Instant::now() >= pulse.deadline {
+                return Err(Upload::Failed(
+                    JobErrorClass::Network.message("the upload ran past the lease"),
+                ));
+            }
+            let len = chunk.min(total - offset);
+            let mut buf = vec![0u8; len as usize];
+            file.seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(io_failed)?;
+            file.read_exact(&mut buf).await.map_err(io_failed)?;
+            let last = offset + len >= total;
+            let req = Request::put(self.url(&format!("/engine/jobs/{id}/output")))
+                .header(HEADER_UPLOAD_OFFSET, offset.to_string())
+                .header(HEADER_ATTEMPT, attempt.to_string())
+                .header(HEADER_WORKER_ID, &self.instance)
+                .header(HEADER_UPLOAD_COMPLETE, if last { "?1" } else { "?0" })
+                .header(header::CONTENT_TYPE, "application/octet-stream");
+            match self.send(req, Bytes::from(buf), UPLOAD_TIMEOUT).await {
+                Ok(a) if a.status.is_success() => {
+                    offset += len;
+                    if last {
+                        return Ok(());
+                    }
+                }
+                Ok(a) if a.status == StatusCode::CONFLICT => {
+                    // The host holds another length: continue from it; no ack means the job is fenced.
+                    match serde_json::from_slice::<UploadAck>(&a.body) {
+                        Ok(ack) if (ack.received_bytes as u64) <= total => {
+                            offset = ack.received_bytes as u64;
+                            if offset >= total {
+                                return Ok(());
+                            }
+                        }
+                        _ => return Err(Upload::Fenced),
+                    }
+                }
+                Ok(a) if a.status.is_client_error() => {
+                    return Err(Upload::Failed(
+                        JobErrorClass::Network
+                            .message(format!("the host refused the output: {}", a.status)),
+                    ));
+                }
+                other => {
+                    if let Err(e) = other {
+                        tracing::warn!(job = id, "upload failed: {e}");
+                    }
+                    tokio::time::sleep(RETRY).await;
+                }
+            }
+        }
     }
 
     /// Posts the result until the host answers; false when it fenced it or the lease ran out.
@@ -613,6 +791,68 @@ fn remove_staged(snap: &JobSnapshot) {
 mod tests {
     use super::*;
     use fliks_engine_core::api::{JobPriority, MediaInfo, OptimizeLevel, OptimizeMeta};
+
+    #[tokio::test]
+    async fn an_upload_resumes_from_the_offset_the_host_holds() {
+        use axum::{Router, extract::State, http::HeaderMap, response::IntoResponse, routing::put};
+        let held = Arc::new(Mutex::new(b"abc".to_vec()));
+        async fn chunk(
+            State(held): State<Arc<Mutex<Vec<u8>>>>,
+            h: HeaderMap,
+            body: Bytes,
+        ) -> axum::response::Response {
+            let off: usize = h[HEADER_UPLOAD_OFFSET].to_str().unwrap().parse().unwrap();
+            let mut g = held.lock().unwrap();
+            if off != g.len() {
+                let ack = format!(r#"{{"receivedBytes":{}}}"#, g.len());
+                return (StatusCode::CONFLICT, ack).into_response();
+            }
+            g.extend_from_slice(&body);
+            StatusCode::OK.into_response()
+        }
+        let app = Router::new()
+            .route("/engine/jobs/{id}/output", put(chunk))
+            .with_state(held.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+
+        let hw = crate::hw::Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
+        let rt = Runtime::new(hw, crate::cache::Cache::from_env(), "ffmpeg".into());
+        let w = Worker {
+            rt,
+            host: Host { url, token: None },
+            instance: "w".into(),
+            client: Client::builder(TokioExecutor::new()).build_http(),
+            held: Mutex::new(HashMap::new()),
+            settings: Mutex::new(WorkerSettings {
+                upload_chunk_bytes: 4,
+                ..default_settings()
+            }),
+        };
+        let dir = std::env::temp_dir().join(format!("fliks-up-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let staged = dir.join(".out");
+        std::fs::write(&staged, b"abcdefghij").unwrap();
+        let meta = OptimizeMeta {
+            staged_path: staged.to_string_lossy().into_owned(),
+            out_size: 10.0,
+            out_sha256: "ab".into(),
+            out_info: MediaInfo::default(),
+            level: OptimizeLevel::Remux,
+            copy_reason: None,
+            cpu_fallback: false,
+            nothing_to_do: false,
+        };
+        let done = JobResult::Optimize {
+            optimize: Box::new(meta),
+        };
+        let snap = snapshot(BgJobState::Done, Some(done), None);
+        let mut pulse = Pulse::new(60, 3600);
+        assert!(w.upload(1, 1, &snap, &mut pulse).await.is_ok());
+        assert_eq!(held.lock().unwrap().as_slice(), b"abcdefghij");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn answer(status: u16, body: &str) -> Result<Answer, String> {
         Ok(Answer {

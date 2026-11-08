@@ -100,6 +100,19 @@ impl Cache {
         }
     }
 
+    /// Removes the outputs a remote worker staged before it stopped: its leases are gone with it.
+    pub fn remove_remote_outputs(&self) {
+        let Ok(rd) = std::fs::read_dir(self.optimize_dir()) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with(".fliks-opt-") && name.ends_with(".tmp") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
     /// `FLIKS_TRANSCODE_DIR`, else `FLIKS_CACHE_DIR`, else the OS temp dir.
     pub fn from_env() -> Self {
         let var = |k| {
