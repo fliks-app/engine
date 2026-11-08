@@ -53,8 +53,8 @@ jobs:
       - name: Engine with the pack
         if: ${{ !matrix.msys }}
         run: |
-          cargo build --release -p fliks-engine --bin fliks-engine --features karaoke
-          cp target/release/fliks-engine out/
+          cargo build --release -p fliks-engine --bin fliks-engine --example provider-check --features karaoke
+          cp target/release/fliks-engine target/release/examples/provider-check out/
           FLIKS_ENGINE_TOKEN=t out/fliks-engine --listen 127.0.0.1:7411 & pid=$!
           sleep 3
           curl -fsS -H 'Authorization: Bearer t' http://127.0.0.1:7411/v1/models | python3 -c 'import json,sys; r=json.load(sys.stdin)["runtime"]; print(r); assert r["onnx"] and r["whisper"] and r["rubberband"] and "coreml" in r["providers"]'
@@ -77,6 +77,7 @@ jobs:
           path: |
             out/fliks-engine-karaoke-*
             out/fliks-engine
+            out/provider-check
       - name: Attach to the release
         if: inputs.tag != ''
         env:
