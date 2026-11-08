@@ -159,7 +159,7 @@ fn codecs(bytes: &[u8]) -> Vec<String> {
     let f_dir = temp_dir("live-probe");
     let f = f_dir.join("seg.bin");
     std::fs::write(&f, bytes).unwrap();
-    let out = std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
+    let out = std::process::Command::new(fliks_engine::tool_path("FFPROBE_PATH", "ffprobe"))
         .args([
             "-v",
             "error",

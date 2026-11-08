@@ -6,6 +6,7 @@ mod fingerprint;
 mod merge;
 mod ocr;
 mod optimize;
+mod run;
 mod scan;
 mod sprite;
 mod srt;
@@ -46,7 +47,7 @@ const TICK: Duration = Duration::from_millis(200);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 const DEFAULT_MIN_FREE_BYTES: f64 = 1024.0 * 1024.0 * 1024.0;
 pub const CANCELLED: &str = "cancelled";
-const PROMOTED: &str = "promoted";
+pub(super) const PROMOTED: &str = "promoted";
 /// A run that must yield and cannot be paused is killed: the job goes back to its queue.
 const REQUEUED: &str = "requeued";
 

@@ -17,7 +17,7 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo, source: &SrtSource) -> Result<JobR
         SrtSource::Stream { index } => (media, Some(*index)),
     };
     let argv = pure::to_srt_argv(&input, map);
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes { stdout: true });
+    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout());
     let srt = ctx
         .pipeline(pure::TIMEOUT_MS, vec![cmd], |p| async move {
             let ff = &p[0];

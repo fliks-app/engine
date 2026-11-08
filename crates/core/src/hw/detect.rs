@@ -327,7 +327,7 @@ impl Detected {
             id: id.into(),
             render_node: render_node.into(),
             name,
-            hw_accel: hw_name(self.hw_accel).into(),
+            hw_accel: self.hw_accel.as_str().into(),
             encoders: self.encoders.clone(),
             decoders: self.decoders.clone(),
             tonemap_algos: self.tonemap_algos(),
@@ -360,34 +360,15 @@ impl Detected {
         pause_capability: &str,
     ) -> Capabilities {
         Capabilities {
-            hw_accel: hw_name(self.hw_accel).into(),
+            hw_accel: self.hw_accel.as_str().into(),
             encoders: self.encoders.clone(),
             decoders: self.decoders.clone(),
             tonemap_algos: self.tonemap_algos(),
             gpus: gpus.iter().map(Gpu::from).collect(),
             default_gpu: (!gpus.is_empty()).then(|| render_node.to_string()),
             devices: vec![],
-            platform: platform_name(self.platform).into(),
+            platform: self.platform.as_str().into(),
             pause_capability: pause_capability.into(),
         }
-    }
-}
-
-fn hw_name(h: HwAccel) -> &'static str {
-    match h {
-        HwAccel::Vaapi => "vaapi",
-        HwAccel::Nvenc => "nvenc",
-        HwAccel::Qsv => "qsv",
-        HwAccel::Amf => "amf",
-        HwAccel::Videotoolbox => "videotoolbox",
-        HwAccel::None => "none",
-    }
-}
-
-fn platform_name(p: Platform) -> &'static str {
-    match p {
-        Platform::Linux => "linux",
-        Platform::Darwin => "darwin",
-        Platform::Win32 => "win32",
     }
 }

@@ -18,21 +18,14 @@ pub struct OpenReport {
     pub qoe_pipeline: QoePipeline,
 }
 
-fn hw_kind(hw: HwAccel) -> &'static str {
-    match hw {
-        HwAccel::None => "cpu",
-        HwAccel::Vaapi => "vaapi",
-        HwAccel::Nvenc => "nvenc",
-        HwAccel::Qsv => "qsv",
-        HwAccel::Amf => "amf",
-        HwAccel::Videotoolbox => "videotoolbox",
-    }
-}
-
 fn stage(hw: HwAccel, name: Option<&str>) -> PipelineStage {
     PipelineStage {
         hw: hw != HwAccel::None,
-        kind: hw_kind(hw).into(),
+        kind: match hw {
+            HwAccel::None => "cpu",
+            h => h.as_str(),
+        }
+        .into(),
         name: name.map(String::from),
     }
 }

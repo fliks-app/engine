@@ -1455,7 +1455,7 @@ fn ffprobe_json(bin: &str, file: &std::path::Path) -> Value {
 /// The real ffmpeg on synthetic parts, once copied and once encoded: skipped without ffmpeg.
 #[tokio::test]
 async fn merge_job_with_the_real_ffmpeg_copies_or_encodes_and_chapters_the_parts() {
-    let ffprobe = fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe");
+    let ffprobe = fliks_engine::tool_path("FFPROBE_PATH", "ffprobe");
     if !tool_ok(&ffmpeg(), &[std::ffi::OsStr::new("-version")])
         || !tool_ok(&ffprobe, &[std::ffi::OsStr::new("-version")])
     {

@@ -85,7 +85,7 @@ impl Encoder {
             };
             return format!("{base}{hdr}");
         }
-        let (codec, hw) = (codec_name(self.codec), hw_name(self.hw));
+        let (codec, hw) = (codec_name(self.codec), self.hw.as_str());
         format!("{codec}_{hw}{hdr}")
     }
 
@@ -109,17 +109,6 @@ pub(crate) fn registry_ids() -> Vec<String> {
 
 pub fn codec_name(c: VideoCodec) -> &'static str {
     DecodeCodec::from(c).name()
-}
-
-fn hw_name(h: HwAccel) -> &'static str {
-    match h {
-        Qsv => "qsv",
-        Vaapi => "vaapi",
-        Nvenc => "nvenc",
-        Amf => "amf",
-        Videotoolbox => "videotoolbox",
-        HwAccel::None => "none",
-    }
 }
 
 /// First usable encoder for `variant` on `hw`, else the CPU one of the same variant.

@@ -16,26 +16,11 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 /// One hardware device (`gpu0`, `gpu1`, ...) probed on its own render node.
-#[derive(Debug, Clone)]
-pub struct HwDevice {
-    pub id: String,
-    pub render_node: String,
-    pub name: Option<String>,
-    /// CUDA ordinal on a host with several NVIDIA cards.
-    pub cuda_index: Option<u32>,
-    pub detected: Detected,
-}
+pub use fliks_engine_core::hw::DeviceEntry as HwDevice;
 
-impl HwDevice {
-    /// What the argv builders vary on for a run placed on this device.
-    pub fn device(&self) -> Device {
-        Device {
-            platform: self.detected.platform,
-            render_node: Some(self.render_node.clone()),
-            opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
-            cuda_index: self.cuda_index,
-        }
-    }
+/// The admin's `FLIKS_OPENCL_DEVICE`, if set.
+pub fn opencl_device() -> Option<String> {
+    std::env::var("FLIKS_OPENCL_DEVICE").ok()
 }
 
 /// One finished detection run. `detected` and `render_node` are `devices[0]`'s: what the playback
@@ -96,17 +81,9 @@ pub struct Hw {
     state: Mutex<State>,
 }
 
-/// The binary named by env `var`, else `default` on PATH.
-pub fn tool_path(var: &str, default: &str) -> String {
-    std::env::var(var)
-        .ok()
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| default.into())
-}
-
 /// `FFMPEG_PATH` or `ffmpeg` on PATH.
 pub fn ffmpeg_path() -> String {
-    tool_path("FFMPEG_PATH", "ffmpeg")
+    crate::tool_path("FFMPEG_PATH", "ffmpeg")
 }
 
 /// The real detection: ffmpeg runs, `/dev/dri` + sysfs, and the pause probe (node-independent, run once).
@@ -128,7 +105,7 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
                     let dev = Device {
                         platform,
                         render_node: node.clone(),
-                        opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+                        opencl_device: opencl_device(),
                         cuda_index: cuda,
                     };
                     let detected =
@@ -141,7 +118,7 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
                     }
                 }
             };
-            let (mut found, stdin) = tokio::join!(
+            let (found, stdin) = tokio::join!(
                 async {
                     if node.is_some() || gpus.is_empty() {
                         return vec![probe(0, node.clone(), None, None).await];
@@ -176,17 +153,7 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
                 pause.get_or_init(|| probe_stdin_pause(&ffmpeg))
             );
             let fallback = found[0].detected.clone();
-            found.retain(|f| f.detected.hw_accel != HwAccel::None);
-            let devices: Vec<HwDevice> = assemble(&gpus, found)
-                .into_iter()
-                .map(|d| HwDevice {
-                    id: d.id,
-                    render_node: d.render_node,
-                    name: d.name,
-                    cuda_index: d.cuda_index,
-                    detected: d.detected,
-                })
-                .collect();
+            let devices: Vec<HwDevice> = assemble(&gpus, found);
             let (detected, render_node) = devices.first().map_or_else(
                 || {
                     let primary = node.clone().unwrap_or_else(|| DEFAULT_RENDER_NODE.into());

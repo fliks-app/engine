@@ -1,12 +1,11 @@
 //! Pure half of the `Optimize` and `Verify` jobs: the plan turned into argv inputs, the checks an
 //! output must pass, and how ffmpeg's stderr is read. Spec: `docs/spec/jobs.md` section 11.
 use crate::api::{
-    AudioStreamInfo, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan, OptimizeQuality,
-    StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
+    AudioStreamInfo, HwAccel, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan,
+    OptimizeQuality, StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
 };
-use crate::args::{
-    ArchiveAudio, ArchiveAudioEnc, ArchiveExtraSub, ArchiveFile, ArchiveTrack, FileArgs,
-};
+use crate::args::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack, FileArgs};
+use crate::decide::timeline::parse_source_fps;
 use serde_json::json;
 
 /// Samples encoded to estimate the savings and the speed.
@@ -14,10 +13,10 @@ pub const SAMPLE_COUNT: usize = 3;
 pub const SAMPLE_SECONDS: f64 = 20.0;
 pub const DEFAULT_MAX_SOFTWARE_HOURS: f64 = 12.0;
 /// Longest gap between two keyframes of an output the engine's HLS remux can still cut.
-pub const MAX_KEYFRAME_GAP_SECONDS: f64 = 6.0;
-pub const DURATION_TOLERANCE_SECONDS: f64 = 1.0;
+const MAX_KEYFRAME_GAP_SECONDS: f64 = 6.0;
+const DURATION_TOLERANCE_SECONDS: f64 = 1.0;
 /// Decoding errors per hour of film below which a readable source is `damaged`, not `corrupt`.
-pub const DAMAGED_ERRORS_PER_HOUR: f64 = 10.0;
+const DAMAGED_ERRORS_PER_HOUR: f64 = 10.0;
 /// Mean SSIM under which a hardware output is taken for green or black frames.
 pub const MIN_SSIM: f64 = 0.9;
 const FALLBACK_FRAME_SECONDS: f64 = 0.05;
@@ -94,9 +93,7 @@ pub fn is_noop_copy(info: &MediaInfo, plan: &OptimizePlan) -> bool {
 }
 
 pub fn is_matroska(info: &MediaInfo) -> bool {
-    info.format_name
-        .as_deref()
-        .is_some_and(|f| f.contains("matroska"))
+    crate::probe::is_matroska(info.format_name.as_deref())
 }
 
 /// The main video: the first one (the probe leaves attached pictures out).
@@ -104,12 +101,30 @@ pub fn main_video(info: &MediaInfo) -> Result<&VideoStreamInfo, String> {
     info.video.first().ok_or_else(|| "no video stream".into())
 }
 
+/// Why the video of a re-encode is copied; `OptimizeMeta.copy_reason` carries `as_str`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyReason {
+    UnsupportedSource,
+    TooSlow,
+    LowSavings,
+}
+
+impl CopyReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedSource => "unsupported_source",
+            Self::TooSlow => "too_slow",
+            Self::LowSavings => "low_savings",
+        }
+    }
+}
+
 /// Why the video of a planned re-encode is copied instead; `None` when it can be encoded.
 pub fn copy_video_reason(
     v: &VideoStreamInfo,
     plan: &OptimizePlan,
     hardware: bool,
-) -> Option<&'static str> {
+) -> Option<CopyReason> {
     let px = v.pixel_format.as_deref().unwrap_or("");
     let interlaced = v.field_order.as_deref().is_some_and(|f| f != "progressive");
     let chroma = hardware && (px.contains("422") || px.contains("444"));
@@ -119,7 +134,7 @@ pub fn copy_video_reason(
         None => false,
     };
     let plus = v.hdr10_plus == Some(true) && plan.skip_hdr10plus_dv.unwrap_or(true);
-    (interlaced || chroma || dv || plus).then_some("unsupported_source")
+    (interlaced || chroma || dv || plus).then_some(CopyReason::UnsupportedSource)
 }
 
 fn plan_of(plan: &OptimizePlan, index: u32) -> Option<&StreamPlan> {
@@ -155,13 +170,13 @@ fn in_plan_order<'a, T>(
 
 /// One output audio track: the source stream it comes from and whether it is encoded.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AudioOut<'a> {
+struct AudioOut<'a> {
     pub src: &'a AudioStreamInfo,
     pub encoded: bool,
 }
 
 /// The audio tracks of the output, in order.
-pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'a>> {
+fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'a>> {
     let mut out = vec![];
     for a in in_plan_order(&info.audio, plan, |a| a.stream_index) {
         let sp = plan_of(plan, a.stream_index);
@@ -191,7 +206,7 @@ pub fn audio_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<AudioOut<'
 }
 
 /// The subtitle tracks of the output (source streams kept), in order.
-pub fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a SubtitleStreamInfo> {
+fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a SubtitleStreamInfo> {
     in_plan_order(&info.subtitles, plan, |s| s.stream_index)
         .into_iter()
         .filter(|s| plan_of(plan, s.stream_index).is_none_or(|p| p.keep))
@@ -199,7 +214,7 @@ pub fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a Su
 }
 
 /// The explicit mapping of the output for `args::file`.
-pub fn archive_file(
+fn archive_file(
     info: &MediaInfo,
     plan: &OptimizePlan,
     copy_video: bool,
@@ -246,26 +261,8 @@ pub fn archive_file(
                 ..track(s.stream_index, plan_of(plan, s.stream_index))
             })
             .collect(),
-        extra_subtitles: plan
-            .extra_subtitles
-            .iter()
-            .map(|x| ArchiveExtraSub {
-                path: x.path.clone(),
-                language: x.language.clone(),
-                title: x.title.clone(),
-                default: x.default,
-                forced: x.forced,
-                hearing_impaired: x.hearing_impaired,
-            })
-            .collect(),
+        extra_subtitles: plan.extra_subtitles.clone(),
     })
-}
-
-fn fps(v: &VideoStreamInfo) -> Option<f64> {
-    let s = v.avg_frame_rate.as_deref().or(v.frame_rate.as_deref())?;
-    let (n, d) = s.split_once('/').unwrap_or((s, "1"));
-    let (n, d) = (n.parse::<f64>().ok()?, d.parse::<f64>().ok()?);
-    (n > 0.0 && d > 0.0).then_some(n / d)
 }
 
 /// What `build_file_args` writes and how.
@@ -274,8 +271,8 @@ pub struct Output<'a> {
     pub path: &'a str,
     /// `hevc` or `av1`, the plan's target codec.
     pub codec: &'a str,
-    /// `none` for the CPU, else the detected accelerator (`vaapi`, `nvenc`...).
-    pub hw: &'a str,
+    /// `HwAccel::None` for the CPU, else the detected accelerator.
+    pub hw: HwAccel,
     pub threads: u32,
     pub copy_video: bool,
 }
@@ -287,11 +284,7 @@ pub fn build_file_args(
     o: &Output,
 ) -> Result<FileArgs, String> {
     let v = main_video(info)?;
-    let quality = match plan.quality.unwrap_or(OptimizeQuality::Balanced) {
-        OptimizeQuality::Small => "small",
-        OptimizeQuality::Balanced => "balanced",
-        OptimizeQuality::Faithful => "faithful",
-    };
+    let quality = plan.quality.unwrap_or(OptimizeQuality::Balanced);
     // HEVC keeps the source's depth, AV1 is always 10-bit.
     let ten = v.hdr_format.is_some() || v.bit_depth.is_some_and(|d| d > 8) || o.codec == "av1";
     let mut encode = json!({
@@ -314,7 +307,12 @@ pub fn build_file_args(
     };
     set("sourceWidth", json!(v.width));
     set("sourceHeight", json!(v.height));
-    set("sourceFps", json!(fps(v)));
+    set(
+        "sourceFps",
+        json!(parse_source_fps(
+            v.avg_frame_rate.as_deref().or(v.frame_rate.as_deref())
+        )),
+    );
     set("sourceBitDepth", json!(v.bit_depth));
     set("sourceVideoBitrateBps", json!(v.bit_rate));
     set("sourceHdrMetadata", json!(v.hdr_metadata));
@@ -419,7 +417,7 @@ pub fn estimated_hours(sample_wall_seconds: f64, sampled_seconds: f64, duration:
 }
 
 /// Decoding errors tolerated before `damaged` becomes `corrupt`.
-pub fn damaged_limit(duration_seconds: f64) -> u32 {
+fn damaged_limit(duration_seconds: f64) -> u32 {
     (DAMAGED_ERRORS_PER_HOUR * duration_seconds.max(0.0) / 3600.0).ceil() as u32
 }
 
@@ -523,7 +521,7 @@ impl PacketStats {
 }
 
 pub fn packet_args(file: &str) -> Vec<String> {
-    [
+    crate::strs(&[
         "-v",
         "error",
         "-select_streams",
@@ -533,32 +531,25 @@ pub fn packet_args(file: &str) -> Vec<String> {
         "-of",
         "csv=p=0",
         file,
-    ]
-    .map(String::from)
-    .to_vec()
+    ])
 }
 
 /// A full software decode that stops at the first error: only for an output.
 pub fn decode_args(file: &str, xerror: bool) -> Vec<String> {
-    let mut a: Vec<String> = [
+    let mut a = crate::strs(&[
         "-hide_banner",
         "-v",
         "error",
         "-nostats",
         "-progress",
         "pipe:1",
-    ]
-    .map(String::from)
-    .to_vec();
+    ]);
     if xerror {
         a.push("-xerror".into());
     }
-    a.extend(
-        [
-            "-i", file, "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-",
-        ]
-        .map(String::from),
-    );
+    a.extend(crate::strs(&[
+        "-i", file, "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-",
+    ]));
     a
 }
 
@@ -568,7 +559,7 @@ pub fn ssim_args(src: &str, out: &str, start: f64, len: f64, w: u32, h: u32) -> 
     let g = format!(
         "[0:v:0]scale={w}:{h}:flags=bicubic,format=yuv420p[a];[1:v:0]format=yuv420p[b];[a][b]ssim"
     );
-    [
+    crate::strs(&[
         "-hide_banner",
         "-nostats",
         "-ss",
@@ -590,9 +581,7 @@ pub fn ssim_args(src: &str, out: &str, start: f64, len: f64, w: u32, h: u32) -> 
         "-f",
         "null",
         "-",
-    ]
-    .map(String::from)
-    .to_vec()
+    ])
 }
 
 /// `All:0.97` of ffmpeg's final `SSIM Y:... All:...` line.
@@ -664,7 +653,8 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
             }
         }
     }
-    let frame = fps(sv).map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
+    let frame = parse_source_fps(sv.avg_frame_rate.as_deref().or(sv.frame_rate.as_deref()))
+        .map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
     if let (Some(a), Some(b)) = (sv.start_time_seconds, ov.start_time_seconds)
         && (a - b).abs() > frame
     {
@@ -700,7 +690,7 @@ pub fn verify_output(c: &OutputCheck) -> Vec<String> {
         }
         if !w.encoded {
             let title = match planned.and_then(|p| p.title.as_ref()) {
-                Some(t) if !w.encoded && !planned.is_some_and(|p| p.keep_original) => t.as_str(),
+                Some(t) if !planned.is_some_and(|p| p.keep_original) => t.as_str(),
                 _ => norm(&w.src.title),
             };
             if norm(&o.title) != title {
@@ -896,16 +886,14 @@ pub fn cover_attachment_args(picture: &str) -> Vec<String> {
     } else {
         ("cover.jpg", "image/jpeg")
     };
-    [
+    crate::strs(&[
         "--attachment-name",
         name,
         "--attachment-mime-type",
         mime,
         "--add-attachment",
         picture,
-    ]
-    .map(String::from)
-    .into()
+    ])
 }
 
 #[cfg(test)]
@@ -1017,10 +1005,16 @@ mod tests {
         let mut v = info().video[0].clone();
         assert_eq!(copy_video_reason(&v, &p, true), None);
         v.field_order = Some("tt".into());
-        assert_eq!(copy_video_reason(&v, &p, false), Some("unsupported_source"));
+        assert_eq!(
+            copy_video_reason(&v, &p, false),
+            Some(CopyReason::UnsupportedSource)
+        );
         v.field_order = None;
         v.pixel_format = Some("yuv422p10le".into());
-        assert_eq!(copy_video_reason(&v, &p, true), Some("unsupported_source"));
+        assert_eq!(
+            copy_video_reason(&v, &p, true),
+            Some(CopyReason::UnsupportedSource)
+        );
         v.pixel_format = Some("yuv420p".into());
         v.dv_profile = Some(8);
         assert!(copy_video_reason(&v, &p, false).is_some());
@@ -1070,7 +1064,7 @@ mod tests {
                 input_path: "/m/in.mkv",
                 path: "/m/.stage.tmp",
                 codec: "hevc",
-                hw: "none",
+                hw: HwAccel::None,
                 threads: 4,
                 copy_video: true,
             },
@@ -1105,7 +1099,7 @@ mod tests {
                 input_path: "/m/in.mkv",
                 path: "/m/.stage.tmp",
                 codec,
-                hw: "none",
+                hw: HwAccel::None,
                 threads: 4,
                 copy_video: copy,
             },

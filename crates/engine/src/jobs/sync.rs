@@ -287,7 +287,7 @@ async fn extract_subtitle_stream(
 async fn pcm_spans(ctx: &Ctx, path: &str, map: &str) -> Result<Vec<(i64, i64)>, String> {
     let rate = SAMPLE_RATE;
     let argv = pure::pcm_extract_argv(path, map, rate);
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes { stdout: true });
+    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout());
     let c = ctx.clone();
     ctx.pipeline(pure::PCM_TIMEOUT_MS, vec![cmd], |p| async move {
         let ff = Arc::clone(&p[0]);

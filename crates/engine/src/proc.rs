@@ -152,6 +152,17 @@ pub struct Exit {
 #[derive(Clone, Copy, Default)]
 pub struct Pipes {
     pub stdout: bool,
+    /// Count the stderr lines that report a damaged stream (`decode_errors()`).
+    pub decode_errors: bool,
+}
+
+impl Pipes {
+    pub const fn stdout() -> Self {
+        Self {
+            stdout: true,
+            decode_errors: false,
+        }
+    }
 }
 
 /// One running ffmpeg: its own process group (unix) or the kill-on-close job (windows).
@@ -236,13 +247,14 @@ impl Ffmpeg {
         let drain = child.stderr.take().map(|err| {
             let (ring, count, errors) =
                 (stderr.clone(), stderr_lines.clone(), decode_errors.clone());
+            let count_errors = pipes.decode_errors;
             tokio::spawn(async move {
                 let (mut err, mut buf) = (BufReader::new(err), Vec::new());
                 // A line past MAX_LINE bytes counts as several; invalid UTF-8 must not stop the drain.
                 while let Ok(1..) = (&mut err).take(MAX_LINE).read_until(b'\n', &mut buf).await {
                     count.fetch_add(1, Ordering::Relaxed);
                     let l = String::from_utf8_lossy(&buf);
-                    if is_decode_error(&l) {
+                    if count_errors && is_decode_error(&l) {
                         errors.fetch_add(1, Ordering::Relaxed);
                     }
                     let mut r = ring.locked();

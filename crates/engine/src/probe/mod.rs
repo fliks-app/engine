@@ -4,10 +4,10 @@ pub(crate) mod run;
 
 use crate::AppState;
 use axum::{Json, extract::State, http::StatusCode};
-use fliks_engine_core::api::{MEDIA_INFO_SCHEMA_VERSION, MovieHash, ProbeRequest, ProbeResult};
+use fliks_engine_core::api::{MovieHash, ProbeRequest, ProbeResult};
 use fliks_engine_core::hw::{DEFAULT_RENDER_NODE, platform_from_os};
 use fliks_engine_core::probe::{self, ProbeOpts, args};
-use run::ProcessTools;
+use run::probe_stamped;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -72,7 +72,7 @@ pub async fn probe(
             })
             .flatten(),
     };
-    let mut out = probe::probe(&ProcessTools::new(&path, s.rt.slots.clone()), &path, &opts).await;
+    let out = probe_stamped(&path, s.rt.slots.clone(), &opts).await;
     if let Some(used) = &out.crop_decode {
         let asked = opts.crop_decode.as_ref().and_then(|a| a.get(1));
         if asked.is_some_and(|a| a != used) {
@@ -83,9 +83,7 @@ pub async fn probe(
         }
         tracing::info!(path, decode = %used, "cropdetect");
     }
-    if out.ok {
-        out.info.schema_version = Some(MEDIA_INFO_SCHEMA_VERSION);
-    } else {
+    if !out.ok {
         tracing::warn!(path, error = ?out.error, "ffprobe could not read the file");
     }
     Ok(Json(ProbeResult {

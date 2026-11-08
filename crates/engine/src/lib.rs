@@ -203,6 +203,29 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
     })
 }
 
+/// The binary named by env `var`, else `default` on PATH.
+pub fn tool_path(var: &str, default: &str) -> String {
+    std::env::var(var)
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| default.into())
+}
+
+/// Https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them), empty roots when
+/// none load: an https peer then fails at connect, plain http still works.
+pub(crate) fn tls_builder()
+-> hyper_rustls::HttpsConnectorBuilder<hyper_rustls::builderstates::WantsSchemes> {
+    hyper_rustls::HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .unwrap_or_else(|e| {
+            tracing::warn!("no root certificates ({e}): https peers will fail");
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(rustls::RootCertStore::empty())
+                .with_no_client_auth();
+            hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(config)
+        })
+}
+
 /// Detection runs from boot and the host pushes its config once it sees this instance: until both
 /// are in, it is told to retry.
 pub(crate) fn not_ready() -> (StatusCode, [(axum::http::HeaderName, HeaderValue); 1]) {

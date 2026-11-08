@@ -100,7 +100,11 @@ impl Runtime {
             let sticky = s.m.locked().device.clone();
             let variant = &s.decision.video_variant;
             for d in self.gpu_candidates(sticky.as_deref(), avoid, |d| can_encode(d, variant)) {
-                match build(d.detected.hw_accel, &d.detected.host_caps(), &d.device()) {
+                match build(
+                    d.detected.hw_accel,
+                    &d.detected.host_caps(),
+                    &d.device(crate::hw::opencl_device()),
+                ) {
                     Ok(a) => {
                         placed = Some((d, a));
                         break;

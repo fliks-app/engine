@@ -42,7 +42,7 @@ fn stderr_text(p: &Ffmpeg) -> String {
 }
 
 async fn head(ctx: &Ctx, path: &str, lookup: f64) -> Result<Fingerprint, String> {
-    let cmd = fpcalc(ctx, &head_args(path, lookup), Pipes { stdout: true });
+    let cmd = fpcalc(ctx, &head_args(path, lookup), Pipes::stdout());
     let (text, code, err) = ctx
         .pipeline(TIMEOUT_MS, vec![cmd], |p| async move {
             let p = &p[0];
@@ -57,7 +57,7 @@ async fn head(ctx: &Ctx, path: &str, lookup: f64) -> Result<Fingerprint, String>
 }
 
 async fn piped(ctx: &Ctx, path: &str, start: f64, length: f64) -> Result<Fingerprint, String> {
-    let pipes = Pipes { stdout: true };
+    let pipes = Pipes::stdout();
     let ffmpeg = Cmd::new(
         "ffmpeg",
         &ctx.rt.ffmpeg,

@@ -1,25 +1,21 @@
 //! The `Optimize` job: one library file rewritten into `staged` (metadata edit, remux or
 //! re-encode), checked against the source, hashed. Spec: `docs/spec/jobs.md` section 11.
+use super::run::{Ran, io_err, is_busy, pipeline_err, probe_file, run_ffmpeg};
 use super::scan::{ffprobe, lines, scan_file};
 use super::{Cmd, Ctx, free_bytes, tail};
-use crate::probe::run::ProcessTools;
-use crate::proc::{Ffmpeg, Pipes};
+use crate::proc::Pipes;
 use crate::safe_write;
-use crate::slots::{CPU_DEVICE, Lane};
+use crate::slots::Lane;
 use fliks_engine_core::api::{
-    HwAccel, JobErrorClass as Class, JobResult, MEDIA_INFO_SCHEMA_VERSION, MediaInfo,
-    OptimizeContainer, OptimizeLevel, OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality,
-    OptimizeTooSlow,
+    HwAccel, JobErrorClass as Class, JobResult, MediaInfo, OptimizeContainer, OptimizeLevel,
+    OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
 };
-use fliks_engine_core::args::{self, FileFormat};
+use fliks_engine_core::args::{self, FileArgs, FileFormat};
 use fliks_engine_core::jobs::cover;
-use fliks_engine_core::jobs::merge::progress_seconds;
-use fliks_engine_core::jobs::optimize::{self as opt, Facts, OutputCheck, PacketStats};
-use fliks_engine_core::probe::{self, ProbeOpts};
+use fliks_engine_core::jobs::optimize::{self as opt, CopyReason, Facts, OutputCheck, PacketStats};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 pub fn validate(p: &OptimizePayload) -> Result<(), String> {
     opt::main_video(&p.info)?;
@@ -54,36 +50,6 @@ pub fn validate(p: &OptimizePayload) -> Result<(), String> {
     Ok(())
 }
 
-/// Class of a failed file operation.
-pub(super) fn io_class(e: &std::io::Error) -> Class {
-    #[cfg(unix)]
-    match e.raw_os_error() {
-        Some(libc::EROFS) => return Class::Access,
-        Some(libc::EIO) => return Class::Io,
-        Some(libc::ENOSPC) => return Class::Nospace,
-        _ => {}
-    }
-    match e.kind() {
-        ErrorKind::StorageFull => Class::Nospace,
-        ErrorKind::NotFound | ErrorKind::PermissionDenied => Class::Access,
-        ErrorKind::AlreadyExists => Class::Engine,
-        _ => Class::Io,
-    }
-}
-
-pub(super) fn io_err(what: &Path, e: std::io::Error) -> String {
-    io_class(&e).message(format!("{}: {e}", what.display()))
-}
-
-/// `Err` text of a run that did not end well: a cancel stays itself, the rest is an engine fault.
-fn pipeline_err(e: String) -> String {
-    if e == super::CANCELLED || e == "promoted" || is_busy(&e) {
-        e
-    } else {
-        Class::Engine.message(e)
-    }
-}
-
 /// Whether a failed hardware attempt is worth redoing in software.
 fn software_may_help(e: &str) -> bool {
     !is_busy(e) && matches!(Class::from_message(e).0, Class::Engine | Class::Verify)
@@ -99,11 +65,6 @@ fn decode_verdict(e: String) -> String {
     }
 }
 
-/// A run stopped for playback: the job goes back to the queue, no failure.
-fn is_busy(e: &str) -> bool {
-    Class::from_message(e).0 == Class::Busy && e.starts_with("busy: ")
-}
-
 pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
     let mapped = with_mapped_paths(p, |s| ctx.rt.map_media_path(s));
     let p = &mapped;
@@ -114,11 +75,7 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
     };
     let staged = match (&p.staged_path, remote) {
         (Some(s), _) => PathBuf::from(ctx.rt.map_media_path(s)),
-        (None, true) => ctx
-            .rt
-            .cache
-            .optimize_dir()
-            .join(format!(".fliks-opt-{}.tmp", ctx.job.id)),
+        (None, true) => ctx.rt.cache.remote_staged(&ctx.job.id),
         (None, false) => src
             .parent()
             .unwrap_or(Path::new("."))
@@ -196,7 +153,7 @@ struct Work<'a> {
 /// What the output turned out to be, for the result.
 struct Produced {
     level: OptimizeLevel,
-    copy_reason: Option<&'static str>,
+    copy_reason: Option<CopyReason>,
     cpu_fallback: bool,
     /// The copied video left nothing to change: no output is kept.
     nothing_to_do: bool,
@@ -243,7 +200,7 @@ impl Work<'_> {
     fn threads(&self) -> u32 {
         let slots = &self.ctx.rt.slots;
         match self.ctx.lane() {
-            Some(l) if !l.gpu => slots.optimize_threads(),
+            Some(l) if !l.gpu() => slots.optimize_threads(),
             _ => slots.encode_threads(),
         }
     }
@@ -251,17 +208,11 @@ impl Work<'_> {
     /// A job leased on the GPU lane runs its software encodes on the CPU lane, weighed and
     /// paused like any CPU run; its hardware encodes go back to its own lane.
     fn enter_lane(&self, hardware: bool) {
-        let Some(home) = self.home.as_ref().filter(|h| h.gpu) else {
+        let Some(home) = self.home.as_ref().filter(|h| h.gpu()) else {
             return;
         };
-        self.ctx.set_lane(if hardware {
-            home.clone()
-        } else {
-            Lane {
-                device: CPU_DEVICE.into(),
-                gpu: false,
-            }
-        });
+        self.ctx
+            .set_lane(if hardware { home.clone() } else { Lane::cpu() });
     }
 
     fn staged_text(&self) -> String {
@@ -279,9 +230,7 @@ impl Work<'_> {
 
     /// Samples live in the engine cache, never beside the source.
     fn sample(&self, k: usize, kind: &str) -> PathBuf {
-        let id = &self.ctx.job.id;
-        let dir = self.ctx.rt.cache.optimize_dir();
-        dir.join(format!(".fliks-opt-{id}.sample{k}{kind}.mp4"))
+        self.ctx.rt.cache.optimize_sample(&self.ctx.job.id, k, kind)
     }
 
     async fn start(&mut self, src_len: u64) -> Result<OptimizeMeta, String> {
@@ -396,7 +345,7 @@ impl Work<'_> {
     }
 
     /// The remux: video copied, the rest by the plan.
-    async fn copy(&mut self, reason: Option<&'static str>) -> Result<Produced, String> {
+    async fn copy(&mut self, reason: Option<CopyReason>) -> Result<Produced, String> {
         if reason.is_some() && opt::is_noop_copy(self.info(), self.plan()) {
             return Ok(Produced {
                 level: OptimizeLevel::Remux,
@@ -405,7 +354,7 @@ impl Work<'_> {
                 nothing_to_do: true,
             });
         }
-        let argv = self.argv(true, "none", self.staged_text())?;
+        let argv = self.argv(true, HwAccel::None, self.staged_text(), |_| {})?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
             .await
@@ -430,28 +379,39 @@ impl Work<'_> {
         ),
         String,
     > {
-        let gpu = self.home.as_ref().filter(|l| l.gpu);
+        let gpu = self.home.as_ref().filter(|l| l.gpu());
         self.ctx
             .rt
             .target(gpu.map(|l| l.device.as_str()))
             .map_err(|e| Class::Busy.message(e))
     }
 
-    fn argv(&self, copy_video: bool, hw: &str, out: String) -> Result<Vec<String>, String> {
+    fn codec(&self) -> &str {
+        self.plan().codec.as_deref().unwrap_or("hevc")
+    }
+
+    fn argv(
+        &self,
+        copy_video: bool,
+        hw: HwAccel,
+        out: String,
+        tweak: impl FnOnce(&mut FileArgs),
+    ) -> Result<Vec<String>, String> {
         let (caps, dev) = self.target()?;
-        let file = opt::build_file_args(
+        let mut file = opt::build_file_args(
             self.info(),
             self.plan(),
             &opt::Output {
                 input_path: &self.src.to_string_lossy(),
                 path: &out,
-                codec: self.plan().codec.as_deref().unwrap_or("hevc"),
+                codec: self.codec(),
                 hw,
                 threads: self.threads(),
                 copy_video,
             },
         )
         .map_err(|e| Class::Engine.message(e))?;
+        tweak(&mut file);
         args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))
     }
 
@@ -465,10 +425,10 @@ impl Work<'_> {
 
     async fn reencode(&mut self) -> Result<Produced, String> {
         let (caps, _) = self.target()?;
-        let hw = hw_name(caps.hw_accel);
+        let hw = caps.hw_accel;
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
-        let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
-        let mut hardware = !self.plan().software && hw != "none" && !on_cpu;
+        let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu());
+        let mut hardware = !self.plan().software && hw != HwAccel::None && !on_cpu;
         let v = opt::main_video(self.info())?;
         if let Some(r) = opt::copy_video_reason(v, self.plan(), hardware) {
             return self.copy(Some(r)).await;
@@ -480,7 +440,10 @@ impl Work<'_> {
         let mut cpu_fallback = false;
         let sampled = loop {
             self.enter_lane(hardware);
-            match self.samples(if hardware { hw } else { "none" }).await {
+            match self
+                .samples(if hardware { hw } else { HwAccel::None })
+                .await
+            {
                 Err(e) if hardware && self.falls_back(&e) => {
                     self.hw_failed()?;
                     (hardware, cpu_fallback) = (false, true);
@@ -492,8 +455,8 @@ impl Work<'_> {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
                 // The CPU lane never takes the GPU: the video is copied instead.
-                if hw == "none" || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
-                    return self.copy(Some("too_slow")).await;
+                if hw == HwAccel::None || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
+                    return self.copy(Some(CopyReason::TooSlow)).await;
                 }
                 hardware = true;
             }
@@ -504,8 +467,9 @@ impl Work<'_> {
             self.enter_lane(hardware);
             let argv = match self.argv(
                 false,
-                if hardware { hw } else { "none" },
+                if hardware { hw } else { HwAccel::None },
                 self.staged_text(),
+                |_| {},
             ) {
                 Ok(a) => a,
                 Err(_) if hardware => {
@@ -542,7 +506,7 @@ impl Work<'_> {
             && let Some(src) = self.src_packets
             && opt::savings_pct(src.bytes, f.bytes) < min
         {
-            return self.copy(Some("low_savings")).await;
+            return self.copy(Some(CopyReason::LowSavings)).await;
         }
         Ok(Produced {
             level: OptimizeLevel::Reencode,
@@ -555,12 +519,12 @@ impl Work<'_> {
     /// A hardware run failed on the job's device: it counts against the device, and the job goes
     /// back to the queue (`busy`) when another usable device can encode its codec.
     fn hw_failed(&self) -> Result<(), String> {
-        let Some(l) = self.home.as_ref().filter(|l| l.gpu) else {
+        let Some(l) = self.home.as_ref().filter(|l| l.gpu()) else {
             return Ok(());
         };
         let rt = &self.ctx.rt;
         rt.slots.device_failed(&l.device);
-        let codec = self.plan().codec.as_deref().unwrap_or("hevc");
+        let codec = self.codec();
         let other = rt.hw.snapshot().is_some_and(|s| {
             s.devices.iter().any(|d| {
                 d.id != l.device
@@ -583,7 +547,7 @@ impl Work<'_> {
     }
 
     /// Encodes the sample windows and the same windows copied: savings and software speed.
-    async fn samples(&mut self, hw: &str) -> Result<Sampled, String> {
+    async fn samples(&mut self, hw: HwAccel) -> Result<Sampled, String> {
         let starts = opt::sample_starts(self.duration());
         if starts.is_empty() {
             return Ok(Sampled::None);
@@ -596,35 +560,26 @@ impl Work<'_> {
         for (k, start) in starts.iter().enumerate() {
             for (copy, kind) in [(true, "s"), (false, "e")] {
                 let out = self.sample(k, kind);
-                let mut file = opt::build_file_args(
-                    self.info(),
-                    self.plan(),
-                    &opt::Output {
-                        input_path: &input,
-                        path: &out.to_string_lossy(),
-                        codec: self.plan().codec.as_deref().unwrap_or("hevc"),
-                        hw: if copy { "none" } else { hw },
-                        threads: self.threads(),
-                        copy_video: copy,
+                let argv = self.argv(
+                    copy,
+                    if copy { HwAccel::None } else { hw },
+                    out.to_string_lossy().into_owned(),
+                    |file| {
+                        // Video alone in an MP4: the sizes compare the video tracks.
+                        file.format = FileFormat::Mp4;
+                        if let Some(a) = file.archive.as_mut() {
+                            (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
+                                (vec![], vec![], vec![], false);
+                        }
                     },
-                )
-                .map_err(|e| Class::Engine.message(e))?;
-                // Video alone in an MP4: the sizes compare the video tracks.
-                file.format = FileFormat::Mp4;
-                if let Some(a) = file.archive.as_mut() {
-                    (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
-                        (vec![], vec![], vec![], false);
-                }
-                let (caps, dev) = self.target()?;
-                let argv = args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))?;
+                )?;
                 let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
-                let r = self
-                    .run(
-                        &argv,
-                        opt::SAMPLE_SECONDS,
-                        (k as f64 * step, (k + 1) as f64 * step),
-                    )
-                    .await?;
+                self.run(
+                    &argv,
+                    opt::SAMPLE_SECONDS,
+                    (k as f64 * step, (k + 1) as f64 * step),
+                )
+                .await?;
                 if !copy {
                     wall += self.ctx.last_active_ms() as f64 / 1000.0;
                 }
@@ -637,17 +592,13 @@ impl Work<'_> {
                     copied += len;
                 } else {
                     encoded += len;
-                    if r.errors > 0 && hw != "none" {
-                        // A hardware decode fault is not the source's: the full run decides.
-                        continue;
-                    }
                 }
             }
         }
         if let Some(min) = self.plan().min_savings_pct
             && opt::savings_pct(copied, encoded) < min
         {
-            return Ok(Sampled::Copy("low_savings"));
+            return Ok(Sampled::Copy(CopyReason::LowSavings));
         }
         let sampled = opt::SAMPLE_SECONDS * starts.len() as f64;
         Ok(Sampled::Hours(opt::estimated_hours(
@@ -751,7 +702,7 @@ impl Work<'_> {
                 out_sha256: String::new(),
                 out_info: self.info().clone(),
                 level: made.level,
-                copy_reason: made.copy_reason.map(String::from),
+                copy_reason: made.copy_reason.map(|r| r.as_str().into()),
                 cpu_fallback: made.cpu_fallback,
                 nothing_to_do: true,
             });
@@ -775,7 +726,7 @@ impl Work<'_> {
             out_sha256: sha,
             out_info,
             level: made.level,
-            copy_reason: made.copy_reason.map(String::from),
+            copy_reason: made.copy_reason.map(|r| r.as_str().into()),
             cpu_fallback: made.cpu_fallback,
             nothing_to_do: false,
         })
@@ -784,98 +735,14 @@ impl Work<'_> {
 
 enum Sampled {
     /// The video is copied, for this reason.
-    Copy(&'static str),
+    Copy(CopyReason),
     /// Hours a software encode of the file would take.
     Hours(f64),
     None,
 }
 
 fn mkvpropedit() -> String {
-    crate::hw::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
-}
-
-fn hw_name(h: HwAccel) -> &'static str {
-    match h {
-        HwAccel::Vaapi => "vaapi",
-        HwAccel::Nvenc => "nvenc",
-        HwAccel::Qsv => "qsv",
-        HwAccel::Amf => "amf",
-        HwAccel::Videotoolbox => "videotoolbox",
-        HwAccel::None => "none",
-    }
-}
-
-/// What an ffmpeg run left behind.
-pub(super) struct Ran {
-    pub errors: u32,
-    pub excerpt: String,
-    pub lines: Vec<String>,
-}
-
-/// One ffmpeg run on a background slot, `-progress` lines on stdout as job progress between the
-/// two percentages. A non-zero exit fails with the class its stderr shows.
-pub(super) async fn run_ffmpeg(
-    ctx: &Ctx,
-    argv: &[String],
-    total: f64,
-    (from, to): (f64, f64),
-) -> Result<Ran, String> {
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, argv, Pipes { stdout: true });
-    let c = ctx.clone();
-    ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
-        let p = &p[0];
-        let (_, exit) = tokio::join!(report(&c, p, total, from, to), p.wait());
-        let lines = p.stderr_tail();
-        match exit.code {
-            Some(0) => Ok(Ran {
-                errors: p.decode_errors(),
-                excerpt: lines
-                    .iter()
-                    .filter(|l| opt::is_decode_error(l))
-                    .take(3)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" | "),
-                lines,
-            }),
-            code => Err(opt::classify_stderr(&lines)
-                .message(format!("ffmpeg exited with {code:?}: {}", tail(p, 2)))),
-        }
-    })
-    .await
-    .map_err(pipeline_err)?
-}
-
-async fn report(ctx: &Ctx, p: &Ffmpeg, total: f64, from: f64, to: f64) {
-    let Some(out) = p.take_stdout() else {
-        return;
-    };
-    let mut lines = BufReader::new(out).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        ctx.pulse();
-        if let Some(s) = progress_seconds(&line)
-            && total > 0.0
-        {
-            ctx.progress((from + (to - from) * (s / total).clamp(0.0, 1.0)).min(99.0));
-        }
-    }
-}
-
-pub(super) async fn probe_file(ctx: &Ctx, path: &str) -> Result<MediaInfo, String> {
-    let tools = ProcessTools::new(path, ctx.rt.slots.clone());
-    let opts = ProbeOpts {
-        crop: false,
-        mkv_tags: true,
-        crop_decode: None,
-    };
-    let out = probe::probe(&tools, path, &opts).await;
-    if !out.ok {
-        let why = out.error.unwrap_or_default();
-        return Err(opt::classify_stderr(std::slice::from_ref(&why)).message(why));
-    }
-    let mut info = out.info;
-    info.schema_version = Some(MEDIA_INFO_SCHEMA_VERSION);
-    Ok(info)
+    crate::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
 }
 
 /// Video packets of the first video stream of `path`.

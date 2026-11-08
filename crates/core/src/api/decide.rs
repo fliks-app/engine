@@ -26,6 +26,29 @@ pub enum Platform {
     Win32,
 }
 
+impl HwAccel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Vaapi => "vaapi",
+            Self::Nvenc => "nvenc",
+            Self::Qsv => "qsv",
+            Self::Amf => "amf",
+            Self::Videotoolbox => "videotoolbox",
+            Self::None => "none",
+        }
+    }
+}
+
+impl Platform {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Linux => "linux",
+            Self::Darwin => "darwin",
+            Self::Win32 => "win32",
+        }
+    }
+}
+
 /// What the decision reads of the host: detected backend and boot probe results (`core::hw`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", default)]
