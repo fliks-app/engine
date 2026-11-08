@@ -10,9 +10,9 @@ use fliks_engine_core::api::{
     HwAccel, JobErrorClass as Class, JobResult, MediaInfo, OptimizeContainer, OptimizeLevel,
     OptimizeMeta, OptimizePayload, OptimizePlan, OptimizeQuality, OptimizeTooSlow,
 };
-use fliks_engine_core::args::{self, FileFormat};
+use fliks_engine_core::args::{self, FileArgs, FileFormat};
 use fliks_engine_core::jobs::cover;
-use fliks_engine_core::jobs::optimize::{self as opt, Facts, OutputCheck, PacketStats};
+use fliks_engine_core::jobs::optimize::{self as opt, CopyReason, Facts, OutputCheck, PacketStats};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -157,7 +157,7 @@ struct Work<'a> {
 /// What the output turned out to be, for the result.
 struct Produced {
     level: OptimizeLevel,
-    copy_reason: Option<&'static str>,
+    copy_reason: Option<CopyReason>,
     cpu_fallback: bool,
     /// The copied video left nothing to change: no output is kept.
     nothing_to_do: bool,
@@ -351,7 +351,7 @@ impl Work<'_> {
     }
 
     /// The remux: video copied, the rest by the plan.
-    async fn copy(&mut self, reason: Option<&'static str>) -> Result<Produced, String> {
+    async fn copy(&mut self, reason: Option<CopyReason>) -> Result<Produced, String> {
         if reason.is_some() && opt::is_noop_copy(self.info(), self.plan()) {
             return Ok(Produced {
                 level: OptimizeLevel::Remux,
@@ -360,7 +360,7 @@ impl Work<'_> {
                 nothing_to_do: true,
             });
         }
-        let argv = self.argv(true, HwAccel::None, self.staged_text())?;
+        let argv = self.argv(true, HwAccel::None, self.staged_text(), |_| {})?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
             .await
@@ -392,21 +392,32 @@ impl Work<'_> {
             .map_err(|e| Class::Busy.message(e))
     }
 
-    fn argv(&self, copy_video: bool, hw: HwAccel, out: String) -> Result<Vec<String>, String> {
+    fn codec(&self) -> &str {
+        self.plan().codec.as_deref().unwrap_or("hevc")
+    }
+
+    fn argv(
+        &self,
+        copy_video: bool,
+        hw: HwAccel,
+        out: String,
+        tweak: impl FnOnce(&mut FileArgs),
+    ) -> Result<Vec<String>, String> {
         let (caps, dev) = self.target()?;
-        let file = opt::build_file_args(
+        let mut file = opt::build_file_args(
             self.info(),
             self.plan(),
             &opt::Output {
                 input_path: &self.src.to_string_lossy(),
                 path: &out,
-                codec: self.plan().codec.as_deref().unwrap_or("hevc"),
+                codec: self.codec(),
                 hw,
                 threads: self.threads(),
                 copy_video,
             },
         )
         .map_err(|e| Class::Engine.message(e))?;
+        tweak(&mut file);
         args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))
     }
 
@@ -451,7 +462,7 @@ impl Work<'_> {
             Sampled::Hours(h) if !hardware && h > max_hours => {
                 // The CPU lane never takes the GPU: the video is copied instead.
                 if hw == HwAccel::None || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
-                    return self.copy(Some("too_slow")).await;
+                    return self.copy(Some(CopyReason::TooSlow)).await;
                 }
                 hardware = true;
             }
@@ -464,6 +475,7 @@ impl Work<'_> {
                 false,
                 if hardware { hw } else { HwAccel::None },
                 self.staged_text(),
+                |_| {},
             ) {
                 Ok(a) => a,
                 Err(_) if hardware => {
@@ -500,7 +512,7 @@ impl Work<'_> {
             && let Some(src) = self.src_packets
             && opt::savings_pct(src.bytes, f.bytes) < min
         {
-            return self.copy(Some("low_savings")).await;
+            return self.copy(Some(CopyReason::LowSavings)).await;
         }
         Ok(Produced {
             level: OptimizeLevel::Reencode,
@@ -518,7 +530,7 @@ impl Work<'_> {
         };
         let rt = &self.ctx.rt;
         rt.slots.device_failed(&l.device);
-        let codec = self.plan().codec.as_deref().unwrap_or("hevc");
+        let codec = self.codec();
         let other = rt.hw.snapshot().is_some_and(|s| {
             s.devices.iter().any(|d| {
                 d.id != l.device
@@ -554,35 +566,26 @@ impl Work<'_> {
         for (k, start) in starts.iter().enumerate() {
             for (copy, kind) in [(true, "s"), (false, "e")] {
                 let out = self.sample(k, kind);
-                let mut file = opt::build_file_args(
-                    self.info(),
-                    self.plan(),
-                    &opt::Output {
-                        input_path: &input,
-                        path: &out.to_string_lossy(),
-                        codec: self.plan().codec.as_deref().unwrap_or("hevc"),
-                        hw: if copy { HwAccel::None } else { hw },
-                        threads: self.threads(),
-                        copy_video: copy,
+                let argv = self.argv(
+                    copy,
+                    if copy { HwAccel::None } else { hw },
+                    out.to_string_lossy().into_owned(),
+                    |file| {
+                        // Video alone in an MP4: the sizes compare the video tracks.
+                        file.format = FileFormat::Mp4;
+                        if let Some(a) = file.archive.as_mut() {
+                            (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
+                                (vec![], vec![], vec![], false);
+                        }
                     },
-                )
-                .map_err(|e| Class::Engine.message(e))?;
-                // Video alone in an MP4: the sizes compare the video tracks.
-                file.format = FileFormat::Mp4;
-                if let Some(a) = file.archive.as_mut() {
-                    (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
-                        (vec![], vec![], vec![], false);
-                }
-                let (caps, dev) = self.target()?;
-                let argv = args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))?;
+                )?;
                 let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
-                let r = self
-                    .run(
-                        &argv,
-                        opt::SAMPLE_SECONDS,
-                        (k as f64 * step, (k + 1) as f64 * step),
-                    )
-                    .await?;
+                self.run(
+                    &argv,
+                    opt::SAMPLE_SECONDS,
+                    (k as f64 * step, (k + 1) as f64 * step),
+                )
+                .await?;
                 if !copy {
                     wall += self.ctx.last_active_ms() as f64 / 1000.0;
                 }
@@ -595,17 +598,13 @@ impl Work<'_> {
                     copied += len;
                 } else {
                     encoded += len;
-                    if r.errors > 0 && hw != HwAccel::None {
-                        // A hardware decode fault is not the source's: the full run decides.
-                        continue;
-                    }
                 }
             }
         }
         if let Some(min) = self.plan().min_savings_pct
             && opt::savings_pct(copied, encoded) < min
         {
-            return Ok(Sampled::Copy("low_savings"));
+            return Ok(Sampled::Copy(CopyReason::LowSavings));
         }
         let sampled = opt::SAMPLE_SECONDS * starts.len() as f64;
         Ok(Sampled::Hours(opt::estimated_hours(
@@ -709,7 +708,7 @@ impl Work<'_> {
                 out_sha256: String::new(),
                 out_info: self.info().clone(),
                 level: made.level,
-                copy_reason: made.copy_reason.map(String::from),
+                copy_reason: made.copy_reason.map(|r| r.as_str().into()),
                 cpu_fallback: made.cpu_fallback,
                 nothing_to_do: true,
             });
@@ -733,7 +732,7 @@ impl Work<'_> {
             out_sha256: sha,
             out_info,
             level: made.level,
-            copy_reason: made.copy_reason.map(String::from),
+            copy_reason: made.copy_reason.map(|r| r.as_str().into()),
             cpu_fallback: made.cpu_fallback,
             nothing_to_do: false,
         })
@@ -742,7 +741,7 @@ impl Work<'_> {
 
 enum Sampled {
     /// The video is copied, for this reason.
-    Copy(&'static str),
+    Copy(CopyReason),
     /// Hours a software encode of the file would take.
     Hours(f64),
     None,

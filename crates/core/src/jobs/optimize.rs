@@ -102,12 +102,30 @@ pub fn main_video(info: &MediaInfo) -> Result<&VideoStreamInfo, String> {
     info.video.first().ok_or_else(|| "no video stream".into())
 }
 
+/// Why the video of a re-encode is copied; `OptimizeMeta.copy_reason` carries `as_str`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyReason {
+    UnsupportedSource,
+    TooSlow,
+    LowSavings,
+}
+
+impl CopyReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedSource => "unsupported_source",
+            Self::TooSlow => "too_slow",
+            Self::LowSavings => "low_savings",
+        }
+    }
+}
+
 /// Why the video of a planned re-encode is copied instead; `None` when it can be encoded.
 pub fn copy_video_reason(
     v: &VideoStreamInfo,
     plan: &OptimizePlan,
     hardware: bool,
-) -> Option<&'static str> {
+) -> Option<CopyReason> {
     let px = v.pixel_format.as_deref().unwrap_or("");
     let interlaced = v.field_order.as_deref().is_some_and(|f| f != "progressive");
     let chroma = hardware && (px.contains("422") || px.contains("444"));
@@ -117,7 +135,7 @@ pub fn copy_video_reason(
         None => false,
     };
     let plus = v.hdr10_plus == Some(true) && plan.skip_hdr10plus_dv.unwrap_or(true);
-    (interlaced || chroma || dv || plus).then_some("unsupported_source")
+    (interlaced || chroma || dv || plus).then_some(CopyReason::UnsupportedSource)
 }
 
 fn plan_of(plan: &OptimizePlan, index: u32) -> Option<&StreamPlan> {
@@ -1000,10 +1018,16 @@ mod tests {
         let mut v = info().video[0].clone();
         assert_eq!(copy_video_reason(&v, &p, true), None);
         v.field_order = Some("tt".into());
-        assert_eq!(copy_video_reason(&v, &p, false), Some("unsupported_source"));
+        assert_eq!(
+            copy_video_reason(&v, &p, false),
+            Some(CopyReason::UnsupportedSource)
+        );
         v.field_order = None;
         v.pixel_format = Some("yuv422p10le".into());
-        assert_eq!(copy_video_reason(&v, &p, true), Some("unsupported_source"));
+        assert_eq!(
+            copy_video_reason(&v, &p, true),
+            Some(CopyReason::UnsupportedSource)
+        );
         v.pixel_format = Some("yuv420p".into());
         v.dv_profile = Some(8);
         assert!(copy_video_reason(&v, &p, false).is_some());
