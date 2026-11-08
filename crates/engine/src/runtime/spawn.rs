@@ -41,6 +41,7 @@ struct Run {
 impl Runtime {
     /// Kills the key's previous run, purges the rung from `start` and spawns a main or early run.
     /// [ts:modules/streaming/transcoding/transcoding.service.ts:790-860]
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn spawn_job(
         self: &Arc<Self>,
         s: &Arc<Session>,
