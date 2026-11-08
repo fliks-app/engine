@@ -1,25 +1,29 @@
 //! Pure half of the `Optimize` and `Verify` jobs: the plan turned into argv inputs, the checks an
 //! output must pass, and how ffmpeg's stderr is read. Spec: `docs/spec/jobs.md` section 11.
 use crate::api::{
-    AudioStreamInfo, HwAccel, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan,
-    OptimizeQuality, StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
+    AudioStreamInfo, HwAccel, MediaInfo, OptimizeContainer, OptimizePlan, OptimizeQuality,
+    StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
 };
 use crate::args::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack, FileArgs};
 use crate::decide::timeline::parse_source_fps;
 use serde_json::json;
 
+mod check;
+mod stderr;
+
+pub use check::*;
+pub use stderr::*;
+
 /// Samples encoded to estimate the savings and the speed.
 pub const SAMPLE_COUNT: usize = 3;
 pub const SAMPLE_SECONDS: f64 = 20.0;
 pub const DEFAULT_MAX_SOFTWARE_HOURS: f64 = 12.0;
-/// Longest gap between two keyframes of an output the engine's HLS remux can still cut.
-const MAX_KEYFRAME_GAP_SECONDS: f64 = 6.0;
-const DURATION_TOLERANCE_SECONDS: f64 = 1.0;
-/// Decoding errors per hour of film below which a readable source is `damaged`, not `corrupt`.
-const DAMAGED_ERRORS_PER_HOUR: f64 = 10.0;
 /// Mean SSIM under which a hardware output is taken for green or black frames.
 pub const MIN_SSIM: f64 = 0.9;
-const FALLBACK_FRAME_SECONDS: f64 = 0.05;
+
+fn norm(s: &Option<String>) -> &str {
+    s.as_deref().unwrap_or("")
+}
 
 /// The container the output is written in.
 pub fn container_of(info: &MediaInfo, plan: &OptimizePlan) -> OptimizeContainer {
@@ -416,417 +420,6 @@ pub fn estimated_hours(sample_wall_seconds: f64, sampled_seconds: f64, duration:
     sample_wall_seconds / sampled_seconds * duration / 3600.0
 }
 
-/// Decoding errors tolerated before `damaged` becomes `corrupt`.
-fn damaged_limit(duration_seconds: f64) -> u32 {
-    (DAMAGED_ERRORS_PER_HOUR * duration_seconds.max(0.0) / 3600.0).ceil() as u32
-}
-
-/// An ffmpeg stderr line that reports a damaged stream; timestamp complaints are benign.
-pub fn is_decode_error(line: &str) -> bool {
-    let l = line.to_ascii_lowercase();
-    if l.contains("non monotonically increasing dts")
-        || l.contains("non-monotonic dts")
-        || l.contains("timestamps are unset")
-        || l.contains("past duration too large")
-    {
-        return false;
-    }
-    [
-        "error while decoding",
-        "invalid data found",
-        "corrupt",
-        "error submitting packet",
-        "invalid nal",
-        "missing reference picture",
-        "concealing",
-        "truncated",
-        "decode_slice_header",
-        "cabac",
-        "invalid frame size",
-        "unable to decode",
-    ]
-    .iter()
-    .any(|p| l.contains(p))
-}
-
-/// The class of a failed ffmpeg run from the end of its stderr.
-pub fn classify_stderr(lines: &[String]) -> JobErrorClass {
-    let t = lines.join("\n").to_ascii_lowercase();
-    let has = |ps: &[&str]| ps.iter().any(|p| t.contains(p));
-    if has(&["no space left on device"]) {
-        JobErrorClass::Nospace
-    } else if has(&["input/output error"]) {
-        JobErrorClass::Io
-    } else if has(&[
-        "permission denied",
-        "read-only file system",
-        "no such file or directory",
-    ]) {
-        JobErrorClass::Access
-    } else if has(&[
-        "moov atom not found",
-        "ebml header parsing failed",
-        "invalid data found when processing input",
-    ]) {
-        JobErrorClass::Corrupt
-    } else {
-        JobErrorClass::Engine
-    }
-}
-
-/// Whether an ffmpeg failure text is a dropped or refused HTTP read.
-pub fn is_network_error(text: &str) -> bool {
-    let t = text.to_ascii_lowercase();
-    [
-        "connection reset",
-        "connection timed out",
-        "connection refused",
-        "connection closed",
-        "network is unreachable",
-        "server returned",
-        "http error",
-        "end of file",
-        "error in the pull function",
-        "broken pipe",
-    ]
-    .iter()
-    .any(|p| t.contains(p))
-}
-
-/// The `damaged` or `corrupt` failure of a source that showed `errors` decoding errors.
-pub fn decode_failure(errors: u32, duration_seconds: f64, excerpt: &str) -> String {
-    let class = if errors > damaged_limit(duration_seconds) {
-        JobErrorClass::Corrupt
-    } else {
-        JobErrorClass::Damaged
-    };
-    class.message(format!("{errors} decoding errors: {excerpt}"))
-}
-
-/// Video packets of a stream: count and payload bytes, from `ffprobe -show_entries packet=size
-/// -of csv=p=0` lines.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct PacketStats {
-    pub count: u64,
-    pub bytes: f64,
-}
-
-impl PacketStats {
-    pub fn add_line(&mut self, line: &str) {
-        if let Ok(n) = line.trim().trim_end_matches(',').parse::<f64>() {
-            self.count += 1;
-            self.bytes += n;
-        }
-    }
-}
-
-pub fn packet_args(file: &str) -> Vec<String> {
-    crate::strs(&[
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "packet=size",
-        "-of",
-        "csv=p=0",
-        file,
-    ])
-}
-
-/// A full software decode that stops at the first error: only for an output.
-pub fn decode_args(file: &str, xerror: bool) -> Vec<String> {
-    let mut a = crate::strs(&[
-        "-hide_banner",
-        "-v",
-        "error",
-        "-nostats",
-        "-progress",
-        "pipe:1",
-    ]);
-    if xerror {
-        a.push("-xerror".into());
-    }
-    a.extend(crate::strs(&[
-        "-i", file, "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-",
-    ]));
-    a
-}
-
-/// Mean SSIM of one window of the source against the output, the source scaled to the output.
-pub fn ssim_args(src: &str, out: &str, start: f64, len: f64, w: u32, h: u32) -> Vec<String> {
-    let (s, l) = (format!("{start:.3}"), format!("{len:.3}"));
-    let g = format!(
-        "[0:v:0]scale={w}:{h}:flags=bicubic,format=yuv420p[a];[1:v:0]format=yuv420p[b];[a][b]ssim"
-    );
-    crate::strs(&[
-        "-hide_banner",
-        "-nostats",
-        "-ss",
-        &s,
-        "-t",
-        &l,
-        "-i",
-        src,
-        "-ss",
-        &s,
-        "-t",
-        &l,
-        "-i",
-        out,
-        "-an",
-        "-sn",
-        "-filter_complex",
-        &g,
-        "-f",
-        "null",
-        "-",
-    ])
-}
-
-/// `All:0.97` of ffmpeg's final `SSIM Y:... All:...` line.
-pub fn parse_ssim(lines: &[String]) -> Option<f64> {
-    let l = lines
-        .iter()
-        .rev()
-        .find(|l| l.contains("SSIM") && l.contains("All:"))?;
-    let at = l.find("All:")? + 4;
-    l[at..].split_whitespace().next()?.parse().ok()
-}
-
-/// What was measured on a file besides its probe.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Facts {
-    pub packets: Option<PacketStats>,
-    pub max_keyframe_gap: Option<f64>,
-}
-
-pub struct OutputCheck<'a> {
-    pub src: &'a MediaInfo,
-    pub out: &'a MediaInfo,
-    pub plan: &'a OptimizePlan,
-    pub src_facts: Facts,
-    pub out_facts: Facts,
-    /// The video was encoded (else copied).
-    pub reencoded: bool,
-}
-
-fn ends(bad: &mut Vec<String>, kind: &str, index: u32, src: Option<f64>, out: Option<f64>) {
-    if let (Some(a), Some(b)) = (src, out)
-        && (a - b).abs() > DURATION_TOLERANCE_SECONDS
-    {
-        bad.push(format!("{kind} {index} ends at {b:.1}s, source at {a:.1}s"));
-    }
-}
-
-fn norm(s: &Option<String>) -> &str {
-    s.as_deref().unwrap_or("")
-}
-
-/// Everything the output gets wrong against the source and the plan; empty when it conforms.
-pub fn verify_output(c: &OutputCheck) -> Vec<String> {
-    let (src, out, plan) = (c.src, c.out, c.plan);
-    let mut bad = vec![];
-    let (Some(sv), Some(ov)) = (src.video.first(), out.video.first()) else {
-        return vec!["no video stream in the output".into()];
-    };
-    match (c.src_facts.packets, c.out_facts.packets) {
-        (Some(a), Some(b)) if a.count != b.count => bad.push(format!(
-            "video packets: {} in the output, {} in the source",
-            b.count, a.count
-        )),
-        (Some(_), None) => bad.push("video packets of the output not counted".into()),
-        _ => {}
-    }
-    // Stream ends decide; the container duration (wrong in some files) only when the video has none.
-    match (sv.end_seconds, ov.end_seconds) {
-        (Some(a), Some(b)) => {
-            if (a - b).abs() > DURATION_TOLERANCE_SECONDS {
-                bad.push(format!("video ends at {b:.1}s, source at {a:.1}s"));
-            }
-        }
-        _ => {
-            if let (Some(a), Some(b)) = (src.duration_seconds, out.duration_seconds)
-                && (a - b).abs() > DURATION_TOLERANCE_SECONDS
-            {
-                bad.push(format!("duration {b:.1}s, source {a:.1}s"));
-            }
-        }
-    }
-    let frame = parse_source_fps(sv.avg_frame_rate.as_deref().or(sv.frame_rate.as_deref()))
-        .map_or(FALLBACK_FRAME_SECONDS, |f| 1.0 / f);
-    if let (Some(a), Some(b)) = (sv.start_time_seconds, ov.start_time_seconds)
-        && (a - b).abs() > frame
-    {
-        bad.push(format!("video starts at {b:.3}s, source at {a:.3}s"));
-    }
-    let want = audio_out(src, plan);
-    if out.audio.len() != want.len() {
-        bad.push(format!(
-            "{} audio tracks, expected {}",
-            out.audio.len(),
-            want.len()
-        ));
-    }
-    for (w, o) in want.iter().zip(&out.audio) {
-        let planned = plan_of(plan, w.src.stream_index);
-        let lang = planned
-            .and_then(|p| p.language.as_deref())
-            .unwrap_or(&w.src.language);
-        if o.language != lang {
-            bad.push(format!("audio language {}, expected {lang}", o.language));
-        }
-        let src_default = w.src.is_default;
-        let keeps_original = planned.is_some_and(|p| p.keep_original);
-        let want_default = match (w.encoded, keeps_original) {
-            (true, true) => planned.and_then(|p| p.default).or(Some(false)),
-            (false, true) => src_default,
-            _ => planned.and_then(|p| p.default).or(src_default),
-        };
-        if let Some(d) = want_default
-            && o.is_default.unwrap_or(false) != d
-        {
-            bad.push(format!("audio default {}, expected {d}", !d));
-        }
-        if !w.encoded {
-            let title = match planned.and_then(|p| p.title.as_ref()) {
-                Some(t) if !planned.is_some_and(|p| p.keep_original) => t.as_str(),
-                _ => norm(&w.src.title),
-            };
-            if norm(&o.title) != title {
-                bad.push(format!(
-                    "audio title {:?}, expected {title:?}",
-                    norm(&o.title)
-                ));
-            }
-            if let (Some(a), Some(b)) = (w.src.start_time_seconds, o.start_time_seconds)
-                && (a - b).abs() > frame
-            {
-                bad.push(format!("audio starts at {b:.3}s, source at {a:.3}s"));
-            }
-        }
-        // A source whose statistics tags are stale has an untrustworthy `DURATION`.
-        if w.src.has_statistics_tags != Some(false) {
-            ends(
-                &mut bad,
-                "audio",
-                w.src.stream_index,
-                w.src.end_seconds,
-                o.end_seconds,
-            );
-        }
-        if o.channel_layout
-            .as_deref()
-            .is_none_or(|l| l.is_empty() || l == "unknown")
-        {
-            bad.push("audio channel layout unknown".into());
-        }
-    }
-    let subs = subtitles_out(src, plan);
-    let extra = plan.extra_subtitles.len();
-    if out.subtitles.len() != subs.len() + extra {
-        bad.push(format!(
-            "{} subtitle tracks, expected {}",
-            out.subtitles.len(),
-            subs.len() + extra
-        ));
-    }
-    for (w, o) in subs.iter().zip(&out.subtitles) {
-        let planned = plan_of(plan, w.stream_index);
-        let lang = planned
-            .and_then(|p| p.language.as_deref())
-            .unwrap_or(&w.language);
-        let title = planned
-            .and_then(|p| p.title.as_deref())
-            .unwrap_or(norm(&w.title));
-        if w.has_statistics_tags != Some(false) {
-            ends(
-                &mut bad,
-                "subtitle",
-                w.stream_index,
-                w.end_seconds,
-                o.end_seconds,
-            );
-        }
-        let default = planned.and_then(|p| p.default).or(w.is_default);
-        if o.language != lang
-            || norm(&o.title) != title
-            || o.forced != w.forced
-            || o.hearing_impaired != w.hearing_impaired
-            || default.is_some_and(|d| o.is_default.unwrap_or(false) != d)
-        {
-            bad.push(format!("subtitle {} differs from the plan", w.stream_index));
-        }
-    }
-    for (x, o) in plan
-        .extra_subtitles
-        .iter()
-        .zip(out.subtitles.iter().skip(subs.len()))
-    {
-        let lang = x.language.as_deref().unwrap_or(&o.language);
-        if o.language != lang
-            || norm(&o.title) != x.title.as_deref().unwrap_or("")
-            || o.forced != x.forced.unwrap_or(false)
-            || o.hearing_impaired != x.hearing_impaired.unwrap_or(false)
-            || x.default
-                .is_some_and(|d| o.is_default.unwrap_or(false) != d)
-        {
-            bad.push(format!("extra subtitle {} differs from the plan", x.path));
-        }
-    }
-    if container_of(src, plan) == OptimizeContainer::Mkv
-        && source_container(src) == OptimizeContainer::Mkv
-        && let Some(a) = src.attachments
-        && a != out.attachments.unwrap_or(0)
-    {
-        bad.push(format!(
-            "{} attachments, source {a}",
-            out.attachments.unwrap_or(0)
-        ));
-    }
-    if src.chapters.as_ref().map_or(0, Vec::len) != out.chapters.as_ref().map_or(0, Vec::len) {
-        bad.push("chapters differ from the source".into());
-    }
-    if c.reencoded {
-        if let (Some(a), Some(b)) = (sv.bit_depth, ov.bit_depth)
-            && b < a
-        {
-            bad.push(format!("video depth {b} bits, source {a} bits"));
-        }
-        if sv.hdr_format.is_some()
-            && (ov.hdr_format != sv.hdr_format
-                || ov.color_space != sv.color_space
-                || ov.color_transfer != sv.color_transfer
-                || ov.color_primaries != sv.color_primaries
-                || ov.hdr_metadata != sv.hdr_metadata)
-        {
-            bad.push("HDR colour tags or mastering metadata differ from the source".into());
-        }
-        if let Some(g) = c.out_facts.max_keyframe_gap
-            && g > MAX_KEYFRAME_GAP_SECONDS
-        {
-            bad.push(format!(
-                "keyframes {g:.1}s apart, at most {MAX_KEYFRAME_GAP_SECONDS}s"
-            ));
-        }
-    } else if (ov.dv_profile, ov.dv_bl_signal_compat_id, ov.dv_rpu_present)
-        != (sv.dv_profile, sv.dv_bl_signal_compat_id, sv.dv_rpu_present)
-    {
-        bad.push("Dolby Vision configuration differs from the source".into());
-    }
-    if container_of(src, plan) == OptimizeContainer::Mp4
-        && ov.codec == "hevc"
-        && plan.hvc1_tag
-        && ov.codec_tag.as_deref() != Some("hvc1")
-    {
-        bad.push(format!(
-            "MP4 sample entry {:?}, expected hvc1",
-            ov.codec_tag
-        ));
-    }
-    bad
-}
-
 /// `mkvpropedit` arguments for a metadata-level plan, on `file`; the statistics tags are always rewritten.
 pub fn mkvpropedit_args(info: &MediaInfo, plan: &OptimizePlan, file: &str) -> Vec<String> {
     let mut a = vec![file.to_string()];
@@ -899,19 +492,6 @@ pub fn cover_attachment_args(picture: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn a_dropped_http_read_is_a_network_error() {
-        assert!(super::is_network_error(
-            "ffmpeg exited with Some(1): Connection reset by peer"
-        ));
-        assert!(super::is_network_error(
-            "Server returned 503 Service Unavailable"
-        ));
-        assert!(!super::is_network_error(
-            "Invalid data found when processing input"
-        ));
-    }
-
-    #[test]
     fn http_input_options_precede_each_url_input() {
         let url = "http://h/f.mkv";
         let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
@@ -926,28 +506,6 @@ mod tests {
             ["-reconnect", "1", "-reconnect_on_network_error", "1"]
         );
         assert_eq!(probe.last().unwrap(), url);
-    }
-
-    use super::*;
-    use crate::api::StreamEncode;
-
-    fn plan() -> OptimizePlan {
-        serde_json::from_value(json!({ "level": "remux" })).unwrap()
-    }
-
-    fn info() -> MediaInfo {
-        serde_json::from_value(json!({
-            "formatName": "matroska,webm", "durationSeconds": 100.0,
-            "video": [{ "streamIndex": 0, "codec": "h264", "width": 1920, "height": 1080,
-                "avgFrameRate": "24000/1001", "pixelFormat": "yuv420p", "bitDepth": 8 }],
-            "audio": [
-                { "streamIndex": 1, "codec": "dts", "language": "fre", "channels": 6, "channelLayout": "5.1" },
-                { "streamIndex": 2, "codec": "aac", "language": "eng", "channels": 2, "channelLayout": "stereo" }],
-            "subtitles": [
-                { "streamIndex": 3, "codec": "subrip", "language": "fre", "forced": false,
-                  "hearingImpaired": false, "isImageBased": false }]
-        }))
-        .unwrap()
     }
 
     #[test]
@@ -1043,7 +601,6 @@ mod tests {
         assert_eq!(s.len(), SAMPLE_COUNT);
         assert!(s.windows(2).all(|w| w[0] < w[1]) && s[2] + SAMPLE_SECONDS < 7200.0);
         assert!((savings_pct(100.0, 40.0) - 60.0).abs() < 1e-9);
-        assert_eq!(damaged_limit(7200.0), 20);
     }
 
     #[test]
@@ -1155,142 +712,6 @@ mod tests {
         );
         let a = argv_of(&info(), &p, "hevc", false);
         assert!(!a.iter().any(|x| x == "yuv420p10le"), "8-bit stays 8-bit");
-    }
-
-    #[test]
-    fn stream_ends_decide_not_the_container_duration() {
-        let mut src = info();
-        src.duration_seconds = Some(100.0);
-        src.video[0].end_seconds = Some(90.0);
-        src.audio[0].end_seconds = Some(90.0);
-        src.audio[1].end_seconds = Some(90.0);
-        src.subtitles[0].end_seconds = Some(85.0);
-        let facts = Facts::default();
-        let run = |src: &MediaInfo, out: &MediaInfo| {
-            verify_output(&OutputCheck {
-                src,
-                out,
-                plan: &plan(),
-                src_facts: facts,
-                out_facts: facts,
-                reencoded: false,
-            })
-        };
-        for a in &mut src.audio {
-            a.channel_layout = Some("stereo".into());
-        }
-        let mut out = src.clone();
-        // The remux fixed the container duration: no failure.
-        out.duration_seconds = Some(90.0);
-        assert_eq!(run(&src, &out), Vec::<String>::new());
-        out.audio[1].end_seconds = Some(60.0);
-        assert!(run(&src, &out).iter().any(|b| b.contains("audio 2 ends")));
-        out.audio[1].end_seconds = Some(90.0);
-        out.subtitles[0].end_seconds = Some(10.0);
-        assert!(
-            run(&src, &out)
-                .iter()
-                .any(|b| b.contains("subtitle 3 ends"))
-        );
-        // Stale statistics tags of the source: its ends are not trusted.
-        src.subtitles[0].has_statistics_tags = Some(false);
-        assert!(
-            !run(&src, &out)
-                .iter()
-                .any(|b| b.contains("subtitle 3 ends"))
-        );
-    }
-
-    #[test]
-    fn stderr_is_read_for_errors_and_classes() {
-        assert!(is_decode_error(
-            "[hevc @ 0x1] Error while decoding stream #0:0: Invalid data found"
-        ));
-        assert!(!is_decode_error(
-            "Application provided invalid, non monotonically increasing dts to muxer"
-        ));
-        let l = |s: &str| vec![s.to_string()];
-        assert_eq!(
-            classify_stderr(&l("moov atom not found")),
-            JobErrorClass::Corrupt
-        );
-        assert_eq!(
-            classify_stderr(&l("No space left on device")),
-            JobErrorClass::Nospace
-        );
-        assert_eq!(
-            classify_stderr(&l("encoder crashed")),
-            JobErrorClass::Engine
-        );
-        let m = decode_failure(3, 3600.0, "x");
-        assert!(m.starts_with("damaged: "), "{m}");
-        assert!(decode_failure(11, 3600.0, "x").starts_with("corrupt: "));
-        assert_eq!(
-            parse_ssim(&l(
-                "[Parsed_ssim_0 @ 0x1] SSIM Y:0.9 U:0.9 V:0.9 All:0.912345 (10.5)"
-            )),
-            Some(0.912345)
-        );
-    }
-
-    #[test]
-    fn a_conforming_output_passes_and_a_short_one_fails() {
-        let src = info();
-        let p = plan();
-        let facts = Facts {
-            packets: Some(PacketStats {
-                count: 10,
-                bytes: 100.0,
-            }),
-            max_keyframe_gap: Some(5.0),
-        };
-        let check = |out: &MediaInfo, f: Facts| {
-            verify_output(&OutputCheck {
-                src: &src,
-                out,
-                plan: &p,
-                src_facts: facts,
-                out_facts: f,
-                reencoded: true,
-            })
-        };
-        assert_eq!(check(&src, facts), Vec::<String>::new());
-        let mut short = src.clone();
-        short.duration_seconds = Some(60.0);
-        assert!(check(&short, facts)[0].contains("duration"));
-        let fewer = Facts {
-            packets: Some(PacketStats {
-                count: 9,
-                bytes: 1.0,
-            }),
-            ..facts
-        };
-        assert!(check(&src, fewer)[0].contains("packets"));
-        let sparse = Facts {
-            max_keyframe_gap: Some(9.0),
-            ..facts
-        };
-        assert!(check(&src, sparse)[0].contains("keyframes"));
-    }
-
-    #[test]
-    fn a_depth_cut_in_the_output_fails() {
-        let mut src = info();
-        src.video[0].bit_depth = Some(10);
-        let out = info();
-        let facts = Facts {
-            packets: None,
-            max_keyframe_gap: None,
-        };
-        let bad = verify_output(&OutputCheck {
-            src: &src,
-            out: &out,
-            plan: &plan(),
-            src_facts: facts,
-            out_facts: facts,
-            reencoded: true,
-        });
-        assert!(bad.iter().any(|b| b.contains("depth")), "{bad:?}");
     }
 
     #[test]
@@ -1521,5 +942,26 @@ mod tests {
         assert!(a.windows(2).any(|w| w == ["--set", "flag-default=1"]));
         assert!(a.windows(2).any(|w| w == ["--delete", "name"]));
         assert_eq!(a.last().unwrap(), "--add-track-statistics-tags");
+    }
+    use super::*;
+    use crate::api::StreamEncode;
+
+    pub(crate) fn plan() -> OptimizePlan {
+        serde_json::from_value(json!({ "level": "remux" })).unwrap()
+    }
+
+    pub(crate) fn info() -> MediaInfo {
+        serde_json::from_value(json!({
+            "formatName": "matroska,webm", "durationSeconds": 100.0,
+            "video": [{ "streamIndex": 0, "codec": "h264", "width": 1920, "height": 1080,
+                "avgFrameRate": "24000/1001", "pixelFormat": "yuv420p", "bitDepth": 8 }],
+            "audio": [
+                { "streamIndex": 1, "codec": "dts", "language": "fre", "channels": 6, "channelLayout": "5.1" },
+                { "streamIndex": 2, "codec": "aac", "language": "eng", "channels": 2, "channelLayout": "stereo" }],
+            "subtitles": [
+                { "streamIndex": 3, "codec": "subrip", "language": "fre", "forced": false,
+                  "hearingImpaired": false, "isImageBased": false }]
+        }))
+        .unwrap()
     }
 }
