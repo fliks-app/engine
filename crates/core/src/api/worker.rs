@@ -30,6 +30,9 @@ pub enum PauseMode {
 pub struct WorkerDevice {
     /// Stable within an instance (`cpu`, a render node...).
     pub id: String,
+    /// What a person calls it (the GPU's label); absent for the CPU.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub encoders: Vec<String>,
     pub decoders: Vec<String>,
     pub max_jobs: u32,
@@ -73,6 +76,9 @@ pub struct WorkerSettings {
     /// Hardware playback reads on a device that pause its background GPU jobs; absent: 1, 0 never.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_playback_before_pause: Option<u32>,
+    /// Per-device override of `gpuPlaybackBeforePause`, by device id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub device_gpu_playback_before_pause: std::collections::BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

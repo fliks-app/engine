@@ -7128,6 +7128,13 @@
             "format": "int32",
             "minimum": 0
           },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What a person calls it (the GPU's label); absent for the CPU."
+          },
           "pause": {
             "$ref": "#/components/schemas/PauseMode"
           },
@@ -7210,6 +7217,18 @@
             "format": "int32",
             "description": "CPU weight of a software optimization against the playback budget; absent: 2.",
             "minimum": 0
+          },
+          "deviceGpuPlaybackBeforePause": {
+            "type": "object",
+            "description": "Per-device override of `gpuPlaybackBeforePause`, by device id.",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "gpuPlaybackBeforePause": {
             "type": [

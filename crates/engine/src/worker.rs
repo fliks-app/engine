@@ -5,7 +5,7 @@ use crate::jobs::{self, BgJob};
 use crate::lock::Locked;
 use crate::resolve::Host;
 use crate::runtime::Runtime;
-use crate::slots::{CPU_DEVICE, GPU_DEVICE, Lane};
+use crate::slots::{CPU_DEVICE, Lane};
 use axum::body::Bytes;
 use axum::http::{Request, StatusCode, header};
 use fliks_engine_core::api::{
@@ -116,6 +116,17 @@ async fn supervise(rt: Arc<Runtime>) {
     }
 }
 
+fn gpu_encoders(hw: HwAccel) -> &'static [&'static str] {
+    match hw {
+        HwAccel::Nvenc => &["hevc_nvenc", "av1_nvenc"],
+        HwAccel::Vaapi => &["hevc_vaapi", "av1_vaapi"],
+        HwAccel::Qsv => &["hevc_qsv", "av1_qsv"],
+        HwAccel::Amf => &["hevc_amf", "av1_amf"],
+        HwAccel::Videotoolbox => &["hevc_videotoolbox"],
+        HwAccel::None => &[],
+    }
+}
+
 fn default_settings() -> WorkerSettings {
     WorkerSettings {
         lease_s: LEASE_S as u32,
@@ -124,6 +135,7 @@ fn default_settings() -> WorkerSettings {
         upload_chunk_bytes: fliks_engine_core::api::UPLOAD_CHUNK_BYTES,
         cpu_weight: None,
         gpu_playback_before_pause: None,
+        device_gpu_playback_before_pause: Default::default(),
     }
 }
 
@@ -280,7 +292,7 @@ impl Worker {
         }
     }
 
-    /// The devices of this engine: the CPU and, when detected, its one GPU.
+    /// The devices of this engine: the CPU and each detected GPU (`gpu0..gpuN`).
     async fn devices(&self) -> Vec<WorkerDevice> {
         let caps = loop {
             match self.rt.caps() {
@@ -301,30 +313,32 @@ impl Worker {
             .to_vec();
         let mut out = vec![WorkerDevice {
             id: CPU_DEVICE.into(),
+            name: None,
             encoders: usable(&["libx265", "libsvtav1"]),
             decoders: decoders.clone(),
             max_jobs: (self.rt.slots.size() / 2).max(1) as u32,
             vram_mib: None,
             pause,
         }];
-        let gpu: &[&str] = match caps.hw_accel {
-            HwAccel::Nvenc => &["hevc_nvenc", "av1_nvenc"],
-            HwAccel::Vaapi => &["hevc_vaapi", "av1_vaapi"],
-            HwAccel::Qsv => &["hevc_qsv", "av1_qsv"],
-            HwAccel::Amf => &["hevc_amf", "av1_amf"],
-            HwAccel::Videotoolbox => &["hevc_videotoolbox"],
-            HwAccel::None => &[],
-        };
-        let encoders = usable(gpu);
-        if !encoders.is_empty() {
-            out.push(WorkerDevice {
-                id: GPU_DEVICE.into(),
-                encoders,
-                decoders,
-                max_jobs: 1,
-                vram_mib: None,
-                pause,
-            });
+        let snap = self.rt.hw.snapshot();
+        for d in snap.iter().flat_map(|s| &s.devices) {
+            let gone = d.detected.host_caps().disabled_encoders;
+            let encoders: Vec<String> = gpu_encoders(d.detected.hw_accel)
+                .iter()
+                .filter(|n| !gone.iter().any(|g| g == *n))
+                .map(|n| n.to_string())
+                .collect();
+            if !encoders.is_empty() {
+                out.push(WorkerDevice {
+                    id: d.id.clone(),
+                    name: d.name.clone(),
+                    encoders,
+                    decoders: decoders.clone(),
+                    max_jobs: 1,
+                    vram_mib: None,
+                    pause,
+                });
+            }
         }
         out
     }
@@ -357,6 +371,15 @@ impl Worker {
                             r.settings.cpu_weight,
                             r.settings.gpu_playback_before_pause,
                         );
+                        for d in devices {
+                            self.rt.slots.set_device_reserve(
+                                &d.id,
+                                r.settings
+                                    .device_gpu_playback_before_pause
+                                    .get(&d.id)
+                                    .copied(),
+                            );
+                        }
                         *self.settings.locked() = r.settings;
                         for id in r.abandon {
                             self.drop_job(id).await;
@@ -391,7 +414,7 @@ impl Worker {
         loop {
             let lane = Lane {
                 device: device.id.clone(),
-                gpu: device.id == GPU_DEVICE,
+                gpu: device.id != CPU_DEVICE,
             };
             if self.held_on(&device.id) >= device.max_jobs as usize
                 || !self.rt.slots.has_room(&lane)
@@ -431,7 +454,7 @@ impl Worker {
         let (id, attempt) = (leased.id, leased.attempt);
         let lane = Lane {
             device: device.id.clone(),
-            gpu: device.id == GPU_DEVICE,
+            gpu: device.id != CPU_DEVICE,
         };
         let remote = leased.input_path.is_none();
         let started = request(leased).and_then(|req| {
