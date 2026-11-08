@@ -1,10 +1,11 @@
 //! The probe tools as processes: `core::probe::Tools` over tokio.
 use crate::proc::background;
 use crate::slots::Slots;
-use fliks_engine_core::api::JobPriority;
-use fliks_engine_core::probe::{ToolError, Tools, args};
+use fliks_engine_core::api::{JobPriority, MEDIA_INFO_SCHEMA_VERSION};
+use fliks_engine_core::probe::{self, Outcome, ProbeOpts, ToolError, Tools, args};
 use std::future::Future;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -36,6 +37,15 @@ impl Binaries {
             mkvmerge: var("MKVMERGE_PATH", "mkvmerge"),
         }
     }
+}
+
+/// `probe::probe` over processes, a readable file stamped with the schema version.
+pub async fn probe_stamped(path: &str, slots: Arc<Slots>, opts: &ProbeOpts) -> Outcome {
+    let mut out = probe::probe(&ProcessTools::new(path, slots), path, opts).await;
+    if out.ok {
+        out.info.schema_version = Some(MEDIA_INFO_SCHEMA_VERSION);
+    }
+    out
 }
 
 pub struct ProcessTools {

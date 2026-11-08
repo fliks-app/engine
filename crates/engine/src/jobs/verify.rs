@@ -1,7 +1,7 @@
 //! The `Verify` job: a whole file read, then a counted software decode. Spec: `docs/spec/jobs.md`
 //! section 11.
 use super::Ctx;
-use super::optimize::{io_err, run_ffmpeg};
+use super::run::{io_err, run_ffmpeg};
 use fliks_engine_core::api::{JobErrorClass as Class, JobResult, VerifyMeta, VerifyPayload};
 use fliks_engine_core::jobs::optimize as opt;
 use std::io::Read;
