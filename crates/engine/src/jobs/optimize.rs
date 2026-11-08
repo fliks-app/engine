@@ -405,7 +405,7 @@ impl Work<'_> {
                 nothing_to_do: true,
             });
         }
-        let argv = self.argv(true, "none", self.staged_text())?;
+        let argv = self.argv(true, HwAccel::None, self.staged_text())?;
         let total = self.duration();
         self.run(&argv, total, (5.0, 85.0))
             .await
@@ -437,7 +437,7 @@ impl Work<'_> {
             .map_err(|e| Class::Busy.message(e))
     }
 
-    fn argv(&self, copy_video: bool, hw: &str, out: String) -> Result<Vec<String>, String> {
+    fn argv(&self, copy_video: bool, hw: HwAccel, out: String) -> Result<Vec<String>, String> {
         let (caps, dev) = self.target()?;
         let file = opt::build_file_args(
             self.info(),
@@ -465,10 +465,10 @@ impl Work<'_> {
 
     async fn reencode(&mut self) -> Result<Produced, String> {
         let (caps, _) = self.target()?;
-        let hw = hw_name(caps.hw_accel);
+        let hw = caps.hw_accel;
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
         let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
-        let mut hardware = !self.plan().software && hw != "none" && !on_cpu;
+        let mut hardware = !self.plan().software && hw != HwAccel::None && !on_cpu;
         let v = opt::main_video(self.info())?;
         if let Some(r) = opt::copy_video_reason(v, self.plan(), hardware) {
             return self.copy(Some(r)).await;
@@ -480,7 +480,10 @@ impl Work<'_> {
         let mut cpu_fallback = false;
         let sampled = loop {
             self.enter_lane(hardware);
-            match self.samples(if hardware { hw } else { "none" }).await {
+            match self
+                .samples(if hardware { hw } else { HwAccel::None })
+                .await
+            {
                 Err(e) if hardware && self.falls_back(&e) => {
                     self.hw_failed()?;
                     (hardware, cpu_fallback) = (false, true);
@@ -492,7 +495,7 @@ impl Work<'_> {
             Sampled::Copy(r) => return self.copy(Some(r)).await,
             Sampled::Hours(h) if !hardware && h > max_hours => {
                 // The CPU lane never takes the GPU: the video is copied instead.
-                if hw == "none" || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
+                if hw == HwAccel::None || on_cpu || self.plan().too_slow == OptimizeTooSlow::Skip {
                     return self.copy(Some("too_slow")).await;
                 }
                 hardware = true;
@@ -504,7 +507,7 @@ impl Work<'_> {
             self.enter_lane(hardware);
             let argv = match self.argv(
                 false,
-                if hardware { hw } else { "none" },
+                if hardware { hw } else { HwAccel::None },
                 self.staged_text(),
             ) {
                 Ok(a) => a,
@@ -583,7 +586,7 @@ impl Work<'_> {
     }
 
     /// Encodes the sample windows and the same windows copied: savings and software speed.
-    async fn samples(&mut self, hw: &str) -> Result<Sampled, String> {
+    async fn samples(&mut self, hw: HwAccel) -> Result<Sampled, String> {
         let starts = opt::sample_starts(self.duration());
         if starts.is_empty() {
             return Ok(Sampled::None);
@@ -603,7 +606,7 @@ impl Work<'_> {
                         input_path: &input,
                         path: &out.to_string_lossy(),
                         codec: self.plan().codec.as_deref().unwrap_or("hevc"),
-                        hw: if copy { "none" } else { hw },
+                        hw: if copy { HwAccel::None } else { hw },
                         threads: self.threads(),
                         copy_video: copy,
                     },
@@ -637,7 +640,7 @@ impl Work<'_> {
                     copied += len;
                 } else {
                     encoded += len;
-                    if r.errors > 0 && hw != "none" {
+                    if r.errors > 0 && hw != HwAccel::None {
                         // A hardware decode fault is not the source's: the full run decides.
                         continue;
                     }
@@ -792,17 +795,6 @@ enum Sampled {
 
 fn mkvpropedit() -> String {
     crate::hw::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
-}
-
-fn hw_name(h: HwAccel) -> &'static str {
-    match h {
-        HwAccel::Vaapi => "vaapi",
-        HwAccel::Nvenc => "nvenc",
-        HwAccel::Qsv => "qsv",
-        HwAccel::Amf => "amf",
-        HwAccel::Videotoolbox => "videotoolbox",
-        HwAccel::None => "none",
-    }
 }
 
 /// What an ffmpeg run left behind.

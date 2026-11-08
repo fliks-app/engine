@@ -1,8 +1,8 @@
 //! Pure half of the `Optimize` and `Verify` jobs: the plan turned into argv inputs, the checks an
 //! output must pass, and how ffmpeg's stderr is read. Spec: `docs/spec/jobs.md` section 11.
 use crate::api::{
-    AudioStreamInfo, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan, OptimizeQuality,
-    StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
+    AudioStreamInfo, HwAccel, JobErrorClass, MediaInfo, OptimizeContainer, OptimizePlan,
+    OptimizeQuality, StreamPlan, SubtitleStreamInfo, VideoStreamInfo,
 };
 use crate::args::{
     ArchiveAudio, ArchiveAudioEnc, ArchiveExtraSub, ArchiveFile, ArchiveTrack, FileArgs,
@@ -274,8 +274,8 @@ pub struct Output<'a> {
     pub path: &'a str,
     /// `hevc` or `av1`, the plan's target codec.
     pub codec: &'a str,
-    /// `none` for the CPU, else the detected accelerator (`vaapi`, `nvenc`...).
-    pub hw: &'a str,
+    /// `HwAccel::None` for the CPU, else the detected accelerator.
+    pub hw: HwAccel,
     pub threads: u32,
     pub copy_video: bool,
 }
@@ -1070,7 +1070,7 @@ mod tests {
                 input_path: "/m/in.mkv",
                 path: "/m/.stage.tmp",
                 codec: "hevc",
-                hw: "none",
+                hw: HwAccel::None,
                 threads: 4,
                 copy_video: true,
             },
@@ -1105,7 +1105,7 @@ mod tests {
                 input_path: "/m/in.mkv",
                 path: "/m/.stage.tmp",
                 codec,
-                hw: "none",
+                hw: HwAccel::None,
                 threads: 4,
                 copy_video: copy,
             },

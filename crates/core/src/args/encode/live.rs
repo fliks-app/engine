@@ -1,7 +1,6 @@
 //! Live TV argv and bitrate parsing.
 
 use super::super::{LiveArgs, LiveMode};
-use super::hw_name;
 use crate::api::HwAccel;
 use crate::hw::Device;
 use crate::jsnum::{js_string as js, round};
@@ -45,7 +44,7 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
 pub fn live_h264_encoder(hw: HwAccel) -> String {
     match hw {
         HwAccel::None => "libx264".into(),
-        hw => format!("h264_{}", hw_name(hw)),
+        hw => format!("h264_{}", hw.as_str()),
     }
 }
 

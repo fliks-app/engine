@@ -13,8 +13,7 @@ pub(crate) use self::decode::{ReportNeeds, stage_report};
 pub use self::live::{live_h264_encoder, live_input, live_video, parse_bitrate};
 
 use self::decode::{
-    DecodeNeeds, color_args, decode_stage, gpu_deint, hw_name, sdr_tags, tonemap_bounces,
-    variant_json,
+    DecodeNeeds, color_args, decode_stage, gpu_deint, sdr_tags, tonemap_bounces, variant_json,
 };
 use super::encoders::{amf_ends_on_gpu, build, nvenc_ends_on_gpu};
 use super::filters::{FilterContext, Overlay, image_burn_in, video_filters};
@@ -197,7 +196,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
         return Err(format!(
             "No encoder for variant {} on {}",
             variant_json(&variant),
-            hw_name(p.requested)
+            p.requested.as_str()
         ));
     };
     let hw = p.effective;

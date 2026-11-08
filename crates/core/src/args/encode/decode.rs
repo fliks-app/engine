@@ -75,17 +75,6 @@ pub(super) fn variant_json(v: &CodecVariant) -> String {
     )
 }
 
-pub(super) fn hw_name(h: HwAccel) -> &'static str {
-    match h {
-        HwAccel::Vaapi => "vaapi",
-        HwAccel::Nvenc => "nvenc",
-        HwAccel::Qsv => "qsv",
-        HwAccel::Amf => "amf",
-        HwAccel::Videotoolbox => "videotoolbox",
-        HwAccel::None => "none",
-    }
-}
-
 /// VideoToolbox frames stay on the GPU only if its decoder is there and, for an interlaced source,
 /// so is its deinterlacer.
 fn vt_surface_decodable(codec: Option<DecodeCodec>, interlaced: bool, caps: &HostCaps) -> bool {
