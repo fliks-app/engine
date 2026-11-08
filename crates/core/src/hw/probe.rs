@@ -67,7 +67,11 @@ pub fn hw_tests(d: &Device) -> Vec<(HwAccel, Cmd)> {
         ])
     };
     let amf = simple(&[], "h264_amf");
-    let nvenc = simple(&["-hwaccel", "cuda"], "h264_nvenc");
+    let cuda: Vec<String> = d.cuda_hwaccel(false);
+    let nvenc = simple(
+        &cuda.iter().map(String::as_str).collect::<Vec<_>>(),
+        "h264_nvenc",
+    );
     let vt = simple(&[], "h264_videotoolbox");
     let t = |h, a| (h, cmd(a, 10_000));
     match d.platform {
@@ -332,7 +336,7 @@ pub fn tonemap_opencl_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 3] {
 /// [ts:backend/src/modules/streaming/transcoding/codec/opencl-tonemap-probe.ts:25-72]
 pub fn opencl_tonemap_cmds(hw: HwAccel, d: &Device, sample: &str) -> [Cmd; 2] {
     let decode = match hw {
-        HwAccel::Nvenc => strs(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
+        HwAccel::Nvenc => d.cuda_hwaccel(true),
         HwAccel::Amf => strs(&["-hwaccel", "d3d11va"]),
         _ => vec![],
     };
@@ -474,6 +478,7 @@ pub fn amf_opencl_cmds(sample: &str) -> [Cmd; 2] {
         platform: Platform::Win32,
         render_node: None,
         opencl_device: None,
+        cuda_index: None,
     });
     let mk = |vf: &str, enc: &[&str]| {
         cmd(

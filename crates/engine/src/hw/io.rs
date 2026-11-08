@@ -60,6 +60,16 @@ fn read_trimmed(p: &Path) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
+/// The PCI address a render node's `device` link resolves to.
+fn pci_bus(dev: &Path) -> Option<String> {
+    let name = std::fs::canonicalize(dev)
+        .ok()?
+        .file_name()?
+        .to_str()?
+        .to_string();
+    name.contains(':').then_some(name)
+}
+
 /// DRI render nodes with their sysfs identity; empty without `/dev/dri` (Windows, macOS, no GPU).
 /// [ts:backend/src/modules/streaming/transcoding/gpu-registry.ts:71-125]
 pub fn enumerate_gpus(dri: &Path, sys_class_drm: &Path) -> Vec<GpuInfo> {
@@ -82,6 +92,7 @@ pub fn enumerate_gpus(dri: &Path, sys_class_drm: &Path) -> Vec<GpuInfo> {
                 vendor_id: read_trimmed(&dev.join("vendor")),
                 device_id: read_trimmed(&dev.join("device")),
                 boot_vga: read_trimmed(&dev.join("boot_vga")),
+                pci_bus: pci_bus(&dev),
             };
             describe_gpu(&name, &dri.join(&name).to_string_lossy(), &raw)
         })
@@ -172,6 +183,22 @@ mod tests {
             ]
         );
         assert!(g[0].render_node.ends_with("renderD128"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_the_pci_address_behind_the_device_link() {
+        let root = std::env::temp_dir().join(format!("fliks-pci-{}", std::process::id()));
+        let (dri, sys) = (root.join("dri"), root.join("sys"));
+        write(&dri.join("renderD128"), "");
+        write(&root.join("pci/0000:03:00.0/vendor"), "0x10de\n");
+        std::fs::create_dir_all(sys.join("renderD128")).unwrap();
+        std::os::unix::fs::symlink(root.join("pci/0000:03:00.0"), sys.join("renderD128/device"))
+            .unwrap();
+        let g = enumerate_gpus(&dri, &sys);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(g[0].pci_bus.as_deref(), Some("0000:03:00.0"));
+        assert_eq!(g[0].vendor, "nvidia");
     }
 
     #[test]

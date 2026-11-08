@@ -353,6 +353,9 @@ pub struct Filters {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncoderInput {
+    /// CUDA ordinal of the NVENC card (`-gpu`); `None` leaves the encoder's default.
+    #[serde(default)]
+    pub cuda_index: Option<u32>,
     pub variant: CodecVariant,
     pub target: Target,
     pub preset: String,

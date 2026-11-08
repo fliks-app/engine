@@ -138,6 +138,9 @@ pub(crate) fn build(e: &Encoder, i: &EncoderInput) -> Result<Vec<String>, String
         }
         Nvenc => {
             let mut a = strs(&["-c:v", &format!("{}_nvenc", codec_str(e.codec))]);
+            if let Some(n) = i.cuda_index {
+                a.extend(strs(&["-gpu", &n.to_string()]));
+            }
             if e.codec == Av1 && ten {
                 a.extend(strs(&["-pix_fmt", "p010le"]));
             }

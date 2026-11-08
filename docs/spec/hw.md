@@ -25,7 +25,7 @@ Both are computed from one `Detected` state; `fixtures/hw/*.json` `expected` is 
 | `capabilities.encoders`/`decoders` | the complement: ids that passed, registry order |
 | `capabilities.tonemapAlgos` | `auto`; `vaapi` if hwAccel is qsv or vaapi; `qsv` if qsv and `vppQsv`; `opencl` if `tonemapOpencl`. `[ts:T/transcoding.service.ts:377-395]` |
 | `capabilities.gpus` | section 6, `name` = label |
-| `capabilities.defaultGpu` | the pinned node or `/dev/dri/renderD128`, only when `gpus` is non-empty (TS always returns a node, the picker is hidden on an empty list). `[ts:T/transcoding.service.ts:396-398]` `[new]` |
+| `capabilities.defaultGpu` | `gpu0`'s render node (the pinned node, else the first node with a hardware encoder, `/dev/dri/renderD128` on a host with none), only when `gpus` is non-empty (TS always returns a node, the picker is hidden on an empty list). `[ts:T/transcoding.service.ts:396-398]` `[new]` |
 | `capabilities.pauseCapability` | section 8 |
 
 ## 2. Backend choice `[ts:T/hw-detect.ts:112-135]`
@@ -60,9 +60,13 @@ None passes: `none`. The render node is `gpuRenderNode` when pinned, else `/dev/
 
 ## 5b. Several devices `[new]`
 
-With `gpuRenderNode` auto on Linux, the primary node (`renderD128`) is probed as above, then every other non-NVIDIA render node gets its own full chain (decoders, encoders, tone-map, deinterlace) with `-init_hw_device` on that node. A node whose chain finds no hardware encoder is not a device. Devices are `gpu0..gpuN` in node order; a pinned node is the only device. `capabilities.devices` lists them (`id`, `renderNode`, `name`, `hwAccel`, `encoders`, `decoders`, `tonemapAlgos`); the other `capabilities`/`hostCaps` fields describe `gpu0`, which the playback decision reads. NVIDIA cards are one device (`-gpu` selection per card is not done).
+With `gpuRenderNode` auto on Linux, every render node is probed at once: a non-NVIDIA node gets the whole chain (decoders, encoders, tone-map, deinterlace) with `-init_hw_device` on that node and never reports NVENC; an NVIDIA node runs the NVENC test only. A host with no NVIDIA node (`runtime: nvidia` exposes none) gets one node-less NVENC test. A node whose probe finds no hardware encoder is not a device. A pinned node is the only device and runs the whole chain.
 
-A hardware playback run (VOD, live transcode) is placed on the device with the fewest hardware reads, then on one without a background job (`Slots::playback_gpu`), and its argv uses that device's capabilities and render node; a failed argv falls back to the CPU. An optimization job runs on the device it was leased on. The GPU reserve and the background job limit are per device (`Slots::set_device_reserve`, `set_device_limit`).
+Device ids are `gpu<N>`, N the node's position among all the host's render nodes (`gpu0` on a host without `/dev/dri`), so a card whose probe fails once does not renumber the others. `capabilities.devices` lists the devices (`id`, `renderNode`, `name`, `hwAccel`, `encoders`, `decoders`, `tonemapAlgos`); the other `capabilities`/`hostCaps` fields describe the first device, which the playback decision reads.
+
+With several NVIDIA cards each is a device; its CUDA ordinal is its rank by PCI bus id (the basename of `/sys/class/drm/<node>/device`), every child runs with `CUDA_DEVICE_ORDER=PCI_BUS_ID`, and the argv carries `-init_hw_device cuda=cu:N`, `-hwaccel_device N` and `-gpu N`. A single NVIDIA card gets no index.
+
+A hardware playback run (VOD, live transcode) is placed on a capable device: one whose backend has the run's encoder (`resolve_encoder`) and whose caps build the argv (tone-map chain included); the first device is always eligible. Among them the session's own device comes first (a session keeps one backend across seeks, rung switches and respawns), then the fewest hardware reads, then no background job (`Slots::rank_gpus`). A device with 3 consecutive hardware failures is skipped for 60 s (`Slots::device_usable`); a failed hardware run is retried once on another capable device, then on the CPU. With no device left the run goes to the CPU. An optimization job runs on the device it was leased on, and a lease for a device the host no longer has is refused (`busy`, requeued). The GPU reserve and the background job limit are per device (`Slots::set_device_reserve`, `set_device_limit`).
 
 ## 6. GPUs `[ts:T/gpu-registry.ts:71-125]`
 

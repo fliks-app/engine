@@ -7,7 +7,8 @@ pub use io::{ProcRunner, enumerate_gpus, probe_stdin_pause};
 use crate::lock::Locked;
 use fliks_engine_core::api::{Capabilities, HostCaps, HwAccel};
 use fliks_engine_core::hw::{
-    DEFAULT_RENDER_NODE, Detected, Device, GpuInfo, detect, pause_capability, platform_from_os,
+    DEFAULT_RENDER_NODE, Detected, Device, Found, GpuInfo, assemble, cuda_index, detect_only,
+    pause_capability, platform_from_os,
 };
 use std::future::Future;
 use std::path::Path;
@@ -20,7 +21,21 @@ pub struct HwDevice {
     pub id: String,
     pub render_node: String,
     pub name: Option<String>,
+    /// CUDA ordinal on a host with several NVIDIA cards.
+    pub cuda_index: Option<u32>,
     pub detected: Detected,
+}
+
+impl HwDevice {
+    /// What the argv builders vary on for a run placed on this device.
+    pub fn device(&self) -> Device {
+        Device {
+            platform: self.detected.platform,
+            render_node: Some(self.render_node.clone()),
+            opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+            cuda_index: self.cuda_index,
+        }
+    }
 }
 
 /// One finished detection run. `detected` and `render_node` are `devices[0]`'s: what the playback
@@ -100,55 +115,84 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
         let (ffmpeg, pause) = (ffmpeg.clone(), pause.clone());
         Box::pin(async move {
             let platform = platform_from_os(std::env::consts::OS);
-            let dev = Device {
-                platform,
-                render_node: node.clone(),
-                opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
-            };
             let runner = ProcRunner {
                 ffmpeg: ffmpeg.clone(),
             };
             let tmp = std::env::temp_dir().to_string_lossy().into_owned();
-            let (detected, stdin) = tokio::join!(
-                detect(&dev, &tmp, std::process::id(), &runner),
-                pause.get_or_init(|| probe_stdin_pause(&ffmpeg))
-            );
             let gpus = enumerate_gpus(Path::new("/dev/dri"), Path::new("/sys/class/drm"));
-            let primary = node.clone().unwrap_or_else(|| DEFAULT_RENDER_NODE.into());
-            let mut found = vec![(primary.clone(), detected.clone())];
-            // Auto mode probes every other card on its own node; a pinned node is the only device.
-            if node.is_none() {
-                for g in gpus
-                    .iter()
-                    .filter(|g| g.render_node != primary && g.vendor != "nvidia")
-                {
-                    let d = Device {
-                        render_node: Some(g.render_node.clone()),
-                        ..dev.clone()
+            // Probes of different nodes run at once: each takes its own sample file names.
+            let probe = |n: u32, node: Option<String>, only: Option<HwAccel>, cuda: Option<u32>| {
+                let (tmp, runner) = (&tmp, &runner);
+                async move {
+                    let dev = Device {
+                        platform,
+                        render_node: node.clone(),
+                        opencl_device: std::env::var("FLIKS_OPENCL_DEVICE").ok(),
+                        cuda_index: cuda,
                     };
-                    let other = detect(&d, &tmp, std::process::id(), &runner).await;
-                    if other.hw_accel != HwAccel::None && other.hw_accel != HwAccel::Nvenc {
-                        found.push((g.render_node.clone(), other));
+                    let detected =
+                        detect_only(&dev, tmp, std::process::id().wrapping_add(n), runner, only)
+                            .await;
+                    Found {
+                        render_node: node.unwrap_or_else(|| DEFAULT_RENDER_NODE.into()),
+                        detected,
+                        cuda_index: cuda,
                     }
                 }
-            }
-            found.retain(|(_, d)| d.hw_accel != HwAccel::None);
-            let devices: Vec<HwDevice> = found
+            };
+            let (mut found, stdin) = tokio::join!(
+                async {
+                    if node.is_some() || gpus.is_empty() {
+                        return vec![probe(0, node.clone(), None, None).await];
+                    }
+                    // NVIDIA cards test NVENC only (and any other node never reports it);
+                    // the other nodes get the whole chain.
+                    let mut all =
+                        futures_util::future::join_all(gpus.iter().enumerate().map(|(i, g)| {
+                            let nvidia = g.vendor == "nvidia";
+                            probe(
+                                i as u32,
+                                Some(g.render_node.clone()),
+                                nvidia.then_some(HwAccel::Nvenc),
+                                nvidia.then(|| cuda_index(&gpus, &g.render_node)).flatten(),
+                            )
+                        }))
+                        .await;
+                    for f in &mut all {
+                        let on_nvidia = gpus
+                            .iter()
+                            .any(|g| g.render_node == f.render_node && g.vendor == "nvidia");
+                        if f.detected.hw_accel == HwAccel::Nvenc && !on_nvidia {
+                            f.detected.hw_accel = HwAccel::None;
+                        }
+                    }
+                    // An NVIDIA card with no render node (`runtime: nvidia`): one node-less test.
+                    if !gpus.iter().any(|g| g.vendor == "nvidia") {
+                        all.push(probe(gpus.len() as u32, None, Some(HwAccel::Nvenc), None).await);
+                    }
+                    all
+                },
+                pause.get_or_init(|| probe_stdin_pause(&ffmpeg))
+            );
+            let fallback = found[0].detected.clone();
+            found.retain(|f| f.detected.hw_accel != HwAccel::None);
+            let devices: Vec<HwDevice> = assemble(&gpus, found)
                 .into_iter()
-                .enumerate()
-                .map(|(i, (render_node, detected))| HwDevice {
-                    id: format!("gpu{i}"),
-                    name: gpus
-                        .iter()
-                        .find(|g| g.render_node == render_node)
-                        .map(|g| g.label.clone()),
-                    render_node,
-                    detected,
+                .map(|d| HwDevice {
+                    id: d.id,
+                    render_node: d.render_node,
+                    name: d.name,
+                    cuda_index: d.cuda_index,
+                    detected: d.detected,
                 })
                 .collect();
-            let (detected, render_node) = devices.first().map_or((detected, primary), |d| {
-                (d.detected.clone(), d.render_node.clone())
-            });
+            let (detected, render_node) = devices.first().map_or_else(
+                || {
+                    let primary = node.clone().unwrap_or_else(|| DEFAULT_RENDER_NODE.into());
+                    (fallback, primary)
+                },
+                |d| (d.detected.clone(), d.render_node.clone()),
+            );
             Snapshot {
                 pause_capability: pause_capability(*stdin, platform).into(),
                 gpus,
@@ -218,11 +262,20 @@ impl Hw {
                 let snap = (hw.detector)(node).await;
                 tracing::info!(
                     hw_accel = ?snap.detected.hw_accel,
-                    encoders = snap.detected.encoders.len(),
+                    devices = snap.devices.len(),
                     decoders = snap.detected.decoders.len(),
-                    probes = ?snap.detected.probes,
                     "host capabilities detected"
                 );
+                for d in &snap.devices {
+                    tracing::info!(
+                        id = d.id,
+                        node = d.render_node,
+                        hw_accel = ?d.detected.hw_accel,
+                        encoders = d.detected.encoders.len(),
+                        probes = ?d.detected.probes,
+                        "hardware device"
+                    );
+                }
                 let mut s = hw.state.locked();
                 s.current = Some(snap);
                 if !s.rerun {

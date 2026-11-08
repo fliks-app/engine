@@ -179,6 +179,7 @@ pub fn host(hw: HwAccel, render_node: &str, pause: &str) -> Arc<Hw> {
             id: "gpu0".into(),
             render_node: render_node.into(),
             name: None,
+            cuda_index: None,
             detected: detected.clone(),
         })
         .into_iter()

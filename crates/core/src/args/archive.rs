@@ -277,7 +277,8 @@ pub(super) fn file(
         a.splice(at + 2..at + 2, extra.collect::<Vec<String>>());
     }
     a.extend(["-map".into(), vmap]);
-    for c in &ar.cover_art {
+    // Matroska has no cover stream: the picture is attached after the mux (`cover_attachment_args`).
+    for c in ar.cover_art.iter().filter(|_| !mkv) {
         a.extend(["-map".into(), format!("0:{c}")]);
     }
     for t in ar.audio.iter().map(|x| &x.track).chain(&ar.subtitles) {
@@ -306,7 +307,7 @@ pub(super) fn file(
     if ar.copy_video {
         a.extend(strs(&["-c:v", "copy"]));
     }
-    for k in 1..=ar.cover_art.len() {
+    for k in (1..=ar.cover_art.len()).filter(|_| !mkv) {
         a.extend([format!("-c:v:{k}"), "copy".into()]);
     }
     for (k, x) in ar.audio.iter().enumerate() {

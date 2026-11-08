@@ -291,6 +291,7 @@ pub fn encode(o: &VodArgs, caps: &HostCaps, dev: &Device) -> Result<Encoded, Str
 
     let (ws, hs) = (js(w), js(h));
     let input = EncoderInput {
+        cuda_index: dev.cuda_index,
         variant,
         target: Target {
             width: w,

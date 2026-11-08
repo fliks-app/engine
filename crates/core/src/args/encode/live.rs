@@ -35,7 +35,7 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
             ]));
             a
         }
-        HwAccel::Nvenc => strs(&["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]),
+        HwAccel::Nvenc => dev.cuda_hwaccel(true),
         HwAccel::Videotoolbox => strs(&["-hwaccel", "videotoolbox"]),
         _ => vec![],
     }

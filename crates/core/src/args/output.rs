@@ -521,7 +521,7 @@ pub fn file(f: &FileArgs, caps: &HostCaps, dev: &Device) -> Result<Vec<String>, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::Platform;
+    use crate::api::{HwAccel, Platform};
     use serde_json::json;
 
     fn request(audio: serde_json::Value) -> VodArgs {
@@ -548,6 +548,7 @@ mod tests {
             platform: Platform::Linux,
             render_node: None,
             opencl_device: None,
+            cuda_index: None,
         }
     }
 
@@ -602,6 +603,34 @@ mod tests {
         let tail = got[layer1.len()..].join(" ");
         assert!(tail.starts_with("-map 0:v:0 -map 0:1 -map 0:2 -c:a:0 copy -c:a:1 aac"));
         assert!(tail.ends_with("-f matroska /out/movie.mkv"));
+    }
+
+    #[test]
+    fn nvenc_names_its_card_on_a_multi_gpu_host() {
+        let mut o = request(json!([]));
+        o.hw_accel = HwAccel::Nvenc;
+        let caps = HostCaps {
+            hw_accel: HwAccel::Nvenc,
+            ..HostCaps::default()
+        };
+        let argv = |idx| {
+            vod(
+                &o,
+                &caps,
+                &Device {
+                    cuda_index: idx,
+                    ..dev()
+                },
+            )
+            .unwrap()
+            .join(" ")
+        };
+        let one = argv(Some(1));
+        assert!(one.contains("-init_hw_device cuda=cu:1"), "{one}");
+        assert!(one.contains("-hwaccel_device 1"), "{one}");
+        assert!(one.contains("-c:v h264_nvenc -gpu 1"), "{one}");
+        let none = argv(None);
+        assert!(!none.contains("-gpu") && !none.contains("cu:"), "{none}");
     }
 
     #[test]

@@ -7,10 +7,10 @@ use super::{
 };
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, can_encode};
 use axum::body::Bytes;
 use axum::http::{Request, header};
-use fliks_engine_core::api::{EngineEvent, LiveMode};
+use fliks_engine_core::api::{CodecVariant, EngineEvent, LiveMode, VideoCodec};
 use fliks_engine_core::args;
 use fliks_engine_core::args::LiveArgs;
 use fliks_engine_core::live as core_live;
@@ -148,11 +148,26 @@ async fn spawn_packaged(
     let transcode = mode == LiveMode::Transcode;
     let mut dev = rt.device(&caps);
     let mut slot = None;
-    if transcode
-        && caps.hw_accel != fliks_engine_core::api::HwAccel::None
-        && let Some(p) = rt.place_gpu()
-    {
-        (caps, dev, slot) = (p.caps, p.dev, Some(p.slot));
+    let mut device = None;
+    if transcode && caps.hw_accel != fliks_engine_core::api::HwAccel::None {
+        let sticky = pipe.m.locked().device.clone();
+        let h264 = CodecVariant {
+            codec: VideoCodec::H264,
+            bit_depth: 8,
+            hdr: None,
+        };
+        if let Some(d) = rt
+            .gpu_candidates(sticky.as_deref(), None, |d| can_encode(d, &h264))
+            .into_iter()
+            .next()
+        {
+            (caps, dev) = (d.detected.host_caps(), d.device());
+            slot = Some(rt.slots.playback_on(Some(&d.id)));
+            pipe.m.locked().device = Some(d.id.clone());
+            device = Some(d.id);
+        } else {
+            caps.hw_accel = fliks_engine_core::api::HwAccel::None;
+        }
     }
     let hw_accel = if transcode {
         caps.hw_accel
@@ -201,10 +216,7 @@ async fn spawn_packaged(
         let mut m = pipe.m.locked();
         if !m.ended {
             m.proc = Some(proc.clone());
-            m.slot = Some(slot.unwrap_or_else(|| {
-                rt.slots
-                    .playback(hw_accel == fliks_engine_core::api::HwAccel::None)
-            }));
+            m.slot = Some(slot.unwrap_or_else(|| rt.slots.playback_on(None)));
             m.last_segment_at = Instant::now();
             m.last_seg = None;
         }
@@ -214,6 +226,14 @@ async fn spawn_packaged(
         return false;
     }
     let ok = first_segment(&dir, &proc).await;
+    if let Some(d) = &device {
+        if ok {
+            rt.slots.device_ok(d);
+        } else {
+            rt.slots.device_failed(d);
+            pipe.m.locked().device = None;
+        }
+    }
     if ok && mode == LiveMode::Remux {
         pipe.m.locked().active_codec = video;
     }

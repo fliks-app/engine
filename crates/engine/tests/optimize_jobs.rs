@@ -188,24 +188,28 @@ async fn a_remux_retags_a_track_and_hands_back_a_verified_hashed_output() {
     assert!(f.e.ffmpeg_pids().is_empty());
 }
 
-async fn cover_survives(ext: &str, id: u32) {
+async fn cover_survives(ext: &str, id: u32, plan: Value) {
+    if plan["container"] == "mkv" && !has_mkvpropedit() {
+        eprintln!("mkvpropedit not available: skipped");
+        return;
+    }
     let Some(f) = fixture_with(4, ext, true).await else {
         return;
     };
     assert_eq!(f.info["cover"]["codec"], "mjpeg", "{}", f.info);
     let staged = f.dir.join(format!(".fliks-opt-{id}-1.tmp"));
-    let plan = json!({ "level": "remux" });
     let v = run_kind(&f, optimize(&f, plan, &staged)).await;
     assert_eq!(v["state"], "done", "{v}");
     let out = &v["result"]["optimize"]["outInfo"];
     assert_eq!(out["video"].as_array().unwrap().len(), 1, "{out}");
+    assert_eq!(out["cover"]["codec"], "mjpeg", "{out}");
     let pictures =
         std::process::Command::new(fliks_engine::hw::tool_path("FFPROBE_PATH", "ffprobe"))
             .args([
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_name,codec_type",
+                "stream=codec_name:stream_disposition=attached_pic",
                 "-of",
                 "csv=p=0",
             ])
@@ -213,17 +217,23 @@ async fn cover_survives(ext: &str, id: u32) {
             .output()
             .unwrap();
     let pictures = String::from_utf8_lossy(&pictures.stdout);
+    assert_eq!(pictures.matches("mjpeg,1").count(), 1, "{pictures}");
     assert_eq!(pictures.matches("mjpeg").count(), 1, "{pictures}");
 }
 
 #[tokio::test]
 async fn an_mp4_cover_survives_a_remux() {
-    cover_survives("mp4", 20).await;
+    cover_survives("mp4", 20, json!({ "level": "remux" })).await;
 }
 
 #[tokio::test]
 async fn an_mkv_image_attachment_survives_a_remux() {
-    cover_survives("mkv", 21).await;
+    cover_survives("mkv", 21, json!({ "level": "remux" })).await;
+}
+
+#[tokio::test]
+async fn an_mp4_cover_becomes_a_matroska_attachment() {
+    cover_survives("mp4", 22, json!({ "level": "remux", "container": "mkv" })).await;
 }
 
 #[tokio::test]

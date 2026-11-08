@@ -889,6 +889,25 @@ pub fn statistics_tags_args(file: &str) -> Vec<String> {
     vec![file.into(), "--add-track-statistics-tags".into()]
 }
 
+/// `mkvpropedit` arguments that attach the extracted cover `picture` (`.jpg` or `.png`).
+pub fn cover_attachment_args(picture: &str) -> Vec<String> {
+    let (name, mime) = if picture.ends_with(".png") {
+        ("cover.png", "image/png")
+    } else {
+        ("cover.jpg", "image/jpeg")
+    };
+    [
+        "--attachment-name",
+        name,
+        "--attachment-mime-type",
+        mime,
+        "--add-attachment",
+        picture,
+    ]
+    .map(String::from)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1064,6 +1083,7 @@ mod tests {
                 platform: crate::api::Platform::Linux,
                 render_node: None,
                 opencl_device: None,
+                cuda_index: None,
             },
         )
         .unwrap();
@@ -1095,6 +1115,7 @@ mod tests {
             platform: crate::api::Platform::Linux,
             render_node: None,
             opencl_device: None,
+            cuda_index: None,
         };
         crate::args::file(&f, &Default::default(), &dev).unwrap()
     }
@@ -1279,15 +1300,33 @@ mod tests {
     }
 
     #[test]
-    fn a_reencode_with_cover_art_indexes_the_video_options() {
+    fn an_mp4_reencode_maps_the_cover_and_indexes_the_video_options() {
         let mut i = info();
         i.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
-        let a = argv_of(&i, &plan(), "hevc", false);
+        let mut p = plan();
+        p.container = Some(OptimizeContainer::Mp4);
+        p.streams = vec![];
+        let a = argv_of(&i, &p, "hevc", false);
         assert!(a.iter().any(|x| x == "-filter:v:0"), "{a:?}");
         for bare in ["-vf", "-pix_fmt", "-profile:v", "-c:v"] {
             assert!(!a.iter().any(|x| x == bare), "{bare} in {a:?}");
         }
+        assert!(a.windows(2).any(|w| w == ["-map", "0:4"]), "{a:?}");
         assert!(a.windows(2).any(|w| w == ["-c:v:1", "copy"]));
+    }
+
+    #[test]
+    fn a_matroska_output_leaves_the_cover_to_the_attachment() {
+        let mut i = info();
+        i.cover = serde_json::from_value(json!({ "streamIndex": 4, "codec": "mjpeg" })).unwrap();
+        let a = argv_of(&i, &plan(), "hevc", false);
+        assert!(!a.windows(2).any(|w| w == ["-map", "0:4"]), "{a:?}");
+        assert!(!a.iter().any(|x| x == "-c:v:1"), "{a:?}");
+        assert_eq!(
+            cover_attachment_args("/m/.stage.mkv.cover.png").join(" "),
+            "--attachment-name cover.png --attachment-mime-type image/png \
+             --add-attachment /m/.stage.mkv.cover.png"
+        );
     }
 
     fn sp(i: u32) -> StreamPlan {

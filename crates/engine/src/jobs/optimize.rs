@@ -12,6 +12,7 @@ use fliks_engine_core::api::{
     OptimizeTooSlow,
 };
 use fliks_engine_core::args::{self, FileFormat};
+use fliks_engine_core::jobs::cover;
 use fliks_engine_core::jobs::merge::progress_seconds;
 use fliks_engine_core::jobs::optimize::{self as opt, Facts, OutputCheck, PacketStats};
 use fliks_engine_core::probe::{self, ProbeOpts};
@@ -356,8 +357,27 @@ impl Work<'_> {
         if opt::container_of(self.info(), self.plan()) != OptimizeContainer::Mkv {
             return Ok(());
         }
-        self.mkvpropedit(opt::statistics_tags_args(&self.staged_text()))
-            .await
+        let staged = self.staged_text();
+        let mut argv = opt::statistics_tags_args(&staged);
+        // A Matroska output has no cover stream: the picture goes in as an attachment.
+        let picture = match &self.info().cover {
+            Some(c) => {
+                let path = format!("{staged}.cover.{}", cover::extension(c));
+                let extract = cover::extract_args(&self.src.to_string_lossy(), c, &path);
+                self.ctx
+                    .ffmpeg(&extract)
+                    .await
+                    .map_err(|e| Class::Engine.message(e))?;
+                argv.extend(opt::cover_attachment_args(&path));
+                Some(path)
+            }
+            None => None,
+        };
+        let done = self.mkvpropedit(argv).await;
+        if let Some(p) = picture {
+            let _ = tokio::fs::remove_file(p).await;
+        }
+        done
     }
 
     async fn mkvpropedit(&self, argv: Vec<String>) -> Result<(), String> {
@@ -403,16 +423,22 @@ impl Work<'_> {
     /// Capabilities and render node of the device the job was leased on.
     fn target(
         &self,
-    ) -> (
-        fliks_engine_core::api::HostCaps,
-        fliks_engine_core::hw::Device,
-    ) {
+    ) -> Result<
+        (
+            fliks_engine_core::api::HostCaps,
+            fliks_engine_core::hw::Device,
+        ),
+        String,
+    > {
         let gpu = self.home.as_ref().filter(|l| l.gpu);
-        self.ctx.rt.target(gpu.map(|l| l.device.as_str()))
+        self.ctx
+            .rt
+            .target(gpu.map(|l| l.device.as_str()))
+            .map_err(|e| Class::Busy.message(e))
     }
 
     fn argv(&self, copy_video: bool, hw: &str, out: String) -> Result<Vec<String>, String> {
-        let (caps, dev) = self.target();
+        let (caps, dev) = self.target()?;
         let file = opt::build_file_args(
             self.info(),
             self.plan(),
@@ -438,7 +464,7 @@ impl Work<'_> {
     }
 
     async fn reencode(&mut self) -> Result<Produced, String> {
-        let (caps, _) = self.target();
+        let (caps, _) = self.target()?;
         let hw = hw_name(caps.hw_accel);
         // A job leased on the CPU device never takes the GPU, whatever the plan says.
         let on_cpu = self.home.as_ref().is_some_and(|l| !l.gpu);
@@ -558,7 +584,7 @@ impl Work<'_> {
                     (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
                         (vec![], vec![], vec![], false);
                 }
-                let (caps, dev) = self.target();
+                let (caps, dev) = self.target()?;
                 let argv = args::file(&file, &caps, &dev).map_err(|e| Class::Engine.message(e))?;
                 let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
                 let r = self

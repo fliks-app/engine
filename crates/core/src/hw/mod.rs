@@ -4,6 +4,7 @@ pub(crate) mod decoders;
 mod deint;
 mod detect;
 mod device;
+mod devices;
 mod encoders;
 mod gpu;
 mod parse;
@@ -11,8 +12,9 @@ mod pause;
 mod probe;
 
 pub(crate) use deint::GpuDeint;
-pub use detect::{Detected, Outcome, Runner, detect};
+pub use detect::{Detected, Outcome, Runner, detect, detect_only};
 pub use device::{DEFAULT_RENDER_NODE, Device, selected_render_node};
+pub use devices::{DeviceEntry, Found, assemble, cuda_index};
 pub use gpu::{GpuInfo, GpuKind, GpuRaw, describe_gpu};
 pub use parse::{has_libfdk_aac, vaapi_driver_is_intel_ihd};
 pub use pause::{PROBE_ARGS, PauseVerdict, pause_capability, pause_step};

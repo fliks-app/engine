@@ -19,9 +19,9 @@ pub fn cpu_quota() -> usize {
         .max(1)
 }
 
-/// The first GPU of this engine (`gpu1`, `gpu2`... follow); hardware reads and GPU optimization
-/// are counted per device.
-pub const GPU_DEVICE: &str = "gpu0";
+/// Consecutive hardware failures after which a device is skipped, for [`COOL_OFF`].
+const MAX_FAILURES: u32 = 3;
+const COOL_OFF: std::time::Duration = std::time::Duration::from_secs(60);
 /// The CPU as an optimization device.
 pub const CPU_DEVICE: &str = "cpu";
 const DEFAULT_CPU_WEIGHT: usize = 2;
@@ -86,6 +86,8 @@ struct State {
     gpu_reserve: usize,
     /// Per-device override of `gpu_reserve`.
     device_reserve: HashMap<String, usize>,
+    /// Consecutive hardware failures per device and when the last one happened.
+    failures: HashMap<String, (u32, std::time::Instant)>,
     /// Optimizations at once per device, outside the background job limit.
     device_limit: HashMap<String, usize>,
 }
@@ -107,6 +109,7 @@ impl Slots {
                 cpu_weight: DEFAULT_CPU_WEIGHT,
                 gpu_reserve: DEFAULT_GPU_RESERVE,
                 device_reserve: HashMap::new(),
+                failures: HashMap::new(),
                 device_limit: HashMap::new(),
             }),
         })
@@ -145,15 +148,6 @@ impl Slots {
         rebalance(&mut st);
     }
 
-    /// Hardware reads and optimization runs on `device`, the load placement compares.
-    pub fn device_load(&self, device: &str) -> (usize, usize) {
-        let st = self.st.locked();
-        (
-            st.gpu_reads.get(device).copied().unwrap_or(0),
-            on_device(&st, device),
-        )
-    }
-
     /// Optimizations a device runs at once (default 1).
     pub fn set_device_limit(&self, device: &str, max_jobs: u32) {
         let mut st = self.st.locked();
@@ -187,12 +181,7 @@ impl Slots {
         self.st.locked().queue.len()
     }
 
-    /// Never waits: playback runs first, past the size if need be. A hardware encode (`cpu` false)
-    /// barely uses the quota, so it takes no slot from background work.
-    pub fn playback(self: &Arc<Self>, cpu: bool) -> PlaybackSlot {
-        self.playback_on((!cpu).then_some(GPU_DEVICE))
-    }
-
+    /// Never waits: playback runs first, past the size if need be.
     /// A playback run on `device` (`None` = software, on the CPU budget).
     pub fn playback_on(self: &Arc<Self>, device: Option<&str>) -> PlaybackSlot {
         let device = device.map(String::from);
@@ -204,20 +193,41 @@ impl Slots {
         }
     }
 
-    /// A hardware playback run on the least loaded of `devices`: fewest reads first, then no
-    /// background job over one, then the order given. `None` when `devices` is empty.
-    pub fn playback_gpu(self: &Arc<Self>, devices: &[String]) -> Option<PlaybackSlot> {
-        let best = {
-            let st = self.st.locked();
-            devices
-                .iter()
-                .min_by_key(|d| {
-                    let reads = st.gpu_reads.get(*d).copied().unwrap_or(0);
-                    (reads, on_device(&st, d) > 0)
-                })?
-                .clone()
-        };
-        Some(self.playback_on(Some(&best)))
+    /// `devices` least loaded first: fewest reads, then no background job, then the order given.
+    pub fn rank_gpus(&self, devices: &[String]) -> Vec<String> {
+        let st = self.st.locked();
+        let mut ranked = devices.to_vec();
+        ranked.sort_by_key(|d| {
+            (
+                st.gpu_reads.get(d).copied().unwrap_or(0),
+                on_device(&st, d) > 0,
+            )
+        });
+        ranked
+    }
+
+    /// A hardware run on `device` failed.
+    pub fn device_failed(&self, device: &str) {
+        let mut st = self.st.locked();
+        let f = st
+            .failures
+            .entry(device.into())
+            .or_insert((0, std::time::Instant::now()));
+        *f = (f.0 + 1, std::time::Instant::now());
+    }
+
+    /// A hardware run on `device` ran: its failures are forgiven.
+    pub fn device_ok(&self, device: &str) {
+        self.st.locked().failures.remove(device);
+    }
+
+    /// False while `device` has failed [`MAX_FAILURES`] times in a row and the cool-off lasts.
+    pub fn device_usable(&self, device: &str) -> bool {
+        self.st
+            .locked()
+            .failures
+            .get(device)
+            .is_none_or(|(n, at)| *n < MAX_FAILURES || at.elapsed() >= COOL_OFF)
     }
 
     /// Waits for a background slot of `weight` CPU shares: FIFO within a priority. Dropping the
@@ -467,9 +477,9 @@ mod tests {
         let s = Slots::new(1);
         let quota = cpu_quota();
         assert_eq!(s.encode_threads() as usize, quota);
-        let held: Vec<_> = (0..quota * 2).map(|_| s.playback(true)).collect();
+        let held: Vec<_> = (0..quota * 2).map(|_| s.playback_on(None)).collect();
         assert_eq!(s.encode_threads() as usize, 2.min(quota));
-        let _gpu = s.playback(false);
+        let _gpu = s.playback_on(Some("gpu0"));
         drop(held);
         assert_eq!(s.encode_threads() as usize, quota);
     }
@@ -499,12 +509,12 @@ mod tests {
         let old = s.background(JobPriority::Normal, 1).await;
         let new = s.background(JobPriority::Normal, 1).await;
         let mut queued = Box::pin(s.background(JobPriority::High, 1));
-        let p = s.playback(true);
+        let p = s.playback_on(None);
         assert_eq!(
             (*old.preempted.borrow(), *new.preempted.borrow()),
             (false, true)
         );
-        let p2 = s.playback(true);
+        let p2 = s.playback_on(None);
         assert!(*old.preempted.borrow() && *new.preempted.borrow());
         // A throttled run lends its slot back.
         p2.set_idle(true);
@@ -521,7 +531,7 @@ mod tests {
     async fn playback_never_waits_and_a_shrink_preempts() {
         let s = Slots::new(1);
         let b = s.background(JobPriority::Normal, 1).await;
-        let (p1, p2) = (s.playback(true), s.playback(true));
+        let (p1, p2) = (s.playback_on(None), s.playback_on(None));
         assert_eq!(s.playback_in_use(), 2);
         assert!(*b.preempted.borrow());
         drop((p1, p2));
@@ -538,11 +548,11 @@ mod tests {
     async fn hardware_playback_leaves_the_cpu_budget() {
         let s = Slots::new(1);
         let job = s.background(JobPriority::Normal, 1).await;
-        let hw1 = s.playback(false);
-        let hw2 = s.playback(false);
+        let hw1 = s.playback_on(Some("gpu0"));
+        let hw2 = s.playback_on(Some("gpu0"));
         assert_eq!(s.playback_in_use(), 2);
         assert!(!*job.preempted.borrow(), "two hardware transcodes, one job");
-        let cpu = s.playback(true);
+        let cpu = s.playback_on(None);
         assert!(*job.preempted.borrow());
         cpu.set_idle(true);
         assert!(!*job.preempted.borrow());
@@ -560,7 +570,7 @@ mod tests {
 
     fn gpu_lane() -> Lane {
         Lane {
-            device: GPU_DEVICE.into(),
+            device: "gpu0".into(),
             gpu: true,
         }
     }
@@ -580,7 +590,7 @@ mod tests {
         assert!(!*opt.preempted.borrow());
         s.set_size(Some(1));
         assert!(!*opt.preempted.borrow(), "a smaller size does not block it");
-        let p = s.playback(true);
+        let p = s.playback_on(None);
         assert!(*opt.preempted.borrow());
         drop(p);
     }
@@ -590,7 +600,7 @@ mod tests {
         let s = Slots::new(2);
         let low = s.background(JobPriority::Low, 1).await;
         let high = s.background(JobPriority::High, 1).await;
-        let p = s.playback(true);
+        let p = s.playback_on(None);
         assert_eq!(
             (*low.preempted.borrow(), *high.preempted.borrow()),
             (true, false),
@@ -619,7 +629,7 @@ mod tests {
         let gpu = s.optimize(gpu_lane()).await;
         let cpu = s.optimize(cpu_lane()).await;
         assert!(!*gpu.preempted.borrow() && !*cpu.preempted.borrow());
-        let read = s.playback(false);
+        let read = s.playback_on(Some("gpu0"));
         assert!(*gpu.preempted.borrow() && !*cpu.preempted.borrow());
         let mut again = Box::pin(s.optimize(gpu_lane()));
         assert!(granted(&mut again).await.is_none());
@@ -631,33 +641,47 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_hardware_read_goes_to_the_least_loaded_device_without_a_job() {
-        let s = Slots::new(4);
+    async fn gpus_rank_by_reads_then_by_background_job() {
+        let s = Slots::new(8);
         let devs: Vec<String> = vec!["gpu0".into(), "gpu1".into()];
         let _job = s.optimize(gpu_lane()).await;
-        let a = s.playback_gpu(&devs).unwrap();
-        assert_eq!(a.device(), Some("gpu1"), "gpu0 runs a background job");
-        let b = s.playback_gpu(&devs).unwrap();
         assert_eq!(
-            b.device(),
-            Some("gpu0"),
-            "one read each, the job is the tie-break"
+            s.rank_gpus(&devs),
+            ["gpu1", "gpu0"],
+            "gpu0 runs a background job"
         );
-        assert!(s.playback_gpu(&[]).is_none());
+        let _a = s.playback_on(Some("gpu1"));
+        assert_eq!(
+            s.rank_gpus(&devs),
+            ["gpu0", "gpu1"],
+            "reads weigh more than the job"
+        );
+        assert!(s.rank_gpus(&[]).is_empty());
     }
 
     #[tokio::test]
     async fn the_reserve_of_a_device_overrides_the_global_one() {
-        let s = Slots::new(4);
+        let s = Slots::new(8);
+        s.set_optimize(None, Some(1));
         s.set_device_reserve("gpu0", Some(0));
-        let gpu = s.optimize(gpu_lane()).await;
-        let _r = s.playback_on(Some("gpu0"));
-        assert!(!*gpu.preempted.borrow(), "0 never pauses");
+        let _read = s.playback_on(Some("gpu0"));
+        assert!(s.has_room(&gpu_lane()), "a reserve of 0 never pauses");
         s.set_device_reserve("gpu0", None);
-        assert!(
-            *gpu.preempted.borrow(),
-            "the global reserve of 1 applies again"
-        );
+        assert!(!s.has_room(&gpu_lane()), "the global reserve applies again");
+    }
+
+    #[test]
+    fn a_device_failing_three_times_is_skipped_until_it_runs_again() {
+        let s = Slots::new(8);
+        for _ in 0..2 {
+            s.device_failed("gpu1");
+        }
+        assert!(s.device_usable("gpu1"));
+        s.device_failed("gpu1");
+        assert!(!s.device_usable("gpu1"));
+        assert!(s.device_usable("gpu0"));
+        s.device_ok("gpu1");
+        assert!(s.device_usable("gpu1"));
     }
 
     #[tokio::test]
@@ -665,12 +689,12 @@ mod tests {
         let s = Slots::new(4);
         s.set_optimize(Some(2), Some(1));
         assert!(s.has_room(&cpu_lane()) && s.has_room(&gpu_lane()));
-        let _p1 = s.playback(true);
-        let _p2 = s.playback(true);
-        let _p3 = s.playback(true);
+        let _p1 = s.playback_on(None);
+        let _p2 = s.playback_on(None);
+        let _p3 = s.playback_on(None);
         assert!(!s.has_room(&cpu_lane()), "playback leaves 1 share");
         assert!(s.has_room(&gpu_lane()), "a GPU run takes no CPU");
-        let _read = s.playback(false);
+        let _read = s.playback_on(Some("gpu0"));
         assert!(!s.has_room(&gpu_lane()), "the GPU reserve is reached");
     }
 

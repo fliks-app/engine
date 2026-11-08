@@ -67,9 +67,23 @@ struct Flags {
 /// Runs the whole chain. Failures only turn a flag off; nothing here aborts. Serial where the TS
 /// parallelises CPU probes (the result does not depend on it).
 pub async fn detect<R: Runner>(dev: &Device, tmp_dir: &str, pid: u32, r: &R) -> Detected {
+    detect_only(dev, tmp_dir, pid, r, None).await
+}
+
+/// [`detect`] limited to one backend's test (`only`), for a card that must not fall through to another.
+pub async fn detect_only<R: Runner>(
+    dev: &Device,
+    tmp_dir: &str,
+    pid: u32,
+    r: &R,
+    only: Option<HwAccel>,
+) -> Detected {
     let platform = dev.platform;
     let mut hw_accel = HwAccel::None;
     for (hw, cmd) in probe::hw_tests(dev) {
+        if only.is_some_and(|o| o != hw) {
+            continue;
+        }
         if r.run(&cmd).await.ok {
             hw_accel = hw;
             break;

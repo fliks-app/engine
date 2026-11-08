@@ -252,7 +252,7 @@ pub(super) async fn run_capture(
     tool: &str,
 ) -> Option<Vec<u8>> {
     let _permit = rt.capture.acquire().await.ok()?;
-    let _slot = rt.slots.playback(true);
+    let _slot = rt.slots.playback_on(None);
     let mut cmd = tokio::process::Command::new(tool);
     cmd.args(args)
         .stdin(std::process::Stdio::null())

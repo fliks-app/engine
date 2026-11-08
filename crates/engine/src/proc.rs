@@ -47,6 +47,8 @@ pub fn is_own(pid: u32) -> bool {
 
 /// `Command::spawn`, retried briefly on ETXTBSY: a concurrent fork can still hold a just-written binary open.
 pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
+    // CUDA's ordinals then match the PCI-bus ranks `cuda_index` computes.
+    cmd.env("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
     let child = spawn_retry(cmd).await?;
     #[cfg(unix)]
     if let Some(pid) = child.id().filter(|_| std::process::id() == 1) {
