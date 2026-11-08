@@ -288,7 +288,7 @@ async fn the_metadata_level_edits_a_copy_with_mkvpropedit() {
         return;
     }
     let staged = f.dir.join(".fliks-opt-5-1.tmp");
-    let plan = json!({ "level": "metadata", "stripStatisticsTags": true, "streams": [
+    let plan = json!({ "level": "metadata", "streams": [
         { "streamIndex": 1, "keep": true, "language": "spa", "default": true }] });
     let v = run_kind(&f, optimize(&f, plan, &staged)).await;
     assert_eq!(v["state"], "done", "{v}");

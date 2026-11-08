@@ -311,7 +311,6 @@ impl Worker {
             encoders: usable(&["libx265", "libsvtav1"]),
             decoders: decoders.clone(),
             max_jobs: (self.rt.slots.size() / 2).max(1) as u32,
-            vram_mib: None,
             pause,
         }];
         let snap = self.rt.hw.snapshot();
@@ -329,7 +328,6 @@ impl Worker {
                     encoders,
                     decoders: decoders.clone(),
                     max_jobs: 1,
-                    vram_mib: None,
                     pause,
                 });
             }
