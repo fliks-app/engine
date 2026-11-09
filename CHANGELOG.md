@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/fliks-app/engine/compare/v1.20.0...v1.21.0) (2026-11-09)
+
+
+### Features
+
+* **karaoke:** run the Windows ML runtime of the machine, ship none of it ([#219](https://github.com/fliks-app/engine/issues/219)) ([fb01cc1](https://github.com/fliks-app/engine/commit/fb01cc12f1891c411991c3c1d9c623c108e236c4))
+
 ## [1.20.0](https://github.com/fliks-app/engine/compare/v1.19.1...v1.20.0) (2026-11-08)
 
 
