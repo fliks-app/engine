@@ -12,7 +12,7 @@ pub fn default_backend(models_dir: &std::path::Path) -> Arc<dyn Backend> {
 }
 
 #[cfg(feature = "karaoke")]
-pub use imp::{providers, with_provider};
+pub use imp::{environment, providers, with_provider};
 
 #[cfg(not(feature = "karaoke"))]
 struct Absent;
@@ -24,6 +24,7 @@ impl Backend for Absent {
             onnx: false,
             error: Some("this engine build has no ONNX runtime".into()),
             providers: vec![],
+            windows_ml: None,
         }
     }
 
@@ -53,9 +54,12 @@ mod imp {
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    /// ONNX Runtime from `ORT_DYLIB_PATH`, else the bundle's, else `libonnxruntime` on the loader's path.
+    /// ONNX Runtime from `ORT_DYLIB_PATH`, else the Windows ML runtime of the machine, else the bundle's,
+    /// else `libonnxruntime` on the loader's path.
     pub struct Ort {
         env: OnceLock<Result<Environment, String>>,
+        /// The environment runs the Windows ML runtime.
+        system: AtomicBool,
         preparing: AtomicBool,
         models_dir: PathBuf,
     }
@@ -98,37 +102,71 @@ mod imp {
             .map_err(|e| e.to_string())
     }
 
-    fn library() -> String {
+    fn overridden() -> Option<String> {
+        std::env::var("ORT_DYLIB_PATH")
+            .ok()
+            .filter(|v| !v.is_empty())
+    }
+
+    /// The libraries to try in order, each with whether it is the Windows ML runtime's.
+    fn libraries() -> Vec<(String, bool)> {
+        if let Some(lib) = overridden() {
+            return vec![(lib, false)];
+        }
         let lib = format!(
             "{}onnxruntime{}",
             std::env::consts::DLL_PREFIX,
             std::env::consts::DLL_SUFFIX
         );
-        std::env::var("ORT_DYLIB_PATH")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .or_else(|| crate::karaoke::bundled(&lib))
-            .unwrap_or(lib)
+        let mut all: Vec<_> = winml::system()
+            .map(|s| (s.onnxruntime(), true))
+            .into_iter()
+            .collect();
+        all.push((crate::karaoke::bundled(&lib).unwrap_or(lib), false));
+        all
+    }
+
+    /// An ONNX Runtime environment on the first library that loads, and whether that is the Windows
+    /// ML runtime; with `download`, Windows fetches the execution providers it lacks.
+    pub fn environment(download: bool) -> Result<(Environment, bool), String> {
+        let mut last = String::new();
+        for (lib, system) in libraries() {
+            match ort::init_from(&lib) {
+                Ok(b) => {
+                    let env = b.build().map_err(|e| format!("start ONNX Runtime: {e}"))?;
+                    if system {
+                        winml::register(&env, download);
+                    }
+                    return Ok((env, system));
+                }
+                Err(e) => {
+                    last = format!("load {lib}: {e}");
+                    tracing::warn!("{last}");
+                }
+            }
+        }
+        Err(last)
     }
 
     impl Ort {
         pub fn new(models_dir: &Path) -> Self {
             Self {
                 env: OnceLock::new(),
+                system: AtomicBool::new(false),
                 preparing: AtomicBool::new(false),
                 models_dir: models_dir.to_owned(),
             }
         }
 
+        fn windows_ml(&self) -> Option<fliks_engine_core::api::WindowsMl> {
+            winml::status(self.system.load(Ordering::SeqCst), overridden().is_some())
+        }
+
         fn env(&self) -> &Result<Environment, String> {
             self.env.get_or_init(|| {
                 migraphx_cache(&self.models_dir);
-                let lib = library();
-                let env = ort::init_from(&lib)
-                    .map_err(|e| format!("load {lib}: {e}"))?
-                    .build()
-                    .map_err(|e| format!("start ONNX Runtime: {e}"))?;
-                winml::register(&env, false);
+                let (env, system) = environment(false)?;
+                self.system.store(system, Ordering::SeqCst);
                 Ok(env)
             })
         }
@@ -175,18 +213,20 @@ mod imp {
                     onnx: true,
                     error: None,
                     providers: providers(env),
+                    windows_ml: self.windows_ml(),
                 },
                 Err(e) => BackendInfo {
                     onnx: false,
                     error: Some(e.clone()),
                     providers: vec![],
+                    windows_ml: self.windows_ml(),
                 },
             }
         }
 
         fn prepare(&self) {
             let Ok(env) = self.env() else { return };
-            if self.preparing.swap(true, Ordering::SeqCst) {
+            if !self.system.load(Ordering::SeqCst) || self.preparing.swap(true, Ordering::SeqCst) {
                 return;
             }
             let env = env.clone();

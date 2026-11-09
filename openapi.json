@@ -4327,6 +4327,17 @@
           "whisper": {
             "type": "boolean",
             "description": "The speech recogniser `Align` runs is installed."
+          },
+          "windowsMl": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WindowsMl",
+                "description": "Windows 11 22H2 and later only: the Windows ML runtime of the machine."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -8080,6 +8091,15 @@
             "minimum": 0
           }
         }
+      },
+      "WindowsMl": {
+        "type": "string",
+        "description": "Where the engine stands with the Windows ML runtime installed on the machine.",
+        "enum": [
+          "active",
+          "restart",
+          "missing"
+        ]
       },
       "WorkerDevice": {
         "type": "object",

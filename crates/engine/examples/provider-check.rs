@@ -1,13 +1,10 @@
 //! Runs one model on a fixed input with the CPU and with a provider and prints how far the outputs
-//! differ. `ORT_DYLIB_PATH=<lib> provider-check <provider> <model.onnx> <spleeter|swiftf0>`, a provider
+//! differ. `provider-check <provider> <model.onnx> <spleeter|swiftf0>` on the engine's library (`ORT_DYLIB_PATH`, the Windows ML runtime, the bundle's), a provider
 //! of `PROVIDERS` (`coreml`, `cuda`, `directml`, `nvtensorrtrtx`...); `list` instead prints them. Spleeter
 //! runs on the production shape (one split) and on four splits. A provider that is not clearly faster
 //! than the CPU may have given the whole graph to it: with MIGraphX, `ORT_MIGRAPHX_DUMP_MODEL_OPS=1`
 //! lists the nodes it left out.
-use fliks_engine::karaoke::{
-    onnx::{providers, with_provider},
-    winml,
-};
+use fliks_engine::karaoke::onnx::{environment, providers, with_provider};
 use ort::{environment::Environment, session::Session, value::Tensor};
 
 fn noise(n: usize) -> Vec<f32> {
@@ -81,10 +78,12 @@ fn run(
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     let a: Vec<String> = std::env::args().collect();
-    let lib = std::env::var("ORT_DYLIB_PATH").expect("ORT_DYLIB_PATH");
-    let env = ort::init_from(&lib).unwrap().build().unwrap();
-    winml::register(&env, true);
+    let (env, system) = environment(true).unwrap();
+    println!("windows ml runtime: {system}");
     if a[1] == "list" {
         for d in env.devices() {
             let hw = d.hardware_device();

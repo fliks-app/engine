@@ -24,23 +24,21 @@ windows-x64) exe=".exe"
 *) echo "unknown platform $platform" >&2; exit 2 ;;
 esac
 
-# ONNX Runtime: the official release on macOS (CoreML compiled in); on Windows the Windows ML runtime
-# (self-contained NuGet package: ONNX Runtime with DirectML, DirectML.dll and the EP catalog library).
-mkdir "$work/ort"
+# ONNX Runtime: the official release (MIT), CPU on Windows, CoreML compiled in on macOS. The Windows ML
+# runtime of Microsoft (proprietary licence) is never shipped: the engine finds the one installed.
+mkdir "$work/ort" "$lic/onnxruntime"
 if [ "$platform" = windows-x64 ]; then
-    fetch "https://api.nuget.org/v3-flatcontainer/microsoft.windows.ai.machinelearning/$WINML_VERSION/microsoft.windows.ai.machinelearning.$WINML_VERSION.nupkg" "$WINML_SHA256" winml.zip
-    mkdir -p "$lic/windows-ml"
-    unzip -q "$work/winml.zip" -d "$work/ort"
-    for f in onnxruntime.dll DirectML.dll Microsoft.Windows.AI.MachineLearning.dll; do cp "$work/ort/runtimes/win-x64/native/$f" "$dest/"; done
-    cp "$work/ort/license.txt" "$work/ort/ThirdPartyNotices.txt" "$lic/windows-ml/"
+    fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-win-x64-$ONNXRUNTIME_VERSION.zip" "$ORT_SHA256_WINDOWS_X64" ort.zip
+    unzip -q "$work/ort.zip" -d "$work/ort"
+    o="$(echo "$work"/ort/*)" # the one extracted directory
+    cp "$o/lib/onnxruntime.dll" "$o/lib/onnxruntime_providers_shared.dll" "$dest/"
 else
-    mkdir -p "$lic/onnxruntime"
     fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-osx-arm64-$ONNXRUNTIME_VERSION.tgz" "$ORT_SHA256_DARWIN_ARM64" ort.tgz
     tar -xzf "$work/ort.tgz" -C "$work/ort"
-    o="$(echo "$work"/ort/*)" # the one extracted directory
+    o="$(echo "$work"/ort/*)"
     cp "$o/lib/libonnxruntime.$ONNXRUNTIME_VERSION.dylib" "$dest/libonnxruntime.dylib"
-    cp "$o/LICENSE" "$o/ThirdPartyNotices.txt" "$lic/onnxruntime/"
 fi
+cp "$o/LICENSE" "$o/ThirdPartyNotices.txt" "$lic/onnxruntime/"
 
 # whisper-cli from the same release as the image.
 fetch "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/$WHISPER_CPP_VERSION.tar.gz" "$WHISPER_CPP_SHA256" whisper.tgz

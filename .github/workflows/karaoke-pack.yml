@@ -1,4 +1,4 @@
-# The karaoke pack of the desktop bundles: ONNX Runtime (Windows ML on Windows), whisper-cli and ffmpeg-pitch with their
+# The karaoke pack of the desktop bundles: ONNX Runtime (CPU), whisper-cli and ffmpeg-pitch with their
 # licences, in a `karaoke/` directory that sits next to the engine binary. Built on its own for a
 # PR that changes it, and by the release with a tag to attach it.
 name: Karaoke pack
@@ -71,12 +71,27 @@ jobs:
           Copy-Item target/release/fliks-engine.exe, target/release/examples/provider-check.exe out/
           $env:FLIKS_ENGINE_TOKEN = 't'
           $env:FLIKS_MODELS_DIR = "$PWD\models"
-          $env:ORT_DYLIB_PATH = "$PWD\out\karaoke\onnxruntime.dll"
           $h = @{ Authorization = 'Bearer t' }
+          function Get-Runtime {
+            $p = Start-Process out/fliks-engine.exe -ArgumentList '--listen', '127.0.0.1:7411' -PassThru -NoNewWindow -RedirectStandardError engine.log
+            Start-Sleep 5
+            try { (Invoke-RestMethod -Headers $h http://127.0.0.1:7411/v1/models).runtime } finally { Stop-Process $p; Get-Content engine.log }
+          }
+          # Without Microsoft's runtime the pack alone runs the CPU library: nothing of Microsoft's ships.
+          $r = Get-Runtime
+          $r | ConvertTo-Json
+          if (-not $r.onnx -or $r.windowsMl -ne 'missing' -or ($r.providers -join ',') -ne 'cpu') { throw 'the pack does not start CPU-only' }
+          # Installing the runtime the documented way makes the engine pick it up from the system.
+          $pin = Get-Content tools/karaoke-pack/pins.env | ConvertFrom-StringData
+          $v = $pin.WINAPPRUNTIME_VERSION
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/$($v.Substring(0, 3))/$v/windowsappruntimeinstall-x64.exe" -OutFile wasdk.exe
+          if ((Get-FileHash wasdk.exe).Hash -ne $pin.WINAPPRUNTIME_SHA256) { throw 'the runtime installer changed' }
+          ./wasdk.exe --quiet
+          $r = Get-Runtime
+          $r | ConvertTo-Json
+          if ($r.windowsMl -ne 'active' -or $r.providers -notcontains 'directml') { throw 'the engine does not run the system Windows ML runtime' }
           $p = Start-Process out/fliks-engine.exe -ArgumentList '--listen', '127.0.0.1:7411' -PassThru -NoNewWindow -RedirectStandardError engine.log
           Start-Sleep 5
-          $r = (Invoke-RestMethod -Headers $h http://127.0.0.1:7411/v1/models).runtime
-          $r | ConvertTo-Json
           foreach ($m in 'spleeter-2stems', 'swiftf0') { Invoke-RestMethod -Method Post -Headers $h "http://127.0.0.1:7411/v1/models/$m/download" | Out-Null }
           for ($i = 0; $i -lt 90; $i++) {
             $left = (Invoke-RestMethod -Headers $h http://127.0.0.1:7411/v1/models).models | Where-Object { $_.id -in 'spleeter-2stems', 'swiftf0' -and $_.state -ne 'installed' }
@@ -90,7 +105,7 @@ jobs:
           out/provider-check.exe directml models/spleeter-2stems/vocals.onnx spleeter
           out/provider-check.exe directml models/spleeter-2stems/accompaniment.onnx spleeter
           out/provider-check.exe directml models/swiftf0/model.onnx swiftf0
-          if (-not ($r.onnx -and $r.whisper -and $r.rubberband -and ($r.providers -contains 'directml'))) { throw 'the engine does not run the pack' }
+          if (-not ($r.whisper -and $r.rubberband)) { throw 'the engine does not find the tools of the pack' }
           exit 0
       - name: Smoke test the tools
         run: |

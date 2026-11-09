@@ -212,6 +212,7 @@ impl Backend for NoOnnx {
             onnx: false,
             error: Some("no runtime here".into()),
             providers: vec![],
+            windows_ml: None,
         }
     }
 
@@ -390,6 +391,7 @@ impl Backend for Fake {
             onnx: true,
             error: None,
             providers: vec![],
+            windows_ml: None,
         }
     }
 

@@ -1,6 +1,9 @@
-//! Windows ML's execution providers: the catalog of the bundled `Microsoft.Windows.AI.MachineLearning`
-//! library registers what Windows certified for the hardware into ONNX Runtime (spec section 1).
+//! The Windows ML runtime of the machine (the Windows App SDK framework package, never shipped) and
+//! its execution providers: the catalog registers what Windows certified for the hardware into
+//! ONNX Runtime (spec section 1).
+use fliks_engine_core::api::WindowsMl;
 use ort::{device::Device, environment::Environment, memory::DeviceType};
+use std::path::PathBuf;
 
 const CPU: &str = "CPUExecutionProvider";
 /// The runtime's own provider, used through `ort::ep::DirectML`.
@@ -31,9 +34,63 @@ pub fn device<'e>(env: &'e Environment, name: &str) -> Option<Device<'e>> {
         })
 }
 
-/// Registers the certified providers Windows has for this machine; with `download`, fetches the
-/// missing ones first (it can take minutes). Nothing on a Windows before 11 24H2 or without the
-/// catalog library.
+/// The Windows ML runtime the engine runs: the directory of its framework package, pinned for the life of
+/// the process.
+pub struct System {
+    dir: PathBuf,
+}
+
+impl System {
+    pub const ONNXRUNTIME: &str = "onnxruntime.dll";
+    #[cfg(windows)]
+    const CATALOG: &str = "Microsoft.Windows.AI.MachineLearning.dll";
+
+    pub fn onnxruntime(&self) -> String {
+        self.dir
+            .join(Self::ONNXRUNTIME)
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+/// The runtime installed for this user and pinned in the process, the same on every call; none off
+/// Windows 11 22H2 and later, or when it is not installed.
+pub fn system() -> Option<&'static System> {
+    #[cfg(windows)]
+    {
+        static SYSTEM: std::sync::OnceLock<Option<System>> = std::sync::OnceLock::new();
+        SYSTEM.get_or_init(imp::locate).as_ref()
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+/// Where the engine stands with the runtime (`runtime.windowsMl`): `using` when it runs its library,
+/// `overridden` when `ORT_DYLIB_PATH` names another. None where the runtime does not apply.
+pub fn status(using: bool, overridden: bool) -> Option<WindowsMl> {
+    #[cfg(windows)]
+    {
+        if overridden || !imp::dependency_api() {
+            return None;
+        }
+        Some(if using {
+            WindowsMl::Active
+        } else if imp::installed() {
+            WindowsMl::Restart
+        } else {
+            WindowsMl::Missing
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (using, overridden);
+        None
+    }
+}
+
+/// Registers the certified providers Windows has for this machine into `env`, which runs the system
+/// runtime; with `download`, fetches the missing ones first (it can take minutes). Nothing before
+/// Windows 11 24H2.
 pub fn register(env: &Environment, download: bool) {
     #[cfg(windows)]
     imp::register(env, download);
@@ -43,15 +100,29 @@ pub fn register(env: &Environment, download: bool) {
 
 #[cfg(windows)]
 mod imp {
+    use super::System;
     use ort::environment::Environment;
     use std::collections::HashSet;
-    use std::ffi::{CStr, c_char, c_void};
+    use std::ffi::{CStr, OsString, c_char, c_void};
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::PathBuf;
     use std::sync::Mutex;
+    use windows_sys::Win32::Storage::Packaging::Appx::{
+        FindPackagesByPackageFamily, GetPackagePathByFullName, PACKAGE_FILTER_HEAD,
+    };
 
+    /// The operating system's dynamic dependency API starts at Windows 11 22H2.
+    const MIN_DEPENDENCY_BUILD: u32 = 22621;
     /// Windows 11 24H2, the first build whose catalog serves providers.
-    const MIN_BUILD: u32 = 26100;
+    const MIN_CATALOG_BUILD: u32 = 26100;
+    /// Framework packages that carry the runtime, newest first.
+    const FAMILIES: [&str; 2] = [
+        "Microsoft.WindowsAppRuntime.2_8wekyb3d8bbwe",
+        "Microsoft.WindowsAppRuntime.1.8_8wekyb3d8bbwe",
+    ];
     const CERTIFIED: i32 = 1;
     const NOT_PRESENT: i32 = 2;
+    const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
 
     #[repr(C)]
     struct Info {
@@ -71,6 +142,18 @@ mod imp {
     type Ready = unsafe extern "system" fn(*mut c_void) -> Hr;
     type PathSize = unsafe extern "system" fn(*mut c_void, *mut usize) -> Hr;
     type Path = unsafe extern "system" fn(*mut c_void, usize, *mut c_char, *mut usize) -> Hr;
+    type TryCreate = unsafe extern "system" fn(
+        *mut c_void,
+        *const u16,
+        u64,
+        i32,
+        i32,
+        *const u16,
+        i32,
+        *mut *mut u16,
+    ) -> Hr;
+    type Add =
+        unsafe extern "system" fn(*const u16, i32, i32, *mut *mut c_void, *mut *mut u16) -> Hr;
 
     struct Candidate {
         handle: *mut c_void,
@@ -110,17 +193,127 @@ mod imp {
         }
     }
 
+    pub fn dependency_api() -> bool {
+        build() >= MIN_DEPENDENCY_BUILD
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain([0]).collect()
+    }
+
+    /// Whether a framework package of the runtime is registered for this user.
+    pub fn installed() -> bool {
+        FAMILIES.iter().any(|f| {
+            let (mut count, mut len) = (0u32, 0u32);
+            // SAFETY: a size query: the family is NUL-terminated, the buffers are null with length 0.
+            let rc = unsafe {
+                FindPackagesByPackageFamily(
+                    wide(f).as_ptr(),
+                    PACKAGE_FILTER_HEAD,
+                    &mut count,
+                    std::ptr::null_mut(),
+                    &mut len,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            };
+            rc == ERROR_INSUFFICIENT_BUFFER || (rc == 0 && count > 0)
+        })
+    }
+
+    /// Reads and frees a string the dependency API allocated on the process heap.
+    fn take(p: *mut u16) -> Option<String> {
+        use windows_sys::Win32::System::Memory::{GetProcessHeap, HeapFree};
+        if p.is_null() {
+            return None;
+        }
+        // SAFETY: `p` is a NUL-terminated string from the process heap, freed once here.
+        unsafe {
+            let n = (0..).take_while(|i| *p.add(*i) != 0).count();
+            let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
+            HeapFree(GetProcessHeap(), 0, p.cast());
+            Some(s)
+        }
+    }
+
+    /// Pins the newest package of `family` for the process (the OS then does not service it) and
+    /// gives its directory.
+    fn pin(family: &str) -> Result<PathBuf, String> {
+        // SAFETY: `kernelbase.dll` is in every process; the signatures are appmodel.h's.
+        let kb =
+            unsafe { libloading::Library::new("kernelbase.dll") }.map_err(|e| e.to_string())?;
+        let create = *unsafe { kb.get::<TryCreate>(b"TryCreatePackageDependency\0") }
+            .map_err(|e| e.to_string())?;
+        let add =
+            *unsafe { kb.get::<Add>(b"AddPackageDependency\0") }.map_err(|e| e.to_string())?;
+        // Lifetime kind 0 is the process; the architecture is this build's (x64 4, arm64 16).
+        let arch = if cfg!(target_arch = "aarch64") { 16 } else { 4 };
+        let mut id = std::ptr::null_mut();
+        let hr = unsafe {
+            create(
+                std::ptr::null_mut(),
+                wide(family).as_ptr(),
+                0,
+                arch,
+                0,
+                std::ptr::null(),
+                0,
+                &mut id,
+            )
+        };
+        if hr < 0 {
+            return Err(format!("TryCreatePackageDependency 0x{hr:08x}"));
+        }
+        let id = take(id).ok_or("no dependency id")?;
+        let (mut context, mut full) = (std::ptr::null_mut(), std::ptr::null_mut());
+        let hr = unsafe { add(wide(&id).as_ptr(), 0, 0, &mut context, &mut full) };
+        if hr < 0 {
+            return Err(format!("AddPackageDependency 0x{hr:08x}"));
+        }
+        let full = wide(&take(full).ok_or("no package name")?);
+        let mut len = 0u32;
+        // SAFETY: the two-call size protocol of GetPackagePathByFullName.
+        unsafe { GetPackagePathByFullName(full.as_ptr(), &mut len, std::ptr::null_mut()) };
+        let mut buf = vec![0u16; len as usize];
+        if unsafe { GetPackagePathByFullName(full.as_ptr(), &mut len, buf.as_mut_ptr()) } != 0 {
+            return Err("no package path".into());
+        }
+        buf.truncate(len.saturating_sub(1) as usize);
+        Ok(PathBuf::from(OsString::from_wide(&buf)))
+    }
+
+    /// The newest installed runtime that holds both libraries.
+    pub fn locate() -> Option<System> {
+        if !dependency_api() {
+            return None;
+        }
+        for f in FAMILIES {
+            match pin(f) {
+                Ok(dir)
+                    if dir.join(System::ONNXRUNTIME).is_file()
+                        && dir.join(System::CATALOG).is_file() =>
+                {
+                    tracing::info!("Windows ML runtime at {}", dir.display());
+                    return Some(System { dir });
+                }
+                Ok(dir) => tracing::debug!("{} is no Windows ML runtime", dir.display()),
+                Err(e) => tracing::debug!("{f}: {e}"),
+            }
+        }
+        tracing::info!("no Windows ML runtime installed for this user");
+        None
+    }
+
     /// Providers already handed to ONNX Runtime; the library and catalog live as long as the process,
     /// since a registered provider's package stays in the process' dependency graph.
     static REGISTERED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
     pub fn register(env: &Environment, download: bool) {
-        if build() < MIN_BUILD {
-            tracing::debug!("Windows ML catalog needs build {MIN_BUILD}");
+        if build() < MIN_CATALOG_BUILD {
+            tracing::debug!("Windows ML catalog needs build {MIN_CATALOG_BUILD}");
             return;
         }
-        let Some(lib) = crate::karaoke::bundled("Microsoft.Windows.AI.MachineLearning.dll") else {
-            tracing::debug!("no Windows ML catalog library in the bundle");
+        let Some(lib) = super::system().map(|s| s.dir.join(System::CATALOG)) else {
             return;
         };
         let mut done = REGISTERED.lock().unwrap_or_else(|e| e.into_inner());
@@ -131,11 +324,11 @@ mod imp {
 
     fn run(
         env: &Environment,
-        lib: &str,
+        lib: &std::path::Path,
         download: bool,
         done: &mut HashSet<String>,
     ) -> Result<(), String> {
-        // SAFETY: loads a Microsoft library from the bundle; it is never unloaded.
+        // SAFETY: loads the system runtime's own library; it is never unloaded.
         let lib: &'static libloading::Library = Box::leak(Box::new(
             unsafe { libloading::Library::new(lib) }.map_err(|e| e.to_string())?,
         ));
