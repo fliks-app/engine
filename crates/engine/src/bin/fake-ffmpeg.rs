@@ -350,6 +350,10 @@ fn item(args: &[String]) {
     for n in start..start + count {
         put(&dir.join(format!("seg-{n:04}.ts")), format!("segment {n}"));
     }
+    // A budget cut leaves the muxer a few packets, closed as one more segment.
+    if count >= 30 {
+        put(&dir.join(format!("seg-{:04}.ts", start + count)), "tail");
+    }
 }
 
 /// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes

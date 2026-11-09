@@ -41,7 +41,14 @@ impl Runtime {
         let key = s.item_key(part);
         let existing = self.job(&key);
         let path = self.part_file(s, part, name);
-        if Self::present(&path).await {
+        // A live run's file past its budget is the cut tail, not a segment.
+        let tail = |n| {
+            existing
+                .as_ref()
+                .is_some_and(|e| !e.m.locked().settled && n >= e.start_segment + RUN_SEGMENTS)
+        };
+        let cut = matches!(name, SegmentName::Segment(n) if tail(n));
+        if !cut && Self::present(&path).await {
             return ready(path, existing, 0.0, true);
         }
         let floor = |p: usize| {

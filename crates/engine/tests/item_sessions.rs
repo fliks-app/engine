@@ -200,6 +200,18 @@ async fn a_run_stops_after_its_budget_and_the_next_request_starts_another() {
 }
 
 #[tokio::test]
+async fn the_tail_a_budget_cut_leaves_is_never_served_as_a_segment() {
+    let it = open(&[400.0], 0.0).await;
+    assert_eq!(it.get("seg-0000.ts").await.text(), "segment 0");
+    // The first run ended at its budget: segment 30 is the next run's, written whole.
+    let s = it.get("seg-0030.ts").await;
+    assert_eq!((s.status, s.text().as_str()), (200, "segment 30"));
+    let runs = it.runs(0);
+    assert_eq!(runs.len(), 2);
+    assert_eq!(arg(&runs[1], "-start_number"), "30");
+}
+
+#[tokio::test]
 async fn past_the_end_is_a_404_and_the_snapshot_follows_the_playhead() {
     let it = open(&[14.0, 9.0], 0.0).await;
     assert_eq!(it.get("seg-0005.ts").await.status, 404);

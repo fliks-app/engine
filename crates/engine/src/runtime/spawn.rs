@@ -7,6 +7,7 @@ use crate::lock::Locked;
 use crate::proc::Ffmpeg;
 use crate::remux::Remux;
 use fliks_engine_core::api::{EngineEvent, HostCaps, HwAccel, JobState};
+use fliks_engine_core::item::RUN_SEGMENTS;
 use fliks_engine_core::mp4::{remux_assembly_plan, remux_audio_grid, remux_run_start};
 use fliks_engine_core::session::{
     self as core_session, JobWatch, JobWatchInput, SegmentName, SegmentSet, early_run_seconds,
@@ -168,10 +169,12 @@ impl Runtime {
         let item = s.plan.item.as_ref()?;
         let (span, run) = (item.timeline.parts.get(part)?, item.parts.get(part)?);
         let key = s.item_key(part);
-        if let Some(old) = self.job(&key)
-            && old.producing()
-        {
-            old.kill_now().await;
+        if let Some(old) = self.job(&key) {
+            if old.producing() {
+                old.kill_now().await;
+            }
+            // Its watcher drops the budget's tail segment: that must not hit this run's files.
+            old.settled().await;
         }
         let quality = format!("p{part}");
         let dir = self
@@ -544,6 +547,11 @@ impl Runtime {
             if let Some(r) = job.remux.clone() {
                 let clean = exit.code == Some(0) && !job.killed();
                 let _ = tokio::task::spawn_blocking(move || r.asm.locked().finish(clean)).await;
+            }
+            if job.item && !job.killed() {
+                let (dir, end, ext) = (job.dir.clone(), job.start_segment + RUN_SEGMENTS, job.ext);
+                let _ =
+                    tokio::task::spawn_blocking(move || purge_from(&dir, false, 1, end, ext)).await;
             }
             job.scan().await;
             job.m.locked().pending = false;
