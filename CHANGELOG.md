@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.2](https://github.com/fliks-app/engine/compare/v1.21.1...v1.21.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **item:** run each part's encode to its end, throttled like a video run ([#225](https://github.com/fliks-app/engine/issues/225)) ([5239e25](https://github.com/fliks-app/engine/commit/5239e251d7a83cd0b6d4577218f379d83ab07735))
+* **runtime:** kill playback runs instead of stopping them, move the cache to v2 ([#223](https://github.com/fliks-app/engine/issues/223)) ([fdd1c28](https://github.com/fliks-app/engine/commit/fdd1c280e1a07c85b290f03b14fdf2b479107b75))
+
 ## [1.21.1](https://github.com/fliks-app/engine/compare/v1.21.0...v1.21.1) (2026-11-09)
 
 
