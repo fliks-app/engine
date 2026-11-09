@@ -153,6 +153,7 @@ pub fn decide(req: &DecideRequest, config: &StreamingConfig) -> Decision {
         mpeg_ts: false,
         scan: None,
         last_segment_start: None,
+        video_entries_only: false,
     };
     let decisions = decide_audio(&streams, device, &ctx);
     let uniform = streams.windows(2).all(|w| same_format(&w[0], &w[1]));

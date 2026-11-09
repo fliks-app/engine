@@ -178,7 +178,7 @@ Gates 5 to 11 read `forceLadder`, `copyableIgnoringGates` and `canCopyVideo` (se
 
 Runs once over all tracks (a track is decided as part of its group), before the DirectStream/Transcode split `[ts:backend/src/modules/streaming/stream-builder.service.ts:773-820]`.
 
-- `profileAudioCodecs` = union of `audioCodecs` over the `directPlayProfiles` entries that list a video codec, lowercased: an audio-files entry (no `videoCodecs`) never makes a codec copyable into a video stream.
+- `profileAudioCodecs` = union of `audioCodecs` over the `directPlayProfiles` entries that list a video codec, lowercased: an audio-files entry (no `videoCodecs`) never makes a codec copyable into a video stream. An item decision (`item.md`) reads every entry.
 - `FMP4_COMPATIBLE_AUDIO = {aac, ac3, eac3, opus, flac}` (mp3, dts, truehd... are not). `[ts:backend/src/modules/streaming/transcoding/audio-encode.ts:165-171]`
 - Encodable: `aac, ac3, eac3, opus`; encoder channel max: aac 8, opus 8, ac3 6, eac3 6. `[ts:backend/src/modules/streaming/transcoding/audio-encode.ts:40-46,112-114,125-127]`
 - `encodeChannelCap(device, codec) = min(audioChannelCap(device, codec), encoderMax(codec))`. `[ts:backend/src/modules/streaming/stream-builder.service.ts:144-146]`

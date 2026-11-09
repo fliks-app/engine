@@ -438,6 +438,7 @@ pub fn decide(req: &DecideRequest, caps: &HostCaps, config: &StreamingConfig) ->
             last_segment_start: multi_audio
                 .then(|| last_video_segment_start(info, config.segment_duration, &cut))
                 .flatten(),
+            video_entries_only: true,
         },
     );
     // A DirectStream encodes a transcoded track at the remux encoder's own fixed budget.
