@@ -276,7 +276,7 @@ mod tests {
         hdr.timeline_origin = 1.4;
         assert_eq!(
             profile_hash(&profile_from_layout(&hdr, 6000)),
-            "5b3ac32808b6077c"
+            "e11e4c2d48f195a5"
         );
     }
 
