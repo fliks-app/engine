@@ -206,6 +206,7 @@ pub fn decide_audio(
     let profile_codecs: Vec<String> = d
         .direct_play_profiles
         .iter()
+        .filter(|p| p.is_video())
         .flat_map(|p| p.audio_codecs.iter().map(|c| c.to_lowercase()))
         .collect();
     let group = pick_group_codec(tracks, d, &profile_codecs, &blockers);

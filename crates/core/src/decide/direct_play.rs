@@ -45,7 +45,7 @@ pub fn try_direct_play(
     let mut audio_supported = !has_audio
         || profiles
             .iter()
-            .any(|p| has(&p.audio_codecs, &source.audio_codec));
+            .any(|p| p.is_video() && has(&p.audio_codecs, &source.audio_codec));
 
     let own_entry = source
         .video_codec_tag

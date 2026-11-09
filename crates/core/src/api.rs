@@ -681,6 +681,13 @@ pub struct DirectPlayProfile {
     pub audio_codecs: Vec<String>,
 }
 
+impl DirectPlayProfile {
+    /// An entry of audio-only files lists no video codec; its audio codecs say nothing about video.
+    pub fn is_video(&self) -> bool {
+        !self.video_codecs.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodecCondition {

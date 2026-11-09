@@ -548,6 +548,15 @@ impl Runtime {
             }
             job.scan().await;
             job.m.locked().pending = false;
+            // A replacement in the same rung purges at its start; another rung's leftover stays.
+            if job.killed()
+                && !self
+                    .job(&job.key)
+                    .is_some_and(|j| !Arc::ptr_eq(&j, &job) && j.dir == job.dir)
+            {
+                let (dir, vsm, tracks) = (job.dir.clone(), job.var_stream_map, job.tracks);
+                let _ = tokio::task::spawn_blocking(move || purge_tmp(&dir, vsm, tracks)).await;
+            }
             if exit.code == Some(0) && !job.killed() && job.produced_nothing().await {
                 let init = job.file_path(0, SegmentName::Init(None));
                 self.discard_no_media(Some(&job), &init, job.start_segment, &s)
@@ -629,26 +638,42 @@ impl Runtime {
     }
 }
 
-/// Drops a previous run's segments at and after `start`: one timeline forward of the restart.
-/// [ts:modules/streaming/transcoding/segment-utils.ts:127-170]
-pub(super) fn purge_from(dir: &Path, var_stream_map: bool, tracks: usize, start: u32, ext: &str) {
-    let dirs: Vec<PathBuf> = if var_stream_map {
+fn track_dirs(dir: &Path, var_stream_map: bool, tracks: usize) -> Vec<PathBuf> {
+    if var_stream_map {
         (0..tracks).map(|t| dir.join(t.to_string())).collect()
     } else {
         vec![dir.to_path_buf()]
-    };
-    for d in dirs {
+    }
+}
+
+/// Drops a previous run's segments at and after `start`: one timeline forward of the restart.
+/// A `.tmp` goes at any number: a killed run leaves one wherever it stopped.
+/// [ts:modules/streaming/transcoding/segment-utils.ts:127-170]
+pub(super) fn purge_from(dir: &Path, var_stream_map: bool, tracks: usize, start: u32, ext: &str) {
+    for d in track_dirs(dir, var_stream_map, tracks) {
         let _ = std::fs::create_dir_all(&d);
         let Ok(rd) = std::fs::read_dir(&d) else {
             continue;
         };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            let base = name.strip_suffix(".tmp").unwrap_or(&name);
+            let tmp = name.strip_suffix(".tmp");
+            let base = tmp.unwrap_or(&name);
             if let Some(SegmentName::Segment(n)) = parse_segment_name(base)
-                && n >= start
                 && base.ends_with(ext)
+                && (tmp.is_some() || n >= start)
             {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+}
+
+/// Removes the in-flight `.tmp` segments a killed run left behind.
+pub(super) fn purge_tmp(dir: &Path, var_stream_map: bool, tracks: usize) {
+    for d in track_dirs(dir, var_stream_map, tracks) {
+        for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+            if e.file_name().to_string_lossy().ends_with(".tmp") {
                 let _ = std::fs::remove_file(e.path());
             }
         }
