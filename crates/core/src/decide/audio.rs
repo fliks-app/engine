@@ -125,6 +125,8 @@ pub struct AudioContext<'a> {
     pub scan: Option<&'a SourceScan>,
     /// Where the last video segment starts, for separate renditions only.
     pub last_segment_start: Option<f64>,
+    /// A video file reads audio codecs from the entries that list a video codec; an item, from all.
+    pub video_entries_only: bool,
 }
 
 /// Why a track the device plays as-is must still be re-encoded into fMP4.
@@ -206,6 +208,7 @@ pub fn decide_audio(
     let profile_codecs: Vec<String> = d
         .direct_play_profiles
         .iter()
+        .filter(|p| !ctx.video_entries_only || p.is_video())
         .flat_map(|p| p.audio_codecs.iter().map(|c| c.to_lowercase()))
         .collect();
     let group = pick_group_codec(tracks, d, &profile_codecs, &blockers);

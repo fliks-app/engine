@@ -376,6 +376,21 @@ mod tests {
         remove_dir(&d);
     }
 
+    #[test]
+    fn purge_drops_a_tmp_above_the_start() {
+        let d = std::env::temp_dir().join(format!("fliks-purge-tmp-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        for n in ["seg-0002.m4s", "seg-0007.m4s.tmp", "seg-0001.m4s.tmp"] {
+            std::fs::write(d.join(n), b"x").unwrap();
+        }
+        purge_from(&d, false, 1, 20, "m4s");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        std::fs::write(d.join("seg-0021.m4s.tmp"), b"x").unwrap();
+        super::spawn::purge_tmp(&d, false, 1);
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        remove_dir(&d);
+    }
+
     fn two_gpu_runtime() -> Arc<Runtime> {
         use crate::hw::{HwDevice, Snapshot};
         use fliks_engine_core::api::Platform;
