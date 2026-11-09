@@ -118,7 +118,7 @@ impl Runtime {
                     }
                     ResumeAction::Respawn(r) => {
                         if r.kill {
-                            e.kill_now().await;
+                            e.kill().await;
                         }
                         if r.purge_cache {
                             let dir = e.dir.clone();

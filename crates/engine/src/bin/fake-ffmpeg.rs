@@ -356,6 +356,31 @@ fn item(args: &[String]) {
     }
 }
 
+/// An item run still writing its second segment: a SIGTERM closes it under its final name, like
+/// the muxer's trailer does, a SIGKILL leaves the `.tmp` behind.
+#[cfg(unix)]
+fn itemstop(args: &[String]) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static TERM: AtomicBool = AtomicBool::new(false);
+    extern "C" fn on_term(_: libc::c_int) {
+        TERM.store(true, Ordering::Relaxed);
+    }
+    unsafe { libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t) };
+    let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let dir = Path::new(at("-hls_segment_filename")).parent().unwrap();
+    let start: u32 = at("-start_number").parse().unwrap();
+    put(
+        &dir.join(format!("seg-{start:04}.ts")),
+        format!("segment {start}"),
+    );
+    let open = dir.join(format!("seg-{:04}.ts.tmp", start + 1));
+    std::fs::write(&open, "partial").unwrap();
+    while !TERM.load(Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
+}
+
 /// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
 /// silent, `dies` writes three then exits once `die` exists in the run's directory.
 fn live(args: &[String]) {
@@ -477,6 +502,8 @@ fn main() {
         "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
         "item" => item(&args),
+        #[cfg(unix)]
+        "itemstop" => itemstop(&args),
         "nomedia" => nomedia(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),

@@ -1,4 +1,4 @@
-//! The `cache/v1` directory: layout, index walk, eviction and the one-shot purge of the old
+//! The `cache/v2` directory: layout, index walk, eviction and the one-shot purge of the old
 //! layout. Spec: `docs/spec/runtime.md` section 5.
 use fliks_engine_core::api::CacheEntry;
 use fliks_engine_core::session::{CACHE_NAMESPACE, cache_path};
@@ -444,10 +444,11 @@ mod tests {
         std::fs::write(rung.join("seg-0000.m4s"), [0u8; 10]).unwrap();
         std::fs::create_dir_all(c.entry_dir(None, 9, "def")).unwrap();
         std::fs::create_dir_all(root.join("cache/u7/42/old")).unwrap();
+        std::fs::create_dir_all(root.join("cache/v1/anon/1/old")).unwrap();
         std::fs::create_dir_all(root.join("subtitles/v1/42")).unwrap();
         c.purge_old_layout();
         assert!(!root.join("subtitles/v1").exists());
-        assert!(!root.join("cache/u7").exists());
+        assert!(!root.join("cache/u7").exists() && !root.join("cache/v1").exists());
         let mut s = c.scan();
         s.sort_by_key(|e| e.media_file_id);
         assert_eq!(s.len(), 2);

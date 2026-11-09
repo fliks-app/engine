@@ -68,7 +68,7 @@ impl Runtime {
             // Another rung: start where this request is (an init already asks for the resume floor).
             if !quality_match {
                 if e.producing() {
-                    e.kill_now().await;
+                    e.kill().await;
                 }
             } else {
                 let input = ResolveInput {
@@ -84,7 +84,7 @@ impl Runtime {
                     }
                     ResumeAction::Respawn(r) => {
                         if r.kill {
-                            e.kill_now().await;
+                            e.kill().await;
                         }
                         if r.purge_cache {
                             let dir = e.dir.clone();
@@ -134,7 +134,7 @@ impl Runtime {
                 }
                 ResumeAction::Respawn(r) => {
                     if r.kill {
-                        e.kill_now().await;
+                        e.kill().await;
                     }
                     requested = r.start_segment.unwrap_or(e.start_segment);
                 }
@@ -159,7 +159,7 @@ impl Runtime {
                 return Some(e);
             }
             self.unregister(&e);
-            e.kill_now().await;
+            e.kill().await;
             let dir = e.dir.clone();
             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         }

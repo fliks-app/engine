@@ -32,7 +32,7 @@ HLS is `playUrl = /api/stream/{id}/item/index.m3u8`, fMP4 unless the device asks
 - `init.mp4`: any part's, when one is on disk, else the run of the playhead's part (`startAt` of the playlist, heartbeats, `startAtS`). Every part writes the same format, so the inits are interchangeable.
 - Opening or fetching the playlist warms the run of the playhead's segment, only when the part has no run: a warm-up never moves a run a request placed. Runs of an item are never throttled (they are bounded) and never use a GPU. A part's run is not stopped when another part is requested: it ends by itself, and an ended session stops them all.
 - Segment events are `SegmentServed { track: audio, rung: "item", index }` with the global index. `GET /v1/sessions/{sid}` reports the run of the playhead's part (`job.quality = "p<part>"`, `startSegment` local to the part).
-- The cache hash (`cache/v1|item=1|...`) covers the output format, `sourceVersion`, each part's path and slice and the picked audio stream: reordering or replacing a part forks the directory.
+- The cache hash (`cache/v2|item=1|...`) covers the output format, `sourceVersion`, each part's path and slice and the picked audio stream: reordering or replacing a part forks the directory.
 
 ## 5. Routes
 

@@ -1,4 +1,4 @@
-//! Cache profile hash of a session (`cache/v1`) and the session fields it derives from.
+//! Cache profile hash of a session (`cache/v2`) and the session fields it derives from.
 //! New in the engine: stable, not the host's sha1. [ts:transcoding/profile-hash.ts] [ts:transcoding/session-profile.ts]
 use crate::api::{CodecVariant, HdrFormat, MuxFlavour, TonemapCurve, VideoCodec};
 use crate::decide::dolby_vision::has_no_base;
@@ -59,7 +59,7 @@ fn bits(v: f64) -> String {
 }
 
 impl PlaybackProfile {
-    /// `cache/v1|key=value|...`, fixed order, every key always present (a new field is appended,
+    /// `cache/v2|key=value|...`, fixed order, every key always present (a new field is appended,
     /// so it can never alias an old layout).
     pub fn canonical(&self) -> String {
         let b = |v: bool| u8::from(v);
@@ -254,7 +254,7 @@ mod tests {
         let p = profile_from_layout(&layout(), 3000);
         assert_eq!(
             p.canonical(),
-            "cache/v1|v=h264|vd=8|h=null|a=aac|atm=|ac=2|am=transcode|ae=aac|mux=fmp4|al=inline|sd=3000|tv=browser|tl=2\
+            "cache/v2|v=h264|vd=8|h=null|a=aac|atm=|ac=2|am=transcode|ae=aac|mux=fmp4|al=inline|sd=3000|tv=browser|tl=2\
              |o=0000000000000000|fs=0000000000000000|sv=|dv=0|dvt=0|dvt10=0|h10p=0|dvel=0|tc="
         );
     }
@@ -264,7 +264,7 @@ mod tests {
         // Changing these values orphans every cached title: raise CACHE_NAMESPACE instead.
         assert_eq!(
             profile_hash(&profile_from_layout(&layout(), 3000)),
-            "15ebb5296e293542"
+            "d8e4f547f008404f"
         );
         let mut hdr = layout();
         hdr.video_variant = Some(CodecVariant {
