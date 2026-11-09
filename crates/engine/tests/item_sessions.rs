@@ -191,33 +191,70 @@ async fn the_playlist_covers_every_part_and_a_segment_runs_its_own_part() {
 }
 
 #[tokio::test]
-async fn a_run_stops_after_its_budget_and_the_next_request_starts_another() {
+async fn one_run_covers_the_part_to_its_end_and_serves_every_later_request() {
     // The open warms the run of segment 29, so the request at 29 is the playhead's, not a seek.
     let it = open(&[400.0], 174.0).await;
     assert_eq!(it.get("seg-0029.ts").await.status, 200);
     let runs = it.runs(0);
     assert_eq!(runs.len(), 1);
-    // The run began at 29 and is cut after 30 segments.
-    assert_eq!(arg(&runs[0], "-t"), "180");
+    assert_eq!(arg(&runs[0], "-t"), "226");
+    // Past 30 segments from its start the same run still answers: nothing ends it at a budget.
     assert_eq!(it.get("seg-0059.ts").await.status, 200);
-    let runs = it.runs(0);
-    assert_eq!(runs.len(), 2);
-    assert_eq!(
-        (arg(&runs[1], "-ss"), arg(&runs[1], "-start_number")),
-        ("354", "59")
-    );
+    assert_eq!(it.runs(0).len(), 1);
 }
 
 #[tokio::test]
-async fn the_tail_a_budget_cut_leaves_is_never_served_as_a_segment() {
-    let it = open(&[400.0], 0.0).await;
+async fn a_seek_beyond_the_run_starts_one_new_run_to_the_part_end() {
+    let it = open_running(&[400.0], 0.0, "itemstop").await;
     assert_eq!(it.get("seg-0000.ts").await.text(), "segment 0");
-    // The first run ended at its budget: segment 30 is the next run's, written whole.
-    let s = it.get("seg-0030.ts").await;
-    assert_eq!((s.status, s.text().as_str()), (200, "segment 30"));
+    assert_eq!(it.get("seg-0040.ts").await.text(), "segment 40");
     let runs = it.runs(0);
     assert_eq!(runs.len(), 2);
-    assert_eq!(arg(&runs[1], "-start_number"), "30");
+    assert_eq!(
+        (
+            arg(&runs[1], "-ss"),
+            arg(&runs[1], "-t"),
+            arg(&runs[1], "-start_number")
+        ),
+        ("240", "160", "40")
+    );
+    // The new run is the part's: asking again for its segment starts nothing.
+    assert_eq!(it.get("seg-0040.ts").await.status, 200);
+    assert_eq!(it.runs(0).len(), 2);
+}
+
+#[tokio::test]
+async fn an_item_run_far_ahead_of_its_viewer_is_paused_and_resumed() {
+    let it = open_running(&[400.0], 0.0, "itemstop").await;
+    let cfg = json!({ "revision": 2, "hostUrl": it.e.rt.current_config().host_url, "hostToken": HOST_TOKEN,
+        "streaming": { "throttleThresholdSeconds": 5.0 } });
+    assert_eq!(
+        it.e.control("PUT", "/v1/config", Some(cfg)).await.status,
+        200
+    );
+    assert_eq!(it.get("seg-0000.ts").await.status, 200);
+    let job = || async {
+        let snap =
+            it.e.control("GET", &format!("/v1/sessions/{}", it.sid), None)
+                .await;
+        snap.json()["job"].clone()
+    };
+    until_async("the watcher lists segment 0", 10, || async {
+        job().await["frontierSegment"] == 0
+    })
+    .await;
+    // The run holds segment 0 whole: 6 s ahead of a playhead at 0, over the 5 s threshold.
+    it.e.rt.throttle_tick().await;
+    assert_eq!(job().await["state"], "paused");
+    let hb = json!({ "positionS": 6.0, "state": "playing" });
+    it.e.control(
+        "POST",
+        &format!("/v1/sessions/{}/heartbeat", it.sid),
+        Some(hb),
+    )
+    .await;
+    it.e.rt.throttle_tick().await;
+    assert_eq!(job().await["state"], "running");
 }
 
 #[tokio::test]

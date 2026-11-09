@@ -7,7 +7,6 @@ use crate::lock::Locked;
 use crate::proc::Ffmpeg;
 use crate::remux::Remux;
 use fliks_engine_core::api::{EngineEvent, HostCaps, HwAccel, JobState};
-use fliks_engine_core::item::RUN_SEGMENTS;
 use fliks_engine_core::mp4::{remux_assembly_plan, remux_audio_grid, remux_run_start};
 use fliks_engine_core::session::{
     self as core_session, JobWatch, JobWatchInput, SegmentName, SegmentSet, early_run_seconds,
@@ -34,7 +33,8 @@ struct Run {
     pub(super) restarts: u32,
     pub(super) remux: Option<Remux>,
     pub(super) duration: f64,
-    pub(super) item: bool,
+    /// The part of an item this run plays.
+    pub(super) item: Option<usize>,
     /// The GPU slot taken at placement; a software run takes its own at launch.
     pub(super) slot: Option<crate::slots::PlaybackSlot>,
 }
@@ -151,7 +151,7 @@ impl Runtime {
             restarts,
             remux: None,
             duration: s.plan.duration,
-            item: false,
+            item: None,
             slot,
         };
         self.launch(s, run, &argv).await
@@ -169,12 +169,10 @@ impl Runtime {
         let item = s.plan.item.as_ref()?;
         let (span, run) = (item.timeline.parts.get(part)?, item.parts.get(part)?);
         let key = s.item_key(part);
-        if let Some(old) = self.job(&key) {
-            if old.producing() {
-                old.kill().await;
-            }
-            // Its watcher drops the budget's tail segment: that must not hit this run's files.
-            old.settled().await;
+        if let Some(old) = self.job(&key)
+            && old.producing()
+        {
+            old.kill().await;
         }
         let quality = format!("p{part}");
         let dir = self
@@ -214,7 +212,7 @@ impl Runtime {
             restarts,
             remux: None,
             duration: span.duration_s,
-            item: true,
+            item: Some(part),
             slot: None,
         };
         self.launch(s, run, &argv).await
@@ -312,7 +310,7 @@ impl Runtime {
             restarts: 0,
             remux: Some(Remux::new(asm_plan, dir, gop_dir)),
             duration: plan.duration,
-            item: false,
+            item: None,
             slot: None,
         };
         self.launch(s, run, &argv).await
@@ -339,7 +337,7 @@ impl Runtime {
         let slot = r.slot.unwrap_or_else(|| self.slots.playback_on(None));
         let device = slot.device().map(String::from);
         // A key change needs an ffmpeg with the `rubberband` filter, not always the main one.
-        let pitched = r.item
+        let pitched = r.item.is_some()
             && s.plan
                 .item
                 .as_ref()
@@ -547,11 +545,6 @@ impl Runtime {
             if let Some(r) = job.remux.clone() {
                 let clean = exit.code == Some(0) && !job.killed();
                 let _ = tokio::task::spawn_blocking(move || r.asm.locked().finish(clean)).await;
-            }
-            if job.item && !job.killed() {
-                let (dir, end, ext) = (job.dir.clone(), job.start_segment + RUN_SEGMENTS, job.ext);
-                let _ =
-                    tokio::task::spawn_blocking(move || purge_from(&dir, false, 1, end, ext)).await;
             }
             job.scan().await;
             job.m.locked().pending = false;

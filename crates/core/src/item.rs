@@ -19,8 +19,6 @@ pub const SEGMENT_SECONDS: f64 = 6.0;
 /// A remainder under this is folded into the part's last segment: the muxer writes no segment
 /// for a few frames.
 const MIN_TAIL_SECONDS: f64 = 0.5;
-/// Segments one run writes before it exits; a request past them starts the next run.
-pub const RUN_SEGMENTS: u32 = 30;
 /// Under `-hls_time` so the muxer cuts on the segment grid, not one frame after it.
 const HLS_TIME_MARGIN: f64 = 0.0001;
 
@@ -319,7 +317,7 @@ pub fn open_report(d: &Decision) -> OpenReport {
     }
 }
 
-/// One part's run: segments from `start_segment`, at most [`RUN_SEGMENTS`] of them.
+/// One part's run: segments from `start_segment` to the end of the part.
 pub struct RunArgs<'a> {
     pub input_path: &'a str,
     pub output_dir: &'a str,
@@ -341,7 +339,7 @@ pub struct RunArgs<'a> {
 /// ffmpeg argv of one part's run into HLS segments, `seg-%04d` numbered from `start_segment`.
 pub fn run_args(a: &RunArgs) -> Vec<String> {
     let into = f64::from(a.start_segment) * SEGMENT_SECONDS;
-    let run_s = (a.part_duration_s - into).min(f64::from(RUN_SEGMENTS) * SEGMENT_SECONDS);
+    let run_s = a.part_duration_s - into;
     let mut v = crate::strs(&["-hide_banner", "-loglevel", "warning"]);
     if a.part_start_s + into > 0.0 {
         v.extend(["-ss".into(), seconds(a.part_start_s + into)]);
@@ -462,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn a_run_starts_where_the_segment_is_and_stops_after_its_budget() {
+    fn a_run_starts_where_the_segment_is_and_runs_to_the_end_of_the_part() {
         let plan = AudioPlan::Transcode {
             codec: crate::api::AudioCodec::Aac,
             channels: 2,
@@ -490,7 +488,7 @@ mod tests {
         let v = run(10, 1000.0);
         assert_eq!(
             (at(&v, "-ss").as_str(), at(&v, "-t").as_str()),
-            ("60", "180")
+            ("60", "940")
         );
         assert_eq!(at(&v, "-start_number"), "10");
         assert_eq!(at(&v, "-hls_time"), "5.9999");
