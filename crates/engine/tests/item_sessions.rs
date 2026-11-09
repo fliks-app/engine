@@ -21,13 +21,18 @@ fn info(seconds: f64) -> Value {
 
 /// An engine whose resolver answers `paths` as item 1, for alice and bob.
 async fn engine_of(paths: &[String]) -> Engine {
+    engine_running(paths, "item").await
+}
+
+/// Same, with the fake ffmpeg `mode`.
+async fn engine_running(paths: &[String], mode: &str) -> Engine {
     let e = engine_with(
         host(
             fliks_engine_core::api::HwAccel::None,
             "/dev/dri/renderD128",
             "signal",
         ),
-        &fake("item"),
+        &fake(mode),
         json!({}),
     )
     .await;
@@ -92,10 +97,14 @@ async fn open_pitched(e: &Engine, paths: &[String], semitones: f64) -> Res {
 
 /// An item of fake parts lasting `seconds`.
 async fn open(seconds: &[f64], start_at: f64) -> Item {
+    open_running(seconds, start_at, "item").await
+}
+
+async fn open_running(seconds: &[f64], start_at: f64, mode: &str) -> Item {
     let paths: Vec<String> = (0..seconds.len())
         .map(|i| format!("/books/p{i}.mp3"))
         .collect();
-    let e = engine_of(&paths).await;
+    let e = engine_running(&paths, mode).await;
     let infos: Vec<Value> = seconds.iter().map(|d| info(*d)).collect();
     let r = open_parts(&e, &paths, &infos, start_at).await;
     assert_eq!(r.status, 200, "{}", r.text());
@@ -209,6 +218,28 @@ async fn the_tail_a_budget_cut_leaves_is_never_served_as_a_segment() {
     let runs = it.runs(0);
     assert_eq!(runs.len(), 2);
     assert_eq!(arg(&runs[1], "-start_number"), "30");
+}
+
+#[tokio::test]
+async fn a_stopped_run_leaves_no_segment_it_was_still_writing() {
+    let it = open_running(&[400.0], 0.0, "itemstop").await;
+    assert_eq!(it.get("seg-0000.ts").await.text(), "segment 0");
+    let r =
+        it.e.control("DELETE", &format!("/v1/sessions/{}", it.sid), None)
+            .await;
+    assert!(r.status < 300, "{}", r.text());
+    fn find(dir: &Path, name: &str) -> bool {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| {
+                let p = e.path();
+                (p.is_dir() && find(&p, name)) || p.file_name().is_some_and(|n| n == name)
+            })
+    }
+    assert!(find(&it.e.root, "seg-0000.ts"));
+    assert!(!find(&it.e.root, "seg-0001.ts"));
 }
 
 #[tokio::test]

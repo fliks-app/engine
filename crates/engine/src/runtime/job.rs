@@ -113,24 +113,11 @@ impl Job {
         s.media_file_id == self.media_file_id && s.owner == self.owner && s.hash == self.hash
     }
 
-    /// Stops ffmpeg on purpose (idle, revoke), waits for it and frees its slot.
+    /// SIGKILLs the run and waits for it: a polite stop makes the muxer close the segment it was
+    /// writing under its final name, while `temp_file` keeps a killed one out of it.
     pub async fn kill(&self) -> Exit {
-        self.stop_with(false).await
-    }
-
-    /// SIGKILLs a run whose output is about to be replaced (seek, switch): `temp_file` keeps a
-    /// half-written segment out of the final names.
-    pub async fn kill_now(&self) -> Exit {
-        self.stop_with(true).await
-    }
-
-    async fn stop_with(&self, hard: bool) -> Exit {
         self.m.locked().killed = true;
-        let exit = if hard {
-            self.proc.kill().await
-        } else {
-            self.proc.stop().await
-        };
+        let exit = self.proc.kill().await;
         self.slot.locked().take();
         exit
     }

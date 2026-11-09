@@ -13,15 +13,15 @@ Plan sections: 3 "Exécution", 4 "Cache", 5 "Seek et changement de qualité" and
 - `base_profile_hash` strips one trailing variant suffix (leftmost `-early` or `-remux[-a<digits>][-u]` that reaches the end). [ts:transcoding/variant.ts:73-77]
 - Concurrent playbacks of one `(file, owner, profile)` fork onto their own job by appending the live session's instance suffix (`~i<8 alnum>`) to the base hash: `with_instance_suffix`. [ts:transcoding/transcoding.service.ts:~405]
 
-## 2. Profile hash (`cache/v1`)
+## 2. Profile hash (`cache/v2`)
 
-[new] The cache moves to a new namespace, `cache/v1`, purged once from the old layout (plan section 4): the hash does **not** reproduce `computeProfileHash` (sha1 of a `|` list), it only has to be stable. No TS parity, no fixtures: snapshot and stability tests.
+[new] The cache moves to a new namespace, `cache/v2`, purged once from the old layout (plan section 4): the hash does **not** reproduce `computeProfileHash` (sha1 of a `|` list), it only has to be stable. No TS parity, no fixtures: snapshot and stability tests. `v2` replaced `v1`, whose entries could hold a segment closed short under its final name (an item run's budget cut, a polite stop); the boot purge removes the old directory.
 
 - Inputs: the host's `PlaybackProfile` fields [ts:transcoding/profile-hash.ts:30-77]: video codec, bit depth, hdr, audio codec / channels / mode / encoder id, per-rendition mask (`c`, or `t<channels><encoder>`), mux flavour, audio layout, segment duration (ms), tv platform, timeline origin and format start, source version, `dolbyVision`, `dvTonemap`, `dvTonemapHdr10`, `hdr10PlusStrip`, `doviElStrip`, tone-map curve.
-- `canonical()`: `cache/v1|` then `key=value` pairs joined by `|`, fixed order, every field always present (no optional segments, so a new field can never alias an old one), floats as the 16 hex digits of their IEEE bits (`-0` folded to `0`), unknown text `null`/empty as in the TS. The TS rules kept: a `var-stream-map` layout hashes the rendition mask instead of the picked track's channels/mode/encoder; `dvTonemapHdr10` only counts with `dvTonemap`; the curve only counts for an SDR-output tone-map. [ts:transcoding/profile-hash.ts:87-123]
+- `canonical()`: `cache/v2|` then `key=value` pairs joined by `|`, fixed order, every field always present (no optional segments, so a new field can never alias an old one), floats as the 16 hex digits of their IEEE bits (`-0` folded to `0`), unknown text `null`/empty as in the TS. The TS rules kept: a `var-stream-map` layout hashes the rendition mask instead of the picked track's channels/mode/encoder; `dvTonemapHdr10` only counts with `dvTonemap`; the curve only counts for an SDR-output tone-map. [ts:transcoding/profile-hash.ts:87-123]
 - Hash: FNV-1a 64 over the canonical bytes, 16 lowercase hex digits (core has no hash dependency; the key is a cache directory name, not a security boundary). `SEGMENT_TIMELINE_VERSION` (2) is part of the input: raise it when the segment layout changes.
 - `profile_from_layout`: the session fields the hash derives from, frozen at playback-info [ts:transcoding/session-profile.ts:12-113], `buildPlaybackProfileFromContext` [ts:transcoding/profile-hash.ts:140-186]. Encoder ids are inputs (they belong to `core::args`): `LayoutAudio { codec, channels, mode, encoderId }`.
-- Layout on disk: `cache/v1/<u<id>|anon>/<mediaFileId>/<cacheKey>[/<quality>]`, `cache_path()`. [ts:transcoding/transcode-cache.service.ts:~380]
+- Layout on disk: `cache/v2/<u<id>|anon>/<mediaFileId>/<cacheKey>[/<quality>]`, `cache_path()`. [ts:transcoding/transcode-cache.service.ts:~380]
 
 ## 3. Lifetimes
 

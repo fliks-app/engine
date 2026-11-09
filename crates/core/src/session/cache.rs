@@ -40,9 +40,9 @@ pub fn cache_gc_interval_ms(lifetime: &LifetimeConfig) -> u32 {
 }
 
 /// Namespace of the on-disk layout; the profile hash is part of its key. [new]
-pub const CACHE_NAMESPACE: &str = "cache/v1";
+pub const CACHE_NAMESPACE: &str = "cache/v2";
 
-/// `cache/v1/<u<owner>|anon>/<mediaFileId>/<cacheKey>[/<quality>]`, relative to the data root.
+/// `cache/v2/<u<owner>|anon>/<mediaFileId>/<cacheKey>[/<quality>]`, relative to the data root.
 pub fn cache_path(
     owner_id: Option<&str>,
     media_file_id: u32,
@@ -171,8 +171,8 @@ mod tests {
     fn layout() {
         assert_eq!(
             cache_path(Some("3"), 9, "abc-early", Some("720p")),
-            "cache/v1/u3/9/abc-early/720p"
+            "cache/v2/u3/9/abc-early/720p"
         );
-        assert_eq!(cache_path(None, 9, "abc", None), "cache/v1/anon/9/abc");
+        assert_eq!(cache_path(None, 9, "abc", None), "cache/v2/anon/9/abc");
     }
 }

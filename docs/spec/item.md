@@ -13,6 +13,7 @@ An item is an ordered list of parts, each a file (or a slice of one), played as 
 Per part the picked audio track is `selection.audioStreamIndex` when the part has it, else its first.
 
 1. Direct Play: every part is a whole file whose container (extension or an ffprobe format name) and codec one profile lists, within the channel cap, and the client neither requires HLS nor rejects copy. `playUrl` is the first part's byte-range URL (`/api/stream/{id}/parts/0`); the client plays `parts[]` in order.
+   A browser-side client builds its profile at run time from what its own audio element opens (`canPlayType`, refined by `mediaCapabilities.decodingInfo` where it exists) and maps a MIME to the containers and ffprobe codec names above; nothing is a static allowlist, and a file the element then fails to play is requested again with `rejectCopy`. The TV engines (AVPlay, webOS native pipeline) play video, not the page's audio element, so their capability APIs do not enter this profile.
 2. DirectStream: otherwise, when `decide_audio` copies every part, they share codec, channels, sample rate and profile, and the client does not reject copy: one HLS with the audio copied.
 3. Transcode: otherwise (or whenever `selection.pitchSemitones` is non-zero: reason `PitchShifted`, `docs/spec/karaoke.md` section 6) every part is encoded to the one group codec (AAC unless a surround source takes a Dolby group), at the widest layout any part keeps. Reasons add `ItemFormatsDiffer` (copyable parts of different formats), `ItemPartTrimmed` (a slice cannot be a byte range), `ClientRequiresHls`, `ClientRejectedCopy`, `ContainerNotSupported` and the per-track `Audio*` flags.
 
@@ -32,7 +33,7 @@ HLS is `playUrl = /api/stream/{id}/item/index.m3u8`, fMP4 unless the device asks
 - `init.mp4`: any part's, when one is on disk, else the run of the playhead's part (`startAt` of the playlist, heartbeats, `startAtS`). Every part writes the same format, so the inits are interchangeable.
 - Opening or fetching the playlist warms the run of the playhead's segment, only when the part has no run: a warm-up never moves a run a request placed. Runs of an item are never throttled (they are bounded) and never use a GPU. A part's run is not stopped when another part is requested: it ends by itself, and an ended session stops them all.
 - Segment events are `SegmentServed { track: audio, rung: "item", index }` with the global index. `GET /v1/sessions/{sid}` reports the run of the playhead's part (`job.quality = "p<part>"`, `startSegment` local to the part).
-- The cache hash (`cache/v1|item=1|...`) covers the output format, `sourceVersion`, each part's path and slice and the picked audio stream: reordering or replacing a part forks the directory.
+- The cache hash (`cache/v2|item=1|...`) covers the output format, `sourceVersion`, each part's path and slice and the picked audio stream: reordering or replacing a part forks the directory.
 
 ## 5. Routes
 

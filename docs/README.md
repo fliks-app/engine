@@ -5,7 +5,7 @@
   - [spec/decide.md](spec/decide.md): the play-method decision (`evaluate()`), ladder, audio plan, HDR/DV, host caps.
   - [spec/hw.md](spec/hw.md): host capability detection (backend choice, test encodes, probes, GPUs, pause), the source of `Capabilities` and `HostCaps`.
   - [spec/probe.md](spec/probe.md): media probing (`POST /v1/probe`): ffprobe/mkvmerge/cropdetect to `MediaInfo`, moviehash.
-  - [spec/session.md](spec/session.md): `core::session`, the pure session runtime: keys, `cache/v1` profile hash, seek/quality-switch matrix, throttle, segment responses, lifetimes, cache eviction.
+  - [spec/session.md](spec/session.md): `core::session`, the pure session runtime: keys, `cache/v2` profile hash, seek/quality-switch matrix, throttle, segment responses, lifetimes, cache eviction.
   - [spec/args.md](spec/args.md): the ffmpeg argv (`core::args`): encode layer (decode, filters, encoders, audio) and outputs (HLS VOD, remux, live, iframe, file).
   - [spec/hls.md](spec/hls.md): playlist text (`core::hls`): master, uniform/variable/I-frame/subtitle media playlists, URI prefix as a parameter.
   - [spec/mp4.md](spec/mp4.md): segment packaging (`core::mp4`): boxes, tfdt timelines, edit lists, CMAF rewrite, keyframe grid, remux plan.
@@ -16,7 +16,7 @@
   - [spec/intro.md](spec/intro.md): intro/outro detection (`POST /v1/intro-detect`, `core::intro`): chapter shortcut, reference search, pairwise chromaprint matching, clustering and consensus over fingerprints sent as data.
   - [spec/item.md](spec/item.md): items, ordered audio parts on one timeline (`core::item`, `core::decide::item`, `engine::{runtime,serve}::item`): the resolver's `parts`, the decision (byte-range parts, copy, AAC), the timeline and seek map, one bounded run per part, the item routes.
   - [spec/karaoke.md](spec/karaoke.md): the model manager (`/v1/models`), the `Separate`, `Align` and `Melody` jobs on an ONNX runtime and a speech recogniser built for the image only, and the key change of an item (`rubberband`).
-  - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v1`, the data plane behind the host resolver, SSE events.
+  - [spec/runtime.md](spec/runtime.md): the M3 runtime (`engine::{proc,runtime,cache,resolve,serve,events}`, `core::session::plan`): ffmpeg jobs, sessions, seek/rung switch, CPU fallback, throttle, job ownership and stall watchdog, `cache/v2`, the data plane behind the host resolver, SSE events.
 
 ## Tags
 
@@ -43,7 +43,7 @@
 - subtitle sync (alass): cue times are read and rewritten in the subtitle text (`core::jobs::cues`) instead of through `subparse` (`alass-util`), which pulled about 50 crates. The text outside the timestamps is kept as is (no renumbering or re-serialising), WebVTT is supported, a reference subtitle file is read as lossy UTF-8 (only its timestamps matter) and a binary `idx` reference is refused.
 - hw: every detection run recomputes all flags (the TS keeps the flags of probes a re-pin did not re-run), uses the pinned node for the backend choice too, and runs CPU probes serially; `FFMPEG_PATH` is new (the TS only looks `ffmpeg` up on PATH). Details in `spec/hw.md` section 10.
 - hw: `/v1/capabilities` and `/v1/decide` answer 503 until the first detection run ends (the TS treats unprobed encoders as usable and probes as off).
-- session: the cache profile hash is new (`cache/v1`, FNV-1a 64 over a documented canonical string, `spec/session.md` section 2), not the host's sha1 of `computeProfileHash`: no parity, snapshot and stability tests only. The old cache layout is purged once.
+- session: the cache profile hash is new (`cache/v2`, FNV-1a 64 over a documented canonical string, `spec/session.md` section 2), not the host's sha1 of `computeProfileHash`: no parity, snapshot and stability tests only. The old cache layout is purged once.
 - session: segment names accept `seg-<n>` with any number of digits (the host's regex allows 3 to 4); the production frontier is the in-memory `SegmentSet`, not `existsSync`.
 - session: `EngineConfig.lifetime` (`LifetimeConfig`) carries the durations of the host's `lifetime-constants.ts` (env vars are not read by the engine); zero keeps the default. `MAX_TOMBSTONES` trimming is not ported.
 - session fuzz (3 seeds, 168 000 inputs: 30 000 seek-matrix, 30 000 throttle ticks, 30 000 throttle decisions): 0 mismatches, no class promoted to a `fuzz-*` fixture.
@@ -56,7 +56,7 @@
 - mp4: `trun_samples` refuses a `sample_count` above 2^24 (`OutOfRange`) where the TS would allocate one object per declared sample of a corrupt box.
 - mp4: ticks are `i128` and a non-integral tick count fails with the JS `BigInt` message; a value past 2^127 saturates (the TS keeps a bigint), only changing the number in an error message the write then raises anyway.
 
-- runtime: ffmpeg stops with SIGTERM then SIGKILL after 2 s (the TS sends SIGKILL); the run is awaited before its directory is touched again.
+- runtime: live and background-job ffmpeg stop with SIGTERM then SIGKILL after 2 s (the TS sends SIGKILL); a playback run is SIGKILLed like the TS, and every run is awaited before its directory is touched again.
 - runtime: a session ending (delete, expiry, eviction, revoke) stops its jobs at once; the TS keeps them for `STREAM_JOB_GRACE_MS` and `jobGraceMs`/`jobFallbackTimeoutMs`/`core::session::job_idle` are no longer read. A job no session owns is stopped on the next GC tick.
 - runtime: new stall watchdog (`jobStallTimeoutMs`, default 30 s, 0 disables; CPU time counts as progress on Linux, macOS and Windows) and early-companion overrun kill, `JobEnded.reason`; the TS has neither. A hung run ends failed and restarts on the next request.
 - runtime: spawned processes die with the engine (`PR_SET_PDEATHSIG` on Linux).

@@ -57,7 +57,7 @@ impl Runtime {
         if let Some(old) = self.job(&key)
             && old.producing()
         {
-            old.kill_now().await;
+            old.kill().await;
         }
         let dir = self.cache.rung_dir(
             s.owner.as_deref(),
@@ -171,7 +171,7 @@ impl Runtime {
         let key = s.item_key(part);
         if let Some(old) = self.job(&key) {
             if old.producing() {
-                old.kill_now().await;
+                old.kill().await;
             }
             // Its watcher drops the budget's tail segment: that must not hit this run's files.
             old.settled().await;
@@ -231,7 +231,7 @@ impl Runtime {
         if let Some(old) = self.job(&key)
             && old.producing()
         {
-            old.kill_now().await;
+            old.kill().await;
         }
         let caps = self.caps().unwrap_or_default();
         let plan = &s.plan;
@@ -494,7 +494,7 @@ impl Runtime {
         };
         tracing::warn!(key = job.key, reason, "ffmpeg hung, killing it");
         job.m.locked().reason = Some(reason);
-        job.proc.stop().await;
+        job.proc.kill().await;
     }
 
     /// One assembler pass off the async threads; true when it gave up.
