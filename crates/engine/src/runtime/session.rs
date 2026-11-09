@@ -124,6 +124,27 @@ impl Session {
         }
     }
 
+    /// The viewer as part `part` of an item sees it: the part's own seconds and local segments.
+    pub(super) fn part_viewer(&self, part: usize) -> Viewer {
+        let v = self.viewer();
+        let Some(span) = self
+            .plan
+            .item
+            .as_ref()
+            .and_then(|i| i.timeline.parts.get(part))
+        else {
+            return v;
+        };
+        Viewer {
+            position: v.position - span.offset_s,
+            last_requested_segment: v
+                .last_requested_segment
+                .and_then(|n| n.checked_sub(span.first_segment))
+                .filter(|n| *n < span.segments),
+            pinned: v.pinned,
+        }
+    }
+
     /// The resume floor of an init request: the job's start or the playhead's segment.
     /// [ts:modules/streaming/streaming.controller.ts:428-450]
     pub(super) fn resume_floor(&self, job: Option<&Job>) -> u32 {

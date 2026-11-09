@@ -230,3 +230,99 @@ async fn parts_are_served_by_byte_range() {
     );
     let _: &Runtime = &it.e.rt;
 }
+
+/// Normalised correlation of `a` and `b` shifted by `lag` (`b[i + lag]` against `a[i]`).
+fn correlation(a: &[f32], b: &[f32], lag: isize) -> f64 {
+    let (mut ab, mut aa, mut bb) = (0.0f64, 0.0f64, 0.0f64);
+    for (i, x) in a.iter().enumerate() {
+        let Some(y) = b.get((i as isize + lag) as usize) else {
+            continue;
+        };
+        let (x, y) = (f64::from(*x), f64::from(*y));
+        ab += x * y;
+        aa += x * x;
+        bb += y * y;
+    }
+    ab / (aa * bb).sqrt().max(1e-12)
+}
+
+fn decode_f32(file: &std::path::Path) -> Vec<f32> {
+    let out = std::process::Command::new(ffmpeg())
+        .args(["-v", "error", "-i"])
+        .arg(file)
+        .args(["-f", "f32le", "-ac", "1", "-ar", "44100", "-"])
+        .output()
+        .unwrap();
+    out.stdout
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect()
+}
+
+/// A part longer than one run budget used to be encoded as several runs, and the join at 180 s
+/// was off by some samples. One run now covers it: every window of the decoded HLS lines up with
+/// the source at the delay of the first one.
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn a_long_part_is_sample_aligned_with_its_source_past_180_seconds() {
+    let part = clip(
+        "item-seam-noise-372.flac",
+        "-f lavfi -i anoisesrc=d=372:c=pink:r=44100:a=0.3:seed=7 -c:a flac",
+    );
+    let it = item(vec![part.clone()]).await;
+    let open = it.open(aac_only(), 0.0).await;
+    let sid = open["sessionId"].as_str().unwrap();
+    let mut whole = it.get(sid, "init.mp4").await.body.to_vec();
+    for n in 0..62 {
+        // A client reads at playback speed: never faster than the run encodes.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let s = it.get(sid, &seg_name(n)).await;
+        assert_eq!(s.status, 200, "seg {n}: {}", s.text());
+        whole.extend(s.body);
+    }
+    assert_eq!(
+        std::fs::read_dir(it.e.root.join("cache/v2/ualice/1"))
+            .unwrap()
+            .count(),
+        1
+    );
+    let dir = temp_dir("item-seam");
+    let file = dir.join("whole.mp4");
+    std::fs::write(&file, whole).unwrap();
+    let (src, out) = (decode_f32(&part), decode_f32(&file));
+    const WIN: usize = 2048;
+    // The encoder's delay, from a window early in the stream.
+    let at = |s: f64| (s * 44100.0) as usize;
+    let early = &src[at(2.0)..at(2.0) + WIN];
+    let delay = (0..4096isize)
+        .max_by(|a, b| {
+            let (ca, cb) = (
+                correlation(early, &out[at(2.0)..], *a),
+                correlation(early, &out[at(2.0)..], *b),
+            );
+            ca.total_cmp(&cb)
+        })
+        .unwrap();
+    let mut checked = 0;
+    for t in (3..370).step_by(7).chain(170..190) {
+        let w = &src[at(f64::from(t))..at(f64::from(t)) + WIN];
+        let o = &out[at(f64::from(t))..];
+        let best = (delay - 3..=delay + 3)
+            .max_by(|a, b| correlation(w, o, *a).total_cmp(&correlation(w, o, *b)))
+            .unwrap();
+        assert_eq!(
+            best,
+            delay,
+            "at {t} s the output is off by {}",
+            best - delay
+        );
+        assert!(
+            correlation(w, o, delay) > 0.8,
+            "at {t} s the output is not the source"
+        );
+        checked += 1;
+    }
+    assert!(checked > 70);
+}

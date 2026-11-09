@@ -53,13 +53,16 @@ impl Runtime {
             let reg = self.reg.locked();
             reg.jobs
                 .values()
-                .filter(|j| j.proc.exited().is_none() && !j.item)
+                .filter(|j| j.proc.exited().is_none())
                 .map(|j| {
                     let viewers = reg
                         .sessions
                         .values()
                         .filter(|s| j.serves(s))
-                        .map(|s| s.viewer())
+                        .map(|s| match j.item {
+                            Some(part) => s.part_viewer(part),
+                            None => s.viewer(),
+                        })
                         .collect();
                     (j.clone(), viewers)
                 })

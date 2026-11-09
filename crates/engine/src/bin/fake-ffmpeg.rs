@@ -333,31 +333,33 @@ fn nomedia(args: &[String]) {
     );
 }
 
-/// One part's run of an item: every segment its `-t` covers, written at once as MPEG-TS from
-/// `-start_number`, with the argv logged to `argv.log` in the run's directory.
-fn item(args: &[String]) {
+/// Logs a run's argv to `argv.log` in its directory and returns the directory.
+fn log_argv(args: &[String]) -> &Path {
     let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
-    let pattern = at("-hls_segment_filename");
-    let dir = Path::new(pattern).parent().unwrap();
+    let dir = Path::new(at("-hls_segment_filename")).parent().unwrap();
     let mut log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(dir.join("argv.log"))
         .unwrap();
     writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
+    dir
+}
+
+/// One part's run of an item: every segment its `-t` covers, written at once as MPEG-TS from
+/// `-start_number`, with the argv logged.
+fn item(args: &[String]) {
+    let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let dir = log_argv(args);
     let start: u32 = at("-start_number").parse().unwrap();
     let count = (at("-t").parse::<f64>().unwrap() / 6.0).ceil() as u32;
     for n in start..start + count {
         put(&dir.join(format!("seg-{n:04}.ts")), format!("segment {n}"));
     }
-    // A budget cut leaves the muxer a few packets, closed as one more segment.
-    if count >= 30 {
-        put(&dir.join(format!("seg-{:04}.ts", start + count)), "tail");
-    }
 }
 
-/// An item run still writing its second segment: a SIGTERM closes it under its final name, like
-/// the muxer's trailer does, a SIGKILL leaves the `.tmp` behind.
+/// An item run alive on its second segment: a SIGTERM closes it under its final name, like the
+/// muxer's trailer does, a SIGKILL leaves the `.tmp` behind.
 #[cfg(unix)]
 fn itemstop(args: &[String]) {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -367,7 +369,7 @@ fn itemstop(args: &[String]) {
     }
     unsafe { libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t) };
     let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
-    let dir = Path::new(at("-hls_segment_filename")).parent().unwrap();
+    let dir = log_argv(args);
     let start: u32 = at("-start_number").parse().unwrap();
     put(
         &dir.join(format!("seg-{start:04}.ts")),

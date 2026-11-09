@@ -57,8 +57,8 @@ pub struct Job {
     pub segment_duration: f64,
     pub fps: Option<f64>,
     pub duration: f64,
-    /// One part's run of an item: bounded by itself, never throttled.
-    pub item: bool,
+    /// The part of an item this run plays, to the end of the part.
+    pub item: Option<usize>,
     pub restarts: u32,
     /// The hardware device the run holds a place on; `None` for software.
     pub device: Option<String>,

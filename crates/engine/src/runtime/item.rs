@@ -1,11 +1,10 @@
-//! Serving an item: one run per part, bounded in length, started where a request lands.
+//! Serving an item: one run per part, from where a request lands to the part's end.
 //! Spec: `docs/spec/item.md`.
 
 use super::fetch::{finish, ready};
 use super::{Fetch, Job, Runtime, SEGMENT_WAIT, Session, layout_path};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
-use fliks_engine_core::item::RUN_SEGMENTS;
 use fliks_engine_core::session::{self as core_session, ResolveInput, ResumeAction, SegmentName};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,14 +40,7 @@ impl Runtime {
         let key = s.item_key(part);
         let existing = self.job(&key);
         let path = self.part_file(s, part, name);
-        // A live run's file past its budget is the cut tail, not a segment.
-        let tail = |n| {
-            existing
-                .as_ref()
-                .is_some_and(|e| !e.m.locked().settled && n >= e.start_segment + RUN_SEGMENTS)
-        };
-        let cut = matches!(name, SegmentName::Segment(n) if tail(n));
-        if !cut && Self::present(&path).await {
+        if Self::present(&path).await {
             return ready(path, existing, 0.0, true);
         }
         let floor = |p: usize| {
@@ -101,9 +93,7 @@ impl Runtime {
                 e.settled().await;
             }
             let present = e.m.locked().sets[0].clone();
-            // A run ends after `RUN_SEGMENTS`, so "nearby" says nothing past its end.
-            let unreachable = requested >= e.start_segment + RUN_SEGMENTS
-                || (e.proc.exited().is_some() && !present.contains(requested));
+            let unreachable = e.proc.exited().is_some() && !present.contains(requested);
             if !unreachable {
                 let input = ResolveInput {
                     run: e.existing_run(None),
