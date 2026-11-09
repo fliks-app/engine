@@ -106,9 +106,12 @@ impl Outputs {
     /// ones already published.
     pub async fn publish(&self) -> Result<(), String> {
         for c in &self.claims {
-            let f = tokio::fs::File::open(&c.tmp)
+            // Write access: Windows refuses to flush a read-only handle.
+            let f = tokio::fs::File::options()
+                .write(true)
+                .open(&c.tmp)
                 .await
-                .map_err(|e| format!("read {}: {e}", c.tmp.display()))?;
+                .map_err(|e| format!("write {}: {e}", c.tmp.display()))?;
             f.sync_all()
                 .await
                 .map_err(|e| format!("write {}: {e}", c.tmp.display()))?;
