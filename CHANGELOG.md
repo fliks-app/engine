@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/fliks-app/engine/compare/v1.21.0...v1.21.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **item:** drop the segment a run's budget cuts off ([#221](https://github.com/fliks-app/engine/issues/221)) ([871ab7d](https://github.com/fliks-app/engine/commit/871ab7d9afe9d4c3954b941f0db5000206569fe1))
+
 ## [1.21.0](https://github.com/fliks-app/engine/compare/v1.20.0...v1.21.0) (2026-11-09)
 
 
