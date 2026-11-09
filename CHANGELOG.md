@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.3](https://github.com/fliks-app/engine/compare/v1.21.2...v1.21.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **decide:** read video audio codecs only from video profile entries ([#226](https://github.com/fliks-app/engine/issues/226)) ([4a58a12](https://github.com/fliks-app/engine/commit/4a58a129e45fe9b34d4920b9a7aa913b4c3bc69b))
+
 ## [1.21.2](https://github.com/fliks-app/engine/compare/v1.21.1...v1.21.2) (2026-11-09)
 
 
