@@ -46,7 +46,7 @@ alass-core = "2"
 ring = "0.17"
 webrtc-vad = "0.4"
 lofty = "0.25"
-ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-22", "cuda", "openvino", "coreml", "migraphx", "directml"], optional = true }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-23", "cuda", "openvino", "coreml", "migraphx", "directml"], optional = true }
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 libloading = "0.9"
@@ -55,7 +55,7 @@ libloading = "0.9"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_Storage_Packaging_Appx", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_SystemInformation", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.30"

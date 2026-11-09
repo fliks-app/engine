@@ -70,6 +70,18 @@ pub struct ModelInfo {
     pub error: Option<String>,
 }
 
+/// Where the engine stands with the Windows ML runtime installed on the machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowsMl {
+    /// The engine runs the system runtime.
+    Active,
+    /// Installed since the engine started: a restart makes it run it.
+    Restart,
+    /// Not installed.
+    Missing,
+}
+
 /// What this engine build can run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +97,9 @@ pub struct KaraokeRuntime {
     pub whisper: bool,
     /// An ffmpeg with the `rubberband` filter is installed (pitch shift).
     pub rubberband: bool,
+    /// Windows 11 22H2 and later only: the Windows ML runtime of the machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows_ml: Option<WindowsMl>,
 }
 
 /// `GET /v1/models`.

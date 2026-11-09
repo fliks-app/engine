@@ -23,7 +23,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelsResponse};
+use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelsResponse, WindowsMl};
 use models::Manager;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -65,6 +65,7 @@ pub struct BackendInfo {
     pub error: Option<String>,
     /// Hardware execution providers available (`PROVIDERS`); the CPU is always there.
     pub providers: Vec<String>,
+    pub windows_ml: Option<WindowsMl>,
 }
 
 /// Hardware execution providers in the order a session tries them (the spec's section 1).
@@ -305,6 +306,7 @@ impl Karaoke {
             providers,
             whisper: t.whisper.is_some(),
             rubberband: t.pitch_ffmpeg.is_some(),
+            windows_ml: b.windows_ml,
         }
     }
 
@@ -318,6 +320,9 @@ impl Karaoke {
                 if r.providers.iter().any(|x| x == p) {
                     f.push(format!("onnx-{p}"));
                 }
+            }
+            if r.windows_ml == Some(WindowsMl::Active) {
+                f.push("windows-ml".into());
             }
         }
         if r.whisper {
@@ -489,7 +494,7 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
-    struct Gpus;
+    struct Gpus(Option<WindowsMl>);
 
     impl Backend for Gpus {
         fn runtime(&self) -> BackendInfo {
@@ -497,6 +502,7 @@ mod tests {
                 onnx: true,
                 error: None,
                 providers: names(&["migraphx", "coreml"]),
+                windows_ml: self.0,
             }
         }
 
@@ -511,14 +517,34 @@ mod tests {
         let k = Karaoke::new(dir.clone(), Events::default());
         k.replace(
             Manager::new(dir, models::manifest(), Events::default()),
-            Arc::new(Gpus),
+            Arc::new(Gpus(Some(WindowsMl::Restart))),
         );
         let f = k.features("no-such-ffmpeg").await;
         assert!(f.contains(&"onnx-migraphx".to_string()) && f.contains(&"onnx-coreml".to_string()));
+        assert!(!f.contains(&"windows-ml".to_string()));
+        assert_eq!(
+            k.runtime("no-such-ffmpeg").await.windows_ml,
+            Some(WindowsMl::Restart)
+        );
         assert!(!f.contains(&"onnx-cuda".to_string()) && !f.contains(&"onnx-openvino".to_string()));
         assert_eq!(
             k.runtime("no-such-ffmpeg").await.providers,
             names(&["migraphx", "coreml", "cpu"])
+        );
+    }
+
+    #[tokio::test]
+    async fn the_windows_ml_feature_means_the_engine_runs_the_system_runtime() {
+        let dir = std::env::temp_dir().join(format!("fliks-winml-{}", std::process::id()));
+        let k = Karaoke::new(dir.clone(), Events::default());
+        k.replace(
+            Manager::new(dir, models::manifest(), Events::default()),
+            Arc::new(Gpus(Some(WindowsMl::Active))),
+        );
+        assert!(
+            k.features("no-such-ffmpeg")
+                .await
+                .contains(&"windows-ml".to_string())
         );
     }
 }

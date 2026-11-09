@@ -337,6 +337,7 @@ fn every_wire_key_is_in_its_schema() {
         WorkerHello,
         WorkerHelloResponse,
         WorkerSettings,
+        WindowsMl,
         AlignLine,
         AlignMeta,
         AlignedLine,
