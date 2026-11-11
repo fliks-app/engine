@@ -87,7 +87,7 @@ pub(super) async fn file(
         offset_s: span.offset_s,
         first_segment: span.first_segment,
     };
-    let wait = WaitGuard::new(&rt.events, &s.sid, Track::Audio, "item", global);
+    let wait = WaitGuard::new(&rt.events, Some(&s), &s.sid, Track::Audio, "item", global);
     let fetch = rt.item_file(&s, part, local_name).await;
     wait.done();
     respond(

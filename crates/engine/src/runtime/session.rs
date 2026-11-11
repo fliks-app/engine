@@ -111,6 +111,10 @@ impl Session {
         self.req.pinned
     }
 
+    pub fn last_requested_segment(&self) -> Option<u32> {
+        self.m.locked().last_requested_segment
+    }
+
     pub fn position_s(&self) -> f64 {
         self.m.locked().position_s
     }

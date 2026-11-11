@@ -28,6 +28,7 @@ use fliks_engine_core::session::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -385,6 +386,8 @@ pub(super) struct PartBase {
 
 /// Waits below this are ordinary seek cancellations, not worth an event.
 const ABANDONED_MIN_WAIT: Duration = Duration::from_secs(1);
+/// A session whose last request is further than this from a dropped one has seeked away from it.
+const SAME_POSITION_SEGMENTS: u32 = 2;
 
 /// Emits `SegmentAbandoned` when the client drops a request that was still waiting for its file.
 pub(super) struct WaitGuard<'a> {
@@ -393,6 +396,7 @@ pub(super) struct WaitGuard<'a> {
     track: Track,
     rung: String,
     index: Option<u32>,
+    session: Option<Arc<Session>>,
     t0: Instant,
     done: bool,
 }
@@ -400,6 +404,7 @@ pub(super) struct WaitGuard<'a> {
 impl<'a> WaitGuard<'a> {
     pub(super) fn new(
         events: &'a Events,
+        session: Option<&Arc<Session>>,
         sid: &str,
         track: Track,
         rung: &str,
@@ -411,6 +416,7 @@ impl<'a> WaitGuard<'a> {
             track,
             rung: rung.into(),
             index,
+            session: session.cloned(),
             t0: Instant::now(),
             done: false,
         }
@@ -428,6 +434,13 @@ impl Drop for WaitGuard<'_> {
             return;
         }
         let Some(index) = self.index else { return };
+        let last = self
+            .session
+            .as_ref()
+            .and_then(|s| s.last_requested_segment());
+        if last.is_some_and(|l| l.abs_diff(index) > SAME_POSITION_SEGMENTS) {
+            return;
+        }
         self.events.emit(EngineEvent::SegmentAbandoned {
             session_id: std::mem::take(&mut self.sid),
             track: self.track,
@@ -586,7 +599,7 @@ pub(super) async fn segment(
     if past_end(&s, name, remux) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
-    let wait = WaitGuard::new(&rt.events, &s.sid, Track::Video, &quality, index);
+    let wait = WaitGuard::new(&rt.events, Some(&s), &s.sid, Track::Video, &quality, index);
     let fetch = if remux {
         rt.remux_file(&s, 0, name).await
     } else {
@@ -635,7 +648,7 @@ pub(super) async fn audio_seg(
     }
     let track = idx as usize + 1;
     let rung = format!("audio-{idx}");
-    let wait = WaitGuard::new(&rt.events, &s.sid, Track::Audio, &rung, index);
+    let wait = WaitGuard::new(&rt.events, Some(&s), &s.sid, Track::Audio, &rung, index);
     let fetch = if remux {
         rt.remux_file(&s, track, name).await
     } else {
@@ -660,7 +673,7 @@ mod wait_guard_tests {
     use super::*;
 
     fn guard(events: &Events) -> WaitGuard<'_> {
-        WaitGuard::new(events, "sid", Track::Video, "720p", Some(7))
+        WaitGuard::new(events, None, "sid", Track::Video, "720p", Some(7))
     }
 
     #[tokio::test(start_paused = true)]
