@@ -358,6 +358,32 @@ async fn a_request_waiting_on_a_throttled_run_resumes_it() {
 }
 
 #[tokio::test]
+async fn a_client_dropping_a_waiting_segment_request_is_reported() {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let pinned = json!({ "selection": { "requestedQuality": "720p" } });
+    let sid = open(&e, &file, pinned).await;
+    let mut ev = e.rt.events.subscribe();
+    let path = format!("/api/stream/7/720p/seg-3.m4s?sid={sid}");
+    let _ = tokio::time::timeout(Duration::from_millis(1500), e.get(&path, "alice-jwt", &[])).await;
+    let abandoned = event(&mut ev, 30, |e| {
+        matches!(e, EngineEvent::SegmentAbandoned { .. })
+    })
+    .await;
+    let EngineEvent::SegmentAbandoned {
+        session_id,
+        index,
+        waited_ms,
+        ..
+    } = abandoned
+    else {
+        unreachable!()
+    };
+    assert_eq!((session_id, index), (sid, 3));
+    assert!((1000.0..5000.0).contains(&waited_ms), "waited {waited_ms}");
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_hardware_failure_does_not_stop_the_next_run_from_trying_the_gpu() {
     let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
     let e = engine_with(hw, &fake("hwfail"), json!({})).await;
