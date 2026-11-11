@@ -3,6 +3,7 @@
 use super::{
     Q, S, duration_of, file_id, hls, playlist, prefix, retry, stream_body, text, token_param,
 };
+use crate::events::Events;
 use crate::lock::Locked;
 use crate::runtime::{Fetch, Runtime, Session};
 use axum::body::Body;
@@ -27,7 +28,9 @@ use fliks_engine_core::session::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::Instant;
 
 /// Rendition directories whose init is cached; the map restarts empty past it.
 const MAX_INIT_TRACKS: usize = 1024;
@@ -381,6 +384,73 @@ pub(super) struct PartBase {
     pub first_segment: u32,
 }
 
+/// Waits below this are ordinary seek cancellations, not worth an event.
+const ABANDONED_MIN_WAIT: Duration = Duration::from_secs(1);
+/// A session whose last request is further than this from a dropped one has seeked away from it.
+const SAME_POSITION_SEGMENTS: u32 = 2;
+
+/// Emits `SegmentAbandoned` when the client drops a request that was still waiting for its file.
+pub(super) struct WaitGuard<'a> {
+    events: &'a Events,
+    sid: String,
+    track: Track,
+    rung: String,
+    index: Option<u32>,
+    session: Option<Arc<Session>>,
+    t0: Instant,
+    done: bool,
+}
+
+impl<'a> WaitGuard<'a> {
+    pub(super) fn new(
+        events: &'a Events,
+        session: Option<&Arc<Session>>,
+        sid: &str,
+        track: Track,
+        rung: &str,
+        index: Option<u32>,
+    ) -> Self {
+        Self {
+            events,
+            sid: sid.into(),
+            track,
+            rung: rung.into(),
+            index,
+            session: session.cloned(),
+            t0: Instant::now(),
+            done: false,
+        }
+    }
+
+    pub(super) fn done(mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for WaitGuard<'_> {
+    fn drop(&mut self) {
+        let waited = self.t0.elapsed();
+        if self.done || waited < ABANDONED_MIN_WAIT {
+            return;
+        }
+        let Some(index) = self.index else { return };
+        let last = self
+            .session
+            .as_ref()
+            .and_then(|s| s.last_requested_segment());
+        if last.is_some_and(|l| l.abs_diff(index) > SAME_POSITION_SEGMENTS) {
+            return;
+        }
+        self.events.emit(EngineEvent::SegmentAbandoned {
+            session_id: std::mem::take(&mut self.sid),
+            track: self.track,
+            rung: std::mem::take(&mut self.rung),
+            index,
+            waited_ms: waited.as_secs_f64() * 1000.0,
+        });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn respond(
     rt: &Runtime,
@@ -529,11 +599,13 @@ pub(super) async fn segment(
     if past_end(&s, name, remux) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
+    let wait = WaitGuard::new(&rt.events, Some(&s), &s.sid, Track::Video, &quality, index);
     let fetch = if remux {
         rt.remux_file(&s, 0, name).await
     } else {
         rt.video_file(&s, &quality, name).await
     };
+    wait.done();
     respond(
         &rt,
         &s,
@@ -575,12 +647,14 @@ pub(super) async fn audio_seg(
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
     let track = idx as usize + 1;
+    let rung = format!("audio-{idx}");
+    let wait = WaitGuard::new(&rt.events, Some(&s), &s.sid, Track::Audio, &rung, index);
     let fetch = if remux {
         rt.remux_file(&s, track, name).await
     } else {
         rt.audio_file(&s, track, name).await
     };
-    let rung = format!("audio-{idx}");
+    wait.done();
     respond(
         &rt,
         &s,
@@ -592,4 +666,45 @@ pub(super) async fn audio_seg(
         &q,
     )
     .await
+}
+
+#[cfg(test)]
+mod wait_guard_tests {
+    use super::*;
+
+    fn guard(events: &Events) -> WaitGuard<'_> {
+        WaitGuard::new(events, None, "sid", Track::Video, "720p", Some(7))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_request_dropped_after_a_long_wait_is_reported() {
+        let events = Events::default();
+        let mut rx = events.subscribe();
+        let g = guard(&events);
+        tokio::time::advance(Duration::from_secs(3)).await;
+        drop(g);
+        match rx.try_recv().unwrap() {
+            EngineEvent::SegmentAbandoned {
+                session_id,
+                index,
+                waited_ms,
+                ..
+            } => {
+                assert_eq!((session_id.as_str(), index), ("sid", 7));
+                assert!(waited_ms >= 3000.0);
+            }
+            e => panic!("unexpected {e:?}"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_short_wait_or_a_finished_request_is_silent() {
+        let events = Events::default();
+        let mut rx = events.subscribe();
+        drop(guard(&events));
+        let g = guard(&events);
+        tokio::time::advance(Duration::from_secs(3)).await;
+        g.done();
+        assert!(rx.try_recv().is_err());
+    }
 }

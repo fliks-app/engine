@@ -20,6 +20,7 @@ fn name(e: &EngineEvent) -> &'static str {
         EngineEvent::SessionEnded { .. } => "SessionEnded",
         EngineEvent::PipelineChanged { .. } => "PipelineChanged",
         EngineEvent::SegmentServed { .. } => "SegmentServed",
+        EngineEvent::SegmentAbandoned { .. } => "SegmentAbandoned",
         EngineEvent::JobStarted { .. } => "JobStarted",
         EngineEvent::JobEnded { .. } => "JobEnded",
         EngineEvent::HwFallback { .. } => "HwFallback",

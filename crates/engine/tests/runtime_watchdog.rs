@@ -358,6 +358,61 @@ async fn a_request_waiting_on_a_throttled_run_resumes_it() {
 }
 
 #[tokio::test]
+async fn a_client_dropping_a_waiting_segment_request_is_reported() {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let pinned = json!({ "selection": { "requestedQuality": "720p" } });
+    let sid = open(&e, &file, pinned).await;
+    let mut ev = e.rt.events.subscribe();
+    let path = format!("/api/stream/7/720p/seg-3.m4s?sid={sid}");
+    let _ = tokio::time::timeout(Duration::from_millis(1500), e.get(&path, "alice-jwt", &[])).await;
+    let abandoned = event(&mut ev, 30, |e| {
+        matches!(e, EngineEvent::SegmentAbandoned { .. })
+    })
+    .await;
+    let EngineEvent::SegmentAbandoned {
+        session_id,
+        index,
+        waited_ms,
+        ..
+    } = abandoned
+    else {
+        unreachable!()
+    };
+    assert_eq!((session_id, index), (sid, 3));
+    assert!((1000.0..5000.0).contains(&waited_ms), "waited {waited_ms}");
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_request_the_client_moved_away_from_is_not_reported() {
+    let (e, file) = engine_of(&fake("hang"), json!({})).await;
+    let pinned = json!({ "selection": { "requestedQuality": "720p" } });
+    let sid = open(&e, &file, pinned).await;
+    let mut ev = e.rt.events.subscribe();
+    let get = |n: u32| format!("/api/stream/7/720p/seg-{n}.m4s?sid={sid}");
+    let (a, b) = (get(3), get(12));
+    let first = tokio::time::timeout(Duration::from_millis(1500), e.get(&a, "alice-jwt", &[]));
+    let seeked = async {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let _ =
+            tokio::time::timeout(Duration::from_millis(1200), e.get(&b, "alice-jwt", &[])).await;
+    };
+    let _ = tokio::join!(first, seeked);
+    let abandoned = event(&mut ev, 30, |e| {
+        matches!(e, EngineEvent::SegmentAbandoned { .. })
+    })
+    .await;
+    assert!(matches!(
+        abandoned,
+        EngineEvent::SegmentAbandoned { index: 12, .. }
+    ));
+    while let Ok(e) = ev.try_recv() {
+        assert!(!matches!(e, EngineEvent::SegmentAbandoned { index: 3, .. }));
+    }
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_hardware_failure_does_not_stop_the_next_run_from_trying_the_gpu() {
     let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
     let e = engine_with(hw, &fake("hwfail"), json!({})).await;

@@ -2361,6 +2361,45 @@
           },
           {
             "type": "object",
+            "description": "A segment request was dropped by the client while still waiting for the file.",
+            "required": [
+              "sessionId",
+              "track",
+              "rung",
+              "index",
+              "waitedMs",
+              "type"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "rung": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "track": {
+                "$ref": "#/components/schemas/Track"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SegmentAbandoned"
+                ]
+              },
+              "waitedMs": {
+                "type": "number",
+                "format": "double",
+                "description": "How long the request had waited when it was dropped."
+              }
+            }
+          },
+          {
+            "type": "object",
             "required": [
               "jobKey",
               "mediaFileId",
