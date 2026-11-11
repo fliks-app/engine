@@ -228,6 +228,17 @@ pub fn throttle_step(i: &ThrottleInput) -> ThrottleOutcome {
     if !is_throttle_eligible(i.variant.as_ref(), &i.viewers) {
         return resume_if_paused();
     }
+    // Nobody plays this run: hold it rather than let it encode ahead of no one.
+    if i.viewers.is_empty() {
+        return out(
+            if i.paused {
+                ThrottleDecision::Noop
+            } else {
+                ThrottleDecision::Pause
+            },
+            None,
+        );
+    }
     let grid = match &i.run {
         RunProgress::Transcode(t) => PlayheadGrid::Uniform {
             segment_duration: t.segment_duration,
@@ -399,6 +410,18 @@ mod tests {
         );
         let unreported = transcode((275..=300).collect(), None, 0.0);
         assert_eq!(throttle_step(&unreported).decision, Noop);
+    }
+
+    #[test]
+    fn a_run_nobody_plays_is_paused_once() {
+        let mut i = transcode((275..=276).collect(), None, 0.0);
+        i.viewers.clear();
+        assert_eq!(throttle_step(&i).decision, Pause);
+        i.paused = true;
+        assert_eq!(throttle_step(&i).decision, Noop);
+        i.paused = false;
+        i.variant = Some(SessionVariant::Early);
+        assert_eq!(throttle_step(&i).decision, Noop);
     }
 
     #[test]

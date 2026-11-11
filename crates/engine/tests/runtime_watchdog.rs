@@ -283,7 +283,7 @@ async fn a_playlist_prewarm_keeps_its_run_without_changing_what_the_session_play
 }
 
 #[tokio::test]
-async fn sessions_of_one_file_keep_the_runs_of_the_rendition_each_plays() {
+async fn concurrent_sessions_of_one_file_keep_the_runs_of_the_rendition_each_plays() {
     let (e, file) = engine_of(&fake("hang"), long_lived()).await;
     let rung = e.rt.peek(&open(&e, &file, resume()).await).unwrap();
     let remux = e.rt.peek(&open(&e, &file, json!({})).await).unwrap();
