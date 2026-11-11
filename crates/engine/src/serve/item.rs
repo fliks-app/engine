@@ -1,7 +1,7 @@
 //! An item's HLS playlist and segments: the global numbering of the playlist mapped onto the
 //! per-part runs. Spec: `docs/spec/item.md`.
 
-use super::hls::{PartBase, respond, seg_name};
+use super::hls::{PartBase, WaitGuard, respond, seg_name};
 use super::{Q, S, file_id, hls, playlist, prefix, text, token_param};
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -87,7 +87,9 @@ pub(super) async fn file(
         offset_s: span.offset_s,
         first_segment: span.first_segment,
     };
+    let wait = WaitGuard::new(&rt.events, &s.sid, Track::Audio, "item", global);
     let fetch = rt.item_file(&s, part, local_name).await;
+    wait.done();
     respond(
         &rt,
         &s,

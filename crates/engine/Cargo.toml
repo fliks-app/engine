@@ -60,6 +60,7 @@ windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win3
 [dev-dependencies]
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
+tokio = { version = "1", features = ["test-util"] }
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 

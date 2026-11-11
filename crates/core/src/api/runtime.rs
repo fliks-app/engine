@@ -405,6 +405,16 @@ pub enum EngineEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cmcd_raw: Option<String>,
     },
+    /// A segment request was dropped by the client while still waiting for the file.
+    #[serde(rename_all = "camelCase")]
+    SegmentAbandoned {
+        session_id: String,
+        track: Track,
+        rung: String,
+        index: u32,
+        /// How long the request had waited when it was dropped.
+        waited_ms: f64,
+    },
     #[serde(rename_all = "camelCase")]
     JobStarted {
         job_key: String,
