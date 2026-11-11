@@ -180,6 +180,49 @@ async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
 }
 
 #[tokio::test]
+async fn a_quality_switch_orphans_the_run_of_the_rendition_no_longer_played() {
+    let (e, sid) = with_all_jobs(json!({})).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let live = |k: JobKind| e.rt.job(&s.key(k)).is_some();
+
+    // The client moves to the remux variant: the rung's runs are orphans.
+    e.rt.note_kind(&s, "remux");
+    e.rt.gc_tick().await;
+    until("the rung's runs", 30, || e.ffmpeg_pids().len() == 1).await;
+    assert!(live(JobKind::Remux) && !live(JobKind::Main) && !live(JobKind::Early));
+
+    // And back to a rung: the remux run goes, the rung respawns from its cache.
+    e.rt.note_kind(&s, "720p");
+    e.rt.gc_tick().await;
+    gone(&e, "the remux run").await;
+    assert!(!live(JobKind::Remux));
+    e.rt.prewarm(&s, Some("720p"), Some(60.0));
+    until("the respawned main run", 30, || {
+        e.rt.job(&s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_run_stays_until_the_session_requests_another_rung() {
+    let (e, sid) = with_all_jobs(json!({})).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let main = || e.rt.job(&s.key(JobKind::Main));
+    // Not requested yet, or requested: the open's runs stay.
+    e.rt.gc_tick().await;
+    assert!(main().is_some());
+    e.rt.note_kind(&s, &main().unwrap().quality);
+    e.rt.gc_tick().await;
+    assert!(main().is_some());
+    // Another rung: the old one is reaped, the session keeps no run of it.
+    e.rt.note_kind(&s, "480p");
+    e.rt.gc_tick().await;
+    until("the 720p runs", 30, || main().is_none()).await;
+    assert!(e.rt.job(&s.key(JobKind::Early)).is_none());
+}
+
+#[tokio::test]
 async fn a_hung_run_is_killed_after_the_stall_timeout_and_restarts_on_the_next_request() {
     let (e, file) = engine_of(&fake("hang"), json!({ "jobStallTimeoutMs": 1000 })).await;
     let mut ev = e.rt.events.subscribe();

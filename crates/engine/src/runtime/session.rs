@@ -32,6 +32,8 @@ pub(super) struct SessionMut {
     pub(super) hw_retried: bool,
     /// What the client plays now: an ABR switch moves a DirectStream session to a rung.
     pub(super) kind: SessionKind,
+    /// The rung the client last requested; `None` until its first video request.
+    pub(super) rung: Option<String>,
 }
 
 pub struct Session {
@@ -370,6 +372,7 @@ impl Runtime {
                     device,
                     hw_retried: false,
                     kind: plan.kind,
+                    rung: None,
                 }),
                 plan,
                 req,
@@ -530,12 +533,14 @@ impl Runtime {
 
     /// A video request names what the client plays: the remux variant or a rung.
     /// [ts:modules/streaming/streaming.controller.ts:2274-2282]
-    pub fn note_kind(&self, s: &Session, remux: bool) {
-        s.m.locked().kind = if remux {
-            SessionKind::Remux
+    pub fn note_kind(&self, s: &Session, rung: &str) {
+        let mut m = s.m.locked();
+        if rung == "remux" {
+            m.kind = SessionKind::Remux;
         } else {
-            SessionKind::Transcode
-        };
+            m.kind = SessionKind::Transcode;
+            m.rung = Some(rung.into());
+        }
     }
 
     /// Notes the rung and hardware a segment came from; a change is a `PipelineChanged`.

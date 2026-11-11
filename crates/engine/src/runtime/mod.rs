@@ -313,7 +313,7 @@ impl Runtime {
     }
 }
 
-/// Removes and returns the jobs no live session serves (same owner, file and profile hash).
+/// Removes and returns the jobs no live session serves (`Job::serves`).
 fn take_orphans(reg: &mut Reg) -> Vec<Arc<Job>> {
     let Reg { sessions, jobs, .. } = reg;
     let keys: Vec<String> = jobs

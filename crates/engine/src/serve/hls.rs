@@ -595,7 +595,7 @@ pub(super) async fn segment(
         Err(r) => return r,
     };
     let remux = quality == "remux";
-    rt.note_kind(&s, remux);
+    rt.note_kind(&s, &quality);
     if past_end(&s, name, remux) {
         return text(StatusCode::NOT_FOUND, "Segment not found");
     }
