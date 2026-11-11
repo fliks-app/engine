@@ -1,8 +1,8 @@
 //! Job ownership and the stall watchdog, against the `fake-ffmpeg` test binary (no real ffmpeg).
 mod runtime_common;
 use fliks_engine::proc::{Ffmpeg, STOP_GRACE};
-use fliks_engine::runtime::{Job, JobKind};
-use fliks_engine_core::api::{EngineEvent, HwAccel};
+use fliks_engine::runtime::{Job, JobKind, RENDITION_GRACE_MS, now_ms};
+use fliks_engine_core::api::{EngineEvent, HwAccel, SessionKind};
 use runtime_common::*;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -177,6 +177,157 @@ async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
     e.rt.gc_tick().await;
     gone(&e, "the reaped orphan").await;
     assert!(e.rt.job(&s.key(JobKind::Remux)).is_none());
+}
+
+/// A session outliving the aged gc passes of these tests.
+fn long_lived() -> Value {
+    json!({ "liveSessionTtlMs": 3_600_000 })
+}
+
+/// `gc_tick` once the grace of every rendition asked for so far has passed.
+async fn gc_after_grace(e: &Engine) {
+    e.rt.gc_at(now_ms() + RENDITION_GRACE_MS + 1000).await;
+}
+
+#[tokio::test]
+async fn a_quality_switch_keeps_the_old_run_for_the_grace_window_then_reaps_it() {
+    let (e, sid) = with_all_jobs(long_lived()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let live = |k: JobKind| e.rt.job(&s.key(k)).is_some();
+
+    // The client moves to the remux variant: the rung's runs stay for an ABR flip back.
+    e.rt.note_kind(&s, "remux");
+    e.rt.gc_tick().await;
+    assert!(live(JobKind::Main) && live(JobKind::Early) && live(JobKind::Remux));
+    gc_after_grace(&e).await;
+    until("the rung's runs", 30, || e.ffmpeg_pids().len() == 1).await;
+    assert!(live(JobKind::Remux) && !live(JobKind::Main) && !live(JobKind::Early));
+
+    // Back to the rung through a segment request: the remux run is the one in grace now.
+    let path = format!("/api/stream/7/720p/seg-3.m4s?sid={sid}");
+    let _ = tokio::time::timeout(Duration::from_secs(1), e.get(&path, "alice-jwt", &[])).await;
+    until("the respawned main run", 30, || {
+        e.rt.job(&s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+    e.rt.gc_tick().await;
+    assert!(live(JobKind::Remux));
+    gc_after_grace(&e).await;
+    until("the remux run", 30, || !live(JobKind::Remux)).await;
+    assert!(live(JobKind::Main));
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_prewarmed_switch_target_is_not_throttled_but_an_abandoned_run_is() {
+    let (e, sid) = with_all_jobs(long_lived()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let remux = e.rt.job(&s.key(JobKind::Remux)).unwrap();
+    // Prewarmed while the session has not played anything: it waits for its first request.
+    e.rt.throttle_tick().await;
+    assert!(!remux.stats().throttled, "prewarm paused before use");
+    // Prewarmed after the rung it plays: the switch target again.
+    e.rt.note_kind(&s, "720p");
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    e.rt.prewarm_remux(&s, 0.0);
+    e.rt.throttle_tick().await;
+    assert!(!remux.stats().throttled, "prewarm paused before use");
+    // The client plays the rung since: the remux run is abandoned, inside its grace window.
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    e.rt.note_kind(&s, "720p");
+    e.rt.throttle_tick().await;
+    assert!(remux.stats().throttled, "abandoned run keeps encoding");
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_run_is_reaped_once_its_rung_went_unrequested_for_the_grace_window() {
+    let (e, sid) = with_all_jobs(long_lived()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let main = || e.rt.job(&s.key(JobKind::Main));
+    // Requested, or none requested yet: the open's runs stay however old.
+    gc_after_grace(&e).await;
+    assert!(main().is_some());
+    e.rt.note_kind(&s, &main().unwrap().quality);
+    gc_after_grace(&e).await;
+    assert!(main().is_some());
+    // Another rung: the 720p runs go once the grace has passed, not before.
+    e.rt.note_kind(&s, "480p");
+    e.rt.gc_tick().await;
+    assert!(main().is_some());
+    gc_after_grace(&e).await;
+    until("the 720p runs", 30, || main().is_none()).await;
+    assert!(e.rt.job(&s.key(JobKind::Early)).is_none());
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_playlist_prewarm_keeps_its_run_without_changing_what_the_session_plays() {
+    let (e, file) = engine_of(&fake("hang"), long_lived()).await;
+    let sid = open(&e, &file, resume()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let main = e.rt.job(&s.key(JobKind::Main));
+    until("the open's run", 30, || {
+        e.rt.job(&s.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+    drop(main);
+    // The client plays 720p; its remux playlist is loaded with a startAt.
+    e.rt.note_kind(&s, "720p");
+    let r = e
+        .get(
+            &format!("/api/stream/7/remux/index.m3u8?sid={sid}&startAt=10"),
+            "alice-jwt",
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.text());
+    until("the prewarmed remux run", 30, || {
+        e.rt.job(&s.key(JobKind::Remux))
+            .is_some_and(|j| j.producing())
+    })
+    .await;
+    e.rt.gc_tick().await;
+    assert!(
+        e.rt.job(&s.key(JobKind::Remux)).is_some(),
+        "prewarm reaped before use"
+    );
+    assert_eq!(s.served_kind(), SessionKind::Transcode);
+    gc_after_grace(&e).await;
+    until("the unused prewarm", 30, || {
+        e.rt.job(&s.key(JobKind::Remux)).is_none()
+    })
+    .await;
+    assert!(e.rt.job(&s.key(JobKind::Main)).is_some());
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn concurrent_sessions_of_one_file_keep_the_runs_of_the_rendition_each_plays() {
+    let (e, file) = engine_of(&fake("hang"), long_lived()).await;
+    let rung = e.rt.peek(&open(&e, &file, resume()).await).unwrap();
+    let remux = e.rt.peek(&open(&e, &file, json!({})).await).unwrap();
+    assert_ne!(
+        rung.hash, remux.hash,
+        "a concurrent playback gets its own runs"
+    );
+    e.rt.prewarm_remux(&remux, 0.0);
+    until("both sessions' runs", 30, || {
+        e.rt.job(&rung.key(JobKind::Main))
+            .is_some_and(|j| j.producing())
+            && e.rt
+                .job(&remux.key(JobKind::Remux))
+                .is_some_and(|j| j.producing())
+    })
+    .await;
+    e.rt.note_kind(&rung, "720p");
+    e.rt.note_kind(&remux, "remux");
+    gc_after_grace(&e).await;
+    assert!(e.rt.job(&rung.key(JobKind::Main)).is_some());
+    assert!(e.rt.job(&remux.key(JobKind::Remux)).is_some());
+    e.rt.shutdown().await;
 }
 
 #[tokio::test]

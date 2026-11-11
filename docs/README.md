@@ -26,6 +26,7 @@
 
 ## Deviations
 
+- throttle: a running run with no viewer is paused (the TS left it running); a run the session no longer plays must not encode ahead during its grace window. `Early` runs and already-paused runs are unchanged.
 - decide: the TS throws `No audio encoder for group codec` when a track must re-encode into a group codec that cannot be encoded. That state is unreachable (only an all-copy group settles on such a codec), so the port falls back to AAC instead of failing.
 - decide: no vector is skipped, so the test allowlist `SKIPPED` is empty; the fuzz exclusion list `EXCLUDED` is empty too.
 - decide fuzz (35 000 random inputs, 0 TS throws): the TS never threw, so the unreachable `No audio encoder for group codec` throw above stays the only TS-throws-vs-Rust-returns case. `serde_json` runs with `float_roundtrip`: its default parser can be one ulp off, which flipped exact-boundary comparisons (`fixtures/decide/fuzz-float-roundtrip.json`).

@@ -1,11 +1,11 @@
 //! A running ffmpeg or remux run and the files it has produced.
 
-use super::{INIT_NON_EMPTY, JobKind, Session, now_ms};
+use super::{INIT_NON_EMPTY, JobKind, RENDITION_GRACE_MS, Session, now_ms};
 use crate::lock::Locked;
 use crate::proc::{Exit, Ffmpeg};
 use crate::remux::Remux;
 use crate::slots::PlaybackSlot;
-use fliks_engine_core::api::{HwAccel, JobState, JobStats};
+use fliks_engine_core::api::{HwAccel, JobState, JobStats, SessionKind};
 use fliks_engine_core::mp4::has_samples;
 use fliks_engine_core::session::{
     ExistingRun, PauseCapability, SegmentName, SegmentSet, parse_segment_name,
@@ -109,8 +109,60 @@ impl Job {
         self.m.locked().sets.get(t).is_some_and(|s| s.contains(n))
     }
 
-    pub(super) fn serves(&self, s: &Session) -> bool {
+    /// The rendition this run produces: `remux` or its rung.
+    fn rendition(&self) -> &str {
+        match self.kind {
+            JobKind::Remux => "remux",
+            _ => &self.quality,
+        }
+    }
+
+    fn of(&self, s: &Session) -> bool {
         s.media_file_id == self.media_file_id && s.owner == self.owner && s.hash == self.hash
+    }
+
+    /// The session plays this run: same file and profile, and the rendition it requested last.
+    pub(super) fn plays(&self, s: &Session) -> bool {
+        if !self.of(s) {
+            return false;
+        }
+        if self.item.is_some() {
+            return true;
+        }
+        let m = s.m.locked();
+        match self.kind {
+            JobKind::Remux => m.kind == SessionKind::Remux,
+            JobKind::Main | JobKind::Early => {
+                m.kind == SessionKind::Transcode
+                    && m.rung.as_ref().is_none_or(|r| *r == self.quality)
+            }
+        }
+    }
+
+    /// `plays`, or the rendition the session asked for after the one it plays: a prewarmed switch
+    /// target, which the throttle must not pause before its first request.
+    pub(super) fn awaited_by(&self, s: &Session) -> bool {
+        self.plays(s)
+            || (self.of(s) && self.item.is_none() && {
+                let m = s.m.locked();
+                let current = match m.kind {
+                    SessionKind::Remux => Some("remux"),
+                    _ => m.rung.as_deref(),
+                };
+                let at = |r: &str| m.asked.get(r).copied();
+                at(self.rendition()) > current.and_then(at)
+            })
+    }
+
+    /// `plays`, or the session asked for this rendition less than `RENDITION_GRACE_MS` ago.
+    pub(super) fn serves(&self, s: &Session, now: i64) -> bool {
+        self.plays(s)
+            || (self.of(s)
+                && s.m
+                    .locked()
+                    .asked
+                    .get(self.rendition())
+                    .is_some_and(|t| now - t < RENDITION_GRACE_MS))
     }
 
     /// SIGKILLs the run and waits for it: a polite stop makes the muxer close the segment it was
