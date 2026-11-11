@@ -313,12 +313,15 @@ impl Runtime {
     }
 }
 
+/// How long a run of a rendition the session stopped playing stays, for an ABR flip back.
+pub const RENDITION_GRACE_MS: i64 = 60_000;
+
 /// Removes and returns the jobs no live session serves (`Job::serves`).
-fn take_orphans(reg: &mut Reg) -> Vec<Arc<Job>> {
+fn take_orphans(reg: &mut Reg, now: i64) -> Vec<Arc<Job>> {
     let Reg { sessions, jobs, .. } = reg;
     let keys: Vec<String> = jobs
         .iter()
-        .filter(|(_, j)| !sessions.values().any(|s| j.serves(s)))
+        .filter(|(_, j)| !sessions.values().any(|s| j.serves(s, now)))
         .map(|(k, _)| k.clone())
         .collect();
     keys.iter().filter_map(|k| jobs.remove(k)).collect()

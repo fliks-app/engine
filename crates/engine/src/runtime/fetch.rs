@@ -355,6 +355,7 @@ impl Runtime {
     /// Starts the remux run at the segment a `startAt` falls in, unless one runs.
     /// [ts:modules/streaming/streaming.controller.ts:2155-2180]
     pub fn prewarm_remux(self: &Arc<Self>, s: &Arc<Session>, start_at: f64) {
+        self.note_prewarm(s, "remux");
         if self
             .job(&s.key(JobKind::Remux))
             .is_some_and(|j| j.producing())

@@ -1,6 +1,6 @@
 //! A running ffmpeg or remux run and the files it has produced.
 
-use super::{INIT_NON_EMPTY, JobKind, Session, now_ms};
+use super::{INIT_NON_EMPTY, JobKind, RENDITION_GRACE_MS, Session, now_ms};
 use crate::lock::Locked;
 use crate::proc::{Exit, Ffmpeg};
 use crate::remux::Remux;
@@ -109,9 +109,21 @@ impl Job {
         self.m.locked().sets.get(t).is_some_and(|s| s.contains(n))
     }
 
-    /// The session plays this run: same file and profile, and the rendition it requests last.
-    pub(super) fn serves(&self, s: &Session) -> bool {
-        if s.media_file_id != self.media_file_id || s.owner != self.owner || s.hash != self.hash {
+    /// The rendition this run produces: `remux` or its rung.
+    fn rendition(&self) -> &str {
+        match self.kind {
+            JobKind::Remux => "remux",
+            _ => &self.quality,
+        }
+    }
+
+    fn of(&self, s: &Session) -> bool {
+        s.media_file_id == self.media_file_id && s.owner == self.owner && s.hash == self.hash
+    }
+
+    /// The session plays this run: same file and profile, and the rendition it requested last.
+    pub(super) fn plays(&self, s: &Session) -> bool {
+        if !self.of(s) {
             return false;
         }
         if self.item.is_some() {
@@ -125,6 +137,17 @@ impl Job {
                     && m.rung.as_ref().is_none_or(|r| *r == self.quality)
             }
         }
+    }
+
+    /// `plays`, or the session asked for this rendition less than `RENDITION_GRACE_MS` ago.
+    pub(super) fn serves(&self, s: &Session, now: i64) -> bool {
+        self.plays(s)
+            || (self.of(s)
+                && s.m
+                    .locked()
+                    .asked
+                    .get(self.rendition())
+                    .is_some_and(|t| now - t < RENDITION_GRACE_MS))
     }
 
     /// SIGKILLs the run and waits for it: a polite stop makes the muxer close the segment it was

@@ -13,6 +13,7 @@ use fliks_engine_core::session::{
     self as core_session, SessionPlan, SessionVariant, Viewer, live_session_expired,
     seconds_to_segment, session_key, session_to_evict, tombstone_revivable, variant_hash,
 };
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -34,6 +35,8 @@ pub(super) struct SessionMut {
     pub(super) kind: SessionKind,
     /// The rung the client last requested; `None` until its first video request.
     pub(super) rung: Option<String>,
+    /// When each rendition (`remux` or a rung) was last requested or prewarmed, in ms.
+    pub(super) asked: HashMap<String, i64>,
 }
 
 pub struct Session {
@@ -373,12 +376,13 @@ impl Runtime {
                     hw_retried: false,
                     kind: plan.kind,
                     rung: None,
+                    asked: HashMap::new(),
                 }),
                 plan,
                 req,
             });
             reg.sessions.insert(sid.clone(), s.clone());
-            (s, take_orphans(&mut reg))
+            (s, take_orphans(&mut reg, now_ms()))
         };
         if !orphans.is_empty() {
             tokio::spawn(kill_all(orphans));
@@ -457,6 +461,7 @@ impl Runtime {
             s.plan.segment_duration,
             s.plan.source_fps,
         );
+        self.note_prewarm(s, &quality);
         let (rt, s) = (self.clone(), s.clone());
         tokio::spawn(async move {
             let key = s.job_key();
@@ -535,12 +540,18 @@ impl Runtime {
     /// [ts:modules/streaming/streaming.controller.ts:2274-2282]
     pub fn note_kind(&self, s: &Session, rung: &str) {
         let mut m = s.m.locked();
+        m.asked.insert(rung.into(), now_ms());
         if rung == "remux" {
             m.kind = SessionKind::Remux;
         } else {
             m.kind = SessionKind::Transcode;
             m.rung = Some(rung.into());
         }
+    }
+
+    /// A prewarm keeps its run for the grace window without making it the one the client plays.
+    pub(super) fn note_prewarm(&self, s: &Session, rendition: &str) {
+        s.m.locked().asked.insert(rendition.into(), now_ms());
     }
 
     /// Notes the rung and hardware a segment came from; a change is a `PipelineChanged`.
@@ -607,7 +618,7 @@ impl Runtime {
             let mut reg = self.reg.locked();
             let a = reg.sessions.remove(sid).is_some();
             let known = reg.tombstones.remove(sid).is_some() || a;
-            (known, take_orphans(&mut reg))
+            (known, take_orphans(&mut reg, now_ms()))
         };
         if known {
             self.events.emit(EngineEvent::SessionEnded {
@@ -635,7 +646,7 @@ impl Runtime {
                 .collect();
             reg.sessions.retain(|_, s| !matches(s));
             reg.tombstones.retain(|_, s| !matches(s));
-            (gone, take_orphans(&mut reg))
+            (gone, take_orphans(&mut reg, now_ms()))
         };
         self.resolver.purge(owner, files);
         kill_all(orphans).await;

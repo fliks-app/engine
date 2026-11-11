@@ -15,7 +15,11 @@ use std::sync::Arc;
 impl Runtime {
     /// Session expiry, then the jobs no session owns are stopped, every `liveSessionGcIntervalMs`.
     pub async fn gc_tick(&self) {
-        let now = now_ms();
+        self.gc_at(now_ms()).await;
+    }
+
+    /// `gc_tick` at `now`, for tests that age the renditions' grace.
+    pub async fn gc_at(&self, now: i64) {
         let lifetime = &self.current_config().lifetime;
         let (expired, orphans) = {
             let mut reg = self.reg.locked();
@@ -34,7 +38,7 @@ impl Runtime {
             }
             reg.tombstones
                 .retain(|_, s| tombstone_revivable(s.m.locked().last_beat_ms, now, lifetime));
-            (expired, take_orphans(&mut reg))
+            (expired, take_orphans(&mut reg, now))
         };
         for sid in expired {
             self.events.emit(EngineEvent::SessionEnded {
@@ -58,7 +62,7 @@ impl Runtime {
                     let viewers = reg
                         .sessions
                         .values()
-                        .filter(|s| j.serves(s))
+                        .filter(|s| j.plays(s))
                         .map(|s| match j.item {
                             Some(part) => s.part_viewer(part),
                             None => s.viewer(),
