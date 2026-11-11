@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/fliks-app/engine/compare/v1.21.3...v1.22.0) (2026-11-11)
+
+
+### Features
+
+* **serve:** report a segment request the client dropped while it waited ([#230](https://github.com/fliks-app/engine/issues/230)) ([08abebd](https://github.com/fliks-app/engine/commit/08abebd73972f6380413aa0226ae0fc40fcc91fd))
+
 ## [1.21.3](https://github.com/fliks-app/engine/compare/v1.21.2...v1.21.3) (2026-11-09)
 
 
