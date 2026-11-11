@@ -220,6 +220,28 @@ async fn a_quality_switch_keeps_the_old_run_for_the_grace_window_then_reaps_it()
 }
 
 #[tokio::test]
+async fn a_prewarmed_switch_target_is_not_throttled_but_an_abandoned_run_is() {
+    let (e, sid) = with_all_jobs(long_lived()).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let remux = e.rt.job(&s.key(JobKind::Remux)).unwrap();
+    // Prewarmed while the session has not played anything: it waits for its first request.
+    e.rt.throttle_tick().await;
+    assert!(!remux.stats().throttled, "prewarm paused before use");
+    // Prewarmed after the rung it plays: the switch target again.
+    e.rt.note_kind(&s, "720p");
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    e.rt.prewarm_remux(&s, 0.0);
+    e.rt.throttle_tick().await;
+    assert!(!remux.stats().throttled, "prewarm paused before use");
+    // The client plays the rung since: the remux run is abandoned, inside its grace window.
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    e.rt.note_kind(&s, "720p");
+    e.rt.throttle_tick().await;
+    assert!(remux.stats().throttled, "abandoned run keeps encoding");
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_run_is_reaped_once_its_rung_went_unrequested_for_the_grace_window() {
     let (e, sid) = with_all_jobs(long_lived()).await;
     let s = e.rt.peek(&sid).unwrap();

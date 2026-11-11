@@ -62,7 +62,7 @@ impl Runtime {
                     let viewers = reg
                         .sessions
                         .values()
-                        .filter(|s| j.plays(s))
+                        .filter(|s| j.awaited_by(s))
                         .map(|s| match j.item {
                             Some(part) => s.part_viewer(part),
                             None => s.viewer(),

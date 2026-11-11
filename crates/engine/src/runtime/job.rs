@@ -139,6 +139,21 @@ impl Job {
         }
     }
 
+    /// `plays`, or the rendition the session asked for after the one it plays: a prewarmed switch
+    /// target, which the throttle must not pause before its first request.
+    pub(super) fn awaited_by(&self, s: &Session) -> bool {
+        self.plays(s)
+            || (self.of(s) && self.item.is_none() && {
+                let m = s.m.locked();
+                let current = match m.kind {
+                    SessionKind::Remux => Some("remux"),
+                    _ => m.rung.as_deref(),
+                };
+                let at = |r: &str| m.asked.get(r).copied();
+                at(self.rendition()) > current.and_then(at)
+            })
+    }
+
     /// `plays`, or the session asked for this rendition less than `RENDITION_GRACE_MS` ago.
     pub(super) fn serves(&self, s: &Session, now: i64) -> bool {
         self.plays(s)
