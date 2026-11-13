@@ -6,6 +6,7 @@ use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 
 use super::align::{Copy, finish, words_of};
+use super::melody::SAMPLE_RATE;
 use crate::api::{AlignLine, AlignedLine};
 
 /// Duration of one emission frame.
@@ -22,6 +23,14 @@ const TAIL_MS: u32 = 1500;
 const EXTRA_MS: u32 = 3000;
 /// Largest `frames x states` table (one byte each) a pass may fill.
 const MAX_CELLS: usize = 100_000_000;
+/// A frame is silent when its level is this far below the track's 95th percentile and part of a
+/// run of at least `MIN_SILENT_MS`.
+const SILENT_DB: f32 = -35.0;
+const MIN_SILENT_MS: u32 = 100;
+/// Log-probability a word's state loses per silent frame: a word does not stretch over silence.
+const SILENT_PEN: f32 = -3.0;
+/// A word's end is held over voiced frames at most this long after its last token.
+const HOLD_MS: u32 = 500;
 
 /// The characters a CTC network emits, and its two special classes.
 #[derive(Debug, Clone)]
@@ -97,6 +106,30 @@ impl Emissions {
     fn row(&self, t: usize) -> &[f32] {
         &self.log_probs[t * self.classes..(t + 1) * self.classes]
     }
+}
+
+/// Per `FRAME_MS` frame of the 16 kHz track `pcm`: whether the vocal stem is silent there.
+pub fn silent_frames(pcm: &[f32]) -> Vec<bool> {
+    let per = (SAMPLE_RATE * FRAME_MS / 1000) as usize;
+    let rms: Vec<f32> = pcm
+        .chunks_exact(per)
+        .map(|f| (f.iter().map(|v| v * v).sum::<f32>() / per as f32).sqrt())
+        .collect();
+    let mut sorted = rms.clone();
+    sorted.sort_by(f32::total_cmp);
+    let limit =
+        sorted.get(sorted.len() * 95 / 100).copied().unwrap_or(0.0) * 10f32.powf(SILENT_DB / 20.0);
+    let min = (MIN_SILENT_MS / FRAME_MS) as usize;
+    let mut out = vec![false; rms.len()];
+    let mut at = 0;
+    while at < rms.len() {
+        let run = rms[at..].iter().take_while(|v| **v < limit).count();
+        if run >= min {
+            out[at..at + run].fill(true);
+        }
+        at += run.max(1);
+    }
+    out
 }
 
 const EN_UNITS: [&str; 20] = [
@@ -275,7 +308,8 @@ enum State {
 }
 
 /// A word placed on a span, in frames (ends exclusive): where its tokens start and end, where
-/// its trailing blank ends, and the mean log-probability of its token frames.
+/// the word ends (its tokens' end held over voiced frames), and the mean log-probability of its
+/// token frames.
 #[derive(Clone, Copy)]
 struct Placed {
     start: u32,
@@ -286,10 +320,12 @@ struct Placed {
 
 /// A pass's states (a star before each line with a token and after the last, each token then a
 /// blank); `spans` the word bounds, `bodies` each line's states after its star, `ids` the scored
-/// classes, `cols` each state's emission column.
+/// classes, `cols` each state's emission column, `in_word` the states silence may not hold (a
+/// word's tokens and the blanks between them).
 struct Layout {
     ids: Vec<u32>,
     cols: Vec<usize>,
+    in_word: Vec<bool>,
     states: Vec<State>,
     spans: Vec<Vec<Option<(usize, usize)>>>,
     bodies: Vec<Range<usize>>,
@@ -324,6 +360,10 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
         return None;
     }
     states.push(State::Star);
+    let mut in_word = vec![false; states.len()];
+    for (a, b) in spans.iter().flatten().flatten() {
+        in_word[*a..=*b].fill(true);
+    }
     let mut ids = vec![vocab.blank];
     let mut cols: Vec<usize> = states
         .iter()
@@ -343,6 +383,7 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
     Some(Layout {
         ids,
         cols,
+        in_word,
         states,
         spans,
         bodies,
@@ -351,15 +392,18 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
 
 /// The lines of `lay` forced onto `em`: per line, per word, where it sits; `None` for a word
 /// with no token and for everything when no alignment fits. `bands` (frames, per line) are the
-/// only frames a line's tokens may use; without, every frame.
+/// only frames a line's tokens may use; without, every frame. `silent` flags the silent frames
+/// of the span.
 fn viterbi(
     em: &Emissions,
     lay: &Layout,
     bands: Option<&[(u32, u32)]>,
+    silent: &[bool],
 ) -> Option<Vec<Vec<Option<Placed>>>> {
     let Layout {
         ids,
         cols,
+        in_word,
         states,
         spans,
         bodies,
@@ -394,6 +438,7 @@ fn viterbi(
     }
     for t in 1..frames {
         let row = em.row(t);
+        let quiet = silent.get(t).copied().unwrap_or(false);
         for s in 0..n {
             let (mut best, mut from) = (prev[s], 0u8);
             if s >= 1 && prev[s - 1] > best {
@@ -402,7 +447,8 @@ fn viterbi(
             if skip[s] && prev[s - 2] > best {
                 (best, from) = (prev[s - 2], 2);
             }
-            cur[s] = best + emit(row, t, s);
+            let held = if quiet && in_word[s] { SILENT_PEN } else { 0.0 };
+            cur[s] = best + emit(row, t, s) + held;
             back[t * n + s] = from;
         }
         std::mem::swap(&mut prev, &mut cur);
@@ -427,31 +473,46 @@ fn viterbi(
         let e = seen[*s].get_or_insert((t as u32, t as u32, 0.0, 0));
         *e = (e.0, t as u32, e.2 + lp, e.3 + count);
     }
-    Some(
-        spans
-            .iter()
-            .map(|line| {
-                line.iter()
-                    .map(|span| {
-                        let (a, b) = (*span)?;
-                        let (mut sum, mut count) = (0.0, 0);
-                        for e in seen[a..=b].iter().flatten() {
-                            sum += e.2;
-                            count += e.3;
-                        }
-                        let (first, last) = (seen[a]?, seen[b]?);
-                        let tail = seen[b + 1].map_or(last.1, |e| e.1);
-                        Some(Placed {
-                            start: first.0,
-                            tok_end: last.1 + 1,
-                            end: tail + 1,
-                            score: sum / count.max(1) as f32,
-                        })
+    let mut placed: Vec<Vec<Option<Placed>>> = spans
+        .iter()
+        .map(|line| {
+            line.iter()
+                .map(|span| {
+                    let (a, b) = (*span)?;
+                    let (mut sum, mut count) = (0.0, 0);
+                    for e in seen[a..=b].iter().flatten() {
+                        sum += e.2;
+                        count += e.3;
+                    }
+                    let (first, last) = (seen[a]?, seen[b]?);
+                    Some(Placed {
+                        start: first.0,
+                        tok_end: last.1 + 1,
+                        end: last.1 + 1,
+                        score: sum / count.max(1) as f32,
                     })
-                    .collect()
-            })
-            .collect(),
-    )
+                })
+                .collect()
+        })
+        .collect();
+    // A tokenless word after a placed one keeps the gap: `fill` times it there.
+    let (mut limit, mut gap) = (frames as u32, false);
+    for word in placed.iter_mut().flat_map(|l| l.iter_mut()).rev() {
+        let Some(p) = word else {
+            gap = true;
+            continue;
+        };
+        let cap = if gap {
+            p.tok_end
+        } else {
+            limit.min(p.tok_end + HOLD_MS / FRAME_MS)
+        };
+        p.end = (p.tok_end..cap)
+            .find(|t| silent.get(*t as usize).copied().unwrap_or(false))
+            .unwrap_or(cap);
+        (limit, gap) = (p.start, false);
+    }
+    Some(placed)
 }
 
 /// The band of timed copy `i`, in ms: from `LEAD_MS` before its start to `TAIL_MS` after the next
@@ -489,6 +550,7 @@ struct Placer<'a, F> {
     offsets: Vec<usize>,
     vocab: &'a Vocab,
     duration_ms: u32,
+    silent: &'a [bool],
     emit: &'a mut F,
     times: Vec<Option<(u32, u32)>>,
     found: usize,
@@ -517,7 +579,8 @@ impl<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>> Placer<'_, F> {
             let rel = |(s, e): &(u32, u32)| ((s - lo) / FRAME_MS, (e - lo).div_ceil(FRAME_MS));
             b.iter().map(rel).collect()
         });
-        let Some(out) = viterbi(&em, &lay, frames.as_deref()) else {
+        let silent = self.silent.get((lo / FRAME_MS) as usize..).unwrap_or(&[]);
+        let Some(out) = viterbi(&em, &lay, frames.as_deref(), silent) else {
             return Ok(false);
         };
         for (k, placed) in out.iter().enumerate() {
@@ -570,7 +633,8 @@ impl<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>> Placer<'_, F> {
 }
 
 /// The lines placed by CTC forced alignment, and the share of words found. `emit(from, to, ids)`
-/// gives the emissions of a span (frame 0 at `from`, a multiple of `FRAME_MS`) for the classes `ids`.
+/// gives the emissions of a span (frame 0 at `from`, a multiple of `FRAME_MS`) for the classes `ids`;
+/// `silent` flags the silent frames of the whole track (`silent_frames`).
 /// Consecutive timed lines whose bands overlap go through one pass, so neighbours share the frames
 /// they both reach; a run too large for `MAX_CELLS` is cut into smaller ones.
 pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
@@ -578,6 +642,7 @@ pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
     vocab: &Vocab,
     language: &str,
     duration_ms: u32,
+    silent: &[bool],
     emit: &mut F,
 ) -> Result<(Vec<AlignedLine>, f64), AlignError<E>> {
     let copies = words_of(lines);
@@ -604,6 +669,7 @@ pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
         offsets,
         vocab,
         duration_ms,
+        silent,
         emit,
         times: vec![None; total],
         found: 0,
@@ -688,12 +754,22 @@ mod tests {
         em: &[f32],
         asked: &mut Vec<(u32, u32)>,
     ) -> (Vec<AlignedLine>, f64) {
+        run_silent(lines, em, &[], asked)
+    }
+
+    fn run_silent(
+        lines: &[AlignLine],
+        em: &[f32],
+        silent: &[bool],
+        asked: &mut Vec<(u32, u32)>,
+    ) -> (Vec<AlignedLine>, f64) {
         let frames = em.len() / CLASSES;
         align(
             lines,
             &vocab(),
             "xx",
             frames as u32 * FRAME_MS,
+            silent,
             &mut |s, e, ids| {
                 asked.push((s, e));
                 let (a, b) = (
@@ -759,8 +835,8 @@ mod tests {
         );
         let (out, share) = run(&[line("ab c")], &em, &mut vec![]);
         let w = &out[0].words;
-        assert_eq!((w[0].start_ms, w[0].end_ms), (100, 260));
-        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 320));
+        assert_eq!((w[0].start_ms, w[0].end_ms), (100, 300));
+        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 800));
         assert_eq!(share, 1.0);
         forward(&out);
     }
@@ -771,8 +847,55 @@ mod tests {
         marks.extend((20..50).map(|t| (t, 4, 0.9)));
         let em = emissions(80, &marks);
         let (out, _) = run(&[line("a"), line("b")], &em, &mut vec![]);
-        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 120));
-        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1220));
+        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 620));
+        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1600));
+    }
+
+    /// Frames `a..b` flagged silent in a track of `frames`.
+    fn quiet(frames: usize, a: usize, b: usize) -> Vec<bool> {
+        (0..frames).map(|t| (a..b).contains(&t)).collect()
+    }
+
+    #[test]
+    fn silence_flags_only_runs_of_a_hundred_ms_below_the_track_level() {
+        let per = 320;
+        let mut pcm = vec![0.5f32; per * 400];
+        pcm[per * 100..per * 140].fill(0.0);
+        pcm[per * 200..per * 203].fill(0.0);
+        pcm[per * 300..per * 305].fill(0.0);
+        let s = silent_frames(&pcm);
+        assert_eq!(s.len(), 400);
+        let flagged: Vec<usize> = (0..400).filter(|t| s[*t]).collect();
+        assert_eq!(flagged, (100..140).chain(300..305).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_word_does_not_stretch_over_silence_to_reach_a_spike() {
+        let marks = [(5, 2, 0.9), (7, 3, 0.5), (400, 3, 0.99)];
+        let em = emissions(800, &marks);
+        let silent = quiet(800, 20, 700);
+        let (free, _) = run(&[line("ab")], &em, &mut vec![]);
+        assert!(free[0].words[0].end_ms > 8000);
+        let (held, _) = run_silent(&[line("ab")], &em, &silent, &mut vec![]);
+        assert_eq!(
+            (held[0].words[0].start_ms, held[0].words[0].end_ms),
+            (100, 400)
+        );
+    }
+
+    #[test]
+    fn a_voiced_tail_extends_the_word_end_and_a_silent_one_does_not() {
+        let em = emissions(120, &[(5, 2, 0.9), (60, 3, 0.9)]);
+        let (voiced, _) = run(&[line("a b")], &em, &mut vec![]);
+        assert_eq!(voiced[0].words[0].end_ms, 620);
+        let (quiet, _) = run_silent(&[line("a b")], &em, &quiet(120, 10, 50), &mut vec![]);
+        assert_eq!(quiet[0].words[0].end_ms, 200);
+        let (late, _) = run(
+            &[line("a b")],
+            &emissions(120, &[(5, 2, 0.9), (20, 3, 0.9)]),
+            &mut vec![],
+        );
+        assert_eq!(late[0].words[0].end_ms, 400);
     }
 
     #[test]
@@ -906,14 +1029,21 @@ mod tests {
     fn a_pass_over_the_cell_cap_is_an_error_before_any_audio_is_read() {
         let text = vec!["a"; 3000].join(" ");
         let mut asked = 0;
-        let r = align(&[line(&text)], &vocab(), "xx", 200_000, &mut |_, _, _| {
-            asked += 1;
-            Ok::<_, ()>(Emissions::from_logits(
-                &emissions(1, &[]),
-                CLASSES,
-                &[BLANK],
-            ))
-        });
+        let r = align(
+            &[line(&text)],
+            &vocab(),
+            "xx",
+            200_000,
+            &[],
+            &mut |_, _, _| {
+                asked += 1;
+                Ok::<_, ()>(Emissions::from_logits(
+                    &emissions(1, &[]),
+                    CLASSES,
+                    &[BLANK],
+                ))
+            },
+        );
         assert_eq!(r.unwrap_err(), AlignError::TooLarge);
         assert_eq!(asked, 0);
     }

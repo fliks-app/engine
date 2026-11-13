@@ -5,7 +5,9 @@ use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass};
-use fliks_engine_core::jobs::ctc::{AlignError, Case, Emissions, FRAME_MS, Vocab, align};
+use fliks_engine_core::jobs::ctc::{
+    AlignError, Case, Emissions, FRAME_MS, Vocab, align, silent_frames,
+};
 use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -328,6 +330,7 @@ fn place(
         &export.vocab,
         language,
         duration_ms,
+        &silent_frames(pcm),
         &mut |a, b, ids| spans.emit(a, b, ids),
     )
 }
