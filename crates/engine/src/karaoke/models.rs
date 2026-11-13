@@ -282,6 +282,10 @@ fn with_mit(note: &str) -> String {
 /// Written into a model's directory once its files are verified.
 const RECORD: &str = ".installed.json";
 
+/// Written into a model's directory when a verification found its files bad; it survives a
+/// restart and a job refuses the model until a new install replaces the directory.
+const DAMAGED: &str = ".verify-failed";
+
 /// What an install left on disk: the manifest version it came from and each file's hash.
 #[derive(Serialize, Deserialize)]
 struct Record {
@@ -304,8 +308,24 @@ struct Download {
     error: Option<String>,
     cancel: watch::Sender<bool>,
     running: bool,
-    /// A verification, not a download: its error says the files on disk are bad.
+    /// A verification, not a download.
     verify: bool,
+}
+
+/// Why a model could not be deleted.
+pub enum DeleteError {
+    Verifying,
+    Io(String),
+}
+
+/// What a download or verify request did.
+pub enum Outcome {
+    /// Installed and current: nothing to fetch.
+    Current(ModelInfo),
+    /// The task runs, started by this request or an earlier one.
+    Accepted(ModelInfo),
+    /// The other kind of task runs, or there is nothing to verify.
+    Refused(&'static str),
 }
 
 struct Inner {
@@ -336,6 +356,7 @@ impl Picked {
 
 struct Status {
     state: ModelState,
+    verifying: bool,
     outdated: bool,
     bytes: u64,
     rate: Option<f64>,
@@ -370,6 +391,7 @@ impl Ticker {
 
 impl Manager {
     pub fn new(dir: PathBuf, entries: Vec<Entry>, events: Events) -> Self {
+        recover(&dir, &entries);
         Self(Arc::new(Inner {
             dir,
             entries,
@@ -437,28 +459,31 @@ impl Manager {
         self.present(e, self.record(e).as_ref())
     }
 
+    /// Why the last verification of `e` failed, until a new install replaces its directory.
+    fn damaged(&self, e: &Entry) -> Option<String> {
+        std::fs::read_to_string(self.model_dir(e).join(DAMAGED)).ok()
+    }
+
     fn status(&self, e: &Entry, rec: Option<&Record>) -> Status {
         let total: u64 = e.files.iter().map(|f| f.size).sum();
         let installed = self.present(e, rec);
+        let damaged = self.damaged(e);
         let dl = self.0.downloads.locked();
         let d = dl.get(e.id);
         let (state, bytes, rate) = match d {
             Some(d) if d.running => (ModelState::Downloading, d.bytes, d.rate),
-            Some(Download {
-                verify: true,
-                error: Some(_),
-                ..
-            }) => (ModelState::Failed, 0, None),
+            _ if damaged.is_some() => (ModelState::Failed, 0, None),
             _ if installed => (ModelState::Installed, total, None),
             Some(Download { error: Some(_), .. }) => (ModelState::Failed, 0, None),
             _ => (ModelState::Absent, 0, None),
         };
         Status {
             state,
+            verifying: d.is_some_and(|d| d.running && d.verify),
             outdated: installed && rec.is_some_and(|r| r.version != e.version),
             bytes,
             rate,
-            error: d.and_then(|d| d.error.clone()),
+            error: d.and_then(|d| d.error.clone()).or(damaged),
         }
     }
 
@@ -493,16 +518,12 @@ impl Manager {
                 ModelEngine::Whisper
             }),
             homepage: e.homepage.into(),
-            recommended: if e.kind == ModelKind::Alignment {
-                e.ctc.is_some()
-            } else {
-                e.default
-            },
             size_bytes: e.files.iter().map(|f| f.size).sum::<u64>() as f64,
             disk_bytes: dir_size(&self.model_dir(e)) as f64,
             installed_version: rec.map(|r| r.version),
             outdated: st.outdated,
             state: st.state,
+            verifying: st.verifying,
             downloaded_bytes: st.bytes as f64,
             bytes_per_second: st.rate,
             error: st.error,
@@ -528,7 +549,8 @@ impl Manager {
         dir_size(&self.0.dir)
     }
 
-    /// Directories no manifest entry names; hidden ones are caches and staging.
+    /// Directories holding model files that no manifest entry names; hidden ones are caches and
+    /// staging.
     pub fn orphans(&self) -> Vec<ModelOrphan> {
         let Ok(rd) = std::fs::read_dir(&self.0.dir) else {
             return vec![];
@@ -538,7 +560,8 @@ impl Manager {
             .filter(|d| d.file_type().is_ok_and(|t| t.is_dir()))
             .filter_map(|d| {
                 let name = d.file_name().into_string().ok()?;
-                (!name.starts_with('.') && self.entry(&name).is_none()).then(|| ModelOrphan {
+                let orphan = !name.starts_with('.') && self.entry(&name).is_none();
+                (orphan && holds_model_file(&d.path())).then(|| ModelOrphan {
                     size_bytes: dir_size(&d.path()) as f64,
                     name,
                 })
@@ -548,14 +571,13 @@ impl Manager {
         v
     }
 
-    /// Removes an orphan directory; false when `name` is not one.
-    pub async fn delete_orphan(&self, name: &str) -> bool {
+    /// Removes an orphan directory; `Ok(false)` when `name` is not one.
+    pub async fn delete_orphan(&self, name: &str) -> Result<bool, String> {
         if !self.orphans().iter().any(|o| o.name == name) {
-            return false;
+            return Ok(false);
         }
-        let dir = self.0.dir.join(name);
-        let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
-        true
+        remove_dir(self.0.dir.join(name)).await?;
+        Ok(true)
     }
 
     fn emit(&self, id: &str) {
@@ -597,6 +619,15 @@ impl Manager {
                 ),
             ));
         }
+        if let Some(why) = self.damaged(e) {
+            return Err(job_errors::message(
+                job_errors::MODEL_MISSING,
+                format!(
+                    "{} failed its verification: {why} (POST /v1/models/{}/download repairs it)",
+                    e.id, e.id
+                ),
+            ));
+        }
         Ok(Picked {
             id: e.id,
             version: rec.map_or_else(|| e.version.into(), |r| r.version),
@@ -613,6 +644,7 @@ impl Manager {
                 && e.ctc.is_some()
                 && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
                 && self.installed(e)
+                && self.damaged(e).is_none()
         });
         match (id, ctc) {
             (None, Some(e)) => self.pick(Some(e.id), ModelKind::Alignment),
@@ -620,8 +652,9 @@ impl Manager {
         }
     }
 
-    /// Runs `run` as the task of `id` unless one runs; its result becomes the entry's error.
-    fn spawn<F, Fut>(&self, id: &'static str, verify: bool, run: F)
+    /// Runs `run` as the task of `id`; its result becomes the entry's error. A task of the same
+    /// kind already running stands for this one, the other kind refuses it.
+    fn spawn<F, Fut>(&self, id: &'static str, verify: bool, run: F) -> Result<(), &'static str>
     where
         F: FnOnce(Manager, u64, watch::Receiver<bool>) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<(), String>> + Send + 'static,
@@ -630,8 +663,14 @@ impl Manager {
         let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
         {
             let mut dl = self.0.downloads.locked();
-            if dl.get(id).is_some_and(|d| d.running) {
-                return;
+            if let Some(d) = dl.get(id).filter(|d| d.running) {
+                return if d.verify == verify {
+                    Ok(())
+                } else if d.verify {
+                    Err("a verification is running")
+                } else {
+                    Err("a download is running")
+                };
             }
             dl.insert(
                 id.into(),
@@ -660,54 +699,77 @@ impl Manager {
             me.emit(id);
         });
         self.emit(id);
+        Ok(())
     }
 
-    /// Starts the download of `id` unless it is installed and current, or already running;
-    /// `None` for an unknown id. An outdated or damaged model is fetched beside the installed
-    /// copy, which stays in use until every file is verified. The hash of every file is checked
-    /// before the file is kept.
-    pub fn start(&self, id: &str) -> Option<ModelInfo> {
+    /// Starts the download of `id` (a new install, an update, the repair of a damaged copy; the
+    /// installed copy runs until every file is hash-checked); `None` for an unknown id.
+    pub fn start(&self, id: &str) -> Option<Outcome> {
         let e = self.entry(id)?;
-        let rec = self.record(e);
-        let st = self.status(e, rec.as_ref());
-        if st.state != ModelState::Installed || st.outdated {
-            let id = e.id;
-            self.spawn(id, false, move |me, generation, rx| async move {
-                me.fetch(id, generation, rx).await
-            });
+        let st = self.status(e, self.record(e).as_ref());
+        if st.state == ModelState::Installed && !st.outdated {
+            return self.get(id).map(Outcome::Current);
         }
-        self.get(id)
-    }
-
-    /// Re-hashes the files of an installed model; a mismatch leaves it `failed`. `None` for an
-    /// unknown id; the model comes back `downloading` while the check runs, else nothing started.
-    pub fn verify(&self, id: &str) -> Option<ModelInfo> {
-        let e = self.entry(id)?;
-        if self.installed(e) {
-            let id = e.id;
-            self.spawn(id, true, move |me, generation, rx| async move {
-                me.check(id, generation, rx).await
-            });
-        }
-        self.get(id)
-    }
-
-    /// Removes the model, stopping its download; false for an unknown id.
-    pub async fn delete(&self, id: &str) -> bool {
-        let Some(e) = self.entry(id) else {
-            return false;
-        };
-        if let Some(d) = self.0.downloads.locked().remove(id) {
-            d.cancel.send_replace(true);
-        }
-        let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
-        let _ = tokio::task::spawn_blocking(move || {
-            let _ = std::fs::remove_dir_all(stage);
-            std::fs::remove_dir_all(dir)
+        let id = e.id;
+        let started = self.spawn(id, false, move |me, generation, rx| async move {
+            me.fetch(id, generation, rx).await
+        });
+        Some(match started {
+            Ok(()) => Outcome::Accepted(self.get(id)?),
+            Err(why) => Outcome::Refused(why),
         })
-        .await;
+    }
+
+    /// Re-hashes the files of an installed model, whose mismatch leaves it `failed`; `None` for
+    /// an unknown id.
+    pub fn verify(&self, id: &str) -> Option<Outcome> {
+        let e = self.entry(id)?;
+        if !self.installed(e) {
+            return Some(Outcome::Refused("not installed"));
+        }
+        let id = e.id;
+        let started = self.spawn(id, true, move |me, generation, rx| async move {
+            let verdict = me.check(id, generation, rx).await;
+            me.record_verdict(id, generation, &verdict);
+            verdict
+        });
+        Some(match started {
+            Ok(()) => Outcome::Accepted(self.get(id)?),
+            Err(why) => Outcome::Refused(why),
+        })
+    }
+
+    /// Keeps a verification's verdict on disk, unless the model was deleted meanwhile.
+    fn record_verdict(&self, id: &str, generation: u64, verdict: &Result<(), String>) {
+        let Some(e) = self.entry(id).filter(|_| self.is_current(id, generation)) else {
+            return;
+        };
+        let marker = self.model_dir(e).join(DAMAGED);
+        let _ = match verdict {
+            Ok(()) => std::fs::remove_file(marker),
+            Err(why) => std::fs::write(marker, why),
+        };
+    }
+
+    /// Removes the model, stopping its download; `Ok(false)` for an unknown id. A verification
+    /// is not stopped: its files are what it checks.
+    pub async fn delete(&self, id: &str) -> Result<bool, DeleteError> {
+        let Some(e) = self.entry(id) else {
+            return Ok(false);
+        };
+        {
+            let mut dl = self.0.downloads.locked();
+            if dl.get(id).is_some_and(|d| d.running && d.verify) {
+                return Err(DeleteError::Verifying);
+            }
+            if let Some(d) = dl.remove(id) {
+                d.cancel.send_replace(true);
+            }
+        }
+        let removed = remove_dir(self.staging_dir(e)).await;
+        let removed = removed.and(remove_dir(self.model_dir(e)).await);
         self.emit(id);
-        true
+        removed.map(|()| true).map_err(DeleteError::Io)
     }
 
     async fn check(
@@ -721,7 +783,14 @@ impl Manager {
         let mut done = 0;
         for f in Self::expected(e, self.record(e).as_ref()) {
             let digest = self
-                .hash_file(&dir.join(&f.name), id, generation, done, cancel.clone())
+                .hash_file(
+                    &dir.join(&f.name),
+                    id,
+                    generation,
+                    done,
+                    cancel.clone(),
+                    true,
+                )
                 .await?;
             if digest != f.sha256 {
                 return Err(format!("{} does not match its sha256 ({digest})", f.name));
@@ -748,7 +817,7 @@ impl Manager {
             let dest = stage.join(f.name);
             if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size)
                 && self
-                    .hash_file(&dest, id, generation, done_before, cancel.clone())
+                    .hash_file(&dest, id, generation, done_before, cancel.clone(), false)
                     .await
                     .is_ok_and(|d| d == f.sha256)
             {
@@ -783,12 +852,13 @@ impl Manager {
             version: e.version.into(),
             files: Self::expected(e, None),
         };
-        tokio::fs::write(
-            stage.join(RECORD),
-            serde_json::to_vec(&record).map_err(|e| e.to_string())?,
+        write_synced(
+            &stage.join(RECORD),
+            &serde_json::to_vec(&record).map_err(|e| e.to_string())?,
         )
         .await
         .map_err(|e| format!("write {RECORD}: {e}"))?;
+        sync_dir(&stage).await;
         self.swap(e, id, generation).await
     }
 
@@ -800,13 +870,18 @@ impl Manager {
         let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
         let old = self.0.dir.join(format!(".{}.old", e.id));
         let _ = tokio::fs::remove_dir_all(&old).await;
-        let had = tokio::fs::rename(&dir, &old).await.is_ok();
+        let had = match tokio::fs::rename(&dir, &old).await {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+            Err(err) => return Err(format!("replace {}: {err}", e.id)),
+        };
         if let Err(err) = tokio::fs::rename(&stage, &dir).await {
             if had {
                 let _ = tokio::fs::rename(&old, &dir).await;
             }
             return Err(format!("install {}: {err}", e.id));
         }
+        sync_dir(&self.0.dir).await;
         let _ = tokio::fs::remove_dir_all(&old).await;
         Ok(())
     }
@@ -831,7 +906,8 @@ impl Manager {
         dl.get(id).is_some_and(|d| d.generation == generation)
     }
 
-    /// The sha256 of a file, reported as progress after `done_before` bytes of the task.
+    /// The sha256 of a file, reported as progress after `done_before` bytes of the task; the
+    /// `rate` of hashing is the task's speed only for a verification.
     async fn hash_file(
         &self,
         path: &Path,
@@ -839,6 +915,7 @@ impl Manager {
         generation: u64,
         done_before: u64,
         mut cancel: watch::Receiver<bool>,
+        rate: bool,
     ) -> Result<String, String> {
         let mut file = tokio::fs::File::open(path)
             .await
@@ -857,8 +934,10 @@ impl Manager {
             hash.update(&buf[..n]);
             got += n as u64;
             self.set_bytes(id, generation, done_before + got);
-            if let Some(rate) = tick.due(done_before + got) {
-                self.set_rate(id, generation, rate);
+            if let Some(per_second) = tick.due(done_before + got) {
+                if rate {
+                    self.set_rate(id, generation, per_second);
+                }
                 self.emit(id);
             }
         }
@@ -916,6 +995,72 @@ impl Manager {
         file.sync_all()
             .await
             .map_err(|e| format!("write {}: {e}", part.display()))
+    }
+}
+
+/// Writes `bytes` to `path` and fsyncs it.
+async fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    file.write_all(bytes).await?;
+    file.sync_all().await
+}
+
+/// Makes the renames inside `dir` durable; best effort, a directory cannot be opened on Windows.
+async fn sync_dir(dir: &Path) {
+    if let Ok(d) = tokio::fs::File::open(dir).await {
+        let _ = d.sync_all().await;
+    }
+}
+
+/// Removes a directory tree off the runtime; a directory that is not there is fine.
+async fn remove_dir(dir: PathBuf) -> Result<(), String> {
+    let shown = dir.display().to_string();
+    let removed = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir))
+        .await
+        .map_err(|e| e.to_string())?;
+    match removed {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("remove {shown}: {e}")),
+        _ => Ok(()),
+    }
+}
+
+/// Whether `dir` directly holds a file a model is made of.
+fn holds_model_file(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten().any(|f| {
+            let name = f.file_name();
+            let name = name.to_string_lossy();
+            name == RECORD || name.ends_with(".onnx") || name.ends_with(".bin")
+        })
+    })
+}
+
+/// Finishes what a crash left of a swap: a `.<id>.old` goes back in place of a missing `<id>`,
+/// every other one is dropped, as is the staging of an id the manifest no longer has.
+fn recover(dir: &Path, entries: &[Entry]) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let known = |id: &str| entries.iter().any(|e| e.id == id);
+    for d in rd.flatten() {
+        let name = d.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_prefix('.') else {
+            continue;
+        };
+        let drop = match (stem.strip_suffix(".old"), stem.strip_suffix(".new")) {
+            (Some(id), _) if known(id) && !dir.join(id).exists() => {
+                if let Err(e) = std::fs::rename(d.path(), dir.join(id)) {
+                    tracing::warn!(id, "restoring the model a crash interrupted: {e}");
+                }
+                false
+            }
+            (Some(_), _) => true,
+            (_, Some(id)) => !known(id),
+            _ => false,
+        };
+        if drop {
+            let _ = std::fs::remove_dir_all(d.path());
+        }
     }
 }
 
@@ -1137,6 +1282,11 @@ mod tests {
     }
 
     fn test_manager(url: String) -> Manager {
+        let dir = std::env::temp_dir().join(format!("fliks-models-{}", std::process::id()));
+        manager_in(dir, url)
+    }
+
+    fn manager_in(dir: PathBuf, url: String) -> Manager {
         let entry = Entry {
             id: "t",
             kind: ModelKind::Melody,
@@ -1156,8 +1306,128 @@ mod tests {
                 size: 4,
             }],
         };
-        let dir = std::env::temp_dir().join(format!("fliks-models-{}", std::process::id()));
         Manager::new(dir, vec![entry], Events::default())
+    }
+
+    /// `t` installed (its file has the manifest's size), and a task that runs until cancelled.
+    fn installed_manager(tag: &str) -> Manager {
+        let dir = std::env::temp_dir().join(format!("fliks-{tag}-{}", std::process::id()));
+        let m = manager_in(dir.join("models"), String::new());
+        std::fs::create_dir_all(dir.join("models/t")).unwrap();
+        std::fs::write(dir.join("models/t/m.bin"), b"1234").unwrap();
+        m
+    }
+
+    async fn hold(_: Manager, _: u64, mut stop: watch::Receiver<bool>) -> Result<(), String> {
+        let _ = stop.wait_for(|c| *c).await;
+        Ok(())
+    }
+
+    async fn idle(m: &Manager) {
+        for _ in 0..200 {
+            if m.get("t").unwrap().state != ModelState::Downloading {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the task never ended");
+    }
+
+    #[tokio::test]
+    async fn a_task_of_the_other_kind_is_refused_and_a_verification_is_not_cancelled() {
+        let m = installed_manager("kinds");
+        m.spawn("t", true, hold).unwrap();
+        assert!(matches!(m.start("t"), Some(Outcome::Refused(r)) if r.contains("verification")));
+        assert!(matches!(m.verify("t"), Some(Outcome::Accepted(_))));
+        let info = m.get("t").unwrap();
+        assert_eq!(
+            (info.state, info.verifying),
+            (ModelState::Downloading, true)
+        );
+        assert!(matches!(m.delete("t").await, Err(DeleteError::Verifying)));
+        assert!(m.installed(m.entry("t").unwrap()), "the files stay");
+        m.0.downloads.locked()["t"].cancel.send_replace(true);
+        idle(&m).await;
+
+        m.spawn("t", false, hold).unwrap();
+        assert!(matches!(m.verify("t"), Some(Outcome::Refused(r)) if r.contains("download")));
+        assert!(matches!(m.start("t"), Some(Outcome::Accepted(_))));
+        let info = m.get("t").unwrap();
+        assert_eq!(
+            (info.state, info.verifying),
+            (ModelState::Downloading, false)
+        );
+        assert!(matches!(m.delete("t").await, Ok(true)));
+        assert!(!m.model_dir(m.entry("t").unwrap()).exists());
+        std::fs::remove_dir_all(m.dir().parent().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_model_a_verification_failed_is_not_picked_before_or_after_a_restart() {
+        let m = installed_manager("damaged");
+        let e = m.entry("t").unwrap();
+        assert!(m.pick(None, ModelKind::Melody).is_ok());
+        m.spawn("t", true, |me, generation, _| async move {
+            let verdict = Err("m.bin does not match its sha256 (x)".to_string());
+            me.record_verdict("t", generation, &verdict);
+            verdict
+        })
+        .unwrap();
+        idle(&m).await;
+        let err = m.pick(None, ModelKind::Melody).err().unwrap();
+        assert!(err.contains("failed its verification"), "{err}");
+        assert_eq!(m.get("t").unwrap().state, ModelState::Failed);
+        assert!(m.installed(e), "a new verification may still clear it");
+
+        let again = manager_in(m.dir().to_owned(), String::new());
+        assert_eq!(again.get("t").unwrap().state, ModelState::Failed);
+        assert!(again.pick(None, ModelKind::Melody).is_err());
+        std::fs::remove_dir_all(m.dir().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_crashed_swap_is_finished_at_start() {
+        let d = std::env::temp_dir().join(format!("fliks-recover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        for n in [
+            ".t.old",
+            ".t.new",
+            ".gone.old",
+            ".gone.new",
+            ".other.old",
+            ".shader-cache",
+            "other",
+        ] {
+            std::fs::create_dir_all(d.join(n)).unwrap();
+        }
+        std::fs::write(d.join(".t.old/m.bin"), b"1234").unwrap();
+        let _ = manager_in(d.clone(), String::new());
+        assert!(d.join("t/m.bin").exists() && !d.join(".t.old").exists());
+        assert!(d.join(".t.new").exists(), "a staged download resumes");
+        for n in [".gone.old", ".gone.new", ".other.old"] {
+            assert!(!d.join(n).exists(), "{n}");
+        }
+        assert!(d.join(".shader-cache").exists() && d.join("other").exists());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn only_a_directory_with_model_files_is_an_orphan() {
+        let m = installed_manager("orphans");
+        let d = m.dir().to_owned();
+        for (dir, file) in [
+            ("weights", "model.onnx"),
+            ("whisper", "ggml.bin"),
+            ("half", ".installed.json"),
+            ("backups", "dump.sql"),
+            ("media", "film.mkv"),
+        ] {
+            std::fs::create_dir_all(d.join(dir)).unwrap();
+            std::fs::write(d.join(dir).join(file), b"x").unwrap();
+        }
+        let names: Vec<_> = m.orphans().into_iter().map(|o| o.name).collect();
+        assert_eq!(names, ["half", "weights", "whisper"]);
+        std::fs::remove_dir_all(d.parent().unwrap()).unwrap();
     }
 
     #[tokio::test]
@@ -1172,7 +1442,7 @@ mod tests {
         reached(&n, 1).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(n.load(Ordering::SeqCst), 1);
-        m.delete("t").await;
+        let _ = m.delete("t").await;
     }
 
     #[tokio::test]
@@ -1181,7 +1451,7 @@ mod tests {
         let m = test_manager(url);
         m.start("t");
         reached(&n, 1).await;
-        m.delete("t").await;
+        let _ = m.delete("t").await;
         m.start("t");
         reached(&n, 2).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -1189,6 +1459,6 @@ mod tests {
         let info = m.get("t").unwrap();
         assert_eq!(info.state, ModelState::Downloading);
         assert!(info.error.is_none());
-        m.delete("t").await;
+        let _ = m.delete("t").await;
     }
 }

@@ -217,7 +217,7 @@ pub async fn run(
             .await
             .map_err(|e| e.to_string())?
     };
-    let Loaded { mut net, provider } = match loaded {
+    let Loaded { net, provider, .. } = match loaded {
         Ok(loaded) => loaded,
         Err(e) => return Ok(Err(e)),
     };
@@ -237,19 +237,13 @@ pub async fn run(
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             tokio::task::spawn_blocking(move || {
-                let go = |net: &mut dyn Net| {
-                    place(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse())
-                };
-                match go(&mut *net) {
-                    Err(AlignError::Emit(e)) if provider != "cpu" => {
-                        tracing::warn!(provider, "CTC run failed, repeating on the CPU: {e}");
-                        match load(&*backend, &file, &[], &export) {
-                            Ok(mut cpu) => (cpu.provider, go(&mut *cpu.net)),
-                            Err(e) => (provider, Err(AlignError::Emit(e))),
-                        }
-                    }
-                    placed => (provider, placed),
-                }
+                place_or_retry(
+                    net,
+                    provider,
+                    &stop,
+                    || load(&*backend, &file, &[], &export),
+                    |net| place(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse()),
+                )
             })
             .await
             .map_err(|e| e.to_string())
@@ -270,8 +264,28 @@ pub async fn run(
         }))
 }
 
-/// The network on the first provider of `allow` that runs it (`&[]`: the CPU), checked against the
-/// export's vocabulary on a short silence.
+/// `go` on `net`; a hardware provider's failed run, a stop aside, is repeated once on the CPU.
+fn place_or_retry<T>(
+    mut net: Box<dyn Net>,
+    provider: String,
+    stop: &AtomicBool,
+    cpu: impl FnOnce() -> Result<Loaded, String>,
+    go: impl Fn(&mut dyn Net) -> Result<T, AlignError<String>>,
+) -> (String, Result<T, AlignError<String>>) {
+    match go(&mut *net) {
+        Err(AlignError::Emit(e)) if provider != "cpu" && !stop.load(Relaxed) => {
+            tracing::warn!(provider, "CTC run failed, repeating on the CPU: {e}");
+            match cpu() {
+                Ok(mut cpu) => (cpu.provider, go(&mut *cpu.net)),
+                Err(e) => (provider, Err(AlignError::Emit(e))),
+            }
+        }
+        placed => (provider, placed),
+    }
+}
+
+/// The network on the first provider of `allow` that runs it (`&[]`: the CPU), its class count
+/// checked against the export's vocabulary on the warm-up answer (the CPU's own run of silence).
 fn load(
     backend: &dyn Backend,
     file: &Path,
@@ -280,12 +294,14 @@ fn load(
 ) -> Result<Loaded, String> {
     let warm: &[Warm] = &[(INPUT, &[1, SAMPLE_RATE as i64])];
     let mut loaded = backend.load(file, Some(allow), warm)?;
-    let shape = vec![1, MIN_SAMPLES as i64];
-    let silence = Tensor {
-        shape,
-        data: vec![0.0; MIN_SAMPLES],
+    let answer = if loaded.warmed.is_empty() {
+        let shape = vec![1, MIN_SAMPLES as i64];
+        let data = vec![0.0; MIN_SAMPLES];
+        loaded.net.run(vec![(INPUT, Tensor { shape, data })])?
+    } else {
+        std::mem::take(&mut loaded.warmed)
     };
-    export.check(frames_and_classes(&loaded.net.run(vec![(INPUT, silence)])?)?.1)?;
+    export.check(frames_and_classes(&answer)?.1)?;
     Ok(loaded)
 }
 
@@ -464,6 +480,84 @@ mod tests {
         let e = ex.check(4).unwrap_err();
         assert!(e.contains("token 9") && e.contains("4 classes"), "{e}");
         assert!(ex.check(10).is_ok());
+    }
+
+    struct NoRun;
+
+    impl Net for NoRun {
+        fn run(&mut self, _: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+            panic!("the warm-up answer was enough");
+        }
+    }
+
+    struct Warmed;
+
+    impl Backend for Warmed {
+        fn runtime(&self) -> super::super::BackendInfo {
+            Default::default()
+        }
+
+        fn load(&self, _: &Path, _: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
+            let t = || Tensor {
+                shape: vec![1, 2, 4],
+                data: vec![0.0; 8],
+            };
+            Ok(Loaded {
+                net: Box::new(NoRun),
+                provider: "cuda".into(),
+                warmed: vec![t()],
+            })
+        }
+    }
+
+    #[test]
+    fn the_class_count_comes_from_the_warm_up_run_alone() {
+        let export = |top_id| Export {
+            vocab: Vocab::new([('a', 1)], 0, 2, Case::Lower),
+            normalize: false,
+            top_id,
+        };
+        let ok = load(&Warmed, Path::new("m.onnx"), &["cuda".into()], &export(3)).unwrap();
+        assert_eq!(ok.provider, "cuda");
+        let err = load(&Warmed, Path::new("m.onnx"), &["cuda".into()], &export(4));
+        assert!(err.err().unwrap().contains("4 classes"));
+    }
+
+    fn loaded() -> Result<Loaded, String> {
+        Ok(Loaded {
+            net: Box::new(NoRun),
+            provider: "cpu".into(),
+            warmed: vec![],
+        })
+    }
+
+    #[test]
+    fn a_failed_gpu_run_is_repeated_on_the_cpu_unless_it_was_a_stop() {
+        let net = || -> Box<dyn Net> { loaded().unwrap().net };
+        let fails = |_: &mut dyn Net| Err::<u8, _>(AlignError::Emit("stopped".into()));
+        let stop = AtomicBool::new(false);
+        let calls = std::cell::Cell::new(0);
+        let go = |n: &mut dyn Net| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 { fails(n) } else { Ok(9u8) }
+        };
+        let (provider, r) = place_or_retry(net(), "cuda".into(), &stop, loaded, go);
+        assert_eq!((provider.as_str(), r.ok()), ("cpu", Some(9)));
+
+        stop.store(true, Relaxed);
+        let cpu_built = std::cell::Cell::new(false);
+        let (provider, r) = place_or_retry(
+            net(),
+            "cuda".into(),
+            &stop,
+            || {
+                cpu_built.set(true);
+                loaded()
+            },
+            fails,
+        );
+        assert!(matches!(r, Err(AlignError::Emit(_))) && provider == "cuda");
+        assert!(!cpu_built.get(), "a stop does not build a CPU session");
     }
 
     #[test]

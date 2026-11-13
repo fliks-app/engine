@@ -81,9 +81,6 @@ pub struct ModelInfo {
     pub engine: Option<ModelEngine>,
     /// The model's page (its card or repository).
     pub homepage: String,
-    /// What a host offers first: the default of a separation or melody model, every CTC alignment
-    /// model (a language takes the first one in the list that holds it).
-    pub recommended: bool,
     /// Total of `files[].sizeBytes`.
     pub size_bytes: f64,
     /// What the model's directory takes on disk (0 when absent).
@@ -95,6 +92,9 @@ pub struct ModelInfo {
     /// (`POST /v1/models/{id}/download`) replaces it.
     pub outdated: bool,
     pub state: ModelState,
+    /// The `downloading` state is a verification re-hashing the files, which `DELETE` refuses to
+    /// cancel (it would remove them).
+    pub verifying: bool,
     /// Bytes fetched (or verified) so far while `downloading`, else the installed size.
     pub downloaded_bytes: f64,
     /// Transfer rate of the last second while `downloading`.
@@ -150,7 +150,7 @@ pub struct KaraokeRuntime {
 #[serde(rename_all = "camelCase")]
 pub struct ModelsResponse {
     pub runtime: KaraokeRuntime,
-    /// Where the models live (`FLIKS_MODELS_DIR`).
+    /// Where the models live (`<FLIKS_DATA_DIR>/models`, else `<cache root>/models`).
     pub models_dir: String,
     /// Free space of the filesystem holding the models directory; absent when it can't say.
     #[serde(default, skip_serializing_if = "Option::is_none")]

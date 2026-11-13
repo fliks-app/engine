@@ -560,6 +560,9 @@
           },
           "404": {
             "description": "not a directory of `orphans` in `GET /v1/models`"
+          },
+          "500": {
+            "description": "the directory could not be removed (the body says why)"
           }
         }
       }
@@ -576,6 +579,12 @@
           },
           "404": {
             "description": "unknown model"
+          },
+          "409": {
+            "description": "a verification of the model runs: it is not cancelled, the files are what it checks"
+          },
+          "500": {
+            "description": "the files could not be removed (the body says why)"
           }
         }
       }
@@ -598,30 +607,7 @@
             }
           },
           "202": {
-            "description": "downloading, a new install or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "unknown model"
-          }
-        }
-      }
-    },
-    "/v1/models/{id}/verify": {
-      "post": {
-        "tags": [
-          "karaoke"
-        ],
-        "operationId": "verify_model",
-        "responses": {
-          "202": {
-            "description": "re-hashing the files (progress as for a download); a mismatch leaves the model `failed`",
+            "description": "downloading, started now or before: a new install, a repair or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)",
             "content": {
               "application/json": {
                 "schema": {
@@ -634,7 +620,33 @@
             "description": "unknown model"
           },
           "409": {
-            "description": "not installed, nothing to verify"
+            "description": "a verification of the model runs (the body says so)"
+          }
+        }
+      }
+    },
+    "/v1/models/{id}/verify": {
+      "post": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "verify_model",
+        "responses": {
+          "202": {
+            "description": "re-hashing the files, started now or before (progress as for a download); a mismatch leaves the model `failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown model"
+          },
+          "409": {
+            "description": "not installed, or a download of it runs (the body says which)"
           }
         }
       }
@@ -5549,11 +5561,11 @@
           "files",
           "languages",
           "homepage",
-          "recommended",
           "sizeBytes",
           "diskBytes",
           "outdated",
           "state",
+          "verifying",
           "downloadedBytes"
         ],
         "properties": {
@@ -5637,10 +5649,6 @@
             "type": "boolean",
             "description": "Installed with a version older than the manifest's: it still runs until an update\n(`POST /v1/models/{id}/download`) replaces it."
           },
-          "recommended": {
-            "type": "boolean",
-            "description": "What a host offers first: the default of a separation or melody model, every CTC alignment\nmodel (a language takes the first one in the list that holds it)."
-          },
           "sizeBytes": {
             "type": "number",
             "format": "double",
@@ -5648,6 +5656,10 @@
           },
           "state": {
             "$ref": "#/components/schemas/ModelState"
+          },
+          "verifying": {
+            "type": "boolean",
+            "description": "The `downloading` state is a verification re-hashing the files, which `DELETE` refuses to\ncancel (it would remove them)."
           },
           "version": {
             "type": "string",
@@ -5741,7 +5753,7 @@
           },
           "modelsDir": {
             "type": "string",
-            "description": "Where the models live (`FLIKS_MODELS_DIR`)."
+            "description": "Where the models live (`<FLIKS_DATA_DIR>/models`, else `<cache root>/models`)."
           },
           "orphans": {
             "type": "array",

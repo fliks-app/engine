@@ -24,8 +24,8 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelState, ModelsResponse, WindowsMl};
-use models::Manager;
+use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelsResponse, WindowsMl};
+use models::{DeleteError, Manager, Outcome};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::OnceCell;
@@ -48,6 +48,8 @@ pub struct Loaded {
     pub net: Box<dyn Net>,
     /// One of `PROVIDERS`, or `cpu`.
     pub provider: String,
+    /// What the warm-up run answered; empty when none ran (the CPU).
+    pub warmed: Vec<Tensor>,
 }
 
 /// What can run ONNX files.
@@ -94,7 +96,8 @@ fn allowed(allow: Option<&[String]>, name: &str) -> bool {
 
 /// Runs `net` once on zeros of `warm`: a GPU failure that only shows in a run (missing kernels,
 /// memory, a graph compiled on first use) surfaces here, where a fallback is still possible.
-pub fn warm_up<N: Net>(mut net: N, warm: &[Warm]) -> Result<N, String> {
+pub fn warm_up<N: Net>(mut net: N, warm: &[Warm]) -> Result<(N, Vec<Tensor>), String> {
+    let mut answer = vec![];
     if !warm.is_empty() {
         let zeros = |s: &[i64]| vec![0.0; s.iter().product::<i64>() as usize];
         let inputs = warm
@@ -107,9 +110,9 @@ pub fn warm_up<N: Net>(mut net: N, warm: &[Warm]) -> Result<N, String> {
                 (*name, t)
             })
             .collect();
-        net.run(inputs)?;
+        answer = net.run(inputs)?;
     }
-    Ok(net)
+    Ok((net, answer))
 }
 
 /// The first allowed provider that gives a net, else the CPU's; the name says which ran.
@@ -208,11 +211,17 @@ pub fn threads() -> usize {
         })
 }
 
+/// `<FLIKS_DATA_DIR>/models` when the host names its data directory, else `<cache root>/models`.
 pub fn models_dir(cache_root: &Path) -> PathBuf {
-    std::env::var("FLIKS_MODELS_DIR")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .map_or_else(|| cache_root.join("models"), PathBuf::from)
+    models_dir_in(std::env::var("FLIKS_DATA_DIR").ok().as_deref(), cache_root)
+}
+
+fn models_dir_in(data_dir: Option<&str>, cache_root: &Path) -> PathBuf {
+    data_dir
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map_or_else(|| cache_root.to_owned(), PathBuf::from)
+        .join("models")
 }
 
 impl Karaoke {
@@ -358,50 +367,58 @@ pub async fn list(State(s): S) -> Json<ModelsResponse> {
 
 #[utoipa::path(post, path = "/v1/models/{id}/download", operation_id = "download_model", responses(
     (status = 200, body = ModelInfo, description = "installed and current already"),
-    (status = 202, body = ModelInfo, description = "downloading, a new install or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)"),
-    (status = 404, description = "unknown model")))]
+    (status = 202, body = ModelInfo, description = "downloading, started now or before: a new install, a repair or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)"),
+    (status = 404, description = "unknown model"),
+    (status = 409, description = "a verification of the model runs (the body says so)")))]
 pub async fn download(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     s.rt.karaoke.backend().prepare();
     match s.rt.karaoke.models().start(&id) {
         None => StatusCode::NOT_FOUND.into_response(),
-        Some(m) if m.state == ModelState::Installed => Json(m).into_response(),
-        Some(m) => (StatusCode::ACCEPTED, Json(m)).into_response(),
+        Some(Outcome::Current(m)) => Json(m).into_response(),
+        Some(Outcome::Accepted(m)) => (StatusCode::ACCEPTED, Json(m)).into_response(),
+        Some(Outcome::Refused(why)) => (StatusCode::CONFLICT, why).into_response(),
     }
 }
 
 #[utoipa::path(post, path = "/v1/models/{id}/verify", operation_id = "verify_model", responses(
-    (status = 202, body = ModelInfo, description = "re-hashing the files (progress as for a download); a mismatch leaves the model `failed`"),
+    (status = 202, body = ModelInfo, description = "re-hashing the files, started now or before (progress as for a download); a mismatch leaves the model `failed`"),
     (status = 404, description = "unknown model"),
-    (status = 409, description = "not installed, nothing to verify")))]
+    (status = 409, description = "not installed, or a download of it runs (the body says which)")))]
 pub async fn verify(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     match s.rt.karaoke.models().verify(&id) {
         None => StatusCode::NOT_FOUND.into_response(),
-        Some(m) if m.state == ModelState::Downloading => {
+        Some(Outcome::Accepted(m) | Outcome::Current(m)) => {
             (StatusCode::ACCEPTED, Json(m)).into_response()
         }
-        Some(_) => StatusCode::CONFLICT.into_response(),
+        Some(Outcome::Refused(why)) => (StatusCode::CONFLICT, why).into_response(),
     }
 }
 
 #[utoipa::path(delete, path = "/v1/models/orphans/{name}", operation_id = "delete_model_orphan", responses(
     (status = 204, description = "removed"),
-    (status = 404, description = "not a directory of `orphans` in `GET /v1/models`")))]
-pub async fn delete_orphan(State(s): S, UrlPath(name): UrlPath<String>) -> StatusCode {
-    if s.rt.karaoke.models().delete_orphan(&name).await {
-        StatusCode::NO_CONTENT
-    } else {
-        StatusCode::NOT_FOUND
+    (status = 404, description = "not a directory of `orphans` in `GET /v1/models`"),
+    (status = 500, description = "the directory could not be removed (the body says why)")))]
+pub async fn delete_orphan(State(s): S, UrlPath(name): UrlPath<String>) -> Response {
+    match s.rt.karaoke.models().delete_orphan(&name).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(why) => (StatusCode::INTERNAL_SERVER_ERROR, why).into_response(),
     }
 }
 
 #[utoipa::path(delete, path = "/v1/models/{id}", operation_id = "delete_model", responses(
     (status = 204, description = "removed, a download stopped"),
-    (status = 404, description = "unknown model")))]
-pub async fn delete(State(s): S, UrlPath(id): UrlPath<String>) -> StatusCode {
-    if s.rt.karaoke.models().delete(&id).await {
-        StatusCode::NO_CONTENT
-    } else {
-        StatusCode::NOT_FOUND
+    (status = 404, description = "unknown model"),
+    (status = 409, description = "a verification of the model runs: it is not cancelled, the files are what it checks"),
+    (status = 500, description = "the files could not be removed (the body says why)")))]
+pub async fn delete(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
+    match s.rt.karaoke.models().delete(&id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(DeleteError::Verifying) => {
+            (StatusCode::CONFLICT, "a verification is running").into_response()
+        }
+        Err(DeleteError::Io(why)) => (StatusCode::INTERNAL_SERVER_ERROR, why).into_response(),
     }
 }
 
@@ -472,7 +489,7 @@ mod tests {
                 &names(&["cuda", "migraphx"]),
                 None,
                 |p| warm_up(Failing(broken.contains(&p)), warm),
-                || Ok(Failing(false)),
+                || Ok((Failing(false), vec![])),
             )
             .map(|(_, p)| p)
         };
@@ -509,6 +526,21 @@ mod tests {
         let at = |n: &str| PROVIDERS.iter().position(|p| *p == n).unwrap();
         assert!(at("cuda") < at("nvtensorrtrtx") && at("amdgpu") < at("migraphx"));
         assert_eq!(at("directml"), PROVIDERS.len() - 1);
+    }
+
+    #[test]
+    fn the_models_live_under_the_data_directory_else_the_cache_root() {
+        let cache = Path::new("/cache");
+        assert_eq!(
+            models_dir_in(Some("/data"), cache),
+            Path::new("/data/models")
+        );
+        assert_eq!(
+            models_dir_in(Some(" /data "), cache),
+            Path::new("/data/models")
+        );
+        assert_eq!(models_dir_in(Some("  "), cache), Path::new("/cache/models"));
+        assert_eq!(models_dir_in(None, cache), Path::new("/cache/models"));
     }
 
     #[test]

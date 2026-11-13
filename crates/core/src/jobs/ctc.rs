@@ -282,9 +282,8 @@ struct Placed {
     score: f32,
 }
 
-/// The states of a pass: a star before each line with a token and after the last one, each
-/// token followed by a blank; `spans` the first and last state of each word, `ids` the classes
-/// it scores (the blank first), `cols` the emission column of each state (the wildcard's last).
+/// A pass's states (a star before each line with a token and after the last, each token then a
+/// blank); `spans` the word bounds, `ids` the scored classes, `cols` each state's emission column.
 struct Layout {
     ids: Vec<u32>,
     cols: Vec<usize>,

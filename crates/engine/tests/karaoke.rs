@@ -242,22 +242,30 @@ async fn a_verify_that_finds_a_changed_file_fails_and_a_download_repairs_it() {
     assert_eq!(m["installedVersion"], "7");
     assert!(m["diskBytes"].as_f64().unwrap() > 0.0);
 
-    assert_eq!(
-        e.control("POST", "/v1/models/good/verify", None)
-            .await
-            .status,
-        202
-    );
-    settle(&e, "good", "installed").await;
+    for _ in 0..30 {
+        let r = e.control("POST", "/v1/models/good/verify", None).await;
+        assert_eq!(
+            r.status, 202,
+            "a verify that ends at once is still accepted"
+        );
+        settle(&e, "good", "installed").await;
+    }
 
     std::fs::write(dir.join("good/a.bin"), vec![b'x'; PLAIN.len()]).unwrap();
     e.control("POST", "/v1/models/good/verify", None).await;
     let m = settle(&e, "good", "failed").await;
     assert!(m["error"].as_str().unwrap().contains("a.bin"), "{m}");
+    let models = e.rt.karaoke.models();
+    let err = models.pick(None, ModelKind::Melody).err().unwrap();
+    assert!(err.contains("failed its verification"), "{err}");
 
     e.control("POST", "/v1/models/good/download", None).await;
     settle(&e, "good", "installed").await;
     assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
+    assert!(
+        models.pick(None, ModelKind::Melody).is_ok(),
+        "the repair clears it"
+    );
     assert_eq!(
         e.control("POST", "/v1/models/nope/verify", None)
             .await
@@ -372,6 +380,8 @@ async fn orphan_directories_are_listed_and_removed() {
     std::fs::write(dir.join("stray/x.bin"), b"12345").unwrap();
     std::fs::create_dir_all(dir.join(".cache")).unwrap();
     std::fs::write(dir.join("loose-file"), b"1").unwrap();
+    std::fs::create_dir_all(dir.join("media")).unwrap();
+    std::fs::write(dir.join("media/film.mkv"), b"1").unwrap();
 
     let list = e.control("GET", "/v1/models", None).await.json();
     assert_eq!(
@@ -380,7 +390,7 @@ async fn orphan_directories_are_listed_and_removed() {
     );
     assert!(list["usedBytes"].as_f64().unwrap() >= 6.0);
 
-    for name in [".cache", "good", "loose-file"] {
+    for name in [".cache", "good", "loose-file", "media"] {
         let r = e
             .control("DELETE", &format!("/v1/models/orphans/{name}"), None)
             .await;
@@ -389,6 +399,7 @@ async fn orphan_directories_are_listed_and_removed() {
     let r = e.control("DELETE", "/v1/models/orphans/stray", None).await;
     assert_eq!(r.status, 204);
     assert!(!dir.join("stray").exists() && dir.join(".cache").exists());
+    assert!(dir.join("media/film.mkv").exists());
 }
 
 struct NoOnnx;
@@ -636,7 +647,11 @@ impl Backend for Fake {
             _ if model.starts_with("ctc-") => Box::new(ToneNet),
             _ => Box::new(CrossingNet),
         };
-        Ok(Loaded { net, provider })
+        Ok(Loaded {
+            net,
+            provider,
+            warmed: vec![],
+        })
     }
 }
 
