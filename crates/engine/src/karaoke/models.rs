@@ -7,6 +7,7 @@ use fliks_engine_core::api::{
     EngineEvent, ModelEngine, ModelFile, ModelInfo, ModelKind, ModelLicence, ModelOrphan,
     ModelState, job_errors,
 };
+use fliks_engine_core::jobs::ctc::Case;
 use http_body_util::{BodyExt, Empty};
 use hyper::{Request, StatusCode, Uri};
 use hyper_rustls::HttpsConnector;
@@ -40,8 +41,9 @@ pub struct Entry {
     pub homepage: &'static str,
     /// Two-letter codes of the languages an alignment model is for; empty: every language.
     pub languages: &'static [&'static str],
-    /// An alignment model run as a CTC network (else the speech recogniser's).
-    pub ctc: bool,
+    /// The case of the characters of an alignment model run as a CTC network (else the speech
+    /// recogniser's).
+    pub ctc: Option<Case>,
     pub files: Vec<FileEntry>,
 }
 
@@ -122,7 +124,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/deezer/spleeter",
             languages: &[],
-            ctc: false,
+            ctc: None,
             files: vec![
                 FileEntry {
                     name: "vocals.onnx",
@@ -149,7 +151,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/lars76/swift-f0",
             languages: &[],
-            ctc: false,
+            ctc: None,
             files: vec![FileEntry {
                 name: "model.onnx",
                 url: format!(
@@ -170,7 +172,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://huggingface.co/ggerganov/whisper.cpp",
             languages: &[],
-            ctc: false,
+            ctc: None,
             files: vec![FileEntry {
                 name: "model.bin",
                 url: whisper_url("ggml-small-q5_1.bin"),
@@ -189,7 +191,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-french",
             languages: &["fr"],
-            ctc: true,
+            ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
                     "wav2vec2-ctc-fr",
@@ -216,7 +218,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/wav2vec2-large-960h-lv60-self",
             languages: &["en"],
-            ctc: true,
+            ctc: Some(Case::Upper),
             files: vec![
                 ctc_file(
                     "wav2vec2-ctc-en",
@@ -243,7 +245,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/omniASR-CTC-300M",
             languages: &[],
-            ctc: true,
+            ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
                     "omniasr-ctc-300m",
@@ -322,7 +324,7 @@ pub struct Picked {
     pub id: &'static str,
     /// The version on disk, which an outdated model still runs.
     pub version: String,
-    pub ctc: bool,
+    pub ctc: Option<Case>,
     pub dir: PathBuf,
 }
 
@@ -485,14 +487,14 @@ impl Manager {
                 })
                 .collect(),
             languages: e.languages.iter().map(|l| (*l).into()).collect(),
-            engine: (e.kind == ModelKind::Alignment).then_some(if e.ctc {
+            engine: (e.kind == ModelKind::Alignment).then_some(if e.ctc.is_some() {
                 ModelEngine::Ctc
             } else {
                 ModelEngine::Whisper
             }),
             homepage: e.homepage.into(),
             recommended: if e.kind == ModelKind::Alignment {
-                e.ctc
+                e.ctc.is_some()
             } else {
                 e.default
             },
@@ -608,7 +610,7 @@ impl Manager {
     pub fn pick_aligner(&self, id: Option<&str>, language: Option<&str>) -> Result<Picked, String> {
         let ctc = self.0.entries.iter().find(|e| {
             e.kind == ModelKind::Alignment
-                && e.ctc
+                && e.ctc.is_some()
                 && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
                 && self.installed(e)
         });
@@ -1023,7 +1025,7 @@ mod tests {
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
             }
         }
-        for e in m.iter().filter(|e| e.ctc) {
+        for e in m.iter().filter(|e| e.ctc.is_some()) {
             let names: Vec<_> = e.files.iter().map(|f| f.name).collect();
             assert_eq!(names, ["model.onnx", "vocab.json"], "{}", e.id);
             assert!(e.kind == ModelKind::Alignment && !e.default);
@@ -1061,7 +1063,7 @@ mod tests {
             id(Some("whisper-small-q5_1"), Some("fr")),
             Ok("whisper-small-q5_1")
         );
-        assert!(m.pick_aligner(None, Some("fr")).unwrap().ctc);
+        assert!(m.pick_aligner(None, Some("fr")).unwrap().ctc.is_some());
         // The English model is not installed: Omnilingual serves it.
         assert_eq!(id(None, Some("en")), Ok("omniasr-ctc-300m"));
         assert!(
@@ -1072,7 +1074,7 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
         let (d, m) = dir_with(&["whisper-small-q5_1"]);
         let p = m.pick_aligner(None, Some("fr")).unwrap();
-        assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", false));
+        assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", None));
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1146,7 +1148,7 @@ mod tests {
             default: true,
             homepage: "",
             languages: &[],
-            ctc: false,
+            ctc: None,
             files: vec![FileEntry {
                 name: "m.bin",
                 url,

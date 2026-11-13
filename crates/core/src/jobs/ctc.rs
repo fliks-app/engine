@@ -30,12 +30,11 @@ pub struct Vocab {
     case: Case,
 }
 
-/// How the text's case meets the vocabulary's.
+/// The case a network's characters are in: the text is folded to it.
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Case {
+pub enum Case {
     Lower,
     Upper,
-    Keep,
 }
 
 /// Token standing for a character the vocabulary lacks: it scores the best non-blank class.
@@ -43,18 +42,15 @@ const WILDCARD: u32 = u32::MAX;
 
 impl Vocab {
     /// `chars`: id of each single character the network emits (the delimiter and the blank
-    /// excluded); the text is folded to their case unless they hold both.
-    pub fn new(chars: impl IntoIterator<Item = (char, u32)>, blank: u32, delimiter: u32) -> Self {
-        let ids: HashMap<char, u32> = chars.into_iter().collect();
-        let lower = ids.keys().any(|c| c.is_lowercase());
-        let upper = ids.keys().any(|c| c.is_uppercase());
-        let case = match (lower, upper) {
-            (true, false) => Case::Lower,
-            (false, true) => Case::Upper,
-            _ => Case::Keep,
-        };
+    /// excluded); the text is folded to `case`.
+    pub fn new(
+        chars: impl IntoIterator<Item = (char, u32)>,
+        blank: u32,
+        delimiter: u32,
+        case: Case,
+    ) -> Self {
         Vocab {
-            ids,
+            ids: chars.into_iter().collect(),
             blank,
             delimiter,
             case,
@@ -249,7 +245,6 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
             let cased: Vec<char> = match vocab.case {
                 Case::Upper => c.to_uppercase().collect(),
                 Case::Lower => c.to_lowercase().collect(),
-                Case::Keep => vec![c],
             };
             out.extend(
                 cased
@@ -552,6 +547,7 @@ mod tests {
             [('a', 2), ('b', 3), ('c', 4), ('\'', 5), ('é', 6)],
             BLANK,
             DELIM,
+            Case::Lower,
         )
     }
 
@@ -632,7 +628,7 @@ mod tests {
         );
         assert_eq!(tokens("a-b", &v, "xx"), vec![2, DELIM, 3]);
         assert!(tokens("???", &v, "xx").is_empty());
-        let up = Vocab::new([('A', 2)], BLANK, DELIM);
+        let up = Vocab::new([('A', 2)], BLANK, DELIM, Case::Upper);
         assert_eq!(tokens("a", &up, "xx"), vec![2]);
     }
 
@@ -642,7 +638,12 @@ mod tests {
         assert_eq!(spell_fr(71), "soixante et onze");
         assert_eq!(spell_fr(1984), "mille neuf cent quatre vingt quatre");
         assert_eq!(spell_en(1984), "one thousand nine hundred eighty four");
-        let v = Vocab::new("abcdeinoqrstuvxzé".chars().zip(2..), BLANK, DELIM);
+        let v = Vocab::new(
+            "abcdeinoqrstuvxzé".chars().zip(2..),
+            BLANK,
+            DELIM,
+            Case::Lower,
+        );
         assert!(!tokens("12", &v, "fr").is_empty());
         assert_eq!(tokens("12", &v, "de"), vec![WILDCARD]);
     }
@@ -726,9 +727,9 @@ mod tests {
     }
 
     #[test]
-    fn a_vocabulary_with_both_cases_keeps_the_text_case() {
-        let v = Vocab::new([('a', 2), ('A', 3)], BLANK, DELIM);
-        assert_eq!(tokens("aA", &v, "xx"), vec![2, 3]);
+    fn the_text_is_folded_to_the_declared_case_even_when_the_vocabulary_holds_both() {
+        let v = Vocab::new([('a', 2), ('A', 3)], BLANK, DELIM, Case::Lower);
+        assert_eq!(tokens("aA", &v, "xx"), vec![2, 2]);
     }
 
     #[test]
@@ -741,7 +742,7 @@ mod tests {
 
     #[test]
     fn a_hyphen_is_the_vocabulary_hyphen_when_it_has_one() {
-        let v = Vocab::new([('a', 2), ('b', 3), ('-', 4)], BLANK, DELIM);
+        let v = Vocab::new([('a', 2), ('b', 3), ('-', 4)], BLANK, DELIM, Case::Lower);
         assert_eq!(tokens("a-b", &v, "xx"), vec![2, 4, 3]);
         assert_eq!(tokens("a-", &v, "xx"), vec![2]);
         assert!(tokens("-", &v, "xx").is_empty());
@@ -749,7 +750,7 @@ mod tests {
 
     #[test]
     fn a_number_is_set_apart_from_the_letters_after_it() {
-        let v = Vocab::new("twond".chars().zip(2..), BLANK, DELIM);
+        let v = Vocab::new("twond".chars().zip(2..), BLANK, DELIM, Case::Lower);
         assert_eq!(tokens("2nd", &v, "en"), vec![2, 3, 4, DELIM, 5, 6]);
     }
 

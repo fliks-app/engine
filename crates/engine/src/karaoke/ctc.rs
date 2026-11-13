@@ -5,7 +5,7 @@ use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass};
-use fliks_engine_core::jobs::ctc::{AlignError, Emissions, FRAME_MS, Vocab, align};
+use fliks_engine_core::jobs::ctc::{AlignError, Case, Emissions, FRAME_MS, Vocab, align};
 use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -54,7 +54,7 @@ impl Export {
     }
 }
 
-fn read_export(path: &Path) -> Result<Export, String> {
+fn read_export(path: &Path, case: Case) -> Result<Export, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let f: VocabFile = serde_json::from_slice(&bytes)
         .map_err(|e| format!("{} is not a CTC vocabulary: {e}", path.display()))?;
@@ -81,7 +81,7 @@ fn read_export(path: &Path) -> Result<Export, String> {
         }
     }
     Ok(Export {
-        vocab: Vocab::new(chars, f.blank, f.delimiter),
+        vocab: Vocab::new(chars, f.blank, f.delimiter, case),
         normalize: f.do_normalize,
         top_id,
     })
@@ -195,6 +195,7 @@ pub fn language_of(requested: Option<&str>, lines: &[AlignLine]) -> Option<Strin
 pub async fn run(
     ctx: &Ctx,
     picked: &Picked,
+    case: Case,
     lines: &[AlignLine],
     language: Option<&str>,
     providers: Option<&[String]>,
@@ -204,7 +205,7 @@ pub async fn run(
     if !runtime.onnx {
         return Ok(Err(unsupported(runtime.error.unwrap_or_default())));
     }
-    let export = match read_export(&picked.file("vocab.json")) {
+    let export = match read_export(&picked.file("vocab.json"), case) {
         Ok(export) => Arc::new(export),
         Err(e) => return Ok(Err(e)),
     };
@@ -352,11 +353,15 @@ mod tests {
             )
         };
         std::fs::write(&file, json(20)).unwrap();
-        let e = read_export(&file).unwrap();
+        let e = read_export(&file, Case::Lower).unwrap();
         assert!(e.normalize);
         assert_eq!(e.top_id, 7);
         std::fs::write(&file, json(40)).unwrap();
-        assert!(read_export(&file).unwrap_err().contains("40 ms"));
+        assert!(
+            read_export(&file, Case::Lower)
+                .unwrap_err()
+                .contains("40 ms")
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -452,7 +457,7 @@ mod tests {
     #[test]
     fn a_vocabulary_larger_than_the_network_is_an_error_not_a_silent_miss() {
         let ex = Export {
-            vocab: Vocab::new([('a', 1)], 0, 2),
+            vocab: Vocab::new([('a', 1)], 0, 2, Case::Lower),
             normalize: false,
             top_id: 9,
         };

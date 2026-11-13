@@ -24,10 +24,10 @@ pub async fn run(
     let models = k.models();
     let detected = ctc::language_of(language, lines);
     let picked = models.pick_aligner(model, detected.as_deref())?;
-    if !picked.ctc {
+    let Some(case) = picked.ctc else {
         return recognise(ctx, &picked, lines, language, None).await;
-    }
-    let failure = match ctc::run(ctx, &picked, lines, detected.as_deref(), providers).await? {
+    };
+    let failure = match ctc::run(ctx, &picked, case, lines, detected.as_deref(), providers).await? {
         Ok(align) => return Ok(JobResult::Align { align }),
         Err(e) => e,
     };

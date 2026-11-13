@@ -10,6 +10,7 @@ use axum::{
 use fliks_engine::karaoke::models::{Entry, FileEntry, Manager};
 use fliks_engine::karaoke::{Backend, BackendInfo, Loaded, Net, Tensor, Tools, Warm};
 use fliks_engine_core::api::{EngineEvent, HwAccel, ModelKind};
+use fliks_engine_core::jobs::ctc::Case;
 use runtime_common::*;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -52,7 +53,7 @@ fn entry(id: &'static str, kind: ModelKind, default: bool, files: Vec<FileEntry>
         default,
         homepage: "https://models.test/card",
         languages: &[],
-        ctc: false,
+        ctc: None,
         files,
     }
 }
@@ -1051,7 +1052,7 @@ async fn ctc_engine() -> Option<Engine> {
             file("vocab.json", String::new(), vocab.as_bytes()),
         ];
         entries.push(Entry {
-            ctc: true,
+            ctc: Some(Case::Lower),
             ..entry(id, ModelKind::Alignment, false, files)
         });
     }
@@ -1274,27 +1275,19 @@ async fn align_runs_a_real_ctc_model_when_one_is_given() {
     let read = |p: String| -> Value { serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap() };
     let (truth, other) = (read(lines), read(other));
     let stem = Path::new(&stem);
-    let align = async |lines: &Value, timed: bool, lower: bool| {
+    let align = async |lines: &Value, timed: bool| {
         let lines: Vec<Value> = lines["lines"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| {
-                let text = l["text"].as_str().unwrap();
-                let text = if lower {
-                    text.to_lowercase()
-                } else {
-                    text.into()
-                };
-                json!({ "text": text, "startMs": timed.then(|| l["start"].clone()) })
-            })
+            .map(|l| json!({ "text": l["text"], "startMs": timed.then(|| l["start"].clone()) }))
             .collect();
         let kind = json!({ "type": "Align", "language": truth["lang"], "lines": lines });
         let r = run_kind(&e, stem, kind).await;
         assert_eq!(r["state"], "done", "{r}");
         r["result"]["align"].clone()
     };
-    let a = align(&truth, true, false).await;
+    let a = align(&truth, true).await;
     assert!(a["backend"].as_str().unwrap().starts_with("ctc-"), "{a}");
     let mut last = 0;
     for w in a["lines"]
@@ -1308,13 +1301,11 @@ async fn align_runs_a_real_ctc_model_when_one_is_given() {
         last = s;
     }
     let matched = |a: &Value| a["matched"].as_f64().unwrap();
-    let lower = align(&truth, true, true).await;
-    let whole = align(&truth, false, false).await;
-    let wrong = align(&other, true, false).await;
+    let whole = align(&truth, false).await;
+    let wrong = align(&other, true).await;
     eprintln!(
-        "matched: kept {:.2}, lowercased {:.2}, whole track {:.2}, other lyrics {:.2}",
+        "matched: lyrics {:.2}, whole track {:.2}, other lyrics {:.2}",
         matched(&a),
-        matched(&lower),
         matched(&whole),
         matched(&wrong)
     );
