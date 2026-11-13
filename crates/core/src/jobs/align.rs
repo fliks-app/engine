@@ -293,7 +293,7 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
         .collect();
     let found: Vec<bool> = paired.iter().map(Option::is_some).collect();
     let (matched, share) = shares(&copies, &found);
-    (finish(&copies, &mut times, &matched), share)
+    (finish(&copies, &mut times, &matched, u32::MAX), share)
 }
 
 /// Per copy, and over the track, the share of its words found: the optional ones count only when
@@ -329,13 +329,15 @@ pub(super) fn shares(copies: &[Copy], found: &[bool]) -> (Vec<f64>, f64) {
 }
 
 /// The lines of `copies` from the word times in `times` (flat word order): the words nothing
-/// was placed for are timed first, see `fill`. `matched` is each copy's share found.
+/// was placed for are timed first, see `fill`. `matched` is each copy's share found, `end_ms` the
+/// track's length.
 pub(super) fn finish(
     copies: &[Copy],
     times: &mut [Option<(u32, u32)>],
     matched: &[f64],
+    end_ms: u32,
 ) -> Vec<AlignedLine> {
-    fill(copies, times);
+    fill(copies, times, end_ms);
     let mut out: Vec<AlignedLine> = vec![];
     let mut next = 0;
     let mut last_end = 0;
@@ -374,8 +376,8 @@ pub(super) fn finish(
 }
 
 /// Times the words nothing was placed for: shared out, by length, between the placed words
-/// around them and inside their line's times. The result never runs backwards.
-fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
+/// around them and inside their line's times, none past `end_ms`. The result never runs backwards.
+fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>], end_ms: u32) {
     let flat: Vec<(u32, Option<(u32, u32)>)> = copies
         .iter()
         .flat_map(|c| {
@@ -422,7 +424,7 @@ fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
             spent += weights[w];
             let end =
                 left + ((u64::from(right - left) * u64::from(spent)) / u64::from(total)) as u32;
-            times[k] = Some((at, end.max(at)));
+            times[k] = Some((at.min(end_ms), end.max(at).min(end_ms)));
             at = end;
         }
         i = j;
