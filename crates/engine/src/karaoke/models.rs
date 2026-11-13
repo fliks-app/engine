@@ -164,7 +164,7 @@ pub fn manifest() -> Vec<Entry> {
         Entry {
             id: "whisper-small-q5_1",
             kind: ModelKind::Alignment,
-            name: "Whisper small, 5-bit (190 MB)",
+            name: "Whisper small, 5-bit",
             version: "1",
             licence: "MIT",
             licence_text: with_mit(WHISPER),
@@ -183,7 +183,7 @@ pub fn manifest() -> Vec<Entry> {
         Entry {
             id: "wav2vec2-ctc-fr",
             kind: ModelKind::Alignment,
-            name: "wav2vec2 French, CTC (634 MB)",
+            name: "wav2vec2 French, CTC",
             version: "1",
             licence: "Apache-2.0",
             licence_text: format!("{WAV2VEC2_FR} {APACHE}"),
@@ -210,7 +210,7 @@ pub fn manifest() -> Vec<Entry> {
         Entry {
             id: "wav2vec2-ctc-en",
             kind: ModelKind::Alignment,
-            name: "wav2vec2 English, CTC (634 MB)",
+            name: "wav2vec2 English, CTC",
             version: "1",
             licence: "Apache-2.0",
             licence_text: format!("{WAV2VEC2_EN} {APACHE}"),
@@ -237,7 +237,7 @@ pub fn manifest() -> Vec<Entry> {
         Entry {
             id: "omniasr-ctc-300m",
             kind: ModelKind::Alignment,
-            name: "Omnilingual ASR 300M, CTC (653 MB)",
+            name: "Omnilingual ASR 300M, CTC",
             version: "1",
             licence: "Apache-2.0",
             licence_text: format!("{OMNIASR} {APACHE}"),
