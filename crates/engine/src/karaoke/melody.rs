@@ -48,7 +48,7 @@ pub async fn run(
     Ok(JobResult::Melody {
         melody: MelodyMeta {
             model: picked.id.into(),
-            model_version: picked.version.into(),
+            model_version: picked.version.clone(),
             spans: spans_notes(&track, spans),
         },
     })

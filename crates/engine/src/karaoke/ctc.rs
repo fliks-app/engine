@@ -214,7 +214,7 @@ pub async fn run(
         .await?;
     Ok(placed.map(|(lines, matched)| AlignMeta {
         model: picked.id.into(),
-        model_version: picked.version.into(),
+        model_version: picked.version.clone(),
         backend: format!("ctc-{provider}"),
         lines,
         matched,

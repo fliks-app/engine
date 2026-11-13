@@ -24,7 +24,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelsResponse, WindowsMl};
+use fliks_engine_core::api::{KaraokeRuntime, ModelInfo, ModelState, ModelsResponse, WindowsMl};
 use models::Manager;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -349,22 +349,48 @@ pub async fn list(State(s): S) -> Json<ModelsResponse> {
     Json(ModelsResponse {
         runtime: k.runtime(&s.rt.ffmpeg).await,
         models_dir: models.dir().to_string_lossy().into_owned(),
+        free_bytes: models.free_bytes().map(|b| b as f64),
+        used_bytes: models.used_bytes() as f64,
+        orphans: models.orphans(),
         models: models.list(),
     })
 }
 
 #[utoipa::path(post, path = "/v1/models/{id}/download", operation_id = "download_model", responses(
-    (status = 200, body = ModelInfo, description = "installed already"),
-    (status = 202, body = ModelInfo, description = "downloading (follow it with `GET /v1/models` or the `ModelChanged` events)"),
+    (status = 200, body = ModelInfo, description = "installed and current already"),
+    (status = 202, body = ModelInfo, description = "downloading, a new install or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)"),
     (status = 404, description = "unknown model")))]
 pub async fn download(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
     s.rt.karaoke.backend().prepare();
     match s.rt.karaoke.models().start(&id) {
         None => StatusCode::NOT_FOUND.into_response(),
-        Some(m) if m.state == fliks_engine_core::api::ModelState::Installed => {
-            Json(m).into_response()
-        }
+        Some(m) if m.state == ModelState::Installed => Json(m).into_response(),
         Some(m) => (StatusCode::ACCEPTED, Json(m)).into_response(),
+    }
+}
+
+#[utoipa::path(post, path = "/v1/models/{id}/verify", operation_id = "verify_model", responses(
+    (status = 202, body = ModelInfo, description = "re-hashing the files (progress as for a download); a mismatch leaves the model `failed`"),
+    (status = 404, description = "unknown model"),
+    (status = 409, description = "not installed, nothing to verify")))]
+pub async fn verify(State(s): S, UrlPath(id): UrlPath<String>) -> Response {
+    match s.rt.karaoke.models().verify(&id) {
+        None => StatusCode::NOT_FOUND.into_response(),
+        Some(m) if m.state == ModelState::Downloading => {
+            (StatusCode::ACCEPTED, Json(m)).into_response()
+        }
+        Some(_) => StatusCode::CONFLICT.into_response(),
+    }
+}
+
+#[utoipa::path(delete, path = "/v1/models/orphans/{name}", operation_id = "delete_model_orphan", responses(
+    (status = 204, description = "removed"),
+    (status = 404, description = "not a directory of `orphans` in `GET /v1/models`")))]
+pub async fn delete_orphan(State(s): S, UrlPath(name): UrlPath<String>) -> StatusCode {
+    if s.rt.karaoke.models().delete_orphan(&name).await {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
     }
 }
 

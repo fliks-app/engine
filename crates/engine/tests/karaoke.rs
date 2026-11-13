@@ -51,6 +51,7 @@ fn entry(id: &'static str, kind: ModelKind, default: bool, files: Vec<FileEntry>
         licence_text: "MIT text".into(),
         clear: true,
         default,
+        homepage: "https://models.test/card",
         languages: &[],
         ctc: false,
         files,
@@ -140,6 +141,8 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
     let list = e.control("GET", "/v1/models", None).await.json();
     assert_eq!(list["modelsDir"], dir.to_string_lossy().as_ref());
     assert_eq!(list["runtime"]["onnx"], false);
+    assert_eq!(list["orphans"], json!([]));
+    assert!(list["usedBytes"].is_number());
     assert!(
         list["models"]
             .as_array()
@@ -184,7 +187,8 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
         );
         let m = settle(&e, id, "failed").await;
         assert!(m["error"].as_str().unwrap().contains(why), "{m}");
-        let left: Vec<_> = std::fs::read_dir(dir.join(id)).unwrap().flatten().collect();
+        let stage = dir.join(format!(".{id}.new"));
+        let left: Vec<_> = std::fs::read_dir(stage).unwrap().flatten().collect();
         assert!(left.is_empty(), "no partial file is kept: {left:?}");
     }
 
@@ -204,6 +208,172 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
             .status,
         404
     );
+}
+
+/// A manager of one melody model `good` (two files of `PLAIN`) and the file server behind it.
+async fn good_manager(e: &Engine, tag: &str) -> PathBuf {
+    let base = server().await;
+    let dir = e.root.join(format!("models-{tag}"));
+    e.rt.karaoke.replace(
+        Manager::new(
+            dir.clone(),
+            vec![entry(
+                "good",
+                ModelKind::Melody,
+                true,
+                vec![
+                    file("a.bin", format!("{base}/ok"), PLAIN),
+                    file("b.bin", format!("{base}/ok"), PLAIN),
+                ],
+            )],
+            e.rt.events.clone(),
+        ),
+        Arc::new(NoOnnx),
+    );
+    dir
+}
+
+#[tokio::test]
+async fn a_verify_that_finds_a_changed_file_fails_and_a_download_repairs_it() {
+    let e = engine().await;
+    let dir = good_manager(&e, "verify").await;
+    e.control("POST", "/v1/models/good/download", None).await;
+    let m = settle(&e, "good", "installed").await;
+    assert_eq!(m["installedVersion"], "7");
+    assert!(m["diskBytes"].as_f64().unwrap() > 0.0);
+
+    assert_eq!(
+        e.control("POST", "/v1/models/good/verify", None)
+            .await
+            .status,
+        202
+    );
+    settle(&e, "good", "installed").await;
+
+    std::fs::write(dir.join("a.bin"), vec![b'x'; PLAIN.len()]).unwrap();
+    e.control("POST", "/v1/models/good/verify", None).await;
+    let m = settle(&e, "good", "failed").await;
+    assert!(m["error"].as_str().unwrap().contains("a.bin"), "{m}");
+
+    e.control("POST", "/v1/models/good/download", None).await;
+    settle(&e, "good", "installed").await;
+    assert_eq!(std::fs::read(dir.join("a.bin")).unwrap(), PLAIN);
+    assert_eq!(
+        e.control("POST", "/v1/models/nope/verify", None)
+            .await
+            .status,
+        404
+    );
+}
+
+#[tokio::test]
+async fn a_verify_of_an_absent_model_is_refused() {
+    let e = engine().await;
+    good_manager(&e, "verify-absent").await;
+    assert_eq!(
+        e.control("POST", "/v1/models/good/verify", None)
+            .await
+            .status,
+        409
+    );
+}
+
+/// Leaves `good` installed at version 6, with files that are not the manifest's.
+fn install_old_version(dir: &Path) {
+    std::fs::create_dir_all(dir.join("good")).unwrap();
+    let old = b"old";
+    for n in ["a.bin", "b.bin"] {
+        std::fs::write(dir.join("good").join(n), old).unwrap();
+    }
+    let files: Vec<_> = ["a.bin", "b.bin"]
+        .iter()
+        .map(|n| json!({"name": n, "sha256": sha(old), "size": old.len()}))
+        .collect();
+    let rec = json!({"version": "6", "files": files});
+    std::fs::write(dir.join("good/.installed.json"), rec.to_string()).unwrap();
+}
+
+#[tokio::test]
+async fn an_outdated_model_is_replaced_once_the_new_files_are_verified() {
+    let e = engine().await;
+    let dir = good_manager(&e, "outdated").await;
+    install_old_version(&dir);
+    let m = settle(&e, "good", "outdated").await;
+    assert_eq!(m["installedVersion"], "6");
+    assert_eq!(
+        e.rt.karaoke
+            .models()
+            .pick(None, ModelKind::Melody)
+            .unwrap()
+            .version,
+        "6",
+        "the old files keep running"
+    );
+
+    let r = e.control("POST", "/v1/models/good/download", None).await;
+    assert_eq!(r.status, 202);
+    let m = settle(&e, "good", "installed").await;
+    assert_eq!(m["installedVersion"], "7");
+    assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
+    assert!(!dir.join(".good.new").exists() && !dir.join(".good.old").exists());
+}
+
+#[tokio::test]
+async fn a_failed_update_leaves_the_installed_version_working() {
+    let e = engine().await;
+    let base = server().await;
+    let dir = e.root.join("models-failed-update");
+    let bad = FileEntry {
+        sha256: Box::leak(sha(b"something else").into_boxed_str()),
+        ..file("a.bin", format!("{base}/ok"), PLAIN)
+    };
+    e.rt.karaoke.replace(
+        Manager::new(
+            dir.clone(),
+            vec![entry("good", ModelKind::Melody, true, vec![bad])],
+            e.rt.events.clone(),
+        ),
+        Arc::new(NoOnnx),
+    );
+    install_old_version(&dir);
+    e.control("POST", "/v1/models/good/download", None).await;
+    for _ in 0..100 {
+        let m = e.control("GET", "/v1/models", None).await.json();
+        if m["models"][0]["error"].is_string() {
+            assert_eq!(m["models"][0]["state"], "outdated");
+            assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), b"old");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the update never failed");
+}
+
+#[tokio::test]
+async fn orphan_directories_are_listed_and_removed() {
+    let e = engine().await;
+    let dir = good_manager(&e, "orphans").await;
+    std::fs::create_dir_all(dir.join("stray")).unwrap();
+    std::fs::write(dir.join("stray/x.bin"), b"12345").unwrap();
+    std::fs::create_dir_all(dir.join(".cache")).unwrap();
+    std::fs::write(dir.join("loose-file"), b"1").unwrap();
+
+    let list = e.control("GET", "/v1/models", None).await.json();
+    assert_eq!(
+        list["orphans"],
+        json!([{"name": "stray", "sizeBytes": 5.0}])
+    );
+    assert!(list["usedBytes"].as_f64().unwrap() >= 6.0);
+
+    for name in [".cache", "good", "loose-file"] {
+        let r = e
+            .control("DELETE", &format!("/v1/models/orphans/{name}"), None)
+            .await;
+        assert_eq!(r.status, 404, "{name}");
+    }
+    let r = e.control("DELETE", "/v1/models/orphans/stray", None).await;
+    assert_eq!(r.status, 204);
+    assert!(!dir.join("stray").exists() && dir.join(".cache").exists());
 }
 
 struct NoOnnx;

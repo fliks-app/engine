@@ -4,19 +4,21 @@ use crate::events::Events;
 use crate::lock::Locked;
 use bytes::Bytes;
 use fliks_engine_core::api::{
-    EngineEvent, ModelFile, ModelInfo, ModelKind, ModelLicence, ModelState, job_errors,
+    EngineEvent, ModelEngine, ModelFile, ModelInfo, ModelKind, ModelLicence, ModelOrphan,
+    ModelState, job_errors,
 };
 use http_body_util::{BodyExt, Empty};
 use hyper::{Request, StatusCode, Uri};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 const MAX_REDIRECTS: usize = 5;
@@ -34,6 +36,8 @@ pub struct Entry {
     pub licence_text: String,
     pub clear: bool,
     pub default: bool,
+    /// The model's card or repository.
+    pub homepage: &'static str,
     /// Two-letter codes of the languages an alignment model is for; empty: every language.
     pub languages: &'static [&'static str],
     /// An alignment model run as a CTC network (else the speech recogniser's).
@@ -116,6 +120,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SPLEETER),
             clear: true,
             default: true,
+            homepage: "https://github.com/deezer/spleeter",
             languages: &[],
             ctc: false,
             files: vec![
@@ -142,6 +147,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SWIFTF0),
             clear: true,
             default: true,
+            homepage: "https://github.com/lars76/swift-f0",
             languages: &[],
             ctc: false,
             files: vec![FileEntry {
@@ -162,6 +168,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(WHISPER),
             clear: true,
             default: true,
+            homepage: "https://huggingface.co/ggerganov/whisper.cpp",
             languages: &[],
             ctc: false,
             files: vec![FileEntry {
@@ -180,6 +187,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: format!("{WAV2VEC2_FR} {APACHE}"),
             clear: true,
             default: false,
+            homepage: "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-french",
             languages: &["fr"],
             ctc: true,
             files: vec![
@@ -206,6 +214,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: format!("{WAV2VEC2_EN} {APACHE}"),
             clear: true,
             default: false,
+            homepage: "https://huggingface.co/facebook/wav2vec2-large-960h-lv60-self",
             languages: &["en"],
             ctc: true,
             files: vec![
@@ -232,6 +241,7 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: format!("{OMNIASR} {APACHE}"),
             clear: true,
             default: false,
+            homepage: "https://huggingface.co/facebook/omniASR-CTC-300M",
             languages: &[],
             ctc: true,
             files: vec![
@@ -267,13 +277,33 @@ fn with_mit(note: &str) -> String {
     format!("{note} {MIT}")
 }
 
+/// Written into a model's directory once its files are verified.
+const RECORD: &str = ".installed.json";
+
+/// What an install left on disk: the manifest version it came from and each file's hash.
+#[derive(Serialize, Deserialize)]
+struct Record {
+    version: String,
+    files: Vec<RecordFile>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RecordFile {
+    name: String,
+    sha256: String,
+    size: u64,
+}
+
 struct Download {
     /// Tells a task's own entry from a later one of the same model.
     generation: u64,
     bytes: u64,
+    rate: Option<f64>,
     error: Option<String>,
     cancel: watch::Sender<bool>,
     running: bool,
+    /// A verification, not a download: its error says the files on disk are bad.
+    verify: bool,
 }
 
 struct Inner {
@@ -290,7 +320,8 @@ pub struct Manager(Arc<Inner>);
 /// A model picked for a job, with where its files are.
 pub struct Picked {
     pub id: &'static str,
-    pub version: &'static str,
+    /// The version on disk, which an outdated model still runs.
+    pub version: String,
     pub ctc: bool,
     pub dir: PathBuf,
 }
@@ -298,6 +329,39 @@ pub struct Picked {
 impl Picked {
     pub fn file(&self, name: &str) -> PathBuf {
         self.dir.join(name)
+    }
+}
+
+struct Status {
+    state: ModelState,
+    bytes: u64,
+    rate: Option<f64>,
+    error: Option<String>,
+}
+
+/// Paces a task's progress events to one a second and measures its rate.
+struct Ticker {
+    at: Instant,
+    bytes: u64,
+}
+
+impl Ticker {
+    fn start(bytes: u64) -> Self {
+        Self {
+            at: Instant::now(),
+            bytes,
+        }
+    }
+
+    /// The bytes per second since the last tick, once a second has passed.
+    fn due(&mut self, bytes: u64) -> Option<f64> {
+        let s = self.at.elapsed();
+        if s < PROGRESS_EVERY {
+            return None;
+        }
+        let rate = (bytes - self.bytes) as f64 / s.as_secs_f64();
+        *self = Self::start(bytes);
+        Some(rate)
     }
 }
 
@@ -324,27 +388,82 @@ impl Manager {
         self.0.dir.join(e.id)
     }
 
-    /// Every file is on disk with its size (the hash was checked before it was kept).
-    fn installed(&self, e: &Entry) -> bool {
+    /// Where a download is built before it replaces the installed copy.
+    fn staging_dir(&self, e: &Entry) -> PathBuf {
+        self.0.dir.join(format!(".{}.new", e.id))
+    }
+
+    fn record(&self, e: &Entry) -> Option<Record> {
+        let raw = std::fs::read(self.model_dir(e).join(RECORD)).ok()?;
+        serde_json::from_slice(&raw).ok()
+    }
+
+    /// The files an install holds: the recorded ones, else the manifest's.
+    fn expected(e: &Entry, rec: Option<&Record>) -> Vec<RecordFile> {
+        match rec {
+            Some(r) => r
+                .files
+                .iter()
+                .map(|f| RecordFile {
+                    name: f.name.clone(),
+                    sha256: f.sha256.clone(),
+                    size: f.size,
+                })
+                .collect(),
+            None => e
+                .files
+                .iter()
+                .map(|f| RecordFile {
+                    name: f.name.into(),
+                    sha256: f.sha256.into(),
+                    size: f.size,
+                })
+                .collect(),
+        }
+    }
+
+    /// Every expected file is on disk with its size (the hash was checked before it was kept).
+    fn present(&self, e: &Entry, rec: Option<&Record>) -> bool {
         let dir = self.model_dir(e);
-        e.files
+        Self::expected(e, rec)
             .iter()
-            .all(|f| std::fs::metadata(dir.join(f.name)).is_ok_and(|m| m.len() == f.size))
+            .all(|f| std::fs::metadata(dir.join(&f.name)).is_ok_and(|m| m.len() == f.size))
+    }
+
+    fn installed(&self, e: &Entry) -> bool {
+        self.present(e, self.record(e).as_ref())
+    }
+
+    fn status(&self, e: &Entry, rec: Option<&Record>) -> Status {
+        let total: u64 = e.files.iter().map(|f| f.size).sum();
+        let installed = self.present(e, rec);
+        let dl = self.0.downloads.locked();
+        let d = dl.get(e.id);
+        let (state, bytes, rate) = match d {
+            Some(d) if d.running => (ModelState::Downloading, d.bytes, d.rate),
+            Some(Download {
+                verify: true,
+                error: Some(_),
+                ..
+            }) => (ModelState::Failed, 0, None),
+            _ if installed && rec.is_some_and(|r| r.version != e.version) => {
+                (ModelState::Outdated, total, None)
+            }
+            _ if installed => (ModelState::Installed, total, None),
+            Some(Download { error: Some(_), .. }) => (ModelState::Failed, 0, None),
+            _ => (ModelState::Absent, 0, None),
+        };
+        Status {
+            state,
+            bytes,
+            rate,
+            error: d.and_then(|d| d.error.clone()),
+        }
     }
 
     fn info(&self, e: &Entry) -> ModelInfo {
-        let total: u64 = e.files.iter().map(|f| f.size).sum();
-        let (state, bytes, error) = {
-            let dl = self.0.downloads.locked();
-            match dl.get(e.id) {
-                Some(d) if d.running => (ModelState::Downloading, d.bytes, None),
-                _ if self.installed(e) => (ModelState::Installed, total, None),
-                Some(Download {
-                    error: Some(err), ..
-                }) => (ModelState::Failed, 0, Some(err.clone())),
-                _ => (ModelState::Absent, 0, None),
-            }
-        };
+        let rec = self.record(e);
+        let st = self.status(e, rec.as_ref());
         ModelInfo {
             id: e.id.into(),
             kind: e.kind,
@@ -366,9 +485,25 @@ impl Manager {
                     size_bytes: f.size as f64,
                 })
                 .collect(),
-            state,
-            downloaded_bytes: bytes as f64,
-            error,
+            languages: e.languages.iter().map(|l| (*l).into()).collect(),
+            engine: (e.kind == ModelKind::Alignment).then_some(if e.ctc {
+                ModelEngine::Ctc
+            } else {
+                ModelEngine::Whisper
+            }),
+            homepage: e.homepage.into(),
+            recommended: if e.kind == ModelKind::Alignment {
+                e.ctc
+            } else {
+                e.default
+            },
+            size_bytes: e.files.iter().map(|f| f.size).sum::<u64>() as f64,
+            disk_bytes: dir_size(&self.model_dir(e)) as f64,
+            installed_version: rec.map(|r| r.version),
+            state: st.state,
+            downloaded_bytes: st.bytes as f64,
+            bytes_per_second: st.rate,
+            error: st.error,
         }
     }
 
@@ -378,6 +513,47 @@ impl Manager {
 
     pub fn get(&self, id: &str) -> Option<ModelInfo> {
         self.entry(id).map(|e| self.info(e))
+    }
+
+    /// Free space of the filesystem that holds (or will hold) the models directory.
+    pub fn free_bytes(&self) -> Option<u64> {
+        let near = self.0.dir.ancestors().find(|p| p.exists())?;
+        crate::jobs::disk::free_bytes(near)
+    }
+
+    /// What the models directory takes on disk, caches included.
+    pub fn used_bytes(&self) -> u64 {
+        dir_size(&self.0.dir)
+    }
+
+    /// Directories no manifest entry names; hidden ones are caches and staging.
+    pub fn orphans(&self) -> Vec<ModelOrphan> {
+        let Ok(rd) = std::fs::read_dir(&self.0.dir) else {
+            return vec![];
+        };
+        let mut v: Vec<_> = rd
+            .flatten()
+            .filter(|d| d.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|d| {
+                let name = d.file_name().into_string().ok()?;
+                (!name.starts_with('.') && self.entry(&name).is_none()).then(|| ModelOrphan {
+                    size_bytes: dir_size(&d.path()) as f64,
+                    name,
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| a.name.cmp(&b.name));
+        v
+    }
+
+    /// Removes an orphan directory; false when `name` is not one.
+    pub async fn delete_orphan(&self, name: &str) -> bool {
+        if !self.orphans().iter().any(|o| o.name == name) {
+            return false;
+        }
+        let dir = self.0.dir.join(name);
+        let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+        true
     }
 
     fn emit(&self, id: &str) {
@@ -409,7 +585,8 @@ impl Manager {
                 format!("{} is not a {kind:?} model", e.id).to_lowercase(),
             ));
         }
-        if !self.installed(e) {
+        let rec = self.record(e);
+        if !self.present(e, rec.as_ref()) {
             return Err(job_errors::message(
                 job_errors::MODEL_MISSING,
                 format!(
@@ -420,7 +597,7 @@ impl Manager {
         }
         Ok(Picked {
             id: e.id,
-            version: e.version,
+            version: rec.map_or_else(|| e.version.into(), |r| r.version),
             ctc: e.ctc,
             dir: self.model_dir(e),
         })
@@ -441,44 +618,73 @@ impl Manager {
         }
     }
 
-    /// Starts the download of `id` unless it is installed or already running; `None` for an
-    /// unknown id. The hash of every file is checked before the file is kept.
+    /// Runs `run` as the task of `id` unless one runs; its result becomes the entry's error.
+    fn spawn<F, Fut>(&self, id: &'static str, verify: bool, run: F)
+    where
+        F: FnOnce(Manager, u64, watch::Receiver<bool>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
+        let (tx, rx) = watch::channel(false);
+        let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut dl = self.0.downloads.locked();
+            if dl.get(id).is_some_and(|d| d.running) {
+                return;
+            }
+            dl.insert(
+                id.into(),
+                Download {
+                    generation,
+                    bytes: 0,
+                    rate: None,
+                    error: None,
+                    cancel: tx,
+                    running: true,
+                    verify,
+                },
+            );
+        }
+        let me = self.clone();
+        tokio::spawn(async move {
+            let result = run(me.clone(), generation, rx).await;
+            {
+                let mut dl = me.0.downloads.locked();
+                if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
+                    d.running = false;
+                    d.rate = None;
+                    d.error = result.err();
+                }
+            }
+            me.emit(id);
+        });
+        self.emit(id);
+    }
+
+    /// Starts the download of `id` unless it is installed and current, or already running;
+    /// `None` for an unknown id. An outdated or damaged model is fetched beside the installed
+    /// copy, which stays in use until every file is verified. The hash of every file is checked
+    /// before the file is kept.
     pub fn start(&self, id: &str) -> Option<ModelInfo> {
         let e = self.entry(id)?;
-        if !self.installed(e) {
-            let (tx, rx) = watch::channel(false);
-            let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
-            {
-                let mut dl = self.0.downloads.locked();
-                if dl.get(id).is_some_and(|d| d.running) {
-                    drop(dl);
-                    return self.get(id);
-                }
-                dl.insert(
-                    id.into(),
-                    Download {
-                        generation,
-                        bytes: 0,
-                        error: None,
-                        cancel: tx,
-                        running: true,
-                    },
-                );
-            }
-            let me = self.clone();
+        let rec = self.record(e);
+        if self.status(e, rec.as_ref()).state != ModelState::Installed {
             let id = e.id;
-            tokio::spawn(async move {
-                let result = me.fetch(id, generation, rx).await;
-                {
-                    let mut dl = me.0.downloads.locked();
-                    if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
-                        d.running = false;
-                        d.error = result.err();
-                    }
-                }
-                me.emit(id);
+            self.spawn(id, false, move |me, generation, rx| async move {
+                me.fetch(id, generation, rx).await
             });
-            self.emit(id);
+        }
+        self.get(id)
+    }
+
+    /// Re-hashes the files of an installed model; a mismatch leaves it `failed`. `None` for an
+    /// unknown id; the model comes back `downloading` while the check runs, else nothing started.
+    pub fn verify(&self, id: &str) -> Option<ModelInfo> {
+        let e = self.entry(id)?;
+        if self.installed(e) {
+            let id = e.id;
+            self.spawn(id, true, move |me, generation, rx| async move {
+                me.check(id, generation, rx).await
+            });
         }
         self.get(id)
     }
@@ -491,10 +697,35 @@ impl Manager {
         if let Some(d) = self.0.downloads.locked().remove(id) {
             d.cancel.send_replace(true);
         }
-        let dir = self.model_dir(e);
-        let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+        let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = std::fs::remove_dir_all(stage);
+            std::fs::remove_dir_all(dir)
+        })
+        .await;
         self.emit(id);
         true
+    }
+
+    async fn check(
+        &self,
+        id: &'static str,
+        generation: u64,
+        cancel: watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        let e = self.entry(id).ok_or("unknown model")?;
+        let dir = self.model_dir(e);
+        let mut done = 0;
+        for f in Self::expected(e, self.record(e).as_ref()) {
+            let digest = self
+                .hash_file(&dir.join(&f.name), id, generation, done, cancel.clone())
+                .await?;
+            if digest != f.sha256 {
+                return Err(format!("{} does not match its sha256 ({digest})", f.name));
+            }
+            done += f.size;
+        }
+        Ok(())
     }
 
     async fn fetch(
@@ -504,20 +735,25 @@ impl Manager {
         cancel: watch::Receiver<bool>,
     ) -> Result<(), String> {
         let e = self.entry(id).ok_or("unknown model")?;
-        let dir = self.model_dir(e);
-        tokio::fs::create_dir_all(&dir)
+        let stage = self.staging_dir(e);
+        tokio::fs::create_dir_all(&stage)
             .await
-            .map_err(|e| format!("create {}: {e}", dir.display()))?;
+            .map_err(|e| format!("create {}: {e}", stage.display()))?;
         let client = client();
         let mut done_before = 0u64;
         for f in &e.files {
-            let dest = dir.join(f.name);
-            if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size) {
+            let dest = stage.join(f.name);
+            if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size)
+                && self
+                    .hash_file(&dest, id, generation, done_before, cancel.clone())
+                    .await
+                    .is_ok_and(|d| d == f.sha256)
+            {
                 done_before += f.size;
                 self.set_bytes(id, generation, done_before);
                 continue;
             }
-            let part = dir.join(format!("{}.part", f.name));
+            let part = stage.join(format!("{}.part", f.name));
             let r = self
                 .fetch_file(
                     &client,
@@ -540,6 +776,35 @@ impl Manager {
                 .map_err(|e| format!("keep {}: {e}", f.name))?;
             done_before += f.size;
         }
+        let record = Record {
+            version: e.version.into(),
+            files: Self::expected(e, None),
+        };
+        tokio::fs::write(
+            stage.join(RECORD),
+            serde_json::to_vec(&record).map_err(|e| e.to_string())?,
+        )
+        .await
+        .map_err(|e| format!("write {RECORD}: {e}"))?;
+        self.swap(e, id, generation).await
+    }
+
+    /// Puts the staged copy in place of the installed one.
+    async fn swap(&self, e: &Entry, id: &str, generation: u64) -> Result<(), String> {
+        if !self.is_current(id, generation) {
+            return Err("cancelled".into());
+        }
+        let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
+        let old = self.0.dir.join(format!(".{}.old", e.id));
+        let _ = tokio::fs::remove_dir_all(&old).await;
+        let had = tokio::fs::rename(&dir, &old).await.is_ok();
+        if let Err(err) = tokio::fs::rename(&stage, &dir).await {
+            if had {
+                let _ = tokio::fs::rename(&old, &dir).await;
+            }
+            return Err(format!("install {}: {err}", e.id));
+        }
+        let _ = tokio::fs::remove_dir_all(&old).await;
         Ok(())
     }
 
@@ -550,10 +815,50 @@ impl Manager {
         }
     }
 
+    fn set_rate(&self, id: &str, generation: u64, rate: f64) {
+        let mut dl = self.0.downloads.locked();
+        if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
+            d.rate = Some(rate);
+        }
+    }
+
     /// False once the model was deleted (and maybe restarted) since this task began.
     fn is_current(&self, id: &str, generation: u64) -> bool {
         let dl = self.0.downloads.locked();
         dl.get(id).is_some_and(|d| d.generation == generation)
+    }
+
+    /// The sha256 of a file, reported as progress after `done_before` bytes of the task.
+    async fn hash_file(
+        &self,
+        path: &Path,
+        id: &str,
+        generation: u64,
+        done_before: u64,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Result<String, String> {
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
+        let mut buf = vec![0u8; 1 << 20];
+        let (mut got, mut tick) = (0u64, Ticker::start(done_before));
+        loop {
+            let n = tokio::select! {
+                _ = cancel.wait_for(|c| *c) => return Err("cancelled".into()),
+                r = file.read(&mut buf) => r.map_err(|e| format!("read {}: {e}", path.display()))?,
+            };
+            if n == 0 {
+                return Ok(hex(hash.finish().as_ref()));
+            }
+            hash.update(&buf[..n]);
+            got += n as u64;
+            self.set_bytes(id, generation, done_before + got);
+            if let Some(rate) = tick.due(done_before + got) {
+                self.set_rate(id, generation, rate);
+                self.emit(id);
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -572,7 +877,7 @@ impl Manager {
             .await
             .map_err(|e| format!("create {}: {e}", part.display()))?;
         let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
-        let (mut got, mut last) = (0u64, Instant::now() - PROGRESS_EVERY);
+        let (mut got, mut tick) = (0u64, Ticker::start(done_before));
         loop {
             let frame = tokio::select! {
                 _ = cancel.wait_for(|c| *c) => return Err("cancelled".into()),
@@ -593,8 +898,8 @@ impl Manager {
                 .await
                 .map_err(|e| format!("write {}: {e}", part.display()))?;
             self.set_bytes(id, generation, done_before + got);
-            if last.elapsed() >= PROGRESS_EVERY {
-                last = Instant::now();
+            if let Some(rate) = tick.due(done_before + got) {
+                self.set_rate(id, generation, rate);
                 self.emit(id);
             }
         }
@@ -609,6 +914,20 @@ impl Manager {
             .await
             .map_err(|e| format!("write {}: {e}", part.display()))
     }
+}
+
+/// Bytes under `p`, symlinks not followed.
+fn dir_size(p: &Path) -> u64 {
+    let Ok(rd) = std::fs::read_dir(p) else {
+        return 0;
+    };
+    rd.flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 fn hex(b: &[u8]) -> String {
@@ -707,6 +1026,7 @@ mod tests {
             let names: Vec<_> = e.files.iter().map(|f| f.name).collect();
             assert_eq!(names, ["model.onnx", "vocab.json"], "{}", e.id);
             assert!(e.kind == ModelKind::Alignment && !e.default);
+            assert!(e.homepage.starts_with("https://"));
             assert!(e.languages.iter().all(|l| l.len() == 2));
             let url = format!("/models-ctc-v1/{}.model.onnx", e.id);
             assert!(e.files[0].url.ends_with(&url));
@@ -753,6 +1073,16 @@ mod tests {
         let p = m.pick_aligner(None, Some("fr")).unwrap();
         assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", false));
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_ticker_reports_the_rate_once_a_second() {
+        let mut t = Ticker::start(0);
+        assert_eq!(t.due(5), None);
+        t.at = Instant::now() - Duration::from_secs(2);
+        let rate = t.due(2000).unwrap();
+        assert!((900.0..=1000.0).contains(&rate), "{rate}");
+        assert_eq!(t.due(2001), None);
     }
 
     #[test]
@@ -813,6 +1143,7 @@ mod tests {
             licence_text: "MIT".into(),
             clear: true,
             default: true,
+            homepage: "",
             languages: &[],
             ctc: false,
             files: vec![FileEntry {

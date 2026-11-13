@@ -3,7 +3,7 @@
 mod alass;
 pub(crate) mod cover;
 mod ctx;
-mod disk;
+pub(crate) mod disk;
 mod fingerprint;
 mod merge;
 mod ocr;

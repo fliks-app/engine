@@ -22,8 +22,21 @@ pub enum ModelState {
     Downloading,
     /// Every file is on disk with its verified size and hash.
     Installed,
-    /// The last download failed (`error`); a new one starts from scratch.
+    /// Installed, and the manifest has a newer version: the installed one still runs until an
+    /// update (`POST /v1/models/{id}/download`) replaces it.
+    Outdated,
+    /// The last download or verification failed (`error`); a new download starts from scratch.
     Failed,
+}
+
+/// How an alignment model times the lyrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelEngine {
+    /// A CTC network run on the ONNX runtime.
+    Ctc,
+    /// The speech recogniser.
+    Whisper,
 }
 
 /// The licence a model's weights are distributed under, to show before a download.
@@ -63,11 +76,41 @@ pub struct ModelInfo {
     /// What the job picks when its request names no model of this kind.
     pub default: bool,
     pub files: Vec<ModelFile>,
+    /// Two-letter codes of the languages an alignment model is for; empty: every language, or
+    /// not an alignment model.
+    pub languages: Vec<String>,
+    /// Alignment models only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<ModelEngine>,
+    /// The model's page (its card or repository).
+    pub homepage: String,
+    /// What a host offers first: the default of a separation or melody model, every CTC alignment
+    /// model (a language takes the first one in the list that holds it).
+    pub recommended: bool,
+    /// Total of `files[].sizeBytes`.
+    pub size_bytes: f64,
+    /// What the model's directory takes on disk (0 when absent).
+    pub disk_bytes: f64,
+    /// `version` of the install on disk, once a download recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
     pub state: ModelState,
-    /// Bytes fetched so far while `downloading`, else the installed size.
+    /// Bytes fetched (or verified) so far while `downloading`, else the installed size.
     pub downloaded_bytes: f64,
+    /// Transfer rate of the last second while `downloading`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_per_second: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// A directory of the models directory that no manifest entry names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOrphan {
+    /// Directory name (`DELETE /v1/models/orphans/{name}` removes it).
+    pub name: String,
+    pub size_bytes: f64,
 }
 
 /// Where the engine stands with the Windows ML runtime installed on the machine.
@@ -109,6 +152,13 @@ pub struct ModelsResponse {
     pub runtime: KaraokeRuntime,
     /// Where the models live (`FLIKS_MODELS_DIR`).
     pub models_dir: String,
+    /// Free space of the filesystem holding the models directory; absent when it can't say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_bytes: Option<f64>,
+    /// What the models directory takes on disk, caches included.
+    pub used_bytes: f64,
+    /// Directories no manifest entry names, hidden ones (caches) excluded.
+    pub orphans: Vec<ModelOrphan>,
     pub models: Vec<ModelInfo>,
 }
 

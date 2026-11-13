@@ -73,7 +73,7 @@ async fn recognise(
     Ok(JobResult::Align {
         align: AlignMeta {
             model: picked.id.into(),
-            model_version: picked.version.into(),
+            model_version: picked.version.clone(),
             backend: backend.into(),
             lines: aligned,
             matched,

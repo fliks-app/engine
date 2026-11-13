@@ -548,6 +548,22 @@
         }
       }
     },
+    "/v1/models/orphans/{name}": {
+      "delete": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "delete_model_orphan",
+        "responses": {
+          "204": {
+            "description": "removed"
+          },
+          "404": {
+            "description": "not a directory of `orphans` in `GET /v1/models`"
+          }
+        }
+      }
+    },
     "/v1/models/{id}": {
       "delete": {
         "tags": [
@@ -572,7 +588,7 @@
         "operationId": "download_model",
         "responses": {
           "200": {
-            "description": "installed already",
+            "description": "installed and current already",
             "content": {
               "application/json": {
                 "schema": {
@@ -582,7 +598,7 @@
             }
           },
           "202": {
-            "description": "downloading (follow it with `GET /v1/models` or the `ModelChanged` events)",
+            "description": "downloading, a new install or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)",
             "content": {
               "application/json": {
                 "schema": {
@@ -593,6 +609,32 @@
           },
           "404": {
             "description": "unknown model"
+          }
+        }
+      }
+    },
+    "/v1/models/{id}/verify": {
+      "post": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "verify_model",
+        "responses": {
+          "202": {
+            "description": "re-hashing the files (progress as for a download); a mismatch leaves the model `failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown model"
+          },
+          "409": {
+            "description": "not installed, nothing to verify"
           }
         }
       }
@@ -5453,6 +5495,14 @@
           }
         }
       },
+      "ModelEngine": {
+        "type": "string",
+        "description": "How an alignment model times the lyrics.",
+        "enum": [
+          "ctc",
+          "whisper"
+        ]
+      },
       "ModelFile": {
         "type": "object",
         "required": [
@@ -5490,18 +5540,47 @@
           "licence",
           "default",
           "files",
+          "languages",
+          "homepage",
+          "recommended",
+          "sizeBytes",
+          "diskBytes",
           "state",
           "downloadedBytes"
         ],
         "properties": {
+          "bytesPerSecond": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Transfer rate of the last second while `downloading`."
+          },
           "default": {
             "type": "boolean",
             "description": "What the job picks when its request names no model of this kind."
           },
+          "diskBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "What the model's directory takes on disk (0 when absent)."
+          },
           "downloadedBytes": {
             "type": "number",
             "format": "double",
-            "description": "Bytes fetched so far while `downloading`, else the installed size."
+            "description": "Bytes fetched (or verified) so far while `downloading`, else the installed size."
+          },
+          "engine": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ModelEngine",
+                "description": "Alignment models only."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "error": {
             "type": [
@@ -5515,18 +5594,45 @@
               "$ref": "#/components/schemas/ModelFile"
             }
           },
+          "homepage": {
+            "type": "string",
+            "description": "The model's page (its card or repository)."
+          },
           "id": {
             "type": "string",
             "description": "Stable identifier, the `model` of a job request."
           },
+          "installedVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`version` of the install on disk, once a download recorded it."
+          },
           "kind": {
             "$ref": "#/components/schemas/ModelKind"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Two-letter codes of the languages an alignment model is for; empty: every language, or\nnot an alignment model."
           },
           "licence": {
             "$ref": "#/components/schemas/ModelLicence"
           },
           "name": {
             "type": "string"
+          },
+          "recommended": {
+            "type": "boolean",
+            "description": "What a host offers first: the default of a separation or melody model, every CTC alignment\nmodel (a language takes the first one in the list that holds it)."
+          },
+          "sizeBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Total of `files[].sizeBytes`."
           },
           "state": {
             "$ref": "#/components/schemas/ModelState"
@@ -5569,12 +5675,31 @@
           }
         }
       },
+      "ModelOrphan": {
+        "type": "object",
+        "description": "A directory of the models directory that no manifest entry names.",
+        "required": [
+          "name",
+          "sizeBytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Directory name (`DELETE /v1/models/orphans/{name}` removes it)."
+          },
+          "sizeBytes": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "ModelState": {
         "type": "string",
         "enum": [
           "absent",
           "downloading",
           "installed",
+          "outdated",
           "failed"
         ]
       },
@@ -5584,9 +5709,19 @@
         "required": [
           "runtime",
           "modelsDir",
+          "usedBytes",
+          "orphans",
           "models"
         ],
         "properties": {
+          "freeBytes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Free space of the filesystem holding the models directory; absent when it can't say."
+          },
           "models": {
             "type": "array",
             "items": {
@@ -5597,8 +5732,20 @@
             "type": "string",
             "description": "Where the models live (`FLIKS_MODELS_DIR`)."
           },
+          "orphans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelOrphan"
+            },
+            "description": "Directories no manifest entry names, hidden ones (caches) excluded."
+          },
           "runtime": {
             "$ref": "#/components/schemas/KaraokeRuntime"
+          },
+          "usedBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "What the models directory takes on disk, caches included."
           }
         }
       },
