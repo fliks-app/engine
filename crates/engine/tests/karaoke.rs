@@ -51,6 +51,8 @@ fn entry(id: &'static str, kind: ModelKind, default: bool, files: Vec<FileEntry>
         licence_text: "MIT text".into(),
         clear: true,
         default,
+        languages: &[],
+        ctc: false,
         files,
     }
 }
@@ -383,6 +385,31 @@ impl Net for CrossingNet {
     }
 }
 
+/// A CTC network that hears a tone as `a` and silence as the blank, 20 ms a frame.
+struct ToneNet;
+
+impl Net for ToneNet {
+    fn run(&mut self, mut inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+        assert_eq!(inputs[0].0, "input_values");
+        let audio = inputs.remove(0).1.data;
+        let frames = (audio.len() - 400) / 320 + 1;
+        let mut data = vec![];
+        for f in 0..frames {
+            let w = &audio[f * 320..(f * 320 + 320).min(audio.len())];
+            let rms = (w.iter().map(|v| v * v).sum::<f32>() / w.len() as f32).sqrt();
+            data.extend(if rms > 0.01 {
+                [0.0, 0.0, 0.0, 10.0]
+            } else {
+                [10.0, 0.0, 0.0, 0.0]
+            });
+        }
+        Ok(vec![Tensor {
+            shape: vec![1, frames as i64, 4],
+            data,
+        }])
+    }
+}
+
 struct Fake;
 
 impl Backend for Fake {
@@ -397,9 +424,14 @@ impl Backend for Fake {
 
     fn load(&self, file: &Path, allow: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
         let name = file.file_name().unwrap().to_string_lossy();
+        let ctc = file
+            .parent()
+            .and_then(|d| d.file_name())
+            .is_some_and(|d| d.to_string_lossy().starts_with("ctc-"));
         let net: Box<dyn Net> = match &*name {
             "vocals.onnx" => Box::new(SplitNet { keep_high: true }),
             "accompaniment.onnx" => Box::new(SplitNet { keep_high: false }),
+            _ if ctc => Box::new(ToneNet),
             _ => Box::new(CrossingNet),
         };
         Ok(Loaded {
@@ -791,4 +823,150 @@ async fn align_repeats_a_failed_gpu_run_on_the_cpu() {
     let r = run_kind(&e, &stem, kind).await;
     assert_eq!(r["state"], "done", "{r}");
     assert_eq!(r["result"]["align"]["backend"], "cpu");
+}
+
+const CTC_VOCAB: &str = r#"{"sampleRate":16000,"frameMs":20,"doNormalize":false,"blank":0,
+    "delimiter":2,"vocab":{"0":"<pad>","1":"<unk>","2":"|","3":"a"}}"#;
+
+/// An engine on the fake backend whose manager holds a working CTC model (`ctc-ok`, for any
+/// language), one with a broken vocabulary (`ctc-broken`) and the speech recogniser's model.
+async fn ctc_engine() -> Option<Engine> {
+    let e = real().await?;
+    let mut entries = vec![];
+    for (id, vocab) in [("ctc-ok", CTC_VOCAB), ("ctc-broken", "not json")] {
+        std::fs::create_dir_all(e.root.join("ctc-models").join(id)).unwrap();
+        for (name, bytes) in [
+            ("model.onnx", &b"onnx"[..]),
+            ("vocab.json", vocab.as_bytes()),
+        ] {
+            std::fs::write(e.root.join("ctc-models").join(id).join(name), bytes).unwrap();
+        }
+        let files = vec![
+            file("model.onnx", String::new(), b"onnx"),
+            file("vocab.json", String::new(), vocab.as_bytes()),
+        ];
+        entries.push(Entry {
+            ctc: true,
+            ..entry(id, ModelKind::Alignment, false, files)
+        });
+    }
+    std::fs::create_dir_all(e.root.join("ctc-models/whisper-test")).unwrap();
+    std::fs::write(e.root.join("ctc-models/whisper-test/model.bin"), b"bin").unwrap();
+    entries.push(entry(
+        "whisper-test",
+        ModelKind::Alignment,
+        true,
+        vec![file("model.bin", String::new(), b"bin")],
+    ));
+    e.rt.karaoke.replace(
+        Manager::new(e.root.join("ctc-models"), entries, e.rt.events.clone()),
+        Arc::new(Fake),
+    );
+    Some(e)
+}
+
+/// A second of tone, a second of silence, a second of tone.
+fn tone_silence_tone(e: &Engine, stem: &Path) -> bool {
+    make(
+        e,
+        stem,
+        "sine=frequency=220:sample_rate=16000:duration=1[a];\
+         anullsrc=r=16000:cl=mono:d=1[s];\
+         sine=frequency=220:sample_rate=16000:duration=1[b];\
+         [a][s][b]concat=n=3:v=0:a=1[o]",
+    )
+}
+
+#[tokio::test]
+async fn align_places_the_lyrics_with_the_ctc_model_on_the_provider_the_request_allows() {
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = |providers: Value| {
+        json!({ "type": "Align", "providers": providers, "lines": [
+            { "text": "a", "startMs": 0, "endMs": 1000 },
+            { "text": "a", "startMs": 2000, "endMs": 3000 }] })
+    };
+    let r = run_kind(&e, &stem, kind(json!(["directml"]))).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("ctc-ok"), Some("ctc-directml"))
+    );
+    let start = |i: usize| a["lines"][i]["words"][0]["startMs"].as_i64().unwrap();
+    assert!(start(0) <= 60, "{a}");
+    assert!((start(1) - 2000).abs() <= 60, "{a}");
+    assert!(a["matched"].as_f64().unwrap() > 0.9, "{a}");
+    let r = run_kind(
+        &e,
+        &stem,
+        json!({ "type": "Align", "lines": [{ "text": "a a" }] }),
+    )
+    .await;
+    assert_eq!(r["result"]["align"]["backend"], "ctc-cpu", "{r}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn align_falls_back_to_the_recogniser_when_the_ctc_model_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(e) = ctc_engine().await else { return };
+    let dd = dir(&e, "ctc-fallback");
+    let script = dd.join("whisper-cli");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -of ] && of=\"$2\"; shift; done\n\
+         echo '{\"transcription\":[{\"offsets\":{\"from\":100,\"to\":500},\"text\":\" a\"}]}' > \"$of.json\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    e.rt.karaoke.set_tools(Tools {
+        whisper: Some(script.to_string_lossy().into_owned()),
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let stem = dd.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-broken", "lines": [{ "text": "a" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("whisper-test"), Some("cpu"))
+    );
+}
+
+#[tokio::test]
+async fn align_reports_the_ctc_failure_when_there_is_no_recogniser_to_fall_back_on() {
+    let Some(e) = ctc_engine().await else { return };
+    e.rt.karaoke.set_tools(Tools {
+        whisper: None,
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let d = dir(&e, "ctc-no-fallback");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-broken", "lines": [{ "text": "a" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "failed", "{r}");
+    assert!(
+        r["error"]
+            .as_str()
+            .unwrap()
+            .contains("not a CTC vocabulary"),
+        "{r}"
+    );
 }

@@ -1,6 +1,7 @@
 //! Karaoke: the model manager, the ONNX runtime behind a cargo feature, and the `Separate`,
 //! `Align` and `Melody` jobs. Spec: `docs/spec/karaoke.md`.
 mod align;
+mod ctc;
 mod melody;
 pub mod models;
 pub mod onnx;
@@ -325,11 +326,11 @@ impl Karaoke {
                 f.push("windows-ml".into());
             }
         }
-        if r.whisper {
+        if r.whisper || r.onnx {
             f.push("karaoke-align".into());
-            if self.tools(ffmpeg).await.whisper_backend == "vulkan" {
-                f.push("align-vulkan".into());
-            }
+        }
+        if r.whisper && self.tools(ffmpeg).await.whisper_backend == "vulkan" {
+            f.push("align-vulkan".into());
         }
         if r.rubberband {
             f.push("pitch-shift".into());

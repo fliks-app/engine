@@ -34,6 +34,10 @@ pub struct Entry {
     pub licence_text: String,
     pub clear: bool,
     pub default: bool,
+    /// Two-letter codes of the languages an alignment model is for; empty: every language.
+    pub languages: &'static [&'static str],
+    /// An alignment model run as a CTC network (else the speech recogniser's).
+    pub ctc: bool,
     pub files: Vec<FileEntry>,
 }
 
@@ -63,12 +67,35 @@ const SWIFTF0: &str = "MIT License. Copyright (c) 2025-2026 Lars Nieradzik.";
 const WHISPER: &str = "MIT License. Copyright (c) 2022 OpenAI. The ggml conversion is \
 published by the whisper.cpp project.";
 
+const APACHE: &str = "Licensed under the Apache License, Version 2.0 \
+(https://www.apache.org/licenses/LICENSE-2.0): the weights are used, converted to ONNX in half \
+precision, and not otherwise modified, on an \"AS IS\" basis, without warranties or conditions of \
+any kind.";
+const WAV2VEC2_FR: &str = "Apache-2.0. wav2vec2 XLSR-53 (Meta AI), fine-tuned on French by Jonatas \
+Grosman (jonatasgrosman/wav2vec2-large-xlsr-53-french).";
+const WAV2VEC2_EN: &str = "Apache-2.0. wav2vec2 Large LV-60 self-trained, 960 h (Meta AI, \
+facebook/wav2vec2-large-960h-lv60-self).";
+const OMNIASR: &str = "Apache-2.0. Omnilingual ASR CTC 300M (Meta AI, facebook/omniASR-CTC-300M), \
+ONNX conversion published by OpenVoiceOS (OpenVoiceOS/omnilingual-asr-ctc-300m-onnx).";
+
 const SPLEETER_REV: &str = "7001ba316a615cacddb3f9ef3ec416661a277e26";
 const SWIFTF0_REV: &str = "d1ba77fe5331310b778ebe126b6cb3656d41d24f";
 const WHISPER_REV: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
 
 fn whisper_url(file: &str) -> String {
     format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/{WHISPER_REV}/{file}")
+}
+
+/// A CTC model's file: the release asset `<id>.<name>` of the engine's repository.
+fn ctc_file(id: &str, name: &'static str, sha256: &'static str, size: u64) -> FileEntry {
+    FileEntry {
+        name,
+        url: format!(
+            "https://github.com/fliks-app/engine/releases/download/models-ctc-v1/{id}.{name}"
+        ),
+        sha256,
+        size,
+    }
 }
 
 /// The models this engine knows. Pinned to a revision of their repository: a moved file fails
@@ -89,6 +116,8 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SPLEETER),
             clear: true,
             default: true,
+            languages: &[],
+            ctc: false,
             files: vec![
                 FileEntry {
                     name: "vocals.onnx",
@@ -113,6 +142,8 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SWIFTF0),
             clear: true,
             default: true,
+            languages: &[],
+            ctc: false,
             files: vec![FileEntry {
                 name: "model.onnx",
                 url: format!(
@@ -131,12 +162,92 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(WHISPER),
             clear: true,
             default: true,
+            languages: &[],
+            ctc: false,
             files: vec![FileEntry {
                 name: "model.bin",
                 url: whisper_url("ggml-small-q5_1.bin"),
                 sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
                 size: 190_085_487,
             }],
+        },
+        Entry {
+            id: "wav2vec2-ctc-fr",
+            kind: ModelKind::Alignment,
+            name: "wav2vec2 French, CTC (634 MB)",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{WAV2VEC2_FR} {APACHE}"),
+            clear: true,
+            default: false,
+            languages: &["fr"],
+            ctc: true,
+            files: vec![
+                ctc_file(
+                    "wav2vec2-ctc-fr",
+                    "model.onnx",
+                    "b868c38eb5e124ffb6ddbcd8482f47239cb4066db97b67ceb47a9c80c2bd62db",
+                    634_197_385,
+                ),
+                ctc_file(
+                    "wav2vec2-ctc-fr",
+                    "vocab.json",
+                    "061a54098e7993f516da7edb41d0404411ff9cb786c7bbcf2f69b1926a6bf060",
+                    1026,
+                ),
+            ],
+        },
+        Entry {
+            id: "wav2vec2-ctc-en",
+            kind: ModelKind::Alignment,
+            name: "wav2vec2 English, CTC (634 MB)",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{WAV2VEC2_EN} {APACHE}"),
+            clear: true,
+            default: false,
+            languages: &["en"],
+            ctc: true,
+            files: vec![
+                ctc_file(
+                    "wav2vec2-ctc-en",
+                    "model.onnx",
+                    "cc20dc5db7ed39b8f3bbbb34bbb5a9b3a3e1468701ed414562901c134275cdfd",
+                    634_142_034,
+                ),
+                ctc_file(
+                    "wav2vec2-ctc-en",
+                    "vocab.json",
+                    "11c0856d5dbcfd9f3cf8a8d138a782df7e6d1e7f97e4315bc1e4b1609aeaa09e",
+                    643,
+                ),
+            ],
+        },
+        Entry {
+            id: "omniasr-ctc-300m",
+            kind: ModelKind::Alignment,
+            name: "Omnilingual ASR 300M, CTC (653 MB)",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{OMNIASR} {APACHE}"),
+            clear: true,
+            default: false,
+            languages: &[],
+            ctc: true,
+            files: vec![
+                ctc_file(
+                    "omniasr-ctc-300m",
+                    "model.onnx",
+                    "1c92b3c113e9a3574b812e039433db2bf588d31ca90769179d2a4acf1b9fddd0",
+                    652_837_719,
+                ),
+                ctc_file(
+                    "omniasr-ctc-300m",
+                    "vocab.json",
+                    "333eb690077bb195de573f85afbfb0b6ec296c520c8b416ec9fd7edaa0dee104",
+                    173_163,
+                ),
+            ],
         },
     ]
 }
@@ -180,6 +291,7 @@ pub struct Manager(Arc<Inner>);
 pub struct Picked {
     pub id: &'static str,
     pub version: &'static str,
+    pub ctc: bool,
     pub dir: PathBuf,
 }
 
@@ -309,8 +421,24 @@ impl Manager {
         Ok(Picked {
             id: e.id,
             version: e.version,
+            ctc: e.ctc,
             dir: self.model_dir(e),
         })
+    }
+
+    /// The model of an `Align`: `id`, else the first installed CTC model for `language` (the
+    /// specific entries come first in the manifest), else the default recogniser.
+    pub fn pick_aligner(&self, id: Option<&str>, language: Option<&str>) -> Result<Picked, String> {
+        let ctc = self.0.entries.iter().find(|e| {
+            e.kind == ModelKind::Alignment
+                && e.ctc
+                && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
+                && self.installed(e)
+        });
+        match (id, ctc) {
+            (None, Some(e)) => self.pick(Some(e.id), ModelKind::Alignment),
+            _ => self.pick(id, ModelKind::Alignment),
+        }
     }
 
     /// Starts the download of `id` unless it is installed or already running; `None` for an
@@ -575,8 +703,56 @@ mod tests {
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
             }
         }
+        for e in m.iter().filter(|e| e.ctc) {
+            let names: Vec<_> = e.files.iter().map(|f| f.name).collect();
+            assert_eq!(names, ["model.onnx", "vocab.json"], "{}", e.id);
+            assert!(e.kind == ModelKind::Alignment && !e.default);
+            assert!(e.languages.iter().all(|l| l.len() == 2));
+            let url = format!("/models-ctc-v1/{}.model.onnx", e.id);
+            assert!(e.files[0].url.ends_with(&url));
+        }
         let ids: std::collections::HashSet<_> = m.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), m.len());
+    }
+
+    fn dir_with(ids: &[&str]) -> (PathBuf, Manager) {
+        let d = std::env::temp_dir().join(format!("aligners-{}-{}", std::process::id(), ids.len()));
+        let m = Manager::new(d.clone(), manifest(), Events::default());
+        for id in ids {
+            let e = m.entry(id).unwrap();
+            std::fs::create_dir_all(m.model_dir(e)).unwrap();
+            for f in &e.files {
+                let file = std::fs::File::create(m.model_dir(e).join(f.name)).unwrap();
+                file.set_len(f.size).unwrap();
+            }
+        }
+        (d, m)
+    }
+
+    #[test]
+    fn an_aligner_is_the_installed_ctc_model_of_the_language_else_the_recogniser() {
+        let (d, m) = dir_with(&["wav2vec2-ctc-fr", "omniasr-ctc-300m", "whisper-small-q5_1"]);
+        let id = |model, lang| m.pick_aligner(model, lang).map(|p| p.id);
+        assert_eq!(id(None, Some("fr")), Ok("wav2vec2-ctc-fr"));
+        assert_eq!(id(None, Some("de")), Ok("omniasr-ctc-300m"));
+        assert_eq!(id(None, None), Ok("omniasr-ctc-300m"));
+        assert_eq!(
+            id(Some("whisper-small-q5_1"), Some("fr")),
+            Ok("whisper-small-q5_1")
+        );
+        assert!(m.pick_aligner(None, Some("fr")).unwrap().ctc);
+        // The English model is not installed: Omnilingual serves it.
+        assert_eq!(id(None, Some("en")), Ok("omniasr-ctc-300m"));
+        assert!(
+            id(Some("wav2vec2-ctc-en"), Some("en"))
+                .unwrap_err()
+                .contains("not installed")
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+        let (d, m) = dir_with(&["whisper-small-q5_1"]);
+        let p = m.pick_aligner(None, Some("fr")).unwrap();
+        assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", false));
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
@@ -637,6 +813,8 @@ mod tests {
             licence_text: "MIT".into(),
             clear: true,
             default: true,
+            languages: &[],
+            ctc: false,
             files: vec![FileEntry {
                 name: "m.bin",
                 url,

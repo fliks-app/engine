@@ -1,17 +1,14 @@
 //! The `Melody` job: the vocal stem at 16 kHz through the pitch network, the frames cut into
 //! the notes of each span. Spec: `docs/spec/karaoke.md` section 5.
-use super::run::{StopOnDrop, unsupported};
+use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Net, Tensor};
-use crate::jobs::{Cmd, Ctx, tail};
-use crate::proc::Pipes;
+use crate::jobs::Ctx;
 use fliks_engine_core::api::{JobResult, MelodyMeta, MelodySpan, ModelKind};
 use fliks_engine_core::jobs::melody::{
-    FMAX, FMIN, HOP, PitchTrack, SAMPLE_RATE, SILENCE_PEAK, frames, spans_notes, window_samples,
-    windows,
+    FMAX, FMIN, HOP, PitchTrack, SILENCE_PEAK, frames, spans_notes, window_samples, windows,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use tokio::io::AsyncReadExt;
 
 pub async fn run(
     ctx: &Ctx,
@@ -31,57 +28,12 @@ pub async fn run(
         .await
         .map_err(|e| e.to_string())??;
     ctx.pulse();
-    let argv: Vec<String> = [
-        "-hide_banner",
-        "-loglevel",
-        "warning",
-        "-i",
-        &ctx.media_path(),
-        "-map",
-        "0:a:0",
-        "-vn",
-        "-sn",
-        "-dn",
-        "-f",
-        "f32le",
-        "-ac",
-        "1",
-        "-ar",
-        &SAMPLE_RATE.to_string(),
-        "pipe:1",
-    ]
-    .map(String::from)
-    .to_vec();
-    let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout());
+    let cmd = pcm_cmd(ctx);
     let c = ctx.clone();
     let mut net = loaded.net;
     let track = ctx
         .pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
-            let p = &p[0];
-            let mut out = p.take_stdout().ok_or("no decoder output")?;
-            let mut bytes = vec![];
-            let mut buf = vec![0u8; 1 << 20];
-            loop {
-                let n = out
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| format!("decode: {e}"))?;
-                if n == 0 {
-                    break;
-                }
-                bytes.extend_from_slice(&buf[..n]);
-                c.pulse();
-            }
-            match p.wait().await.code {
-                Some(0) => {}
-                code => return Err(format!("ffmpeg exited with {code:?}: {}", tail(p, 2))),
-            }
-            let pcm: Vec<f32> = bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|b| f32::from_le_bytes(*b))
-                .collect();
+            let pcm = read_pcm(&c, &p[0]).await?;
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             let c = c.clone();

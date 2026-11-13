@@ -1,5 +1,7 @@
-//! The `Align` job: the vocal stem at 16 kHz through `whisper-cli` for word times, the known
-//! lyric words matched onto them. Spec: `docs/spec/karaoke.md` section 4.
+//! The `Align` job: a CTC network places the known lyrics on the vocal stem (`ctc.rs`), else
+//! `whisper-cli` gives word times they are matched onto. Spec: `docs/spec/karaoke.md` section 4.
+use super::ctc;
+use super::models::Picked;
 use super::run::unsupported;
 use crate::jobs::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
@@ -9,14 +11,43 @@ use fliks_engine_core::jobs::align::{align, heard_from_json, words_of};
 /// Characters of the lyrics given to the recogniser as its prompt: it then hears those words.
 const PROMPT_CHARS: usize = 400;
 
+/// Places the lyrics with the CTC model that serves the language when one is installed; the
+/// speech recogniser stands in for a language with none and for a CTC run that fails.
 pub async fn run(
     ctx: &Ctx,
     lines: &[AlignLine],
     language: Option<&str>,
     model: Option<&str>,
+    providers: Option<&[String]>,
 ) -> Result<JobResult, String> {
     let k = &ctx.rt.karaoke;
-    let picked = k.models().pick(model, ModelKind::Alignment)?;
+    let models = k.models();
+    let detected = ctc::language_of(language, lines);
+    let picked = models.pick_aligner(model, detected.as_deref())?;
+    if !picked.ctc {
+        return recognise(ctx, &picked, lines, language).await;
+    }
+    let failure = match ctc::run(ctx, &picked, lines, detected.as_deref(), providers).await? {
+        Ok(align) => return Ok(JobResult::Align { align }),
+        Err(e) => e,
+    };
+    let fallback = models.pick(None, ModelKind::Alignment).ok();
+    match fallback {
+        Some(whisper) if k.tools(&ctx.rt.ffmpeg).await.whisper.is_some() => {
+            tracing::warn!("CTC alignment failed, using the speech recogniser: {failure}");
+            recognise(ctx, &whisper, lines, language).await
+        }
+        _ => Err(failure),
+    }
+}
+
+async fn recognise(
+    ctx: &Ctx,
+    picked: &Picked,
+    lines: &[AlignLine],
+    language: Option<&str>,
+) -> Result<JobResult, String> {
+    let k = &ctx.rt.karaoke;
     let tools = k.tools(&ctx.rt.ffmpeg).await;
     let whisper = tools
         .whisper

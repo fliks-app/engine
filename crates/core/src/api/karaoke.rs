@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 pub enum ModelKind {
     /// Vocals and accompaniment stems (`Separate`).
     Separation,
-    /// Speech recognition whose word times place known lyrics (`Align`).
+    /// A CTC network or speech recognition that places known lyrics on the audio (`Align`).
     Alignment,
     /// Fundamental frequency of a voice (`Melody`).
     Melody,
@@ -184,11 +184,12 @@ pub struct AlignedLine {
 pub struct AlignMeta {
     pub model: String,
     pub model_version: String,
-    /// What ran the recogniser: `vulkan`, `metal` or `cpu`.
+    /// What ran the model: `ctc-<provider>` (`ctc-cpu`, `ctc-cuda`...), or for the speech
+    /// recogniser `vulkan`, `metal` or `cpu`.
     pub backend: String,
     pub lines: Vec<AlignedLine>,
-    /// Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means
-    /// the timing is mostly interpolated.
+    /// Share of the lyric words found, 0 to 1; a low value means the timing is mostly
+    /// interpolated.
     pub matched: f64,
 }
 

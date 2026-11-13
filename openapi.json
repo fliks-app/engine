@@ -901,7 +901,7 @@
         "properties": {
           "backend": {
             "type": "string",
-            "description": "What ran the recogniser: `vulkan`, `metal` or `cpu`."
+            "description": "What ran the model: `ctc-<provider>` (`ctc-cpu`, `ctc-cuda`...), or for the speech\nrecogniser `vulkan`, `metal` or `cpu`."
           },
           "lines": {
             "type": "array",
@@ -912,7 +912,7 @@
           "matched": {
             "type": "number",
             "format": "double",
-            "description": "Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means\nthe timing is mostly interpolated."
+            "description": "Share of the lyric words found, 0 to 1; a low value means the timing is mostly\ninterpolated."
           },
           "model": {
             "type": "string"
@@ -3681,7 +3681,7 @@
           {
             "type": "object",
             "title": "AlignJob",
-            "description": "Times the words of `lines` on the vocal stem `media` names: speech recognition gives word\ntimes, the known words are matched onto them. Lines with times keep within them. Needs an\n`alignment` model and the speech recogniser.",
+            "description": "Times the words of `lines` on the vocal stem `media` names: a CTC network forces the known\nwords onto the audio, else speech recognition gives word times they are matched onto.\nLines with times keep within them. Needs an `alignment` model.",
             "required": [
               "lines",
               "type"
@@ -3692,7 +3692,7 @@
                   "string",
                   "null"
                 ],
-                "description": "ISO 639-1 code of the singing; absent: detected."
+                "description": "ISO 639 code of the singing; absent: detected from the lyrics."
               },
               "lines": {
                 "type": "array",
@@ -3705,7 +3705,17 @@
                   "string",
                   "null"
                 ],
-                "description": "An `alignment` model id; absent: the default one."
+                "description": "An `alignment` model id; absent: the installed CTC model of the language, else the\nspeech recogniser's."
+              },
+              "providers": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Hardware providers a CTC network may run on (`cpu` always may); absent or empty: the\nCPU only."
               },
               "type": {
                 "type": "string",

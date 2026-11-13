@@ -499,6 +499,7 @@ mod tests {
             lines,
             language: None,
             model: None,
+            providers: None,
         };
         assert!(validate(&kind(vec![line("  ")])).is_err());
         assert!(validate(&kind(vec![timed("a", 500, 100)])).is_err());
@@ -507,6 +508,7 @@ mod tests {
             lines: vec![line("a")],
             language: Some("--prompt".into()),
             model: None,
+            providers: None,
         };
         assert!(validate(&bad).is_err());
     }
