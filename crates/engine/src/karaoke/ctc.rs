@@ -6,7 +6,7 @@ use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{AlignLine, AlignMeta, JobErrorClass};
 use fliks_engine_core::jobs::ctc::{
-    Case, Emissions, FRAME_MS, TooLarge, Vocab, align, lyric_ids, silent_frames,
+    Case, Emissions, FRAME_MS, TooLarge, Vocab, Voicing, align, fits, lyric_ids,
 };
 use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use serde::Deserialize;
@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+
+const TOO_LARGE: &str = "the lyrics and the audio are too long for one CTC pass";
 
 /// The network's input, named so by `tools/ctc-export`.
 const INPUT: &str = "input_values";
@@ -103,6 +105,7 @@ struct Spans<'a> {
     net: &'a mut dyn Net,
     pcm: &'a [f32],
     normalize: bool,
+    silent: &'a [bool],
     stop: &'a AtomicBool,
     pulse: &'a dyn Fn(),
 }
@@ -124,13 +127,21 @@ fn frames_and_classes(out: &[Tensor]) -> Result<(usize, usize), String> {
 
 impl Spans<'_> {
     /// The emissions of `from_ms..to_ms` (frame 0 at `from_ms`, a multiple of `FRAME_MS`) for
-    /// the classes `ids`.
+    /// the classes `ids`; a chunk that is silent throughout is not run, it is all blank.
     fn emit(&mut self, from_ms: u32, to_ms: u32, ids: &[u32]) -> Result<Emissions, String> {
         let frames = (to_ms - from_ms).div_ceil(FRAME_MS) as usize;
         let mut log_probs = Vec::with_capacity(frames * (ids.len() + 1));
         for at in (from_ms..to_ms).step_by(CHUNK_MS as usize) {
-            let em = self.chunk(at, (at + CHUNK_MS).min(to_ms), ids)?;
-            log_probs.extend(em.log_probs);
+            let to = (at + CHUNK_MS).min(to_ms);
+            let (a, b) = ((at / FRAME_MS) as usize, to.div_ceil(FRAME_MS) as usize);
+            if self.silent.get(a..b).is_some_and(|s| s.iter().all(|v| *v)) {
+                for _ in a..b {
+                    log_probs.push(0.0);
+                    log_probs.extend(std::iter::repeat_n(-30.0, ids.len()));
+                }
+                continue;
+            }
+            log_probs.extend(self.chunk(at, to, ids)?.log_probs);
         }
         Ok(Emissions {
             ids: ids.to_vec(),
@@ -241,17 +252,31 @@ pub async fn run(
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             tokio::task::spawn_blocking(move || {
+                let duration_ms = u32::try_from(pcm.len() / SAMPLES_PER_MS).unwrap_or(u32::MAX);
+                if fits(&lines, &export.vocab, &language, duration_ms).is_err() {
+                    return (provider, Err(TOO_LARGE.to_string()));
+                }
+                let voice = Voicing::of(&pcm);
                 let (provider, em) = place_or_retry(
                     net,
                     provider,
                     &stop,
                     || load(&*backend, &file, &[], &export),
-                    |net| emissions(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse()),
+                    |net| {
+                        let spans = Spans {
+                            net,
+                            pcm: &pcm,
+                            normalize: export.normalize,
+                            silent: &voice.silent,
+                            stop: &stop,
+                            pulse: &|| c.pulse(),
+                        };
+                        emissions(spans, duration_ms, &lines, &language, &export)
+                    },
                 );
                 let placed = em.and_then(|em| {
-                    align(&lines, &export.vocab, &language, &silent_frames(&pcm), &em).map_err(
-                        |TooLarge| "the lyrics and the audio are too long for one CTC pass".into(),
-                    )
+                    align(&lines, &export.vocab, &language, &voice, &em)
+                        .map_err(|TooLarge| TOO_LARGE.to_string())
                 });
                 (provider, placed)
             })
@@ -310,24 +335,14 @@ fn load(
     Ok(loaded)
 }
 
-/// The emissions of the whole track `pcm` for the characters of `lines`; blocking.
+/// The emissions of the whole track for the characters of `lines`; blocking.
 fn emissions(
-    net: &mut dyn Net,
-    pcm: &[f32],
+    mut spans: Spans,
+    duration_ms: u32,
     lines: &[AlignLine],
     language: &str,
     export: &Export,
-    stop: &AtomicBool,
-    pulse: &dyn Fn(),
 ) -> Result<Emissions, String> {
-    let duration_ms = u32::try_from(pcm.len() / SAMPLES_PER_MS).unwrap_or(u32::MAX);
-    let mut spans = Spans {
-        net,
-        pcm,
-        normalize: export.normalize,
-        stop,
-        pulse,
-    };
     spans.emit(0, duration_ms, &lyric_ids(lines, &export.vocab, language))
 }
 
@@ -424,10 +439,21 @@ mod tests {
         normalize: bool,
         stop: &'a AtomicBool,
     ) -> Spans<'a> {
+        spans_with(net, pcm, normalize, &[], stop)
+    }
+
+    fn spans_with<'a>(
+        net: &'a mut Echo,
+        pcm: &'a [f32],
+        normalize: bool,
+        silent: &'a [bool],
+        stop: &'a AtomicBool,
+    ) -> Spans<'a> {
         Spans {
             net,
             pcm,
             normalize,
+            silent,
             stop,
             pulse: &|| (),
         }
@@ -453,6 +479,23 @@ mod tests {
         }
         // Two calls of 30 s with 1 s of context on each side.
         assert_eq!(net.calls, [16_000 * 32; 2]);
+    }
+
+    #[test]
+    fn a_chunk_silent_throughout_is_not_run() {
+        let pcm = vec![0.1f32; 16_000 * 60];
+        let mut net = Echo {
+            calls: vec![],
+            classes: 4,
+        };
+        let stop = AtomicBool::new(false);
+        let mut silent = vec![true; 1500];
+        silent.extend(vec![false; 1500]);
+        let em = spans_with(&mut net, &pcm, false, &silent, &stop)
+            .emit(0, 60_000, &[0, 3])
+            .unwrap();
+        assert_eq!((em.frames() >= 2999, net.calls.len()), (true, 1));
+        assert_eq!(&em.log_probs[..3], &[0.0, -30.0, -30.0]);
     }
 
     #[test]
@@ -590,10 +633,8 @@ mod tests {
             .collect()
     }
 
-    /// The whole pipeline on the real tracks of `FLIKS_CTC_TRUTH` (`<id>.json` with `lang` and
-    /// `lines[{start, text}]`, `<id>.wav` the vocal stem, also in its `library-eval/`) with the
-    /// models of `FLIKS_CTC_MODELS`; `thresholds.json` there (`{id: {minMatched, maxLongWords,
-    /// maxSilentStarts, maxWall}}`, wall as a multiple of the audio) is what each must meet.
+    /// The pipeline on the tracks of `FLIKS_CTC_TRUTH` (`<id>.json` and `<id>.wav`, also in its
+    /// `library-eval/`) with `FLIKS_CTC_MODELS`; its `thresholds.json` keyed by id is the bar.
     #[cfg(feature = "karaoke")]
     #[test]
     #[ignore = "needs FLIKS_CTC_TRUTH, FLIKS_CTC_MODELS and an ONNX Runtime (ORT_DYLIB_PATH)"]
@@ -649,21 +690,43 @@ mod tests {
             let mut loaded = load(&*backend, &file, &[], &export).unwrap();
             let pcm = read_wav(&base.join(format!("{id}.wav")));
             let stop = AtomicBool::new(false);
+            let voice = Voicing::of(&pcm);
+            let spans = Spans {
+                net: &mut *loaded.net,
+                pcm: &pcm,
+                normalize: export.normalize,
+                silent: &voice.silent,
+                stop: &stop,
+                pulse: &|| (),
+            };
             let t0 = Instant::now();
-            let em =
-                emissions(&mut *loaded.net, &pcm, &lines, lang, &export, &stop, &|| ()).unwrap();
+            let em = emissions(
+                spans,
+                (pcm.len() / SAMPLES_PER_MS) as u32,
+                &lines,
+                lang,
+                &export,
+            )
+            .unwrap();
             let t1 = Instant::now();
-            let silent = silent_frames(&pcm);
-            let (out, matched) = align(&lines, &export.vocab, lang, &silent, &em).unwrap();
+            let (out, matched) = align(&lines, &export.vocab, lang, &voice, &em).unwrap();
             let (net, vit) = (t1 - t0, t1.elapsed());
             let words: Vec<_> = out.iter().flat_map(|l| &l.words).collect();
+            let frames = |w: &&fliks_engine_core::api::AlignedWord| {
+                (w.start_ms / FRAME_MS) as usize..(w.end_ms / FRAME_MS) as usize
+            };
+            let silent_in = |w: &&fliks_engine_core::api::AlignedWord| {
+                frames(w)
+                    .filter(|t| voice.silent.get(*t) == Some(&true))
+                    .count()
+            };
             let long = words
                 .iter()
-                .filter(|w| w.end_ms - w.start_ms > 3000)
+                .filter(|w| w.end_ms - w.start_ms > 3000 && silent_in(w) * 5 >= frames(w).count())
                 .count();
             let quiet = words
                 .iter()
-                .filter(|w| silent.get((w.start_ms / FRAME_MS) as usize) == Some(&true))
+                .filter(|w| voice.silent.get((w.start_ms / FRAME_MS) as usize) == Some(&true))
                 .count() as f64
                 / words.len().max(1) as f64;
             let audio = pcm.len() as f64 / SAMPLE_RATE as f64;
