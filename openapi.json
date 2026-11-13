@@ -945,6 +945,13 @@
             "type": "string",
             "description": "What ran the model: `ctc-<provider>` (`ctc-cpu`, `ctc-cuda`...), or for the speech\nrecogniser `vulkan`, `metal` or `cpu`."
           },
+          "fallback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the speech recogniser placed the words instead of the CTC model: the CTC failure."
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -5545,6 +5552,7 @@
           "recommended",
           "sizeBytes",
           "diskBytes",
+          "outdated",
           "state",
           "downloadedBytes"
         ],
@@ -5552,7 +5560,6 @@
           "bytesPerSecond": {
             "type": [
               "number",
-          "outdated",
               "null"
             ],
             "format": "double",
@@ -5626,6 +5633,10 @@
           "name": {
             "type": "string"
           },
+          "outdated": {
+            "type": "boolean",
+            "description": "Installed with a version older than the manifest's: it still runs until an update\n(`POST /v1/models/{id}/download`) replaces it."
+          },
           "recommended": {
             "type": "boolean",
             "description": "What a host offers first: the default of a separation or melody model, every CTC alignment\nmodel (a language takes the first one in the list that holds it)."
@@ -5633,10 +5644,6 @@
           "sizeBytes": {
             "type": "number",
             "format": "double",
-          "outdated": {
-            "type": "boolean",
-            "description": "Installed with a version older than the manifest's: it still runs until an update\n(`POST /v1/models/{id}/download`) replaces it."
-          },
             "description": "Total of `files[].sizeBytes`."
           },
           "state": {

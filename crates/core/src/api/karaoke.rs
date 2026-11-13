@@ -241,6 +241,9 @@ pub struct AlignMeta {
     /// Share of the lyric words found, 0 to 1; a low value means the timing is mostly
     /// interpolated.
     pub matched: f64,
+    /// Why the speech recogniser placed the words instead of the CTC model: the CTC failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<String>,
 }
 
 /// A span of the vocal stem whose notes a `Melody` looks for (a word cue).

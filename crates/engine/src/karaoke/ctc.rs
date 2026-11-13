@@ -2,7 +2,7 @@
 //! onto its per-frame log-probabilities. Spec: `docs/spec/karaoke.md` section 4.
 use super::models::Picked;
 use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
-use super::{Loaded, Net, Tensor, Warm};
+use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass};
 use fliks_engine_core::jobs::ctc::{AlignError, Emissions, FRAME_MS, Vocab, align};
@@ -40,6 +40,18 @@ struct Export {
     normalize: bool,
     /// The network must have more classes than the largest id of its vocabulary.
     top_id: u32,
+}
+
+impl Export {
+    fn check(&self, classes: usize) -> Result<(), String> {
+        if classes <= self.top_id as usize {
+            return Err(format!(
+                "the vocabulary has token {} but the network {classes} classes",
+                self.top_id
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn read_export(path: &Path) -> Result<Export, String> {
@@ -88,25 +100,42 @@ fn normalise(x: &mut [f32]) {
 struct Spans<'a> {
     net: &'a mut dyn Net,
     pcm: &'a [f32],
-    export: &'a Export,
+    normalize: bool,
     stop: &'a AtomicBool,
     pulse: &'a dyn Fn(),
 }
 
+/// `(frames, classes)` of a CTC network's answer.
+fn frames_and_classes(out: &[Tensor]) -> Result<(usize, usize), String> {
+    let [logits] = out else {
+        return Err("unexpected CTC network output".into());
+    };
+    let &[1, frames, classes] = &logits.shape[..] else {
+        return Err(format!("unexpected CTC output shape {:?}", logits.shape));
+    };
+    let (frames, classes) = (frames as usize, classes as usize);
+    if logits.data.len() != frames * classes {
+        return Err("CTC network answered the wrong size".into());
+    }
+    Ok((frames, classes))
+}
+
 impl Spans<'_> {
-    /// The emissions of `from_ms..to_ms` (frame 0 at `from_ms`, a multiple of `FRAME_MS`).
-    fn emit(&mut self, from_ms: u32, to_ms: u32) -> Result<Emissions, String> {
-        let (mut classes, mut log_probs) = (0, vec![]);
+    /// The emissions of `from_ms..to_ms` (frame 0 at `from_ms`, a multiple of `FRAME_MS`) for
+    /// the classes `ids`.
+    fn emit(&mut self, from_ms: u32, to_ms: u32, ids: &[u32]) -> Result<Emissions, String> {
+        let classes = ids.len() + 1;
+        let frames = (to_ms - from_ms).div_ceil(FRAME_MS) as usize;
+        let mut log_probs = Vec::with_capacity(frames * classes);
         for at in (from_ms..to_ms).step_by(CHUNK_MS as usize) {
-            let em = self.chunk(at, (at + CHUNK_MS).min(to_ms))?;
-            classes = em.classes;
+            let em = self.chunk(at, (at + CHUNK_MS).min(to_ms), ids)?;
             log_probs.extend(em.log_probs);
         }
         Ok(Emissions { classes, log_probs })
     }
 
     /// One call on `from_ms..to_ms` with `CONTEXT_MS` of audio around it, the context dropped.
-    fn chunk(&mut self, from_ms: u32, to_ms: u32) -> Result<Emissions, String> {
+    fn chunk(&mut self, from_ms: u32, to_ms: u32, ids: &[u32]) -> Result<Emissions, String> {
         if self.stop.load(Relaxed) {
             return Err("stopped".into());
         }
@@ -115,33 +144,18 @@ impl Spans<'_> {
         let a = ((from_ms - lead_ms) as usize * SAMPLES_PER_MS).min(end);
         let b = ((to_ms + CONTEXT_MS) as usize * SAMPLES_PER_MS).clamp(a, end);
         let mut audio = self.pcm[a..b].to_vec();
-        if self.export.normalize {
+        if self.normalize {
             normalise(&mut audio);
         }
         audio.resize(audio.len().max(MIN_SAMPLES), 0.0);
         let shape = vec![1, audio.len() as i64];
         let out = self.net.run(vec![(INPUT, Tensor { shape, data: audio })])?;
         (self.pulse)();
-        let [logits] = &out[..] else {
-            return Err("unexpected CTC network output".into());
-        };
-        let &[1, frames, classes] = &logits.shape[..] else {
-            return Err(format!("unexpected CTC output shape {:?}", logits.shape));
-        };
-        let (frames, classes) = (frames as usize, classes as usize);
-        if logits.data.len() != frames * classes {
-            return Err("CTC network answered the wrong size".into());
-        }
-        if classes <= self.export.top_id as usize {
-            return Err(format!(
-                "the vocabulary has token {} but the network {classes} classes",
-                self.export.top_id
-            ));
-        }
-        let skip = (lead_ms / FRAME_MS) as usize;
-        let take = ((to_ms - from_ms).div_ceil(FRAME_MS) as usize).min(frames.saturating_sub(skip));
-        let rows = logits.data[skip * classes..(skip + take) * classes].to_vec();
-        Ok(Emissions::from_logits(classes, rows))
+        let (frames, classes) = frames_and_classes(&out)?;
+        let skip = ((lead_ms / FRAME_MS) as usize).min(frames);
+        let take = ((to_ms - from_ms).div_ceil(FRAME_MS) as usize).min(frames - skip);
+        let rows = &out[0].data[skip * classes..(skip + take) * classes];
+        Ok(Emissions::from_logits(rows, classes, ids))
     }
 }
 
@@ -176,9 +190,8 @@ pub fn language_of(requested: Option<&str>, lines: &[AlignLine]) -> Option<Strin
         .map(|c| two_letter(c).to_owned())
 }
 
-/// The lyrics placed by `picked`: `Ok(Err(_))` is a failure of this path (a missing runtime, a
-/// broken model, a pass too large) the speech recogniser can stand in for; `Err(_)` ends the job
-/// (a cancel or a stall).
+/// The lyrics placed by `picked`. `Ok(Err(_))`: the CTC path failed, the recogniser can stand in;
+/// `Err(_)`: the job ends (cancel, stall, undecodable source).
 pub async fn run(
     ctx: &Ctx,
     picked: &Picked,
@@ -186,65 +199,93 @@ pub async fn run(
     language: Option<&str>,
     providers: Option<&[String]>,
 ) -> Result<Result<AlignMeta, String>, String> {
-    let (export, loaded) = match prepare(ctx, picked, providers).await {
-        Ok(ready) => ready,
+    let backend = ctx.rt.karaoke.backend();
+    let runtime = backend.runtime();
+    if !runtime.onnx {
+        return Ok(Err(unsupported(runtime.error.unwrap_or_default())));
+    }
+    let export = match read_export(&picked.file("vocab.json")) {
+        Ok(export) => Arc::new(export),
         Err(e) => return Ok(Err(e)),
     };
-    let provider = loaded.provider;
-    let mut net = loaded.net;
+    let file = picked.file("model.onnx");
+    let allow = providers.unwrap_or_default().to_vec();
+    let loaded = {
+        let (backend, file, export) = (backend.clone(), file.clone(), export.clone());
+        tokio::task::spawn_blocking(move || load(&*backend, &file, &allow, &export))
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    let Loaded { mut net, provider } = match loaded {
+        Ok(loaded) => loaded,
+        Err(e) => return Ok(Err(e)),
+    };
+    ctx.pulse();
     let cmd = pcm_cmd(ctx);
     let (c, lines, language) = (
         ctx.clone(),
         lines.to_vec(),
         language.unwrap_or_default().to_owned(),
     );
-    let placed = ctx
+    let (provider, placed) = ctx
         .pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
             let pcm = read_pcm(&c, &p[0]).await?;
+            if pcm.is_empty() {
+                return Err(JobErrorClass::Corrupt.message("no audio decoded"));
+            }
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             tokio::task::spawn_blocking(move || {
-                place(&mut *net, &pcm, &lines, &language, &export, &stop, &|| {
-                    c.pulse()
-                })
+                let go = |net: &mut dyn Net| {
+                    place(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse())
+                };
+                match go(&mut *net) {
+                    Err(AlignError::Emit(e)) if provider != "cpu" => {
+                        tracing::warn!(provider, "CTC run failed, repeating on the CPU: {e}");
+                        match load(&*backend, &file, &[], &export) {
+                            Ok(mut cpu) => (cpu.provider, go(&mut *cpu.net)),
+                            Err(e) => (provider, Err(AlignError::Emit(e))),
+                        }
+                    }
+                    placed => (provider, placed),
+                }
             })
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())
         })
-        .await?;
-    Ok(placed.map(|(lines, matched)| AlignMeta {
-        model: picked.id.into(),
-        model_version: picked.version.clone(),
-        backend: format!("ctc-{provider}"),
-        lines,
-        matched,
-    }))
+        .await??;
+    Ok(placed
+        .map_err(|e| match e {
+            AlignError::Emit(e) => e,
+            AlignError::TooLarge => "the lyrics and the audio are too long for one CTC pass".into(),
+        })
+        .map(|(lines, matched)| AlignMeta {
+            model: picked.id.into(),
+            model_version: picked.version.clone(),
+            backend: format!("ctc-{provider}"),
+            lines,
+            matched,
+            fallback: None,
+        }))
 }
 
-/// The export's vocabulary and the network on the first allowed provider that runs it.
-async fn prepare(
-    ctx: &Ctx,
-    picked: &Picked,
-    providers: Option<&[String]>,
-) -> Result<(Export, Loaded), String> {
-    let backend = ctx.rt.karaoke.backend();
-    let runtime = backend.runtime();
-    if !runtime.onnx {
-        return Err(unsupported(runtime.error.unwrap_or_default()));
-    }
-    let export = read_export(&picked.file("vocab.json"))?;
-    let (file, allow) = (
-        picked.file("model.onnx"),
-        providers.unwrap_or_default().to_vec(),
-    );
-    let loaded = tokio::task::spawn_blocking(move || {
-        let warm: &[Warm] = &[(INPUT, &[1, SAMPLE_RATE as i64])];
-        backend.load(&file, Some(&allow), warm)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    ctx.pulse();
-    Ok((export, loaded))
+/// The network on the first provider of `allow` that runs it (`&[]`: the CPU), checked against the
+/// export's vocabulary on a short silence.
+fn load(
+    backend: &dyn Backend,
+    file: &Path,
+    allow: &[String],
+    export: &Export,
+) -> Result<Loaded, String> {
+    let warm: &[Warm] = &[(INPUT, &[1, SAMPLE_RATE as i64])];
+    let mut loaded = backend.load(file, Some(allow), warm)?;
+    let shape = vec![1, MIN_SAMPLES as i64];
+    let silence = Tensor {
+        shape,
+        data: vec![0.0; MIN_SAMPLES],
+    };
+    export.check(frames_and_classes(&loaded.net.run(vec![(INPUT, silence)])?)?.1)?;
+    Ok(loaded)
 }
 
 /// `lines` on the audio `pcm`; blocking.
@@ -256,25 +297,22 @@ fn place(
     export: &Export,
     stop: &AtomicBool,
     pulse: &dyn Fn(),
-) -> Result<(Vec<AlignedLine>, f64), String> {
-    if pcm.is_empty() {
-        return Err(JobErrorClass::Corrupt.message("no audio decoded"));
-    }
+) -> Result<(Vec<AlignedLine>, f64), AlignError<String>> {
     let duration_ms = u32::try_from(pcm.len() / SAMPLES_PER_MS).unwrap_or(u32::MAX);
     let mut spans = Spans {
         net,
         pcm,
-        export,
+        normalize: export.normalize,
         stop,
         pulse,
     };
-    align(lines, &export.vocab, language, duration_ms, &mut |a, b| {
-        spans.emit(a, b)
-    })
-    .map_err(|e| match e {
-        AlignError::Emit(e) => e,
-        AlignError::TooLarge => "the lyrics and the audio are too long for one CTC pass".into(),
-    })
+    align(
+        lines,
+        &export.vocab,
+        language,
+        duration_ms,
+        &mut |a, b, ids| spans.emit(a, b, ids),
+    )
 }
 
 #[cfg(test)]
@@ -360,11 +398,18 @@ mod tests {
         }
     }
 
-    fn export(normalize: bool, top_id: u32) -> Export {
-        Export {
-            vocab: Vocab::new([('a', 1)], 0, 2),
+    fn spans<'a>(
+        net: &'a mut Echo,
+        pcm: &'a [f32],
+        normalize: bool,
+        stop: &'a AtomicBool,
+    ) -> Spans<'a> {
+        Spans {
+            net,
+            pcm,
             normalize,
-            top_id,
+            stop,
+            pulse: &|| (),
         }
     }
 
@@ -376,18 +421,13 @@ mod tests {
             classes: 64,
         };
         let stop = AtomicBool::new(false);
-        let ex = export(false, 2);
-        let mut spans = Spans {
-            net: &mut net,
-            pcm: &pcm,
-            export: &ex,
-            stop: &stop,
-            pulse: &|| (),
-        };
-        let em = spans.emit(5_000, 65_000).unwrap();
-        assert_eq!(em.frames(), 3000);
+        let ids: Vec<u32> = (0..64).collect();
+        let em = spans(&mut net, &pcm, false, &stop)
+            .emit(5_000, 65_000, &ids)
+            .unwrap();
+        assert_eq!((em.frames(), em.classes), (3000, 65));
         for t in 0..3000 {
-            let row = &em.log_probs[t * 64..(t + 1) * 64];
+            let row = &em.log_probs[t * 65..t * 65 + 64];
             let top = (0..64).max_by(|a, b| row[*a].total_cmp(&row[*b])).unwrap();
             assert_eq!(top, (250 + t) % 64, "frame {t}");
         }
@@ -396,23 +436,29 @@ mod tests {
     }
 
     #[test]
-    fn a_vocabulary_larger_than_the_network_is_an_error_not_a_silent_miss() {
-        let pcm = vec![0.1f32; 16_000 * 2];
+    fn a_span_ending_a_few_ms_into_a_chunk_does_not_run_past_the_answer() {
+        let pcm = vec![0.1f32; 16_000 * 60 + 48];
         let mut net = Echo {
             calls: vec![],
             classes: 4,
         };
         let stop = AtomicBool::new(false);
-        let ex = export(false, 9);
-        let mut spans = Spans {
-            net: &mut net,
-            pcm: &pcm,
-            export: &ex,
-            stop: &stop,
-            pulse: &|| (),
+        let em = spans(&mut net, &pcm, false, &stop)
+            .emit(0, 60_003, &[0, 3])
+            .unwrap();
+        assert_eq!(em.frames(), 3000);
+    }
+
+    #[test]
+    fn a_vocabulary_larger_than_the_network_is_an_error_not_a_silent_miss() {
+        let ex = Export {
+            vocab: Vocab::new([('a', 1)], 0, 2),
+            normalize: false,
+            top_id: 9,
         };
-        let e = spans.emit(0, 1000).unwrap_err();
+        let e = ex.check(4).unwrap_err();
         assert!(e.contains("token 9") && e.contains("4 classes"), "{e}");
+        assert!(ex.check(10).is_ok());
     }
 
     #[test]
@@ -423,15 +469,9 @@ mod tests {
             classes: 4,
         };
         let stop = AtomicBool::new(false);
-        let ex = export(true, 2);
-        let mut spans = Spans {
-            net: &mut net,
-            pcm: &pcm,
-            export: &ex,
-            stop: &stop,
-            pulse: &|| (),
-        };
-        let em = spans.emit(0, 100).unwrap();
+        let em = spans(&mut net, &pcm, true, &stop)
+            .emit(0, 100, &[0])
+            .unwrap();
         assert_eq!(em.frames(), 5);
         assert_eq!(net.calls, [MIN_SAMPLES]);
     }

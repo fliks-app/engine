@@ -1,6 +1,5 @@
-//! The pure half of the CTC `Align`: the known lyric text forced onto the per-frame character
-//! log-probabilities of a CTC network (Viterbi), giving word times and scores. The network runs
-//! in the engine. Spec: `docs/spec/karaoke.md` section 4.
+//! The pure half of the CTC `Align`: the lyrics forced onto a network's per-frame log-probabilities
+//! (Viterbi), giving word times and scores. Spec: `docs/spec/karaoke.md` section 4.
 use std::collections::HashMap;
 
 use unicode_normalization::UnicodeNormalization;
@@ -63,7 +62,8 @@ impl Vocab {
     }
 }
 
-/// Log-probabilities of a span of audio, `classes` per frame; frame 0 starts at the span's start.
+/// Log-probabilities of a span of audio: per frame the columns of the asked ids, then the best
+/// non-blank class (a `WILDCARD`'s score).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Emissions {
     pub classes: usize,
@@ -75,17 +75,24 @@ impl Emissions {
         self.log_probs.len().checked_div(self.classes).unwrap_or(0)
     }
 
-    /// Turns raw network outputs (`classes` per frame) into log-probabilities, in place.
-    pub fn from_logits(classes: usize, mut logits: Vec<f32>) -> Self {
-        for row in logits.chunks_mut(classes.max(1)) {
+    /// The columns `ids` (the blank first) of the log-softmax of raw network rows of `total`
+    /// classes, plus the wildcard column; every id is below `total`.
+    pub fn from_logits(logits: &[f32], total: usize, ids: &[u32]) -> Self {
+        let mut log_probs = Vec::with_capacity(logits.len() / total.max(1) * (ids.len() + 1));
+        for row in logits.chunks_exact(total.max(1)) {
             let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            let sum: f32 = row.iter().map(|v| (v - max).exp()).sum();
-            let lse = max + sum.ln();
-            row.iter_mut().for_each(|v| *v -= lse);
+            let lse = max + row.iter().map(|v| (v - max).exp()).sum::<f32>().ln();
+            log_probs.extend(ids.iter().map(|id| row[*id as usize] - lse));
+            let best = row
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| *k != ids[0] as usize)
+                .fold(f32::NEG_INFINITY, |m, (_, v)| m.max(*v));
+            log_probs.push(best - lse);
         }
         Emissions {
-            classes,
-            log_probs: logits,
+            classes: ids.len() + 1,
+            log_probs,
         }
     }
 
@@ -280,10 +287,12 @@ struct Placed {
     score: f32,
 }
 
-/// The states of a pass: a star before each line with a token and after the last one, the
-/// tokens of each word each followed by a blank, and per line the first and last token state of
-/// each word (`None` for a word with no token).
+/// The states of a pass: a star before each line with a token and after the last one, each
+/// token followed by a blank; `spans` the first and last state of each word, `ids` the classes
+/// it scores (the blank first), `cols` the emission column of each state (the wildcard's last).
 struct Layout {
+    ids: Vec<u32>,
+    cols: Vec<usize>,
     states: Vec<State>,
     spans: Vec<Vec<Option<(usize, usize)>>>,
 }
@@ -314,15 +323,42 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
         return None;
     }
     states.push(State::Star);
-    Some(Layout { states, spans })
+    let mut ids = vec![vocab.blank];
+    let mut cols: Vec<usize> = states
+        .iter()
+        .map(|s| match s {
+            State::Star | State::Blank => 0,
+            State::Tok(WILDCARD) => usize::MAX,
+            State::Tok(t) => ids.iter().position(|i| i == t).unwrap_or_else(|| {
+                ids.push(*t);
+                ids.len() - 1
+            }),
+        })
+        .collect();
+    let wildcard = ids.len();
+    cols.iter_mut()
+        .filter(|c| **c == usize::MAX)
+        .for_each(|c| *c = wildcard);
+    Some(Layout {
+        ids,
+        cols,
+        states,
+        spans,
+    })
 }
 
 /// The lines of `lay` forced onto `em`: per line, per word, where it sits; `None` for a word
 /// with no token and for everything when no alignment fits.
-fn viterbi(em: &Emissions, vocab: &Vocab, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
-    let Layout { states, spans } = lay;
+fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
+    let Layout {
+        ids,
+        cols,
+        states,
+        spans,
+    } = lay;
     let (n, frames) = (states.len(), em.frames());
-    if frames == 0 || em.classes <= vocab.blank as usize {
+    debug_assert_eq!(em.classes, ids.len() + 1);
+    if frames == 0 {
         return None;
     }
     let skip: Vec<bool> = (0..n)
@@ -335,12 +371,7 @@ fn viterbi(em: &Emissions, vocab: &Vocab, lay: &Layout) -> Option<Vec<Vec<Option
         .collect();
     let emit = |row: &[f32], s: usize| match states[s] {
         State::Star => STAR_LOGP,
-        State::Blank => row[vocab.blank as usize],
-        State::Tok(WILDCARD) => (0..row.len())
-            .filter(|k| *k != vocab.blank as usize)
-            .map(|k| row[k])
-            .fold(f32::NEG_INFINITY, f32::max),
-        State::Tok(t) => row.get(t as usize).copied().unwrap_or(f32::NEG_INFINITY),
+        _ => row[cols[s]],
     };
     let mut back = vec![0u8; frames * n];
     let mut prev = vec![f32::NEG_INFINITY; n];
@@ -430,15 +461,14 @@ pub enum AlignError<E> {
     TooLarge,
 }
 
-/// The lines placed on the audio by CTC forced alignment, and the share of words found.
-/// `emit(start_ms, end_ms)` gives the emissions of that span (frame 0 at `start_ms`, a multiple
-/// of `FRAME_MS`); a timed line gets its own window, each run of untimed lines one pass.
-pub fn align<E>(
+/// The lines placed by CTC forced alignment, and the share of words found. `emit(from, to, ids)`
+/// gives the emissions of a span (frame 0 at `from`, a multiple of `FRAME_MS`) for the classes `ids`.
+pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
     lines: &[AlignLine],
     vocab: &Vocab,
     language: &str,
     duration_ms: u32,
-    emit: &mut dyn FnMut(u32, u32) -> Result<Emissions, E>,
+    emit: &mut F,
 ) -> Result<(Vec<AlignedLine>, f64), AlignError<E>> {
     let copies = words_of(lines);
     let toks: Vec<Vec<Vec<u32>>> = copies
@@ -485,8 +515,8 @@ pub fn align<E>(
         if (hi - lo).div_ceil(FRAME_MS) as usize * lay.states.len() > MAX_CELLS {
             return Err(AlignError::TooLarge);
         }
-        let em = emit(lo, hi).map_err(AlignError::Emit)?;
-        let Some(out) = viterbi(&em, vocab, &lay) else {
+        let em = emit(lo, hi, &lay.ids).map_err(AlignError::Emit)?;
+        let Some(out) = viterbi(&em, &lay) else {
             continue;
         };
         for (k, placed) in out.iter().enumerate() {
@@ -525,8 +555,9 @@ mod tests {
         )
     }
 
-    /// Frames of blank-dominated emissions with `marks` (frame, class, probability) laid on top.
-    fn emissions(frames: usize, marks: &[(usize, u32, f32)]) -> Emissions {
+    /// Frames of blank-dominated probabilities of every class, with `marks` (frame, class,
+    /// probability) laid on top.
+    fn emissions(frames: usize, marks: &[(usize, u32, f32)]) -> Vec<f32> {
         let mut v = vec![];
         for t in 0..frames {
             let mark = marks.iter().rev().find(|m| m.0 == t);
@@ -534,10 +565,7 @@ mod tests {
             let rest = (1.0 - p) / (CLASSES - 1) as f32;
             v.extend((0..CLASSES as u32).map(|c| (if c == main { p } else { rest }).ln()));
         }
-        Emissions {
-            classes: CLASSES,
-            log_probs: v,
-        }
+        v
     }
 
     fn line(text: &str) -> AlignLine {
@@ -558,21 +586,28 @@ mod tests {
 
     fn run(
         lines: &[AlignLine],
-        em: &Emissions,
+        em: &[f32],
         asked: &mut Vec<(u32, u32)>,
     ) -> (Vec<AlignedLine>, f64) {
-        let duration = em.frames() as u32 * FRAME_MS;
-        align(lines, &vocab(), "xx", duration, &mut |s, e| {
-            asked.push((s, e));
-            let (a, b) = (
-                (s / FRAME_MS) as usize,
-                (e.div_ceil(FRAME_MS) as usize).min(em.frames()),
-            );
-            Ok::<_, ()>(Emissions {
-                classes: em.classes,
-                log_probs: em.log_probs[a * CLASSES..b * CLASSES].to_vec(),
-            })
-        })
+        let frames = em.len() / CLASSES;
+        align(
+            lines,
+            &vocab(),
+            "xx",
+            frames as u32 * FRAME_MS,
+            &mut |s, e, ids| {
+                asked.push((s, e));
+                let (a, b) = (
+                    (s / FRAME_MS) as usize,
+                    (e.div_ceil(FRAME_MS) as usize).min(frames),
+                );
+                Ok::<_, ()>(Emissions::from_logits(
+                    &em[a * CLASSES..b * CLASSES],
+                    CLASSES,
+                    ids,
+                ))
+            },
+        )
         .unwrap()
     }
 
@@ -722,11 +757,28 @@ mod tests {
     fn a_pass_over_the_cell_cap_is_an_error_before_any_audio_is_read() {
         let text = vec!["a"; 3000].join(" ");
         let mut asked = 0;
-        let r = align(&[line(&text)], &vocab(), "xx", 200_000, &mut |_, _| {
+        let r = align(&[line(&text)], &vocab(), "xx", 200_000, &mut |_, _, _| {
             asked += 1;
-            Ok::<_, ()>(emissions(1, &[]))
+            Ok::<_, ()>(Emissions::from_logits(
+                &emissions(1, &[]),
+                CLASSES,
+                &[BLANK],
+            ))
         });
         assert_eq!(r.unwrap_err(), AlignError::TooLarge);
         assert_eq!(asked, 0);
+    }
+
+    #[test]
+    fn emissions_keep_the_asked_columns_and_the_best_non_blank_class() {
+        let logits = [1.0, 4.0, 0.0, 2.0, 0.0, 9.0, 3.0, 1.0];
+        let em = Emissions::from_logits(&logits, 4, &[3, 1]);
+        assert_eq!((em.classes, em.frames()), (3, 2));
+        let lse = |r: [f32; 4]| r.iter().map(|v| v.exp()).sum::<f32>().ln();
+        let (a, b) = (lse([1.0, 4.0, 0.0, 2.0]), lse([0.0, 9.0, 3.0, 1.0]));
+        let want = [2.0 - a, 4.0 - a, 4.0 - a, 1.0 - b, 9.0 - b, 9.0 - b];
+        for (g, w) in em.log_probs.iter().zip(want) {
+            assert!((g - w).abs() < 1e-5, "{g} {w}");
+        }
     }
 }

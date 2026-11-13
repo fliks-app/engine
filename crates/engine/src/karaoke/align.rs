@@ -25,17 +25,16 @@ pub async fn run(
     let detected = ctc::language_of(language, lines);
     let picked = models.pick_aligner(model, detected.as_deref())?;
     if !picked.ctc {
-        return recognise(ctx, &picked, lines, language).await;
+        return recognise(ctx, &picked, lines, language, None).await;
     }
     let failure = match ctc::run(ctx, &picked, lines, detected.as_deref(), providers).await? {
         Ok(align) => return Ok(JobResult::Align { align }),
         Err(e) => e,
     };
-    let fallback = models.pick(None, ModelKind::Alignment).ok();
-    match fallback {
+    match models.pick(None, ModelKind::Alignment).ok() {
         Some(whisper) if k.tools(&ctx.rt.ffmpeg).await.whisper.is_some() => {
             tracing::warn!("CTC alignment failed, using the speech recogniser: {failure}");
-            recognise(ctx, &whisper, lines, language).await
+            recognise(ctx, &whisper, lines, language, Some(failure)).await
         }
         _ => Err(failure),
     }
@@ -46,6 +45,7 @@ async fn recognise(
     picked: &Picked,
     lines: &[AlignLine],
     language: Option<&str>,
+    fallback: Option<String>,
 ) -> Result<JobResult, String> {
     let k = &ctx.rt.karaoke;
     let tools = k.tools(&ctx.rt.ffmpeg).await;
@@ -77,6 +77,7 @@ async fn recognise(
             backend: backend.into(),
             lines: aligned,
             matched,
+            fallback,
         },
     })
 }

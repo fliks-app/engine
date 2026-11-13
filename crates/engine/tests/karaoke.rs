@@ -1,6 +1,5 @@
-//! The model manager and the `Separate`, `Align` and `Melody` jobs: a local file server for the
-//! downloads, and a fake network backend (splitting by frequency, a zero-crossing pitch) on the
-//! real ffmpeg for the jobs. Tests that need ffmpeg skip without it.
+//! The model manager and the `Separate`, `Align` and `Melody` jobs: a local file server and a fake
+//! network backend on the real ffmpeg. Tests that need ffmpeg skip without it.
 mod runtime_common;
 use axum::{
     Router,
@@ -595,6 +594,18 @@ impl Net for ToneNet {
     }
 }
 
+/// A CTC network on a device that runs a short call, then dies on a real one.
+struct FlakyNet;
+
+impl Net for FlakyNet {
+    fn run(&mut self, inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+        if inputs[0].1.data.len() > 3200 {
+            return Err("device out of memory".into());
+        }
+        ToneNet.run(inputs)
+    }
+}
+
 struct Fake;
 
 impl Backend for Fake {
@@ -609,22 +620,22 @@ impl Backend for Fake {
 
     fn load(&self, file: &Path, allow: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
         let name = file.file_name().unwrap().to_string_lossy();
-        let ctc = file
+        let model = file
             .parent()
             .and_then(|d| d.file_name())
-            .is_some_and(|d| d.to_string_lossy().starts_with("ctc-"));
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let provider = allow
+            .and_then(|a| a.first().cloned())
+            .unwrap_or_else(|| "cpu".into());
         let net: Box<dyn Net> = match &*name {
             "vocals.onnx" => Box::new(SplitNet { keep_high: true }),
             "accompaniment.onnx" => Box::new(SplitNet { keep_high: false }),
-            _ if ctc => Box::new(ToneNet),
+            _ if model == "ctc-flaky" && provider != "cpu" => Box::new(FlakyNet),
+            _ if model.starts_with("ctc-") => Box::new(ToneNet),
             _ => Box::new(CrossingNet),
         };
-        Ok(Loaded {
-            net,
-            provider: allow
-                .and_then(|a| a.first().cloned())
-                .unwrap_or_else(|| "cpu".into()),
-        })
+        Ok(Loaded { net, provider })
     }
 }
 
@@ -1013,12 +1024,21 @@ async fn align_repeats_a_failed_gpu_run_on_the_cpu() {
 const CTC_VOCAB: &str = r#"{"sampleRate":16000,"frameMs":20,"doNormalize":false,"blank":0,
     "delimiter":2,"vocab":{"0":"<pad>","1":"<unk>","2":"|","3":"a"}}"#;
 
-/// An engine on the fake backend whose manager holds a working CTC model (`ctc-ok`, for any
-/// language), one with a broken vocabulary (`ctc-broken`) and the speech recogniser's model.
+/// A vocabulary with a token the 4-class `ToneNet` has no class for.
+const WIDE_VOCAB: &str = r#"{"sampleRate":16000,"frameMs":20,"doNormalize":false,"blank":0,
+    "delimiter":2,"vocab":{"0":"<pad>","2":"|","3":"a","9":"b"}}"#;
+
+/// An engine on the fake backend whose manager holds CTC models (`ctc-ok`, `ctc-flaky` whose GPU
+/// runs die, `ctc-broken` and `ctc-wide` with bad vocabularies) and the recogniser's model.
 async fn ctc_engine() -> Option<Engine> {
     let e = real().await?;
     let mut entries = vec![];
-    for (id, vocab) in [("ctc-ok", CTC_VOCAB), ("ctc-broken", "not json")] {
+    for (id, vocab) in [
+        ("ctc-ok", CTC_VOCAB),
+        ("ctc-flaky", CTC_VOCAB),
+        ("ctc-broken", "not json"),
+        ("ctc-wide", WIDE_VOCAB),
+    ] {
         std::fs::create_dir_all(e.root.join("ctc-models").join(id)).unwrap();
         for (name, bytes) in [
             ("model.onnx", &b"onnx"[..]),
@@ -1094,6 +1114,65 @@ async fn align_places_the_lyrics_with_the_ctc_model_on_the_provider_the_request_
     )
     .await;
     assert_eq!(r["result"]["align"]["backend"], "ctc-cpu", "{r}");
+    assert!(r["result"]["align"].get("fallback").is_none(), "{r}");
+}
+
+#[tokio::test]
+async fn align_repeats_a_ctc_run_that_dies_on_the_gpu_on_the_cpu() {
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc-gpu");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-flaky", "providers": ["directml"],
+        "lines": [{ "text": "a", "startMs": 0, "endMs": 1000 }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("ctc-flaky"), Some("ctc-cpu"))
+    );
+    assert!(a["matched"].as_f64().unwrap() > 0.9, "{a}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn align_ends_the_job_on_a_source_with_no_audio_instead_of_falling_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc-empty");
+    let script = d.join("whisper-cli");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -of ] && of=\"$2\"; shift; done\n\
+         echo '{\"transcription\":[{\"offsets\":{\"from\":100,\"to\":500},\"text\":\" a\"}]}' > \"$of.json\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    e.rt.karaoke.set_tools(Tools {
+        whisper: Some(script.to_string_lossy().into_owned()),
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let stem = d.join("vocals.flac");
+    if !make(
+        &e,
+        &stem,
+        "anullsrc=r=16000:cl=mono:d=1,atrim=end_sample=0[o]",
+    ) {
+        eprintln!("ffmpeg cannot make the empty audio: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-ok", "lines": [{ "text": "a" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "failed", "{r}");
+    assert!(
+        r["error"].as_str().unwrap().contains("no audio decoded"),
+        "{r}"
+    );
 }
 
 #[cfg(unix)]
@@ -1128,6 +1207,13 @@ async fn align_falls_back_to_the_recogniser_when_the_ctc_model_fails() {
         (a["model"].as_str(), a["backend"].as_str()),
         (Some("whisper-test"), Some("cpu"))
     );
+    assert!(
+        a["fallback"]
+            .as_str()
+            .unwrap()
+            .contains("not a CTC vocabulary"),
+        "{a}"
+    );
 }
 
 #[tokio::test]
@@ -1144,8 +1230,11 @@ async fn align_reports_the_ctc_failure_when_there_is_no_recogniser_to_fall_back_
         eprintln!("ffmpeg cannot make the tones: skipped");
         return;
     }
-    let kind = json!({ "type": "Align", "model": "ctc-broken", "lines": [{ "text": "a" }] });
-    let r = run_kind(&e, &stem, kind).await;
+    let run = |model: &'static str| {
+        let kind = json!({ "type": "Align", "model": model, "lines": [{ "text": "a" }] });
+        run_kind(&e, &stem, kind)
+    };
+    let r = run("ctc-broken").await;
     assert_eq!(r["state"], "failed", "{r}");
     assert!(
         r["error"]
@@ -1154,20 +1243,22 @@ async fn align_reports_the_ctc_failure_when_there_is_no_recogniser_to_fall_back_
             .contains("not a CTC vocabulary"),
         "{r}"
     );
+    let r = run("ctc-wide").await;
+    assert!(r["error"].as_str().unwrap().contains("token 9"), "{r}");
 }
 
-/// With `FLIKS_CTC_MODELS` (a models directory holding the manifest's CTC files), `FLIKS_CTC_STEM`
-/// (a vocal stem) and `FLIKS_CTC_LINES` (`{ "lang", "lines": [{ "start", "text" }] }`) set, and an
-/// ONNX runtime at `ORT_DYLIB_PATH`: the real model through the real runtime.
+/// The real model, with `FLIKS_CTC_MODELS`, `FLIKS_CTC_STEM`, `FLIKS_CTC_LINES` and
+/// `FLIKS_CTC_OTHER_LINES` (`{ "lang", "lines": [{ "start", "text" }] }`) and `ORT_DYLIB_PATH` set.
 #[tokio::test]
 async fn align_runs_a_real_ctc_model_when_one_is_given() {
     let var = |n: &str| std::env::var(n).ok();
-    let (Some(models), Some(stem), Some(lines)) = (
+    let (Some(models), Some(stem), Some(lines), Some(other)) = (
         var("FLIKS_CTC_MODELS"),
         var("FLIKS_CTC_STEM"),
         var("FLIKS_CTC_LINES"),
+        var("FLIKS_CTC_OTHER_LINES"),
     ) else {
-        eprintln!("FLIKS_CTC_MODELS, FLIKS_CTC_STEM and FLIKS_CTC_LINES not set: skipped");
+        eprintln!("FLIKS_CTC_{{MODELS,STEM,LINES,OTHER_LINES}} not all set: skipped");
         return;
     };
     let e = engine().await;
@@ -1180,19 +1271,31 @@ async fn align_runs_a_real_ctc_model_when_one_is_given() {
         ),
         fliks_engine::karaoke::onnx::default_backend(&models),
     );
-    let truth: Value = serde_json::from_slice(&std::fs::read(lines).unwrap()).unwrap();
-    let lines: Vec<Value> = truth["lines"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|l| json!({ "text": l["text"], "startMs": l["start"] }))
-        .collect();
-    let kind = json!({ "type": "Align", "language": truth["lang"], "lines": lines });
-    let r = run_kind(&e, Path::new(&stem), kind).await;
-    assert_eq!(r["state"], "done", "{r}");
-    let a = &r["result"]["align"];
+    let read = |p: String| -> Value { serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap() };
+    let (truth, other) = (read(lines), read(other));
+    let stem = Path::new(&stem);
+    let align = async |lines: &Value, timed: bool, lower: bool| {
+        let lines: Vec<Value> = lines["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| {
+                let text = l["text"].as_str().unwrap();
+                let text = if lower {
+                    text.to_lowercase()
+                } else {
+                    text.into()
+                };
+                json!({ "text": text, "startMs": timed.then(|| l["start"].clone()) })
+            })
+            .collect();
+        let kind = json!({ "type": "Align", "language": truth["lang"], "lines": lines });
+        let r = run_kind(&e, stem, kind).await;
+        assert_eq!(r["state"], "done", "{r}");
+        r["result"]["align"].clone()
+    };
+    let a = align(&truth, true, false).await;
     assert!(a["backend"].as_str().unwrap().starts_with("ctc-"), "{a}");
-    assert!(a["matched"].as_f64().unwrap() > 0.5, "{a}");
     let mut last = 0;
     for w in a["lines"]
         .as_array()
@@ -1204,4 +1307,17 @@ async fn align_runs_a_real_ctc_model_when_one_is_given() {
         assert!(s >= last && t > s, "{w}");
         last = s;
     }
+    let matched = |a: &Value| a["matched"].as_f64().unwrap();
+    let lower = align(&truth, true, true).await;
+    let whole = align(&truth, false, false).await;
+    let wrong = align(&other, true, false).await;
+    eprintln!(
+        "matched: kept {:.2}, lowercased {:.2}, whole track {:.2}, other lyrics {:.2}",
+        matched(&a),
+        matched(&lower),
+        matched(&whole),
+        matched(&wrong)
+    );
+    assert!(matched(&a) > 0.5, "{a}");
+    assert!(matched(&wrong) < 0.3, "{wrong}");
 }
