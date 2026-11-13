@@ -334,6 +334,7 @@ impl Picked {
 
 struct Status {
     state: ModelState,
+    outdated: bool,
     bytes: u64,
     rate: Option<f64>,
     error: Option<String>,
@@ -446,15 +447,13 @@ impl Manager {
                 error: Some(_),
                 ..
             }) => (ModelState::Failed, 0, None),
-            _ if installed && rec.is_some_and(|r| r.version != e.version) => {
-                (ModelState::Outdated, total, None)
-            }
             _ if installed => (ModelState::Installed, total, None),
             Some(Download { error: Some(_), .. }) => (ModelState::Failed, 0, None),
             _ => (ModelState::Absent, 0, None),
         };
         Status {
             state,
+            outdated: installed && rec.is_some_and(|r| r.version != e.version),
             bytes,
             rate,
             error: d.and_then(|d| d.error.clone()),
@@ -500,6 +499,7 @@ impl Manager {
             size_bytes: e.files.iter().map(|f| f.size).sum::<u64>() as f64,
             disk_bytes: dir_size(&self.model_dir(e)) as f64,
             installed_version: rec.map(|r| r.version),
+            outdated: st.outdated,
             state: st.state,
             downloaded_bytes: st.bytes as f64,
             bytes_per_second: st.rate,
@@ -667,7 +667,8 @@ impl Manager {
     pub fn start(&self, id: &str) -> Option<ModelInfo> {
         let e = self.entry(id)?;
         let rec = self.record(e);
-        if self.status(e, rec.as_ref()).state != ModelState::Installed {
+        let st = self.status(e, rec.as_ref());
+        if st.state != ModelState::Installed || st.outdated {
             let id = e.id;
             self.spawn(id, false, move |me, generation, rx| async move {
                 me.fetch(id, generation, rx).await

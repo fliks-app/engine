@@ -298,8 +298,11 @@ async fn an_outdated_model_is_replaced_once_the_new_files_are_verified() {
     let e = engine().await;
     let dir = good_manager(&e, "outdated").await;
     install_old_version(&dir);
-    let m = settle(&e, "good", "outdated").await;
-    assert_eq!(m["installedVersion"], "6");
+    let m = settle(&e, "good", "installed").await;
+    assert_eq!(
+        (&m["installedVersion"], &m["outdated"]),
+        (&json!("6"), &json!(true))
+    );
     assert_eq!(
         e.rt.karaoke
             .models()
@@ -312,8 +315,19 @@ async fn an_outdated_model_is_replaced_once_the_new_files_are_verified() {
 
     let r = e.control("POST", "/v1/models/good/download", None).await;
     assert_eq!(r.status, 202);
-    let m = settle(&e, "good", "installed").await;
-    assert_eq!(m["installedVersion"], "7");
+    let mut m = Value::Null;
+    for _ in 0..100 {
+        let list = e.control("GET", "/v1/models", None).await.json();
+        m = list["models"][0].clone();
+        if m["outdated"] == false {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        (&m["state"], &m["installedVersion"]),
+        (&json!("installed"), &json!("7"))
+    );
     assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
     assert!(!dir.join(".good.new").exists() && !dir.join(".good.old").exists());
 }
@@ -340,7 +354,8 @@ async fn a_failed_update_leaves_the_installed_version_working() {
     for _ in 0..100 {
         let m = e.control("GET", "/v1/models", None).await.json();
         if m["models"][0]["error"].is_string() {
-            assert_eq!(m["models"][0]["state"], "outdated");
+            assert_eq!(m["models"][0]["state"], "installed");
+            assert_eq!(m["models"][0]["outdated"], true);
             assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), b"old");
             return;
         }

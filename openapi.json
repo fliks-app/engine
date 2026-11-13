@@ -5552,6 +5552,7 @@
           "bytesPerSecond": {
             "type": [
               "number",
+          "outdated",
               "null"
             ],
             "format": "double",
@@ -5632,6 +5633,10 @@
           "sizeBytes": {
             "type": "number",
             "format": "double",
+          "outdated": {
+            "type": "boolean",
+            "description": "Installed with a version older than the manifest's: it still runs until an update\n(`POST /v1/models/{id}/download`) replaces it."
+          },
             "description": "Total of `files[].sizeBytes`."
           },
           "state": {
@@ -5699,7 +5704,6 @@
           "absent",
           "downloading",
           "installed",
-          "outdated",
           "failed"
         ]
       },

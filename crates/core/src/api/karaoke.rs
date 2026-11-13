@@ -22,9 +22,6 @@ pub enum ModelState {
     Downloading,
     /// Every file is on disk with its verified size and hash.
     Installed,
-    /// Installed, and the manifest has a newer version: the installed one still runs until an
-    /// update (`POST /v1/models/{id}/download`) replaces it.
-    Outdated,
     /// The last download or verification failed (`error`); a new download starts from scratch.
     Failed,
 }
@@ -94,6 +91,9 @@ pub struct ModelInfo {
     /// `version` of the install on disk, once a download recorded it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_version: Option<String>,
+    /// Installed with a version older than the manifest's: it still runs until an update
+    /// (`POST /v1/models/{id}/download`) replaces it.
+    pub outdated: bool,
     pub state: ModelState,
     /// Bytes fetched (or verified) so far while `downloading`, else the installed size.
     pub downloaded_bytes: f64,
