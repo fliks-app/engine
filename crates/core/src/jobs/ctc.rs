@@ -714,20 +714,30 @@ fn band_of(copies: &[Copy], i: usize, duration_ms: u32) -> Option<(u32, u32)> {
     (hi > lo).then_some((lo, hi))
 }
 
-/// The frames a copy's required words need: one a token, a delimiter between words, a blank between
-/// two equal tokens in a row.
+/// The frames a copy needs at least: one a token of a required word, a delimiter between words, a
+/// blank between two equal tokens in a row, one for the star before it, two for the blanks a jump
+/// over an optional span goes between.
 fn frames_needed(words: &[Vec<u32>], roles: &[Role]) -> usize {
-    let words = words
+    let words = words.iter().zip(roles).filter(|(w, _)| !w.is_empty());
+    let (mut required, mut spans, mut last) = (vec![], 0, None);
+    for (w, r) in words.clone() {
+        match r {
+            Role::Word => required.push(w),
+            Role::Optional(g) if last != Some(g) => spans += 1,
+            _ => {}
+        }
+        last = match r {
+            Role::Optional(g) => Some(g),
+            _ => None,
+        };
+    }
+    let repeats = required
         .iter()
-        .zip(roles)
-        .filter(|(w, r)| !w.is_empty() && **r == Role::Word)
-        .map(|(w, _)| w);
-    let repeats = words
-        .clone()
         .map(|w| w.windows(2).filter(|p| p[0] == p[1]).count())
         .sum::<usize>();
-    let tokens = words.clone().map(Vec::len).sum::<usize>();
-    (tokens + repeats + words.count()).saturating_sub(1)
+    let tokens = required.iter().map(|w| w.len()).sum::<usize>();
+    let star = usize::from(words.count() > 0);
+    (tokens + repeats + required.len()).saturating_sub(1) + star + 2 * spans
 }
 
 /// `word` without its `[...]` parts (labels inside a word).
@@ -749,6 +759,20 @@ fn unlabelled(word: &str) -> String {
 #[derive(Debug, PartialEq)]
 pub struct TooLarge;
 
+/// Why `align` placed nothing.
+#[derive(Debug, PartialEq)]
+pub enum AlignError {
+    TooLarge,
+    /// The lyrics cannot be laid on the audio in order.
+    NoPath,
+}
+
+impl From<TooLarge> for AlignError {
+    fn from(_: TooLarge) -> Self {
+        Self::TooLarge
+    }
+}
+
 /// What one Viterbi pass is given: the copies, their tokens and the frames each may sit on.
 struct Plan {
     copies: Vec<Copy>,
@@ -757,7 +781,8 @@ struct Plan {
 }
 
 /// The copies of `lines` with their frames. A band too short reaches the next one's end; a copy
-/// that cannot follow the ones before it (stale times) is untimed; one that fits nowhere has no tokens.
+/// that cannot follow the ones before it (stale times) is untimed; one that fits nowhere has no
+/// tokens, so the copies kept always have a path.
 fn plan(lines: &[AlignLine], vocab: &Vocab, language: &str, duration_ms: u32) -> Plan {
     let mut copies = words_of(lines);
     let mut toks: Vec<Vec<Vec<u32>>> = copies
@@ -787,25 +812,38 @@ fn plan(lines: &[AlignLine], vocab: &Vocab, language: &str, duration_ms: u32) ->
         });
         (lo, if hi - lo < need { hi.max(reach) } else { hi })
     };
-    let untimed_hi = |copies: &[Copy], i: usize| {
+    // A stale copy's neighbours are as stale as it is: only the track's end bounds it.
+    let untimed_hi = |copies: &[Copy], stale: bool, i: usize| {
         let next = copies[i + 1..].iter().find_map(|c| c.window);
-        next.map_or(duration_ms, |w| w.0 + TAIL_MS).min(duration_ms)
-    };
-    let (mut cursor, mut stale) = (0, vec![false; copies.len()]);
-    for i in 0..copies.len() {
-        let need = needs(&toks, &copies, i);
-        if copies[i].window.is_some() {
-            let (lo, hi) = widened(&copies, need, i);
-            if cursor.max(lo) + need <= hi {
-                cursor = cursor.max(lo) + need;
-                continue;
-            }
-            (copies[i].window, stale[i]) = (None, true);
+        match next {
+            Some(w) if !stale => (w.0 + TAIL_MS).min(duration_ms),
+            _ => duration_ms,
         }
-        if stale[i] || cursor + need <= untimed_hi(&copies, i) {
-            cursor += need;
-        } else {
-            toks[i].iter_mut().for_each(Vec::clear);
+    };
+    // A band follows the next timed copy, so clearing a window can shrink an earlier band: walk
+    // again until a walk clears none.
+    let (full, mut stale) = (toks.clone(), vec![false; copies.len()]);
+    loop {
+        let (mut cursor, mut cleared) = (0, false);
+        toks.clone_from(&full);
+        for i in 0..copies.len() {
+            let need = needs(&toks, &copies, i);
+            if copies[i].window.is_some() {
+                let (lo, hi) = widened(&copies, need, i);
+                if cursor.max(lo) + need <= hi {
+                    cursor = cursor.max(lo) + need;
+                    continue;
+                }
+                (copies[i].window, stale[i], cleared) = (None, true, true);
+            }
+            if cursor + need <= untimed_hi(&copies, stale[i], i) {
+                cursor += need;
+            } else {
+                toks[i].iter_mut().for_each(Vec::clear);
+            }
+        }
+        if !cleared {
+            break;
         }
     }
     let frames = (0..copies.len())
@@ -813,8 +851,7 @@ fn plan(lines: &[AlignLine], vocab: &Vocab, language: &str, duration_ms: u32) ->
             let need = needs(&toks, &copies, i);
             let (lo, hi) = match copies[i].window {
                 Some(_) => widened(&copies, need, i),
-                None if stale[i] => (0, duration_ms),
-                None => (0, untimed_hi(&copies, i)),
+                None => (0, untimed_hi(&copies, stale[i], i)),
             };
             (lo / FRAME_MS, hi.div_ceil(FRAME_MS))
         })
@@ -855,24 +892,21 @@ pub fn fits(
 }
 
 /// The lines placed by CTC forced alignment in one Viterbi pass, and the share of words found:
-/// `em` the track's emissions for `lyric_ids`, `voice` its levels. No path: redone without times.
+/// `em` the track's emissions for `lyric_ids`, `voice` its levels.
 pub fn align(
     lines: &[AlignLine],
     vocab: &Vocab,
     language: &str,
     voice: &Voicing,
     em: &Emissions,
-) -> Result<(Vec<AlignedLine>, f64), TooLarge> {
-    let plan = plan(lines, vocab, language, em.frames() as u32 * FRAME_MS);
+) -> Result<(Vec<AlignedLine>, f64), AlignError> {
+    let duration_ms = em.frames() as u32 * FRAME_MS;
+    let plan = plan(lines, vocab, language, duration_ms);
     let total = plan.copies.iter().map(|c| c.words.len()).sum();
     let (mut times, mut found, mut at) = (vec![None; total], vec![false; total], 0);
     if let Some(lay) = layout_of(&plan, vocab, &em.ids) {
-        let mut placed = viterbi(em, &lay, &plan.frames, voice)?;
-        if placed.is_none() {
-            let open = vec![(0, em.frames() as u32); plan.copies.len()];
-            placed = viterbi(em, &lay, &open, voice)?;
-        }
-        for (copy, line) in plan.copies.iter().zip(placed.unwrap_or_default()) {
+        let placed = viterbi(em, &lay, &plan.frames, voice)?.ok_or(AlignError::NoPath)?;
+        for (copy, line) in plan.copies.iter().zip(placed) {
             for (wi, p) in line.iter().enumerate() {
                 if let Some(p) = p {
                     times[at + wi] = Some((p.start * FRAME_MS, p.end * FRAME_MS));
@@ -883,7 +917,10 @@ pub fn align(
         }
     }
     let (matched, share) = shares(&plan.copies, &found);
-    Ok((finish(&plan.copies, &mut times, &matched), share))
+    Ok((
+        finish(&plan.copies, &mut times, &matched, duration_ms),
+        share,
+    ))
 }
 
 #[cfg(test)]
@@ -1201,7 +1238,7 @@ mod tests {
         let ids = lyric_ids(&lines, &vocab(), "xx");
         let em = Emissions::from_logits(&emissions(35_000, &[]), CLASSES, &ids);
         let r = align(&lines, &vocab(), "xx", &Voicing::default(), &em);
-        assert_eq!(r.unwrap_err(), TooLarge);
+        assert_eq!(r.unwrap_err(), AlignError::TooLarge);
     }
 
     #[test]
@@ -1501,6 +1538,61 @@ mod tests {
             (starts(&out), share),
             (vec![48_000, 52_000, 56_000, 60_000], 1.0)
         );
+    }
+
+    #[test]
+    fn an_outro_that_does_not_fit_costs_only_its_overflow_copies() {
+        let marks = [(55, 2, 0.9), (250, 3, 0.95), (480, 3, 0.6)];
+        let em = emissions(1000, &marks);
+        let mut lines = vec![timed("a", 1000, 2000), timed("b", 9000, 10_000)];
+        lines.extend((0..20).map(|k| timed("c c c c c c", 18_000 + k * 50, 18_050 + k * 50)));
+        let p = plan(&lines, &vocab(), "xx", 20_000);
+        let dropped = p
+            .toks
+            .iter()
+            .filter(|t| t.iter().all(Vec::is_empty))
+            .count();
+        assert_eq!(dropped, 4);
+        let (out, _) = run(&lines, &em);
+        assert!(
+            (7000..=11_000).contains(&out[1].start_ms),
+            "{}",
+            out[1].start_ms
+        );
+        assert!(out.iter().all(|l| l.end_ms <= 20_000));
+        forward(&out);
+    }
+
+    #[test]
+    fn a_plan_always_has_a_path_and_no_time_passes_the_track() {
+        let mut rng = Lcg(11);
+        for _ in 0..400 {
+            let frames = 40 + rng.below(500);
+            let lines: Vec<AlignLine> = (0..1 + rng.below(12))
+                .map(|_| {
+                    let words: Vec<&str> = (0..1 + rng.below(6))
+                        .map(|_| {
+                            ["a", "ab", "abc", "bb", "c", "(ab)", "(a", "c)"][rng.below(8) as usize]
+                        })
+                        .collect();
+                    let text = words.join(" ") + ["", "", " x2", " x3"][rng.below(4) as usize];
+                    match rng.below(3) {
+                        0 => line(&text),
+                        _ => {
+                            let s = rng.below(frames * FRAME_MS * 4 / 3);
+                            timed(&text, s, s + rng.below(4000))
+                        }
+                    }
+                })
+                .collect();
+            let em = emissions(frames as usize, &[]);
+            let (out, _) = run(&lines, &em);
+            assert!(
+                out.iter().all(|l| l.end_ms <= frames * FRAME_MS),
+                "{lines:?}"
+            );
+            forward(&out);
+        }
     }
 
     #[test]

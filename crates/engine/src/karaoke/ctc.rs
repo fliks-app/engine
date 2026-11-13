@@ -6,7 +6,7 @@ use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{AlignLine, AlignMeta, JobErrorClass};
 use fliks_engine_core::jobs::ctc::{
-    Case, Emissions, FRAME_MS, TooLarge, Vocab, Voicing, align, fits, lyric_ids,
+    AlignError, Case, Emissions, FRAME_MS, Vocab, Voicing, align, fits, lyric_ids,
 };
 use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use serde::Deserialize;
@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 const TOO_LARGE: &str = "the lyrics and the audio are too long for one CTC pass";
+const NO_PATH: &str = "the lyrics cannot be laid on the audio in order";
 
 /// The network's input, named so by `tools/ctc-export`.
 const INPUT: &str = "input_values";
@@ -275,8 +276,10 @@ pub async fn run(
                     },
                 );
                 let placed = em.and_then(|em| {
-                    align(&lines, &export.vocab, &language, &voice, &em)
-                        .map_err(|TooLarge| TOO_LARGE.to_string())
+                    align(&lines, &export.vocab, &language, &voice, &em).map_err(|e| match e {
+                        AlignError::TooLarge => TOO_LARGE.to_string(),
+                        AlignError::NoPath => NO_PATH.to_string(),
+                    })
                 });
                 (provider, placed)
             })
