@@ -970,3 +970,53 @@ async fn align_reports_the_ctc_failure_when_there_is_no_recogniser_to_fall_back_
         "{r}"
     );
 }
+
+/// With `FLIKS_CTC_MODELS` (a models directory holding the manifest's CTC files), `FLIKS_CTC_STEM`
+/// (a vocal stem) and `FLIKS_CTC_LINES` (`{ "lang", "lines": [{ "start", "text" }] }`) set, and an
+/// ONNX runtime at `ORT_DYLIB_PATH`: the real model through the real runtime.
+#[tokio::test]
+async fn align_runs_a_real_ctc_model_when_one_is_given() {
+    let var = |n: &str| std::env::var(n).ok();
+    let (Some(models), Some(stem), Some(lines)) = (
+        var("FLIKS_CTC_MODELS"),
+        var("FLIKS_CTC_STEM"),
+        var("FLIKS_CTC_LINES"),
+    ) else {
+        eprintln!("FLIKS_CTC_MODELS, FLIKS_CTC_STEM and FLIKS_CTC_LINES not set: skipped");
+        return;
+    };
+    let e = engine().await;
+    let models = PathBuf::from(models);
+    e.rt.karaoke.replace(
+        Manager::new(
+            models.clone(),
+            fliks_engine::karaoke::models::manifest(),
+            e.rt.events.clone(),
+        ),
+        fliks_engine::karaoke::onnx::default_backend(&models),
+    );
+    let truth: Value = serde_json::from_slice(&std::fs::read(lines).unwrap()).unwrap();
+    let lines: Vec<Value> = truth["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| json!({ "text": l["text"], "startMs": l["start"] }))
+        .collect();
+    let kind = json!({ "type": "Align", "language": truth["lang"], "lines": lines });
+    let r = run_kind(&e, Path::new(&stem), kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert!(a["backend"].as_str().unwrap().starts_with("ctc-"), "{a}");
+    assert!(a["matched"].as_f64().unwrap() > 0.5, "{a}");
+    let mut last = 0;
+    for w in a["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|l| l["words"].as_array().unwrap())
+    {
+        let (s, t) = (w["startMs"].as_u64().unwrap(), w["endMs"].as_u64().unwrap());
+        assert!(s >= last && t > s, "{w}");
+        last = s;
+    }
+}

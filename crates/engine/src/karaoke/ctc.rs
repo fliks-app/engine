@@ -291,9 +291,11 @@ mod tests {
 
     #[test]
     fn the_language_is_the_requests_else_the_lyrics_when_reliable() {
-        let fr = [line(
-            "Je ne regrette rien, ni le bien qu'on m'a fait ni le mal",
-        )];
+        let fr = [
+            line("Non, rien de rien, non, je ne regrette rien"),
+            line("Ni le bien qu'on m'a fait, ni le mal"),
+            line("Tout ça m'est bien égal, c'est payé, balayé, oublié"),
+        ];
         assert_eq!(language_of(Some("de"), &fr).as_deref(), Some("de"));
         assert_eq!(language_of(Some("fra"), &fr).as_deref(), Some("fr"));
         assert_eq!(language_of(None, &fr).as_deref(), Some("fr"));
