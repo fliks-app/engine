@@ -22,6 +22,10 @@ pub const FMAX: f32 = 2093.75;
 const VOICED: f32 = 0.25;
 /// Semitones a frame may sit from the singer's median: further out is a harmonic or another instrument.
 const REGISTER: f64 = 15.0;
+/// Highest harmonic number an out-of-register frame is tried as.
+const HARMONICS: u32 = 8;
+/// Semitones from the voice nearby within which a frame divided by a harmonic number is that harmonic.
+const HARMONIC_FIT: f64 = 0.5;
 /// Frames on each side (4 s) of the sung frames whose median is the register.
 const REGISTER_REACH: usize = 250;
 /// Frames on each side (640 ms) whose median a frame an octave away is folded back to.
@@ -147,7 +151,8 @@ fn near(v: &[Option<f64>], i: usize, reach: usize) -> Option<f64> {
 }
 
 /// The MIDI pitch of every frame, `None` when unvoiced: frames out of the singer's register (the
-/// median of the spans' voiced frames nearby) dropped, short octave errors folded back, then smoothed.
+/// median of the spans' voiced frames nearby) dropped unless a harmonic of the voice, short octave
+/// errors folded back, then smoothed.
 fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
     let n = track.hz.len().min(track.confidence.len());
     let mut raw: Vec<Option<f64>> = (0..n)
@@ -161,11 +166,22 @@ fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
     let Some(global) = near(&sung, 0, n) else {
         return vec![None; n];
     };
+    let mut out_of_register = vec![];
     for (i, v) in raw.iter_mut().enumerate() {
         let register = near(&sung, i, REGISTER_REACH).unwrap_or(global);
-        if v.is_some_and(|x| (x - register).abs() > REGISTER) {
+        if let Some(x) = v.filter(|x| (x - register).abs() > REGISTER) {
+            out_of_register.push((i, x));
             *v = None;
         }
+    }
+    let in_register = raw.clone();
+    for (i, x) in out_of_register {
+        let Some(voice) = near(&in_register, i, MAX_GAP) else {
+            continue;
+        };
+        raw[i] = (2..=HARMONICS)
+            .map(|k| x - 12.0 * f64::from(k).log2())
+            .find(|y| (y - voice).abs() <= HARMONIC_FIT);
     }
     let shift: Vec<f64> = (0..n)
         .map(|i| {
@@ -216,15 +232,10 @@ fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
 }
 
 /// Notes of one span: cut where the pitch moves a semitone for four frames or the voice stops for
-/// more than 128 ms; notes under 96 ms are dropped, then equal neighbours merged.
+/// more than 128 ms; a note under 96 ms lengthens its neighbour or is dropped, then equal ones merge.
 fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
     let (first, end) = frame_range(span, clean.len());
-    let mut kept: Vec<Open> = vec![];
-    let mut close = |o: Open| {
-        if o.vals.len() >= MIN_FRAMES {
-            kept.push(o);
-        }
-    };
+    let mut closed: Vec<Open> = vec![];
     let (mut cur, mut pending, mut gap): (Option<Open>, Vec<(usize, f64)>, usize) =
         (None, vec![], 0);
     for (i, v) in clean.iter().enumerate().take(end).skip(first) {
@@ -233,7 +244,7 @@ fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
             if gap > MAX_GAP {
                 pending.clear();
                 if let Some(o) = cur.take() {
-                    close(o);
+                    closed.push(o);
                 }
             }
             continue;
@@ -259,14 +270,34 @@ fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
                     next.last = j;
                 }
                 if let Some(old) = cur.replace(next) {
-                    close(old);
+                    closed.push(old);
                 }
             }
         }
     }
-    if let Some(o) = cur {
-        close(o);
+    closed.extend(cur);
+    let long = |o: &Open| o.vals.len() >= MIN_FRAMES;
+    for k in 0..closed.len() {
+        if long(&closed[k]) {
+            continue;
+        }
+        let (first, last) = (closed[k].first, closed[k].last);
+        if let Some(p) = closed[..k]
+            .iter()
+            .rposition(long)
+            .filter(|&p| first <= closed[p].last + MAX_GAP + 1)
+        {
+            closed[p].last = closed[p].last.max(last);
+        } else if let Some(n) = closed[k + 1..]
+            .iter()
+            .position(long)
+            .map(|n| n + k + 1)
+            .filter(|&n| closed[n].first <= last + MAX_GAP + 1)
+        {
+            closed[n].first = closed[n].first.min(first);
+        }
     }
+    let kept = closed.into_iter().filter(long);
     let mut merged: Vec<Open> = vec![];
     for o in kept {
         match merged.last_mut() {
@@ -428,6 +459,27 @@ mod tests {
     fn a_short_gap_inside_a_word_is_bridged() {
         let t = track(&[(10, 220.0), (3, 0.0), (10, 220.0)]);
         assert_eq!(one(&t, span(0, 500)).len(), 1);
+    }
+
+    #[test]
+    fn a_short_note_lengthens_the_note_before_it() {
+        let t = track(&[(40, 220.0), (5, 246.94), (8, 0.0), (20, 196.0)]);
+        let n = one(&t, span(0, 1200));
+        assert_eq!(n.iter().map(|n| n.midi).collect::<Vec<_>>(), [57.0, 55.0]);
+        assert_eq!(n[0].end_ms, 720);
+    }
+
+    #[test]
+    fn a_short_note_lengthens_the_note_after_it_when_none_precedes() {
+        let t = track(&[(5, 246.94), (3, 0.0), (20, 196.0)]);
+        let n = one(&t, span(0, 800));
+        assert_eq!(n.iter().map(|n| n.midi).collect::<Vec<_>>(), [55.0]);
+        assert_eq!(n[0].start_ms, 0);
+    }
+
+    #[test]
+    fn a_fifth_harmonic_out_of_the_register_is_folded_to_the_voice() {
+        assert_eq!(mids(&[(40, 220.0), (12, 1100.0), (40, 220.0)]), [57.0]);
     }
 
     #[test]
