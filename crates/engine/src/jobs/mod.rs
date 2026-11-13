@@ -3,7 +3,7 @@
 mod alass;
 pub(crate) mod cover;
 mod ctx;
-mod disk;
+pub(crate) mod disk;
 mod fingerprint;
 mod merge;
 mod ocr;
@@ -463,7 +463,11 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             lines,
             language,
             model,
-        } => crate::karaoke::run_align(ctx, lines, language.as_deref(), model.as_deref()).await,
+            providers,
+        } => {
+            let (language, model) = (language.as_deref(), model.as_deref());
+            crate::karaoke::run_align(ctx, lines, language, model, providers.as_deref()).await
+        }
         JobKind::Melody { spans, model } => {
             crate::karaoke::run_melody(ctx, spans, model.as_deref()).await
         }

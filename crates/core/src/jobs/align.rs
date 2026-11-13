@@ -50,7 +50,18 @@ pub fn validate(kind: &JobKind) -> Result<(), String> {
     Ok(())
 }
 
-/// A line copy to place: the words of `text` (byte ranges into it).
+/// How a lyric word counts: sung as written, optional, or not sung at all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Role {
+    Word,
+    /// Inside parentheses (one group per pair) or in a repeat of a line sung once (group 0): it may
+    /// be skipped, and only counts when it is found.
+    Optional(u32),
+    /// Only a `[...]` section label.
+    Label,
+}
+
+/// A line copy to place: the words of `text` (byte ranges into it) and their roles.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Copy {
     pub line: u32,
@@ -58,6 +69,7 @@ pub struct Copy {
     /// Times the line is known to have, shared out when it repeats.
     pub window: Option<(u32, u32)>,
     pub words: Vec<(u32, u32)>,
+    pub roles: Vec<Role>,
     pub text: String,
 }
 
@@ -79,8 +91,9 @@ pub fn words_of(lines: &[AlignLine]) -> Vec<Copy> {
     let mut out = vec![];
     for (i, l) in lines.iter().enumerate() {
         let mut words = vec![];
-        let mut times = 1;
-        let mut at = 0;
+        let mut roles = vec![];
+        let (mut times, mut at) = (1, 0);
+        let (mut parens, mut brackets, mut group) = (0u32, 0u32, 0u32);
         for tok in l.text.split_inclusive(char::is_whitespace) {
             let word = tok.trim_end();
             let lead = tok.len() - tok.trim_start().len();
@@ -93,11 +106,35 @@ pub fn words_of(lines: &[AlignLine]) -> Vec<Copy> {
                 start as u32,
                 (at - (tok.len() - tok.trim_end().len())) as u32,
             );
-            if let Some(n) = repeat_marker(&l.text[s as usize..e as usize]) {
+            let w = &l.text[s as usize..e as usize];
+            if let Some(n) = repeat_marker(w) {
                 times = n;
-            } else {
-                words.push((s, e));
+                continue;
             }
+            words.push((s, e));
+            let (mut grouped, mut bare) = (parens > 0 || w.starts_with('('), false);
+            let labelled = brackets > 0 || w.starts_with('[');
+            for c in w.chars() {
+                match c {
+                    '(' => {
+                        if parens == 0 {
+                            group += 1;
+                        }
+                        parens += 1;
+                        grouped = true;
+                    }
+                    ')' => parens = parens.saturating_sub(1),
+                    '[' => brackets += 1,
+                    ']' => brackets = brackets.saturating_sub(1),
+                    c if c.is_alphanumeric() && brackets == 0 => bare = true,
+                    _ => {}
+                }
+            }
+            roles.push(match (labelled && !bare, grouped) {
+                (true, _) => Role::Label,
+                (_, true) => Role::Optional(group),
+                _ => Role::Word,
+            });
         }
         for r in 0..times {
             let window = l.start_ms.zip(l.end_ms).map(|(s, e)| {
@@ -111,11 +148,26 @@ pub fn words_of(lines: &[AlignLine]) -> Vec<Copy> {
                     },
                 )
             });
+            let roles = if r == 0 {
+                roles.clone()
+            } else {
+                roles
+                    .iter()
+                    .map(|k| {
+                        if *k == Role::Label {
+                            *k
+                        } else {
+                            Role::Optional(0)
+                        }
+                    })
+                    .collect()
+            };
             out.push(Copy {
                 line: i as u32,
                 repeat: r,
                 window,
                 words: words.clone(),
+                roles,
                 text: l.text.clone(),
             });
         }
@@ -160,8 +212,6 @@ fn similarity(a: &str, b: &str) -> i32 {
 }
 
 struct Slot {
-    copy: usize,
-    word: usize,
     key: String,
     window: Option<(u32, u32)>,
 }
@@ -217,18 +267,19 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
         .collect();
     let keys: Vec<String> = heard.iter().map(|h| norm(&h.text)).collect();
     let mut slots = vec![];
-    for (ci, c) in copies.iter().enumerate() {
-        for (wi, (s, e)) in c.words.iter().enumerate() {
+    for c in &copies {
+        for ((s, e), role) in c.words.iter().zip(&c.roles) {
+            let key = match role {
+                Role::Label => String::new(),
+                _ => norm(&c.text[*s as usize..*e as usize]),
+            };
             slots.push(Slot {
-                copy: ci,
-                word: wi,
-                key: norm(&c.text[*s as usize..*e as usize]),
+                key,
                 window: c.window,
             });
         }
     }
     let paired = pair(&slots, &heard, &keys);
-    let found = paired.iter().flatten().count();
     let mut times: Vec<Option<(u32, u32)>> = paired
         .iter()
         .map(|p| {
@@ -240,29 +291,73 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
             })
         })
         .collect();
-    fill(&slots, &copies, &mut times);
+    let found: Vec<bool> = paired.iter().map(Option::is_some).collect();
+    let (matched, share) = shares(&copies, &found);
+    (finish(&copies, &mut times, &matched, u32::MAX), share)
+}
+
+/// Per copy, and over the track, the share of its words found: the optional ones count only when
+/// found, the labels never. A copy with nothing to find is whole (1), a track with none is 0.
+pub(super) fn shares(copies: &[Copy], found: &[bool]) -> (Vec<f64>, f64) {
+    let (mut at, mut track) = (0, (0usize, 0usize));
+    let per = copies
+        .iter()
+        .map(|c| {
+            let (mut hit, mut counted) = (0, 0);
+            for (k, role) in c.roles.iter().enumerate() {
+                let f = found[at + k];
+                counted += usize::from(f || *role == Role::Word);
+                hit += usize::from(f);
+            }
+            at += c.words.len();
+            track = (track.0 + hit, track.1 + counted);
+            if counted == 0 {
+                1.0
+            } else {
+                hit as f64 / counted as f64
+            }
+        })
+        .collect();
+    (
+        per,
+        if track.1 == 0 {
+            0.0
+        } else {
+            track.0 as f64 / track.1 as f64
+        },
+    )
+}
+
+/// The lines of `copies` from the word times in `times` (flat word order): the words nothing
+/// was placed for are timed first, see `fill`. `matched` is each copy's share found, `end_ms` the
+/// track's length.
+pub(super) fn finish(
+    copies: &[Copy],
+    times: &mut [Option<(u32, u32)>],
+    matched: &[f64],
+    end_ms: u32,
+) -> Vec<AlignedLine> {
+    fill(copies, times, end_ms);
     let mut out: Vec<AlignedLine> = vec![];
     let mut next = 0;
     let mut last_end = 0;
-    for (ci, c) in copies.iter().enumerate() {
-        let mine: Vec<usize> = (next..slots.len())
-            .take_while(|k| slots[*k].copy == ci)
-            .collect();
-        next += mine.len();
-        let words: Vec<AlignedWord> = mine
+    for (c, matched) in copies.iter().zip(matched) {
+        let words: Vec<AlignedWord> = c
+            .words
             .iter()
-            .map(|k| {
-                let (start_ms, end_ms) = times[*k].unwrap_or((last_end, last_end));
-                let (s, e) = c.words[slots[*k].word];
+            .enumerate()
+            .map(|(wi, (s, e))| {
+                let (start_ms, end_ms) = times[next + wi].unwrap_or((last_end, last_end));
                 AlignedWord {
-                    text: c.text[s as usize..e as usize].to_string(),
-                    byte_start: s,
-                    byte_end: e,
+                    text: c.text[*s as usize..*e as usize].to_string(),
+                    byte_start: *s,
+                    byte_end: *e,
                     start_ms,
                     end_ms,
                 }
             })
             .collect();
+        next += c.words.len();
         let (start_ms, end_ms) = match (words.first(), words.last()) {
             (Some(f), Some(l)) => (f.start_ms, l.end_ms),
             _ => (last_end, last_end),
@@ -273,43 +368,50 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
             repeat: c.repeat,
             start_ms,
             end_ms,
+            matched: *matched,
             words,
         });
     }
-    let share = if slots.is_empty() {
-        0.0
-    } else {
-        found as f64 / slots.len() as f64
-    };
-    (out, share)
+    out
 }
 
-/// Times the words nothing was heard for: shared out, by length, between the heard words around
-/// them and inside their line's times. The result never runs backwards.
-fn fill(slots: &[Slot], copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
+/// Times the words nothing was placed for: shared out, by length, between the placed words
+/// around them and inside their line's times, none past `end_ms`. The result never runs backwards.
+fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>], end_ms: u32) {
+    let flat: Vec<(u32, Option<(u32, u32)>)> = copies
+        .iter()
+        .flat_map(|c| {
+            c.words.iter().map(move |(s, e)| {
+                let key = norm(&c.text[*s as usize..*e as usize]);
+                (key.chars().count() as u32 + 1, c.window)
+            })
+        })
+        .collect();
+    let n = times.len();
     let mut i = 0;
-    while i < slots.len() {
+    while i < n {
         if times[i].is_some() {
             i += 1;
             continue;
         }
         let mut j = i;
-        while j < slots.len() && times[j].is_none() {
+        while j < n && times[j].is_none() {
             j += 1;
         }
-        let window = |k: usize| copies[slots[k].copy].window;
-        let weights: Vec<u32> = (i..j)
-            .map(|k| slots[k].key.chars().count() as u32 + 1)
-            .collect();
+        let weights: Vec<u32> = (i..j).map(|k| flat[k].0).collect();
         let total: u32 = weights.iter().sum();
         let mut left = i.checked_sub(1).and_then(|k| times[k]).map_or(0, |t| t.1);
-        if let Some((s, _)) = window(i) {
+        if let Some((s, _)) = flat[i].1 {
             left = left.max(s);
         }
+        let next = times.get(j).copied().flatten();
+        if let Some((s, _)) = next {
+            left = left.min(s);
+        }
         let own = (total * MS_PER_CHAR).max(MIN_WORD_MS * (j - i) as u32);
-        let mut right = times.get(j).copied().flatten().map_or(left + own, |t| t.0);
-        if let Some((_, e)) = window(j - 1)
-            && times.get(j).copied().flatten().is_none()
+        let mut right = next.map_or(left + own, |t| t.0);
+        if let Some((_, e)) = flat[j - 1].1
+            && next.is_none()
         {
             right = right.max(left).min(e.max(left + MIN_WORD_MS));
         }
@@ -318,17 +420,17 @@ fn fill(slots: &[Slot], copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
         }
         let mut at = left;
         let mut spent = 0;
-        for (n, k) in (i..j).enumerate() {
-            spent += weights[n];
+        for (w, k) in (i..j).enumerate() {
+            spent += weights[w];
             let end =
                 left + ((u64::from(right - left) * u64::from(spent)) / u64::from(total)) as u32;
-            times[k] = Some((at, end.max(at)));
+            times[k] = Some((at.min(end_ms), end.max(at).min(end_ms)));
             at = end;
         }
         i = j;
     }
-    // Overlaps from a heard word that outlasts its successor are trimmed.
-    for k in 1..times.len() {
+    // A word that outlasts its successor is trimmed, from the end so a collapse carries back.
+    for k in (1..n).rev() {
         if let (Some(a), Some(b)) = (times[k - 1], times[k])
             && a.1 > b.0
         {
@@ -404,6 +506,45 @@ mod tests {
         assert_eq!(&c[0].text[s as usize..e as usize], "wörld");
         assert_eq!((c[2].line, c[3].repeat, c[2].words.len()), (1, 1, 2));
         assert_eq!(words_of(&[line("take x"), line("x10")]).len(), 2);
+    }
+
+    #[test]
+    fn words_in_parentheses_and_repeats_are_optional_and_labels_are_not_words() {
+        let c = words_of(&[
+            line("a (b c) d (e) [Chorus] [Verse 1] f(g"),
+            line("x (y) 2x"),
+        ]);
+        use Role::*;
+        assert_eq!(
+            c[0].roles,
+            vec![
+                Word,
+                Optional(1),
+                Optional(1),
+                Word,
+                Optional(2),
+                Label,
+                Label,
+                Label,
+                Optional(3)
+            ]
+        );
+        assert_eq!(c[1].roles, vec![Word, Optional(1)]);
+        assert_eq!(c[2].roles, vec![Optional(0), Optional(0)]);
+    }
+
+    #[test]
+    fn optional_words_count_only_when_heard() {
+        let l = [line("one (two) three (four)")];
+        let h = heard(&[
+            ("one", 1000, 1200),
+            ("two", 1300, 1500),
+            ("three", 1600, 1900),
+        ]);
+        let (out, share) = align(&l, &h);
+        assert_eq!((share, out[0].matched), (1.0, 1.0));
+        let (out, share) = align(&l, &h[..1]);
+        assert!((share - 0.5).abs() < 1e-9 && (out[0].matched - 0.5).abs() < 1e-9);
     }
 
     #[test]
@@ -487,6 +628,7 @@ mod tests {
             lines,
             language: None,
             model: None,
+            providers: None,
         };
         assert!(validate(&kind(vec![line("  ")])).is_err());
         assert!(validate(&kind(vec![timed("a", 500, 100)])).is_err());
@@ -495,6 +637,7 @@ mod tests {
             lines: vec![line("a")],
             language: Some("--prompt".into()),
             model: None,
+            providers: None,
         };
         assert!(validate(&bad).is_err());
     }

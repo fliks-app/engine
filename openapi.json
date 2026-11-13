@@ -548,6 +548,25 @@
         }
       }
     },
+    "/v1/models/orphans/{name}": {
+      "delete": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "delete_model_orphan",
+        "responses": {
+          "204": {
+            "description": "removed"
+          },
+          "404": {
+            "description": "not a directory of `orphans` in `GET /v1/models`"
+          },
+          "500": {
+            "description": "the directory could not be removed (the body says why)"
+          }
+        }
+      }
+    },
     "/v1/models/{id}": {
       "delete": {
         "tags": [
@@ -560,6 +579,12 @@
           },
           "404": {
             "description": "unknown model"
+          },
+          "409": {
+            "description": "a verification of the model runs: it is not cancelled, the files are what it checks"
+          },
+          "500": {
+            "description": "the files could not be removed (the body says why)"
           }
         }
       }
@@ -572,7 +597,7 @@
         "operationId": "download_model",
         "responses": {
           "200": {
-            "description": "installed already",
+            "description": "installed and current already",
             "content": {
               "application/json": {
                 "schema": {
@@ -582,7 +607,7 @@
             }
           },
           "202": {
-            "description": "downloading (follow it with `GET /v1/models` or the `ModelChanged` events)",
+            "description": "downloading, started now or before: a new install, a repair or an update of an `outdated` model (follow it with `GET /v1/models` or the `ModelChanged` events)",
             "content": {
               "application/json": {
                 "schema": {
@@ -593,6 +618,35 @@
           },
           "404": {
             "description": "unknown model"
+          },
+          "409": {
+            "description": "a verification of the model runs (the body says so)"
+          }
+        }
+      }
+    },
+    "/v1/models/{id}/verify": {
+      "post": {
+        "tags": [
+          "karaoke"
+        ],
+        "operationId": "verify_model",
+        "responses": {
+          "202": {
+            "description": "re-hashing the files, started now or before (progress as for a download); a mismatch leaves the model `failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown model"
+          },
+          "409": {
+            "description": "not installed, or a download of it runs (the body says which)"
           }
         }
       }
@@ -901,7 +955,14 @@
         "properties": {
           "backend": {
             "type": "string",
-            "description": "What ran the recogniser: `vulkan`, `metal` or `cpu`."
+            "description": "What ran the model: `ctc-<provider>` (`ctc-cpu`, `ctc-cuda`...), or for the speech\nrecogniser `vulkan`, `metal` or `cpu`."
+          },
+          "fallback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the speech recogniser placed the words instead of the CTC model: the CTC failure."
           },
           "lines": {
             "type": "array",
@@ -912,7 +973,7 @@
           "matched": {
             "type": "number",
             "format": "double",
-            "description": "Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means\nthe timing is mostly interpolated."
+            "description": "Share of the lyric words found, 0 to 1; a low value means the timing is mostly\ninterpolated."
           },
           "model": {
             "type": "string"
@@ -943,6 +1004,11 @@
             "format": "int32",
             "description": "Index of the request line.",
             "minimum": 0
+          },
+          "matched": {
+            "type": "number",
+            "format": "double",
+            "description": "Share of the copy's words found, 0 to 1: a word in parentheses or in a repeat counts only\nwhen found and a `[...]` label never, so a copy with nothing left to find is 1."
           },
           "repeat": {
             "type": "integer",
@@ -3681,7 +3747,7 @@
           {
             "type": "object",
             "title": "AlignJob",
-            "description": "Times the words of `lines` on the vocal stem `media` names: speech recognition gives word\ntimes, the known words are matched onto them. Lines with times keep within them. Needs an\n`alignment` model and the speech recogniser.",
+            "description": "Times the words of `lines` on the vocal stem `media` names: a CTC network forces the known\nwords onto the audio, else speech recognition gives word times they are matched onto.\nLines with times keep within them. Needs an `alignment` model.",
             "required": [
               "lines",
               "type"
@@ -3692,7 +3758,7 @@
                   "string",
                   "null"
                 ],
-                "description": "ISO 639-1 code of the singing; absent: detected."
+                "description": "ISO 639 code of the singing; absent: detected from the lyrics."
               },
               "lines": {
                 "type": "array",
@@ -3705,7 +3771,17 @@
                   "string",
                   "null"
                 ],
-                "description": "An `alignment` model id; absent: the default one."
+                "description": "An `alignment` model id; absent: the installed CTC model of the language, else the\nspeech recogniser's."
+              },
+              "providers": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Hardware providers a CTC network may run on (`cpu` always may); absent or empty: the\nCPU only."
               },
               "type": {
                 "type": "string",
@@ -5443,6 +5519,14 @@
           }
         }
       },
+      "ModelEngine": {
+        "type": "string",
+        "description": "How an alignment model times the lyrics.",
+        "enum": [
+          "ctc",
+          "whisper"
+        ]
+      },
       "ModelFile": {
         "type": "object",
         "required": [
@@ -5480,18 +5564,48 @@
           "licence",
           "default",
           "files",
+          "languages",
+          "homepage",
+          "sizeBytes",
+          "diskBytes",
+          "outdated",
           "state",
+          "verifying",
           "downloadedBytes"
         ],
         "properties": {
+          "bytesPerSecond": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Transfer rate of the last second while `downloading`."
+          },
           "default": {
             "type": "boolean",
             "description": "What the job picks when its request names no model of this kind."
           },
+          "diskBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "What the model's directory takes on disk (0 when absent)."
+          },
           "downloadedBytes": {
             "type": "number",
             "format": "double",
-            "description": "Bytes fetched so far while `downloading`, else the installed size."
+            "description": "Bytes fetched (or verified) so far while `downloading`, else the installed size."
+          },
+          "engine": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ModelEngine",
+                "description": "Alignment models only."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "error": {
             "type": [
@@ -5505,12 +5619,30 @@
               "$ref": "#/components/schemas/ModelFile"
             }
           },
+          "homepage": {
+            "type": "string",
+            "description": "The model's page (its card or repository)."
+          },
           "id": {
             "type": "string",
             "description": "Stable identifier, the `model` of a job request."
           },
+          "installedVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`version` of the install on disk, once a download recorded it."
+          },
           "kind": {
             "$ref": "#/components/schemas/ModelKind"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Two-letter codes of the languages an alignment model is for; empty: every language, or\nnot an alignment model."
           },
           "licence": {
             "$ref": "#/components/schemas/ModelLicence"
@@ -5518,8 +5650,21 @@
           "name": {
             "type": "string"
           },
+          "outdated": {
+            "type": "boolean",
+            "description": "Installed with a version older than the manifest's: it still runs until an update\n(`POST /v1/models/{id}/download`) replaces it."
+          },
+          "sizeBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Total of `files[].sizeBytes`."
+          },
           "state": {
             "$ref": "#/components/schemas/ModelState"
+          },
+          "verifying": {
+            "type": "boolean",
+            "description": "The `downloading` state is a verification re-hashing the files, which `DELETE` refuses to\ncancel (it would remove them)."
           },
           "version": {
             "type": "string",
@@ -5559,6 +5704,24 @@
           }
         }
       },
+      "ModelOrphan": {
+        "type": "object",
+        "description": "A directory of the models directory that no manifest entry names.",
+        "required": [
+          "name",
+          "sizeBytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Directory name (`DELETE /v1/models/orphans/{name}` removes it)."
+          },
+          "sizeBytes": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "ModelState": {
         "type": "string",
         "enum": [
@@ -5574,9 +5737,19 @@
         "required": [
           "runtime",
           "modelsDir",
+          "usedBytes",
+          "orphans",
           "models"
         ],
         "properties": {
+          "freeBytes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Free space of the filesystem holding the models directory; absent when it can't say."
+          },
           "models": {
             "type": "array",
             "items": {
@@ -5585,10 +5758,22 @@
           },
           "modelsDir": {
             "type": "string",
-            "description": "Where the models live (`FLIKS_MODELS_DIR`)."
+            "description": "Where the models live (`<FLIKS_DATA_DIR>/models`, else `<cache root>/models`)."
+          },
+          "orphans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelOrphan"
+            },
+            "description": "Directories no manifest entry names, hidden ones (caches) excluded."
           },
           "runtime": {
             "$ref": "#/components/schemas/KaraokeRuntime"
+          },
+          "usedBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "What the models directory takes on disk, caches included."
           }
         }
       },

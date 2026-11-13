@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 pub enum ModelKind {
     /// Vocals and accompaniment stems (`Separate`).
     Separation,
-    /// Speech recognition whose word times place known lyrics (`Align`).
+    /// A CTC network or speech recognition that places known lyrics on the audio (`Align`).
     Alignment,
     /// Fundamental frequency of a voice (`Melody`).
     Melody,
@@ -22,8 +22,18 @@ pub enum ModelState {
     Downloading,
     /// Every file is on disk with its verified size and hash.
     Installed,
-    /// The last download failed (`error`); a new one starts from scratch.
+    /// The last download or verification failed (`error`); a new download starts from scratch.
     Failed,
+}
+
+/// How an alignment model times the lyrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelEngine {
+    /// A CTC network run on the ONNX runtime.
+    Ctc,
+    /// The speech recogniser.
+    Whisper,
 }
 
 /// The licence a model's weights are distributed under, to show before a download.
@@ -63,11 +73,44 @@ pub struct ModelInfo {
     /// What the job picks when its request names no model of this kind.
     pub default: bool,
     pub files: Vec<ModelFile>,
+    /// Two-letter codes of the languages an alignment model is for; empty: every language, or
+    /// not an alignment model.
+    pub languages: Vec<String>,
+    /// Alignment models only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<ModelEngine>,
+    /// The model's page (its card or repository).
+    pub homepage: String,
+    /// Total of `files[].sizeBytes`.
+    pub size_bytes: f64,
+    /// What the model's directory takes on disk (0 when absent).
+    pub disk_bytes: f64,
+    /// `version` of the install on disk, once a download recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
+    /// Installed with a version older than the manifest's: it still runs until an update
+    /// (`POST /v1/models/{id}/download`) replaces it.
+    pub outdated: bool,
     pub state: ModelState,
-    /// Bytes fetched so far while `downloading`, else the installed size.
+    /// The `downloading` state is a verification re-hashing the files, which `DELETE` refuses to
+    /// cancel (it would remove them).
+    pub verifying: bool,
+    /// Bytes fetched (or verified) so far while `downloading`, else the installed size.
     pub downloaded_bytes: f64,
+    /// Transfer rate of the last second while `downloading`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_per_second: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// A directory of the models directory that no manifest entry names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOrphan {
+    /// Directory name (`DELETE /v1/models/orphans/{name}` removes it).
+    pub name: String,
+    pub size_bytes: f64,
 }
 
 /// Where the engine stands with the Windows ML runtime installed on the machine.
@@ -107,8 +150,15 @@ pub struct KaraokeRuntime {
 #[serde(rename_all = "camelCase")]
 pub struct ModelsResponse {
     pub runtime: KaraokeRuntime,
-    /// Where the models live (`FLIKS_MODELS_DIR`).
+    /// Where the models live (`<FLIKS_DATA_DIR>/models`, else `<cache root>/models`).
     pub models_dir: String,
+    /// Free space of the filesystem holding the models directory; absent when it can't say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_bytes: Option<f64>,
+    /// What the models directory takes on disk, caches included.
+    pub used_bytes: f64,
+    /// Directories no manifest entry names, hidden ones (caches) excluded.
+    pub orphans: Vec<ModelOrphan>,
     pub models: Vec<ModelInfo>,
 }
 
@@ -175,7 +225,15 @@ pub struct AlignedLine {
     pub repeat: u32,
     pub start_ms: u32,
     pub end_ms: u32,
+    /// Share of the copy's words found, 0 to 1: a word in parentheses or in a repeat counts only
+    /// when found and a `[...]` label never, so a copy with nothing left to find is 1.
+    #[serde(default = "whole")]
+    pub matched: f64,
     pub words: Vec<AlignedWord>,
+}
+
+fn whole() -> f64 {
+    1.0
 }
 
 /// What an `Align` found.
@@ -184,12 +242,16 @@ pub struct AlignedLine {
 pub struct AlignMeta {
     pub model: String,
     pub model_version: String,
-    /// What ran the recogniser: `vulkan`, `metal` or `cpu`.
+    /// What ran the model: `ctc-<provider>` (`ctc-cpu`, `ctc-cuda`...), or for the speech
+    /// recogniser `vulkan`, `metal` or `cpu`.
     pub backend: String,
     pub lines: Vec<AlignedLine>,
-    /// Share of the lyric words found in what the recogniser heard, 0 to 1; a low value means
-    /// the timing is mostly interpolated.
+    /// Share of the lyric words found, 0 to 1; a low value means the timing is mostly
+    /// interpolated.
     pub matched: f64,
+    /// Why the speech recogniser placed the words instead of the CTC model: the CTC failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<String>,
 }
 
 /// A span of the vocal stem whose notes a `Melody` looks for (a word cue).

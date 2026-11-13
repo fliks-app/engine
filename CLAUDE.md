@@ -10,7 +10,7 @@ Video engine for Fliks (decisions, ffmpeg sessions, segment serving). Standalone
 
 ## Crates
 
-- `crates/core` (`fliks_engine_core`): PURE. Deps: serde, serde_json, utoipa only. No tokio, fs, process, clock, rand.
+- `crates/core` (`fliks_engine_core`): PURE. Deps: serde, serde_json, utoipa, unicode-normalization only. No tokio, fs, process, clock, rand.
 - `crates/engine` (`fliks-engine` bin + `fliks_engine` lib): axum control plane, supervisor, later hw/proc/sessions/cache/serve.
 - `crates/engine/src/bin/gen-openapi.rs`: writes `openapi.json` at the repo root.
 - `fixtures/`: golden vectors (regression tests, `BLESS=1` rewrites `expected`). No client package: hosts generate their types from `openapi.json` (published with each release).

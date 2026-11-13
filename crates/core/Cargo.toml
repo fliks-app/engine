@@ -12,4 +12,5 @@ name = "fliks_engine_core"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+unicode-normalization.workspace = true
 utoipa.workspace = true

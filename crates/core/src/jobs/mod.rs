@@ -2,6 +2,7 @@
 //! Specs: `docs/spec/jobs.md` (framework, sprite), `docs/spec/jobs-pure.md`.
 pub mod align;
 pub mod cover;
+pub mod ctc;
 pub mod cues;
 pub mod fingerprint;
 pub mod melody;
