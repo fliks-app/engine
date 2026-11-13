@@ -4,9 +4,9 @@ use super::models::Picked;
 use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
-use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass};
+use fliks_engine_core::api::{AlignLine, AlignMeta, JobErrorClass};
 use fliks_engine_core::jobs::ctc::{
-    AlignError, Case, Emissions, FRAME_MS, Vocab, align, silent_frames,
+    Case, Emissions, FRAME_MS, TooLarge, Vocab, align, lyric_ids, silent_frames,
 };
 use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use serde::Deserialize;
@@ -126,14 +126,16 @@ impl Spans<'_> {
     /// The emissions of `from_ms..to_ms` (frame 0 at `from_ms`, a multiple of `FRAME_MS`) for
     /// the classes `ids`.
     fn emit(&mut self, from_ms: u32, to_ms: u32, ids: &[u32]) -> Result<Emissions, String> {
-        let classes = ids.len() + 1;
         let frames = (to_ms - from_ms).div_ceil(FRAME_MS) as usize;
-        let mut log_probs = Vec::with_capacity(frames * classes);
+        let mut log_probs = Vec::with_capacity(frames * (ids.len() + 1));
         for at in (from_ms..to_ms).step_by(CHUNK_MS as usize) {
             let em = self.chunk(at, (at + CHUNK_MS).min(to_ms), ids)?;
             log_probs.extend(em.log_probs);
         }
-        Ok(Emissions { classes, log_probs })
+        Ok(Emissions {
+            ids: ids.to_vec(),
+            log_probs,
+        })
     }
 
     /// One call on `from_ms..to_ms` with `CONTEXT_MS` of audio around it, the context dropped.
@@ -239,31 +241,32 @@ pub async fn run(
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             tokio::task::spawn_blocking(move || {
-                place_or_retry(
+                let (provider, em) = place_or_retry(
                     net,
                     provider,
                     &stop,
                     || load(&*backend, &file, &[], &export),
-                    |net| place(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse()),
-                )
+                    |net| emissions(net, &pcm, &lines, &language, &export, &stop, &|| c.pulse()),
+                );
+                let placed = em.and_then(|em| {
+                    align(&lines, &export.vocab, &language, &silent_frames(&pcm), &em).map_err(
+                        |TooLarge| "the lyrics and the audio are too long for one CTC pass".into(),
+                    )
+                });
+                (provider, placed)
             })
             .await
             .map_err(|e| e.to_string())
         })
         .await??;
-    Ok(placed
-        .map_err(|e| match e {
-            AlignError::Emit(e) => e,
-            AlignError::TooLarge => "the lyrics and the audio are too long for one CTC pass".into(),
-        })
-        .map(|(lines, matched)| AlignMeta {
-            model: picked.id.into(),
-            model_version: picked.version.clone(),
-            backend: format!("ctc-{provider}"),
-            lines,
-            matched,
-            fallback: None,
-        }))
+    Ok(placed.map(|(lines, matched)| AlignMeta {
+        model: picked.id.into(),
+        model_version: picked.version.clone(),
+        backend: format!("ctc-{provider}"),
+        lines,
+        matched,
+        fallback: None,
+    }))
 }
 
 /// `go` on `net`; a hardware provider's failed run, a stop aside, is repeated once on the CPU.
@@ -272,14 +275,14 @@ fn place_or_retry<T>(
     provider: String,
     stop: &AtomicBool,
     cpu: impl FnOnce() -> Result<Loaded, String>,
-    go: impl Fn(&mut dyn Net) -> Result<T, AlignError<String>>,
-) -> (String, Result<T, AlignError<String>>) {
+    go: impl Fn(&mut dyn Net) -> Result<T, String>,
+) -> (String, Result<T, String>) {
     match go(&mut *net) {
-        Err(AlignError::Emit(e)) if provider != "cpu" && !stop.load(Relaxed) => {
+        Err(e) if provider != "cpu" && !stop.load(Relaxed) => {
             tracing::warn!(provider, "CTC run failed, repeating on the CPU: {e}");
             match cpu() {
                 Ok(mut cpu) => (cpu.provider, go(&mut *cpu.net)),
-                Err(e) => (provider, Err(AlignError::Emit(e))),
+                Err(e) => (provider, Err(e)),
             }
         }
         placed => (provider, placed),
@@ -307,8 +310,8 @@ fn load(
     Ok(loaded)
 }
 
-/// `lines` on the audio `pcm`; blocking.
-fn place(
+/// The emissions of the whole track `pcm` for the characters of `lines`; blocking.
+fn emissions(
     net: &mut dyn Net,
     pcm: &[f32],
     lines: &[AlignLine],
@@ -316,7 +319,7 @@ fn place(
     export: &Export,
     stop: &AtomicBool,
     pulse: &dyn Fn(),
-) -> Result<(Vec<AlignedLine>, f64), AlignError<String>> {
+) -> Result<Emissions, String> {
     let duration_ms = u32::try_from(pcm.len() / SAMPLES_PER_MS).unwrap_or(u32::MAX);
     let mut spans = Spans {
         net,
@@ -325,14 +328,7 @@ fn place(
         stop,
         pulse,
     };
-    align(
-        lines,
-        &export.vocab,
-        language,
-        duration_ms,
-        &silent_frames(pcm),
-        &mut |a, b, ids| spans.emit(a, b, ids),
-    )
+    spans.emit(0, duration_ms, &lyric_ids(lines, &export.vocab, language))
 }
 
 #[cfg(test)]
@@ -449,7 +445,7 @@ mod tests {
         let em = spans(&mut net, &pcm, false, &stop)
             .emit(5_000, 65_000, &ids)
             .unwrap();
-        assert_eq!((em.frames(), em.classes), (3000, 65));
+        assert_eq!((em.frames(), em.classes()), (3000, 65));
         for t in 0..3000 {
             let row = &em.log_probs[t * 65..t * 65 + 64];
             let top = (0..64).max_by(|a, b| row[*a].total_cmp(&row[*b])).unwrap();
@@ -537,7 +533,7 @@ mod tests {
     #[test]
     fn a_failed_gpu_run_is_repeated_on_the_cpu_unless_it_was_a_stop() {
         let net = || -> Box<dyn Net> { loaded().unwrap().net };
-        let fails = |_: &mut dyn Net| Err::<u8, _>(AlignError::Emit("stopped".into()));
+        let fails = |_: &mut dyn Net| Err::<u8, _>("stopped".to_string());
         let stop = AtomicBool::new(false);
         let calls = std::cell::Cell::new(0);
         let go = |n: &mut dyn Net| {
@@ -559,7 +555,7 @@ mod tests {
             },
             fails,
         );
-        assert!(matches!(r, Err(AlignError::Emit(_))) && provider == "cuda");
+        assert!(r.is_err() && provider == "cuda");
         assert!(!cpu_built.get(), "a stop does not build a CPU session");
     }
 
