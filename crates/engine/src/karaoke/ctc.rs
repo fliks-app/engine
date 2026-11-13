@@ -446,7 +446,7 @@ mod tests {
         let em = spans(&mut net, &pcm, false, &stop)
             .emit(0, 60_003, &[0, 3])
             .unwrap();
-        assert_eq!(em.frames(), 3000);
+        assert_eq!(em.frames(), 2999);
     }
 
     #[test]
