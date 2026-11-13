@@ -327,7 +327,7 @@ async fn an_outdated_model_is_replaced_once_the_new_files_are_verified() {
     for _ in 0..100 {
         let list = e.control("GET", "/v1/models", None).await.json();
         m = list["models"][0].clone();
-        if m["outdated"] == false {
+        if m["outdated"] == false && m["state"] == "installed" {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
