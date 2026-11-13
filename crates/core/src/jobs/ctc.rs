@@ -1,6 +1,7 @@
 //! The pure half of the CTC `Align`: the lyrics forced onto a network's per-frame log-probabilities
 //! (Viterbi), giving word times and scores. Spec: `docs/spec/karaoke.md` section 4.
 use std::collections::HashMap;
+use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -9,14 +10,15 @@ use crate::api::{AlignLine, AlignedLine};
 
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
-/// Per-frame log-probability of the star token: the price of audio the lyrics do not explain.
+/// Per-frame log-probability the star token scores at least, a blank's when higher: audio the
+/// lyrics do not explain costs no more than silence.
 const STAR_LOGP: f32 = -2.3;
 /// A word whose mean log-probability reaches this counts as found (about 22 %).
 const MIN_SCORE: f32 = -1.5;
-/// A window of a line starts this much before its line, ends this much after the next one starts.
-const LEAD_MS: u32 = 1000;
-const TAIL_MS: u32 = 500;
-/// A window is at most its line's length plus this.
+/// The band of a timed line starts this much before it and ends this much after the next one starts.
+const LEAD_MS: u32 = 2000;
+const TAIL_MS: u32 = 1500;
+/// A band is at most its line's length plus this.
 const EXTRA_MS: u32 = 3000;
 /// Largest `frames x states` table (one byte each) a pass may fill.
 const MAX_CELLS: usize = 100_000_000;
@@ -283,19 +285,23 @@ struct Placed {
 }
 
 /// A pass's states (a star before each line with a token and after the last, each token then a
-/// blank); `spans` the word bounds, `ids` the scored classes, `cols` each state's emission column.
+/// blank); `spans` the word bounds, `bodies` each line's states after its star, `ids` the scored
+/// classes, `cols` each state's emission column.
 struct Layout {
     ids: Vec<u32>,
     cols: Vec<usize>,
     states: Vec<State>,
     spans: Vec<Vec<Option<(usize, usize)>>>,
+    bodies: Vec<Range<usize>>,
 }
 
 fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
     let mut states = vec![];
     let mut spans: Vec<Vec<Option<(usize, usize)>>> = vec![];
+    let mut bodies = vec![];
     for words in lines {
         let mut mine = vec![None; words.len()];
+        let body = states.len() + 1;
         if words.iter().any(|w| !w.is_empty()) {
             states.extend([State::Star, State::Blank]);
             let mut first = true;
@@ -312,6 +318,7 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
             }
         }
         spans.push(mine);
+        bodies.push(body.min(states.len())..states.len());
     }
     if states.is_empty() {
         return None;
@@ -338,17 +345,24 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
         cols,
         states,
         spans,
+        bodies,
     })
 }
 
 /// The lines of `lay` forced onto `em`: per line, per word, where it sits; `None` for a word
-/// with no token and for everything when no alignment fits.
-fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
+/// with no token and for everything when no alignment fits. `bands` (frames, per line) are the
+/// only frames a line's tokens may use; without, every frame.
+fn viterbi(
+    em: &Emissions,
+    lay: &Layout,
+    bands: Option<&[(u32, u32)]>,
+) -> Option<Vec<Vec<Option<Placed>>>> {
     let Layout {
         ids,
         cols,
         states,
         spans,
+        bodies,
     } = lay;
     let (n, frames) = (states.len(), em.frames());
     debug_assert_eq!(em.classes, ids.len() + 1);
@@ -363,15 +377,20 @@ fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
                     || (states[s - 1] == State::Star && states[s] == State::Blank))
         })
         .collect();
-    let emit = |row: &[f32], s: usize| match states[s] {
-        State::Star => STAR_LOGP,
+    let mut band = vec![(0, frames as u32); n];
+    for (body, b) in bodies.iter().zip(bands.into_iter().flatten()) {
+        band[body.clone()].fill(*b);
+    }
+    let emit = |row: &[f32], t: usize, s: usize| match states[s] {
+        _ if (t as u32) < band[s].0 || t as u32 >= band[s].1 => f32::NEG_INFINITY,
+        State::Star => row[0].max(STAR_LOGP),
         _ => row[cols[s]],
     };
     let mut back = vec![0u8; frames * n];
     let mut prev = vec![f32::NEG_INFINITY; n];
     let mut cur = vec![f32::NEG_INFINITY; n];
     for (s, p) in prev.iter_mut().enumerate().take(3.min(n)) {
-        *p = emit(em.row(0), s);
+        *p = emit(em.row(0), 0, s);
     }
     for t in 1..frames {
         let row = em.row(t);
@@ -383,7 +402,7 @@ fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
             if skip[s] && prev[s - 2] > best {
                 (best, from) = (prev[s - 2], 2);
             }
-            cur[s] = best + emit(row, s);
+            cur[s] = best + emit(row, t, s);
             back[t * n + s] = from;
         }
         std::mem::swap(&mut prev, &mut cur);
@@ -403,7 +422,7 @@ fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
         let (lp, count) = match states[*s] {
             State::Star => continue,
             State::Blank => (0.0, 0),
-            State::Tok(_) => (emit(em.row(t), *s), 1),
+            State::Tok(_) => (emit(em.row(t), t, *s), 1),
         };
         let e = seen[*s].get_or_insert((t as u32, t as u32, 0.0, 0));
         *e = (e.0, t as u32, e.2 + lp, e.3 + count);
@@ -435,15 +454,24 @@ fn viterbi(em: &Emissions, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
     )
 }
 
-/// The window of copy `i` of the lines, in ms: `floor` is where the previous line's last word
-/// ended.
-fn window_of(copies: &[Copy], i: usize, floor: u32, duration_ms: u32) -> Option<(u32, u32)> {
+/// The band of timed copy `i`, in ms: from `LEAD_MS` before its start to `TAIL_MS` after the next
+/// timed copy starts.
+fn band_of(copies: &[Copy], i: usize, duration_ms: u32) -> Option<(u32, u32)> {
     let (s, e) = copies[i].window?;
     let next = copies[i + 1..].iter().find_map(|c| c.window).map(|w| w.0);
-    let lo = s.saturating_sub(LEAD_MS).max(floor) / FRAME_MS * FRAME_MS;
+    let lo = s.saturating_sub(LEAD_MS) / FRAME_MS * FRAME_MS;
     let hi = next.map_or(e + EXTRA_MS, |n| n + TAIL_MS);
     let hi = hi.min(lo + (e - s) + EXTRA_MS).min(duration_ms);
     (hi > lo).then_some((lo, hi))
+}
+
+/// The number of states `layout` gives a line, its star included.
+fn line_states(words: &[Vec<u32>]) -> usize {
+    let words = words.iter().filter(|w| !w.is_empty());
+    match words.clone().count() {
+        0 => 0,
+        n => 2 * (n + words.map(Vec::len).sum::<usize>()),
+    }
 }
 
 /// Why an alignment gave nothing.
@@ -455,8 +483,96 @@ pub enum AlignError<E> {
     TooLarge,
 }
 
+struct Placer<'a, F> {
+    copies: Vec<Copy>,
+    toks: Vec<Vec<Vec<u32>>>,
+    offsets: Vec<usize>,
+    vocab: &'a Vocab,
+    duration_ms: u32,
+    emit: &'a mut F,
+    times: Vec<Option<(u32, u32)>>,
+    found: usize,
+    /// Where the last placed word's tokens ended: the next pass starts there.
+    floor: u32,
+}
+
+impl<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>> Placer<'_, F> {
+    /// Copies `range` forced onto `lo..hi` in one pass, `bands` (ms, per copy) bounding their
+    /// tokens; whether an alignment fit.
+    fn pass(
+        &mut self,
+        range: Range<usize>,
+        (lo, hi): (u32, u32),
+        bands: Option<&[(u32, u32)]>,
+    ) -> Result<bool, AlignError<E>> {
+        let run: Vec<&[Vec<u32>]> = self.toks[range.clone()].iter().map(Vec::as_slice).collect();
+        let Some(lay) = layout(self.vocab, &run).filter(|_| hi > lo) else {
+            return Ok(false);
+        };
+        if (hi - lo).div_ceil(FRAME_MS) as usize * lay.states.len() > MAX_CELLS {
+            return Err(AlignError::TooLarge);
+        }
+        let em = (self.emit)(lo, hi, &lay.ids).map_err(AlignError::Emit)?;
+        let frames: Option<Vec<_>> = bands.map(|b| {
+            let rel = |(s, e): &(u32, u32)| ((s - lo) / FRAME_MS, (e - lo).div_ceil(FRAME_MS));
+            b.iter().map(rel).collect()
+        });
+        let Some(out) = viterbi(&em, &lay, frames.as_deref()) else {
+            return Ok(false);
+        };
+        for (k, placed) in out.iter().enumerate() {
+            for (wi, p) in placed
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| Some((i, (*p)?)))
+            {
+                self.times[self.offsets[range.start + k] + wi] =
+                    Some((lo + p.start * FRAME_MS, lo + p.end * FRAME_MS));
+                self.found += usize::from(p.score >= MIN_SCORE);
+                self.floor = self.floor.max(lo + p.tok_end * FRAME_MS);
+            }
+        }
+        Ok(true)
+    }
+
+    /// The timed copies from `start` that share one pass: while each band overlaps the pass so
+    /// far and the table stays within `MAX_CELLS`.
+    fn group_end(&self, start: usize) -> usize {
+        let (mut lo, mut hi, mut states) = (u32::MAX, 0, 1);
+        let mut end = start;
+        while let Some(Some((l, h))) = (end < self.copies.len()).then(|| self.band(end)) {
+            states += line_states(&self.toks[end]);
+            let (nlo, nhi) = (lo.min(l).max(self.floor), hi.max(h));
+            let cells = (nhi.saturating_sub(nlo)).div_ceil(FRAME_MS) as usize * states;
+            if end > start && (l >= hi || cells > MAX_CELLS) {
+                break;
+            }
+            (lo, hi, end) = (nlo, nhi, end + 1);
+        }
+        end.max(start + 1)
+    }
+
+    fn band(&self, i: usize) -> Option<(u32, u32)> {
+        band_of(&self.copies, i, self.duration_ms)
+    }
+
+    /// The timed copies `range` in one pass over their bands.
+    fn timed(&mut self, range: Range<usize>) -> Result<bool, AlignError<E>> {
+        let bands: Vec<_> = range.clone().filter_map(|i| self.band(i)).collect();
+        let lo = bands.iter().map(|b| b.0).min().unwrap_or(0).max(self.floor) / FRAME_MS * FRAME_MS;
+        let hi = bands.iter().map(|b| b.1).max().unwrap_or(0);
+        let bands: Vec<_> = bands.iter().map(|(s, e)| (*s.max(&lo), *e)).collect();
+        if bands.len() != range.len() || bands.iter().any(|b| b.1 <= b.0) {
+            return Ok(false);
+        }
+        self.pass(range, (lo, hi), Some(&bands))
+    }
+}
+
 /// The lines placed by CTC forced alignment, and the share of words found. `emit(from, to, ids)`
 /// gives the emissions of a span (frame 0 at `from`, a multiple of `FRAME_MS`) for the classes `ids`.
+/// Consecutive timed lines whose bands overlap go through one pass, so neighbours share the frames
+/// they both reach; a run too large for `MAX_CELLS` is cut into smaller ones.
 pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
     lines: &[AlignLine],
     vocab: &Vocab,
@@ -482,53 +598,41 @@ pub fn align<E, F: FnMut(u32, u32, &[u32]) -> Result<Emissions, E>>(
         })
         .collect();
     let total: usize = copies.iter().map(|c| c.words.len()).sum();
-    let mut times: Vec<Option<(u32, u32)>> = vec![None; total];
-    let (mut found, mut floor, mut ci) = (0, 0, 0);
-    while ci < copies.len() {
+    let mut p = Placer {
+        copies,
+        toks,
+        offsets,
+        vocab,
+        duration_ms,
+        emit,
+        times: vec![None; total],
+        found: 0,
+        floor: 0,
+    };
+    let mut ci = 0;
+    while ci < p.copies.len() {
         let start = ci;
-        let (lo, hi) = if copies[ci].window.is_some() {
-            ci += 1;
-            let Some(w) = window_of(&copies, start, floor, duration_ms) else {
-                continue;
-            };
-            w
-        } else {
-            ci = (start..copies.len())
-                .find(|k| copies[*k].window.is_some())
-                .unwrap_or(copies.len());
-            let end = copies
-                .get(ci)
-                .and_then(|c| c.window)
-                .map_or(duration_ms, |w| w.0 + TAIL_MS);
-            (floor / FRAME_MS * FRAME_MS, end.min(duration_ms))
-        };
-        let run: Vec<&[Vec<u32>]> = toks[start..ci].iter().map(|t| t.as_slice()).collect();
-        let Some(lay) = layout(vocab, &run).filter(|_| hi > lo) else {
-            continue;
-        };
-        if (hi - lo).div_ceil(FRAME_MS) as usize * lay.states.len() > MAX_CELLS {
-            return Err(AlignError::TooLarge);
-        }
-        let em = emit(lo, hi, &lay.ids).map_err(AlignError::Emit)?;
-        let Some(out) = viterbi(&em, &lay) else {
-            continue;
-        };
-        for (k, placed) in out.iter().enumerate() {
-            for (wi, p) in placed.iter().enumerate() {
-                if let Some(p) = p {
-                    times[offsets[start + k] + wi] =
-                        Some((lo + p.start * FRAME_MS, lo + p.end * FRAME_MS));
-                    found += usize::from(p.score >= MIN_SCORE);
-                    floor = floor.max(lo + p.tok_end * FRAME_MS);
+        if p.copies[ci].window.is_some() {
+            ci = p.group_end(start);
+            if !p.timed(start..ci)? && ci - start > 1 {
+                for k in start..ci {
+                    p.timed(k..k + 1)?;
                 }
             }
+        } else {
+            ci = (start..p.copies.len())
+                .find(|k| p.copies[*k].window.is_some())
+                .unwrap_or(p.copies.len());
+            let end = p.copies.get(ci).and_then(|c| c.window);
+            let hi = end.map_or(duration_ms, |w| w.0 + TAIL_MS).min(duration_ms);
+            p.pass(start..ci, (p.floor / FRAME_MS * FRAME_MS, hi), None)?;
         }
     }
-    let out = finish(&copies, &mut times);
+    let out = finish(&p.copies, &mut p.times);
     let share = if total == 0 {
         0.0
     } else {
-        found as f64 / total as f64
+        p.found as f64 / total as f64
     };
     Ok((out, share))
 }
@@ -656,7 +760,7 @@ mod tests {
         let (out, share) = run(&[line("ab c")], &em, &mut vec![]);
         let w = &out[0].words;
         assert_eq!((w[0].start_ms, w[0].end_ms), (100, 260));
-        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 800));
+        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 320));
         assert_eq!(share, 1.0);
         forward(&out);
     }
@@ -667,8 +771,8 @@ mod tests {
         marks.extend((20..50).map(|t| (t, 4, 0.9)));
         let em = emissions(80, &marks);
         let (out, _) = run(&[line("a"), line("b")], &em, &mut vec![]);
-        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 400));
-        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1600));
+        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 120));
+        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1220));
     }
 
     #[test]
@@ -687,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_start_after_the_previous_word_and_never_run_over_a_long_gap() {
+    fn lines_with_overlapping_bands_share_a_pass_and_a_long_gap_splits_them() {
         let em = emissions(3500, &[(120, 2, 0.9), (150, 3, 0.9), (2500, 4, 0.9)]);
         let mut asked = vec![];
         let lines = [
@@ -696,9 +800,54 @@ mod tests {
             timed("c", 50_000, 51_000),
         ];
         let (out, _) = run(&lines, &em, &mut asked);
-        assert_eq!(asked, vec![(500, 3000), (2420, 6420), (49_000, 53_000)]);
+        assert_eq!(asked, vec![(0, 4500), (48_000, 52_000)]);
         assert_eq!(out[2].words[0].start_ms, 50_000);
         forward(&out);
+    }
+
+    #[test]
+    fn lines_times_that_run_late_still_place_every_word() {
+        let mut marks = vec![];
+        for (k, p) in [(0usize, 0.8), (1, 0.95), (2, 0.8)] {
+            marks.extend([(50 + 100 * k, 2, p), (100 + 100 * k, 3, p)]);
+        }
+        let em = emissions(400, &marks);
+        let late = |k: u32| timed("a b", 1700 + 2000 * k, 3700 + 2000 * k);
+        let (out, share) = run(&[late(0), late(1), late(2)], &em, &mut vec![]);
+        let starts: Vec<u32> = out
+            .iter()
+            .flat_map(|l| &l.words)
+            .map(|w| w.start_ms)
+            .collect();
+        assert_eq!(starts, vec![1000, 2000, 3000, 4000, 5000, 6000]);
+        assert_eq!(share, 1.0);
+    }
+
+    #[test]
+    fn a_frame_inside_two_bands_goes_to_the_line_that_sings_it() {
+        let em = emissions(
+            300,
+            &[(50, 2, 0.9), (150, 3, 0.9), (160, 4, 0.9), (200, 2, 0.9)],
+        );
+        let lines = [timed("a b", 1000, 3500), timed("c a", 3500, 5000)];
+        let (out, share) = run(&lines, &em, &mut vec![]);
+        let starts: Vec<u32> = out
+            .iter()
+            .flat_map(|l| &l.words)
+            .map(|w| w.start_ms)
+            .collect();
+        assert_eq!(starts, vec![1000, 3000, 3200, 4000]);
+        assert_eq!(share, 1.0);
+    }
+
+    #[test]
+    fn a_run_over_the_cell_cap_is_cut_into_smaller_passes() {
+        let text = vec!["a"; 1500].join(" ");
+        let lines = [timed(&text, 0, 200_000), timed(&text, 200_000, 400_000)];
+        let mut asked = vec![];
+        run(&lines, &emissions(20_000, &[]), &mut asked);
+        assert_eq!(asked.len(), 2);
+        assert_eq!((asked[0], asked[1].1), ((0, 201_500), 400_000));
     }
 
     #[test]
@@ -719,7 +868,7 @@ mod tests {
         let mut asked = vec![];
         let lines = [timed("a", 0, 500), line("b"), timed("c", 2000, 2500)];
         let (out, _) = run(&lines, &em, &mut asked);
-        assert_eq!(asked, vec![(0, 2500), (120, 2500), (1220, 4000)]);
+        assert_eq!(asked, vec![(0, 3500), (120, 3500), (1220, 3500)]);
         let starts: Vec<u32> = out.iter().map(|l| l.start_ms).collect();
         assert_eq!(starts, vec![100, 1200, 2000]);
         forward(&out);
