@@ -11,7 +11,7 @@ use crate::api::{AlignLine, AlignedLine};
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
 /// Per-frame log-probability of the star token: the price of audio the lyrics do not explain.
-const STAR_LOGP: f32 = -2.3;
+pub const STAR_LOGP: f32 = -2.3;
 /// A word whose mean log-probability reaches this counts as found (about 22 %).
 const MIN_SCORE: f32 = -1.5;
 /// A window of a line starts this much before its line, ends this much after the next one starts.
@@ -28,21 +28,37 @@ pub struct Vocab {
     ids: HashMap<char, u32>,
     pub blank: u32,
     pub delimiter: u32,
-    upper: bool,
+    case: Case,
 }
+
+/// How the text's case meets the vocabulary's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Case {
+    Lower,
+    Upper,
+    Keep,
+}
+
+/// Token standing for a character the vocabulary lacks: it scores the best non-blank class.
+pub const WILDCARD: u32 = u32::MAX;
 
 impl Vocab {
     /// `chars`: id of each single character the network emits (the delimiter and the blank
-    /// excluded); the case of the text follows theirs.
+    /// excluded); the text is folded to their case unless they hold both.
     pub fn new(chars: impl IntoIterator<Item = (char, u32)>, blank: u32, delimiter: u32) -> Self {
         let ids: HashMap<char, u32> = chars.into_iter().collect();
         let lower = ids.keys().any(|c| c.is_lowercase());
-        let upper = !lower && ids.keys().any(|c| c.is_uppercase());
+        let upper = ids.keys().any(|c| c.is_uppercase());
+        let case = match (lower, upper) {
+            (true, false) => Case::Lower,
+            (false, true) => Case::Upper,
+            _ => Case::Keep,
+        };
         Vocab {
             ids,
             blank,
             delimiter,
-            upper,
+            case,
         }
     }
 }
@@ -176,8 +192,8 @@ fn spell(n: u32, language: &str) -> String {
     }
 }
 
-/// The token ids of one lyric word. Characters outside the vocabulary and punctuation are
-/// dropped; spaces and spelled numbers become delimiters between sub-words, and so does a
+/// The token ids of one lyric word. Letters and digits outside the vocabulary become a
+/// `WILDCARD`; punctuation and symbols are dropped; spaces and spelled numbers become delimiters between sub-words, and so does a
 /// hyphen when the vocabulary has no `-`.
 pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
     let hyphen = vocab.ids.get(&'-').copied();
@@ -189,17 +205,20 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
     };
     let mut digits = String::new();
     let flush = |digits: &mut String, out: &mut Vec<u32>, gap: &mut dyn FnMut(&mut Vec<u32>)| {
-        if let Ok(n) = digits.parse::<u32>()
-            && n < 10_000
-        {
-            let words = spell(n, language);
-            let nested = tokens(&words, vocab, language);
-            if !nested.is_empty() {
-                gap(out);
-                out.extend(nested);
-                gap(out);
-            }
+        if digits.is_empty() {
+            return;
         }
+        let spelled = match digits.parse::<u32>() {
+            Ok(n) if n < 10_000 => tokens(&spell(n, language), vocab, language),
+            _ => vec![],
+        };
+        gap(out);
+        if spelled.is_empty() {
+            out.push(WILDCARD);
+        } else {
+            out.extend(spelled);
+        }
+        gap(out);
         digits.clear();
     };
     for c in word.nfc() {
@@ -221,12 +240,18 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
         } else if c == '-' || c.is_whitespace() {
             gap(&mut out);
         } else if c.is_alphabetic() || c == '\'' {
-            let cased: Vec<char> = if vocab.upper {
-                c.to_uppercase().collect()
-            } else {
-                c.to_lowercase().collect()
+            let cased: Vec<char> = match vocab.case {
+                Case::Upper => c.to_uppercase().collect(),
+                Case::Lower => c.to_lowercase().collect(),
+                Case::Keep => vec![c],
             };
-            out.extend(cased.iter().filter_map(|k| vocab.ids.get(k)));
+            out.extend(
+                cased
+                    .iter()
+                    .map(|k| vocab.ids.get(k).copied().unwrap_or(WILDCARD)),
+            );
+        } else if c.is_alphanumeric() {
+            out.push(WILDCARD);
         }
     }
     flush(&mut digits, &mut out, &mut gap);
@@ -312,6 +337,10 @@ fn viterbi(em: &Emissions, vocab: &Vocab, lay: &Layout) -> Option<Vec<Vec<Option
     let emit = |row: &[f32], s: usize| match states[s] {
         State::Star => STAR_LOGP,
         State::Blank => row[vocab.blank as usize],
+        State::Tok(WILDCARD) => (0..row.len())
+            .filter(|k| *k != vocab.blank as usize)
+            .map(|k| row[k])
+            .fold(f32::NEG_INFINITY, f32::max),
         State::Tok(t) => row.get(t as usize).copied().unwrap_or(f32::NEG_INFINITY),
     };
     let mut back = vec![0u8; frames * n];
@@ -566,7 +595,10 @@ mod tests {
     fn text_becomes_tokens_per_the_vocabulary() {
         let v = vocab();
         assert_eq!(tokens("A’b", &v, "xx"), vec![2, 5, 3]);
-        assert_eq!(tokens("e\u{301}!x1", &v, "xx"), vec![6]);
+        assert_eq!(
+            tokens("e\u{301}!x1", &v, "xx"),
+            vec![6, WILDCARD, DELIM, WILDCARD]
+        );
         assert_eq!(tokens("a-b", &v, "xx"), vec![2, DELIM, 3]);
         assert!(tokens("???", &v, "xx").is_empty());
         let up = Vocab::new([('A', 2)], BLANK, DELIM);
@@ -581,7 +613,7 @@ mod tests {
         assert_eq!(spell_en(1984), "one thousand nine hundred eighty four");
         let v = Vocab::new("abcdeinoqrstuvxzé".chars().zip(2..), BLANK, DELIM);
         assert!(!tokens("12", &v, "fr").is_empty());
-        assert!(tokens("12", &v, "de").is_empty());
+        assert_eq!(tokens("12", &v, "de"), vec![WILDCARD]);
     }
 
     #[test]
@@ -659,6 +691,20 @@ mod tests {
         assert_eq!(asked, vec![(0, 2500), (120, 2500), (1220, 4000)]);
         let starts: Vec<u32> = out.iter().map(|l| l.start_ms).collect();
         assert_eq!(starts, vec![100, 1200, 2000]);
+        forward(&out);
+    }
+
+    #[test]
+    fn a_vocabulary_with_both_cases_keeps_the_text_case() {
+        let v = Vocab::new([('a', 2), ('A', 3)], BLANK, DELIM);
+        assert_eq!(tokens("aA", &v, "xx"), vec![2, 3]);
+    }
+
+    #[test]
+    fn a_wildcard_word_stays_anchored_on_the_loudest_class() {
+        let em = emissions(60, &[(5, 2, 0.9), (18, 4, 0.9), (30, 3, 0.9)]);
+        let (out, share) = run(&[timed("a x b", 0, 1200)], &em, &mut vec![]);
+        assert_eq!(share, 1.0);
         forward(&out);
     }
 
