@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::align::words_of;
-use crate::api::{AlignLine, AlignedLine, AlignedWord};
+use super::align::{Copy, finish, words_of};
+use crate::api::{AlignLine, AlignedLine};
 
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
@@ -20,10 +20,7 @@ const TAIL_MS: u32 = 500;
 /// A window is at most its line's length plus this.
 const EXTRA_MS: u32 = 3000;
 /// Largest `frames x states` table (one byte each) a pass may fill.
-const MAX_CELLS: usize = 600_000_000;
-/// Time given to a word nothing was aligned for, per character, and its floor.
-const MS_PER_CHAR: u32 = 70;
-const MIN_WORD_MS: u32 = 120;
+const MAX_CELLS: usize = 100_000_000;
 
 /// The characters a CTC network emits, and its two special classes.
 #[derive(Debug, Clone)]
@@ -180,8 +177,10 @@ fn spell(n: u32, language: &str) -> String {
 }
 
 /// The token ids of one lyric word. Characters outside the vocabulary and punctuation are
-/// dropped; hyphens, spaces and spelled numbers become delimiters between sub-words.
+/// dropped; spaces and spelled numbers become delimiters between sub-words, and so does a
+/// hyphen when the vocabulary has no `-`.
 pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
+    let hyphen = vocab.ids.get(&'-').copied();
     let mut out: Vec<u32> = vec![];
     let mut gap = |out: &mut Vec<u32>| {
         if out.last().is_some_and(|t| *t != vocab.delimiter) {
@@ -198,6 +197,7 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
             if !nested.is_empty() {
                 gap(out);
                 out.extend(nested);
+                gap(out);
             }
         }
         digits.clear();
@@ -212,7 +212,13 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
             '’' | '‘' | 'ʼ' | '`' | '´' | '′' => '\'',
             c => c,
         };
-        if c == '-' || c.is_whitespace() {
+        if c == '-'
+            && let Some(h) = hyphen
+        {
+            if out.last().is_some_and(|t| *t != vocab.delimiter && *t != h) {
+                out.push(h);
+            }
+        } else if c == '-' || c.is_whitespace() {
             gap(&mut out);
         } else if c.is_alphabetic() || c == '\'' {
             let cased: Vec<char> = if vocab.upper {
@@ -224,7 +230,10 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
         }
     }
     flush(&mut digits, &mut out, &mut gap);
-    while out.last() == Some(&vocab.delimiter) {
+    while out
+        .last()
+        .is_some_and(|t| *t == vocab.delimiter || Some(*t) == hyphen)
+    {
         out.pop();
     }
     out
@@ -237,17 +246,25 @@ enum State {
     Tok(u32),
 }
 
-/// A word placed on a span: first and last frame (end exclusive), mean token log-probability.
-type Placed = (u32, u32, f32);
+/// A word placed on a span, in frames (ends exclusive): where its tokens start and end, where
+/// its trailing blank ends, and the mean log-probability of its token frames.
+#[derive(Clone, Copy)]
+struct Placed {
+    start: u32,
+    tok_end: u32,
+    end: u32,
+    score: f32,
+}
 
-/// The lines forced onto `em`: per line, per word, where it sits; `None` for a word with no
-/// token and for everything when no alignment fits. A star state before each line and after the
-/// last one lets audio the lyrics do not explain be absorbed.
-fn viterbi(
-    em: &Emissions,
-    vocab: &Vocab,
-    lines: &[&[Vec<u32>]],
-) -> Option<Vec<Vec<Option<Placed>>>> {
+/// The states of a pass: a star before each line with a token and after the last one, the
+/// tokens of each word each followed by a blank, and per line the first and last token state of
+/// each word (`None` for a word with no token).
+struct Layout {
+    states: Vec<State>,
+    spans: Vec<Vec<Option<(usize, usize)>>>,
+}
+
+fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]]) -> Option<Layout> {
     let mut states = vec![];
     let mut spans: Vec<Vec<Option<(usize, usize)>>> = vec![];
     for words in lines {
@@ -273,8 +290,15 @@ fn viterbi(
         return None;
     }
     states.push(State::Star);
+    Some(Layout { states, spans })
+}
+
+/// The lines of `lay` forced onto `em`: per line, per word, where it sits; `None` for a word
+/// with no token and for everything when no alignment fits.
+fn viterbi(em: &Emissions, vocab: &Vocab, lay: &Layout) -> Option<Vec<Vec<Option<Placed>>>> {
+    let Layout { states, spans } = lay;
     let (n, frames) = (states.len(), em.frames());
-    if frames == 0 || frames.saturating_mul(n) > MAX_CELLS || em.classes <= vocab.blank as usize {
+    if frames == 0 || em.classes <= vocab.blank as usize {
         return None;
     }
     let skip: Vec<bool> = (0..n)
@@ -320,13 +344,16 @@ fn viterbi(
         path[t] = s;
         s -= usize::from(back[t * n + s]);
     }
+    // Per token or blank state: first and last frame, summed token log-probability, token frames.
     let mut seen: Vec<Option<(u32, u32, f32, u32)>> = vec![None; n];
     for (t, s) in path.iter().enumerate() {
-        if matches!(states[*s], State::Tok(_)) {
-            let lp = emit(em.row(t), *s);
-            let e = seen[*s].get_or_insert((t as u32, t as u32, 0.0, 0));
-            *e = (e.0, t as u32, e.2 + lp, e.3 + 1);
-        }
+        let (lp, count) = match states[*s] {
+            State::Star => continue,
+            State::Blank => (0.0, 0),
+            State::Tok(_) => (emit(em.row(t), *s), 1),
+        };
+        let e = seen[*s].get_or_insert((t as u32, t as u32, 0.0, 0));
+        *e = (e.0, t as u32, e.2 + lp, e.3 + count);
     }
     Some(
         spans
@@ -341,7 +368,13 @@ fn viterbi(
                             count += e.3;
                         }
                         let (first, last) = (seen[a]?, seen[b]?);
-                        Some((first.0, last.1 + 1, sum / count.max(1) as f32))
+                        let tail = seen[b + 1].map_or(last.1, |e| e.1);
+                        Some(Placed {
+                            start: first.0,
+                            tok_end: last.1 + 1,
+                            end: tail + 1,
+                            score: sum / count.max(1) as f32,
+                        })
                     })
                     .collect()
             })
@@ -349,63 +382,9 @@ fn viterbi(
     )
 }
 
-/// Times the words nothing was aligned for: shared out, by length, between the aligned words
-/// around them and inside their line's times when it has some. Never runs backwards.
-fn interpolate(keys: &[usize], windows: &[Option<(u32, u32)>], times: &mut [Option<(u32, u32)>]) {
-    let mut i = 0;
-    while i < times.len() {
-        if times[i].is_some() {
-            i += 1;
-            continue;
-        }
-        let mut j = i;
-        while j < times.len() && times[j].is_none() {
-            j += 1;
-        }
-        let weights: Vec<u32> = (i..j).map(|k| keys[k] as u32 + 1).collect();
-        let total: u32 = weights.iter().sum();
-        let mut left = i.checked_sub(1).and_then(|k| times[k]).map_or(0, |t| t.1);
-        if let Some((s, _)) = windows[i] {
-            left = left.max(s);
-        }
-        let own = (total * MS_PER_CHAR).max(MIN_WORD_MS * (j - i) as u32);
-        let mut right = times.get(j).copied().flatten().map_or(left + own, |t| t.0);
-        if let Some((_, e)) = windows[j - 1]
-            && times.get(j).copied().flatten().is_none()
-        {
-            right = right.max(left).min(e.max(left + MIN_WORD_MS));
-        }
-        if right <= left {
-            right = left + MIN_WORD_MS * (j - i) as u32;
-        }
-        let mut at = left;
-        let mut spent = 0;
-        for (n, k) in (i..j).enumerate() {
-            spent += weights[n];
-            let end =
-                left + ((u64::from(right - left) * u64::from(spent)) / u64::from(total)) as u32;
-            times[k] = Some((at, end.max(at)));
-            at = end;
-        }
-        i = j;
-    }
-    for k in 1..times.len() {
-        if let (Some(a), Some(b)) = (times[k - 1], times[k])
-            && a.1 > b.0
-        {
-            times[k - 1] = Some((a.0.min(b.0), b.0));
-        }
-    }
-}
-
 /// The window of copy `i` of the lines, in ms: `floor` is where the previous line's last word
 /// ended.
-fn window_of(
-    copies: &[super::align::Copy],
-    i: usize,
-    floor: u32,
-    duration_ms: u32,
-) -> Option<(u32, u32)> {
+fn window_of(copies: &[Copy], i: usize, floor: u32, duration_ms: u32) -> Option<(u32, u32)> {
     let (s, e) = copies[i].window?;
     let next = copies[i + 1..].iter().find_map(|c| c.window).map(|w| w.0);
     let lo = s.saturating_sub(LEAD_MS).max(floor) / FRAME_MS * FRAME_MS;
@@ -414,18 +393,28 @@ fn window_of(
     (hi > lo).then_some((lo, hi))
 }
 
+/// Why an alignment gave nothing.
+#[derive(Debug, PartialEq)]
+pub enum AlignError<E> {
+    /// The emissions callback failed.
+    Emit(E),
+    /// A pass would need more than `MAX_CELLS` cells: the caller falls back to another aligner.
+    TooLarge,
+}
+
 /// The lines placed on the audio by CTC forced alignment, and the share of words found.
 ///
 /// `emit(start_ms, end_ms)` gives the emissions of that span of the track (frame 0 at
-/// `start_ms`, which is a multiple of `FRAME_MS`). Lines that all have times are aligned one by
-/// one in a window around their times; otherwise the whole track is aligned in one pass.
+/// `start_ms`, which is a multiple of `FRAME_MS`). A line with times is aligned alone in a window
+/// around them; each run of lines without times is aligned in one pass, from where the previous
+/// word ended to the start of the next timed line (the track end when none follows).
 pub fn align<E>(
     lines: &[AlignLine],
     vocab: &Vocab,
     language: &str,
     duration_ms: u32,
     emit: &mut dyn FnMut(u32, u32) -> Result<Emissions, E>,
-) -> Result<(Vec<AlignedLine>, f64), E> {
+) -> Result<(Vec<AlignedLine>, f64), AlignError<E>> {
     let copies = words_of(lines);
     let toks: Vec<Vec<Vec<u32>>> = copies
         .iter()
@@ -445,87 +434,48 @@ pub fn align<E>(
         .collect();
     let total: usize = copies.iter().map(|c| c.words.len()).sum();
     let mut times: Vec<Option<(u32, u32)>> = vec![None; total];
-    let mut found = 0;
-    let mut take = |ci: usize, base_ms: u32, placed: &[Option<Placed>]| {
-        for (wi, p) in placed.iter().enumerate() {
-            if let Some((a, b, score)) = p {
-                times[offsets[ci] + wi] = Some((base_ms + a * FRAME_MS, base_ms + b * FRAME_MS));
-                found += usize::from(*score >= MIN_SCORE);
-            }
-        }
-    };
-    if copies.iter().all(|c| c.window.is_some()) {
-        let mut floor = 0;
-        for (ci, tk) in toks.iter().enumerate() {
-            let Some((lo, hi)) = window_of(&copies, ci, floor, duration_ms) else {
+    let (mut found, mut floor, mut ci) = (0, 0, 0);
+    while ci < copies.len() {
+        let start = ci;
+        let (lo, hi) = if copies[ci].window.is_some() {
+            ci += 1;
+            let Some(w) = window_of(&copies, start, floor, duration_ms) else {
                 continue;
             };
-            let em = emit(lo, hi)?;
-            if let Some(mut out) = viterbi(&em, vocab, &[tk]) {
-                let placed = out.remove(0);
-                take(ci, lo, &placed);
-                floor = placed
-                    .iter()
-                    .flatten()
-                    .map(|p| lo + p.1 * FRAME_MS)
-                    .max()
-                    .unwrap_or(floor);
-            }
-        }
-    } else if !copies.is_empty() {
-        let em = emit(0, duration_ms)?;
-        let all: Vec<&[Vec<u32>]> = toks.iter().map(|t| t.as_slice()).collect();
-        if let Some(out) = viterbi(&em, vocab, &all) {
-            for (ci, placed) in out.iter().enumerate() {
-                take(ci, 0, placed);
-            }
-        }
-    }
-    let mut keys = vec![];
-    let mut windows = vec![];
-    for c in &copies {
-        for (s, e) in &c.words {
-            keys.push(
-                c.text[*s as usize..*e as usize]
-                    .chars()
-                    .filter(|c| c.is_alphanumeric())
-                    .count(),
-            );
-            windows.push(c.window);
-        }
-    }
-    interpolate(&keys, &windows, &mut times);
-    let mut out = vec![];
-    let mut last_end = 0;
-    for (ci, c) in copies.iter().enumerate() {
-        let words: Vec<AlignedWord> = c
-            .words
-            .iter()
-            .enumerate()
-            .map(|(wi, (s, e))| {
-                let (start_ms, end_ms) = times[offsets[ci] + wi].unwrap_or((last_end, last_end));
-                AlignedWord {
-                    text: c.text[*s as usize..*e as usize].to_string(),
-                    byte_start: *s,
-                    byte_end: *e,
-                    start_ms,
-                    end_ms,
-                }
-            })
-            .collect();
-        let (start_ms, end_ms) = match (words.first(), words.last()) {
-            (Some(f), Some(l)) => (f.start_ms, l.end_ms),
-            _ => (last_end, last_end),
+            w
+        } else {
+            ci = (start..copies.len())
+                .find(|k| copies[*k].window.is_some())
+                .unwrap_or(copies.len());
+            let end = copies
+                .get(ci)
+                .and_then(|c| c.window)
+                .map_or(duration_ms, |w| w.0 + TAIL_MS);
+            (floor / FRAME_MS * FRAME_MS, end.min(duration_ms))
         };
-        last_end = end_ms;
-        out.push(AlignedLine {
-            line: c.line,
-            repeat: c.repeat,
-            start_ms,
-            end_ms,
-            words,
-        });
+        let run: Vec<&[Vec<u32>]> = toks[start..ci].iter().map(|t| t.as_slice()).collect();
+        let Some(lay) = layout(vocab, &run).filter(|_| hi > lo) else {
+            continue;
+        };
+        if (hi - lo).div_ceil(FRAME_MS) as usize * lay.states.len() > MAX_CELLS {
+            return Err(AlignError::TooLarge);
+        }
+        let em = emit(lo, hi).map_err(AlignError::Emit)?;
+        let Some(out) = viterbi(&em, vocab, &lay) else {
+            continue;
+        };
+        for (k, placed) in out.iter().enumerate() {
+            for (wi, p) in placed.iter().enumerate() {
+                if let Some(p) = p {
+                    times[offsets[start + k] + wi] =
+                        Some((lo + p.start * FRAME_MS, lo + p.end * FRAME_MS));
+                    found += usize::from(p.score >= MIN_SCORE);
+                    floor = floor.max(lo + p.tok_end * FRAME_MS);
+                }
+            }
+        }
     }
+    let out = finish(&copies, &mut times);
     let share = if total == 0 {
         0.0
     } else {
@@ -642,8 +592,8 @@ mod tests {
         );
         let (out, share) = run(&[line("ab c")], &em, &mut vec![]);
         let w = &out[0].words;
-        assert_eq!((w[0].start_ms, w[0].end_ms), (100, 220));
-        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 320));
+        assert_eq!((w[0].start_ms, w[0].end_ms), (100, 260));
+        assert_eq!((w[1].start_ms, w[1].end_ms), (300, 800));
         assert_eq!(share, 1.0);
         forward(&out);
     }
@@ -654,8 +604,8 @@ mod tests {
         marks.extend((20..50).map(|t| (t, 4, 0.9)));
         let em = emissions(80, &marks);
         let (out, _) = run(&[line("a"), line("b")], &em, &mut vec![]);
-        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 120));
-        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1220));
+        assert_eq!((out[0].start_ms, out[0].end_ms), (100, 400));
+        assert_eq!((out[1].start_ms, out[1].end_ms), (1200, 1600));
     }
 
     #[test]
@@ -686,5 +636,55 @@ mod tests {
         assert_eq!(asked, vec![(500, 3000), (2420, 6420), (49_000, 53_000)]);
         assert_eq!(out[2].words[0].start_ms, 50_000);
         forward(&out);
+    }
+
+    #[test]
+    fn a_tokenless_line_after_the_next_words_start_never_runs_backwards() {
+        let em = emissions(700, &[(480, 2, 0.9)]);
+        let lines = [
+            timed("\u{266a} \u{266a} \u{266a}", 10_000, 10_500),
+            timed("a", 10_500, 12_000),
+        ];
+        let (out, _) = run(&lines, &em, &mut vec![]);
+        assert_eq!(out[1].words[0].start_ms, 9600);
+        forward(&out);
+    }
+
+    #[test]
+    fn untimed_lines_between_timed_ones_get_their_own_pass() {
+        let em = emissions(200, &[(5, 2, 0.9), (60, 3, 0.9), (100, 4, 0.9)]);
+        let mut asked = vec![];
+        let lines = [timed("a", 0, 500), line("b"), timed("c", 2000, 2500)];
+        let (out, _) = run(&lines, &em, &mut asked);
+        assert_eq!(asked, vec![(0, 2500), (120, 2500), (1220, 4000)]);
+        let starts: Vec<u32> = out.iter().map(|l| l.start_ms).collect();
+        assert_eq!(starts, vec![100, 1200, 2000]);
+        forward(&out);
+    }
+
+    #[test]
+    fn a_hyphen_is_the_vocabulary_hyphen_when_it_has_one() {
+        let v = Vocab::new([('a', 2), ('b', 3), ('-', 4)], BLANK, DELIM);
+        assert_eq!(tokens("a-b", &v, "xx"), vec![2, 4, 3]);
+        assert_eq!(tokens("a-", &v, "xx"), vec![2]);
+        assert!(tokens("-", &v, "xx").is_empty());
+    }
+
+    #[test]
+    fn a_number_is_set_apart_from_the_letters_after_it() {
+        let v = Vocab::new("twond".chars().zip(2..), BLANK, DELIM);
+        assert_eq!(tokens("2nd", &v, "en"), vec![2, 3, 4, DELIM, 5, 6]);
+    }
+
+    #[test]
+    fn a_pass_over_the_cell_cap_is_an_error_before_any_audio_is_read() {
+        let text = vec!["a"; 3000].join(" ");
+        let mut asked = 0;
+        let r = align(&[line(&text)], &vocab(), "xx", 200_000, &mut |_, _| {
+            asked += 1;
+            Ok::<_, ()>(emissions(1, &[]))
+        });
+        assert_eq!(r.unwrap_err(), AlignError::TooLarge);
+        assert_eq!(asked, 0);
     }
 }

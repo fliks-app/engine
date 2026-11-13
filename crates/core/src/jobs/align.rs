@@ -160,8 +160,6 @@ fn similarity(a: &str, b: &str) -> i32 {
 }
 
 struct Slot {
-    copy: usize,
-    word: usize,
     key: String,
     window: Option<(u32, u32)>,
 }
@@ -217,11 +215,9 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
         .collect();
     let keys: Vec<String> = heard.iter().map(|h| norm(&h.text)).collect();
     let mut slots = vec![];
-    for (ci, c) in copies.iter().enumerate() {
-        for (wi, (s, e)) in c.words.iter().enumerate() {
+    for c in &copies {
+        for (s, e) in &c.words {
             slots.push(Slot {
-                copy: ci,
-                word: wi,
                 key: norm(&c.text[*s as usize..*e as usize]),
                 window: c.window,
             });
@@ -240,29 +236,39 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
             })
         })
         .collect();
-    fill(&slots, &copies, &mut times);
+    let out = finish(&copies, &mut times);
+    let share = if slots.is_empty() {
+        0.0
+    } else {
+        found as f64 / slots.len() as f64
+    };
+    (out, share)
+}
+
+/// The lines of `copies` from the word times in `times` (flat word order): the words nothing
+/// was placed for are timed first, see `fill`.
+pub(super) fn finish(copies: &[Copy], times: &mut [Option<(u32, u32)>]) -> Vec<AlignedLine> {
+    fill(copies, times);
     let mut out: Vec<AlignedLine> = vec![];
     let mut next = 0;
     let mut last_end = 0;
-    for (ci, c) in copies.iter().enumerate() {
-        let mine: Vec<usize> = (next..slots.len())
-            .take_while(|k| slots[*k].copy == ci)
-            .collect();
-        next += mine.len();
-        let words: Vec<AlignedWord> = mine
+    for c in copies {
+        let words: Vec<AlignedWord> = c
+            .words
             .iter()
-            .map(|k| {
-                let (start_ms, end_ms) = times[*k].unwrap_or((last_end, last_end));
-                let (s, e) = c.words[slots[*k].word];
+            .enumerate()
+            .map(|(wi, (s, e))| {
+                let (start_ms, end_ms) = times[next + wi].unwrap_or((last_end, last_end));
                 AlignedWord {
-                    text: c.text[s as usize..e as usize].to_string(),
-                    byte_start: s,
-                    byte_end: e,
+                    text: c.text[*s as usize..*e as usize].to_string(),
+                    byte_start: *s,
+                    byte_end: *e,
                     start_ms,
                     end_ms,
                 }
             })
             .collect();
+        next += c.words.len();
         let (start_ms, end_ms) = match (words.first(), words.last()) {
             (Some(f), Some(l)) => (f.start_ms, l.end_ms),
             _ => (last_end, last_end),
@@ -276,40 +282,46 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
             words,
         });
     }
-    let share = if slots.is_empty() {
-        0.0
-    } else {
-        found as f64 / slots.len() as f64
-    };
-    (out, share)
+    out
 }
 
-/// Times the words nothing was heard for: shared out, by length, between the heard words around
-/// them and inside their line's times. The result never runs backwards.
-fn fill(slots: &[Slot], copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
+/// Times the words nothing was placed for: shared out, by length, between the placed words
+/// around them and inside their line's times. The result never runs backwards.
+fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
+    let flat: Vec<(u32, Option<(u32, u32)>)> = copies
+        .iter()
+        .flat_map(|c| {
+            c.words.iter().map(move |(s, e)| {
+                let key = norm(&c.text[*s as usize..*e as usize]);
+                (key.chars().count() as u32 + 1, c.window)
+            })
+        })
+        .collect();
+    let n = times.len();
     let mut i = 0;
-    while i < slots.len() {
+    while i < n {
         if times[i].is_some() {
             i += 1;
             continue;
         }
         let mut j = i;
-        while j < slots.len() && times[j].is_none() {
+        while j < n && times[j].is_none() {
             j += 1;
         }
-        let window = |k: usize| copies[slots[k].copy].window;
-        let weights: Vec<u32> = (i..j)
-            .map(|k| slots[k].key.chars().count() as u32 + 1)
-            .collect();
+        let weights: Vec<u32> = (i..j).map(|k| flat[k].0).collect();
         let total: u32 = weights.iter().sum();
         let mut left = i.checked_sub(1).and_then(|k| times[k]).map_or(0, |t| t.1);
-        if let Some((s, _)) = window(i) {
+        if let Some((s, _)) = flat[i].1 {
             left = left.max(s);
         }
+        let next = times.get(j).copied().flatten();
+        if let Some((s, _)) = next {
+            left = left.min(s);
+        }
         let own = (total * MS_PER_CHAR).max(MIN_WORD_MS * (j - i) as u32);
-        let mut right = times.get(j).copied().flatten().map_or(left + own, |t| t.0);
-        if let Some((_, e)) = window(j - 1)
-            && times.get(j).copied().flatten().is_none()
+        let mut right = next.map_or(left + own, |t| t.0);
+        if let Some((_, e)) = flat[j - 1].1
+            && next.is_none()
         {
             right = right.max(left).min(e.max(left + MIN_WORD_MS));
         }
@@ -318,8 +330,8 @@ fn fill(slots: &[Slot], copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
         }
         let mut at = left;
         let mut spent = 0;
-        for (n, k) in (i..j).enumerate() {
-            spent += weights[n];
+        for (w, k) in (i..j).enumerate() {
+            spent += weights[w];
             let end =
                 left + ((u64::from(right - left) * u64::from(spent)) / u64::from(total)) as u32;
             times[k] = Some((at, end.max(at)));
@@ -327,8 +339,8 @@ fn fill(slots: &[Slot], copies: &[Copy], times: &mut [Option<(u32, u32)>]) {
         }
         i = j;
     }
-    // Overlaps from a heard word that outlasts its successor are trimmed.
-    for k in 1..times.len() {
+    // A word that outlasts its successor is trimmed, from the end so a collapse carries back.
+    for k in (1..n).rev() {
         if let (Some(a), Some(b)) = (times[k - 1], times[k])
             && a.1 > b.0
         {
