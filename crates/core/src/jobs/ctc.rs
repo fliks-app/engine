@@ -11,7 +11,7 @@ use crate::api::{AlignLine, AlignedLine};
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
 /// Per-frame log-probability of the star token: the price of audio the lyrics do not explain.
-pub const STAR_LOGP: f32 = -2.3;
+const STAR_LOGP: f32 = -2.3;
 /// A word whose mean log-probability reaches this counts as found (about 22 %).
 const MIN_SCORE: f32 = -1.5;
 /// A window of a line starts this much before its line, ends this much after the next one starts.
@@ -26,8 +26,8 @@ const MAX_CELLS: usize = 100_000_000;
 #[derive(Debug, Clone)]
 pub struct Vocab {
     ids: HashMap<char, u32>,
-    pub blank: u32,
-    pub delimiter: u32,
+    blank: u32,
+    delimiter: u32,
     case: Case,
 }
 
@@ -40,7 +40,7 @@ enum Case {
 }
 
 /// Token standing for a character the vocabulary lacks: it scores the best non-blank class.
-pub const WILDCARD: u32 = u32::MAX;
+const WILDCARD: u32 = u32::MAX;
 
 impl Vocab {
     /// `chars`: id of each single character the network emits (the delimiter and the blank
@@ -192,9 +192,8 @@ fn spell(n: u32, language: &str) -> String {
     }
 }
 
-/// The token ids of one lyric word. Letters and digits outside the vocabulary become a
-/// `WILDCARD`; punctuation and symbols are dropped; spaces and spelled numbers become delimiters between sub-words, and so does a
-/// hyphen when the vocabulary has no `-`.
+/// The token ids of one lyric word: characters outside the vocabulary become a `WILDCARD`,
+/// punctuation is dropped, spaces, spelled numbers and a `-` the vocabulary lacks become delimiters.
 pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
     let hyphen = vocab.ids.get(&'-').copied();
     let mut out: Vec<u32> = vec![];
@@ -432,11 +431,8 @@ pub enum AlignError<E> {
 }
 
 /// The lines placed on the audio by CTC forced alignment, and the share of words found.
-///
-/// `emit(start_ms, end_ms)` gives the emissions of that span of the track (frame 0 at
-/// `start_ms`, which is a multiple of `FRAME_MS`). A line with times is aligned alone in a window
-/// around them; each run of lines without times is aligned in one pass, from where the previous
-/// word ended to the start of the next timed line (the track end when none follows).
+/// `emit(start_ms, end_ms)` gives the emissions of that span (frame 0 at `start_ms`, a multiple
+/// of `FRAME_MS`); a timed line gets its own window, each run of untimed lines one pass.
 pub fn align<E>(
     lines: &[AlignLine],
     vocab: &Vocab,
