@@ -250,14 +250,14 @@ async fn a_verify_that_finds_a_changed_file_fails_and_a_download_repairs_it() {
     );
     settle(&e, "good", "installed").await;
 
-    std::fs::write(dir.join("a.bin"), vec![b'x'; PLAIN.len()]).unwrap();
+    std::fs::write(dir.join("good/a.bin"), vec![b'x'; PLAIN.len()]).unwrap();
     e.control("POST", "/v1/models/good/verify", None).await;
     let m = settle(&e, "good", "failed").await;
     assert!(m["error"].as_str().unwrap().contains("a.bin"), "{m}");
 
     e.control("POST", "/v1/models/good/download", None).await;
     settle(&e, "good", "installed").await;
-    assert_eq!(std::fs::read(dir.join("a.bin")).unwrap(), PLAIN);
+    assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
     assert_eq!(
         e.control("POST", "/v1/models/nope/verify", None)
             .await
