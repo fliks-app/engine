@@ -227,9 +227,13 @@ pub struct AlignedLine {
     pub end_ms: u32,
     /// Share of the copy's words found, 0 to 1: a word in parentheses or in a repeat counts only
     /// when found and a `[...]` label never, so a copy with nothing left to find is 1.
-    #[serde(default)]
+    #[serde(default = "whole")]
     pub matched: f64,
     pub words: Vec<AlignedWord>,
+}
+
+fn whole() -> f64 {
+    1.0
 }
 
 /// What an `Align` found.
