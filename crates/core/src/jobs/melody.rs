@@ -28,8 +28,10 @@ const REGISTER_REACH: usize = 250;
 const OCTAVE_REACH: usize = 40;
 /// Semitones from that median within which an octave-shifted frame counts as an octave error.
 const OCTAVE_FIT: f64 = 2.0;
-/// An octave-shifted run longer than this many frames (192 ms) is a sung leap, not a tracker error.
+/// An octave-shifted run of more voiced frames than this (192 ms) is a sung leap, not a tracker error.
 const OCTAVE_RUN: usize = 12;
+/// Semitones a run's entry or exit step may sit from a whole octave to count as an octave error.
+const OCTAVE_STEP: f64 = 0.75;
 /// Frames on each side of the smoothing median: two irons out vibrato.
 const SMOOTH: usize = 2;
 /// A note is dropped under this many voiced frames (96 ms).
@@ -179,18 +181,31 @@ fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
         })
         .collect();
     let mut folded = raw.clone();
-    let mut i = 0;
-    while i < n {
-        let mut j = i;
-        while j < n && shift[j] == shift[i] {
-            j += 1;
+    let voiced: Vec<usize> = (0..n).filter(|&i| raw[i].is_some()).collect();
+    let near_gap = |a: usize, b: usize| voiced[b] - voiced[a] - 1 <= MAX_GAP;
+    let is_octave = |a: usize, b: usize| {
+        let d = (raw[voiced[a]].unwrap_or(0.0) - raw[voiced[b]].unwrap_or(0.0)).abs();
+        d >= 12.0 - OCTAVE_STEP && (d - 12.0 * (d / 12.0).round()).abs() <= OCTAVE_STEP
+    };
+    let mut p = 0;
+    while p < voiced.len() {
+        let k = shift[voiced[p]];
+        let mut q = p + 1;
+        while q < voiced.len() && shift[voiced[q]] == k && near_gap(q - 1, q) {
+            q += 1;
         }
-        if shift[i] != 0.0 && j - i <= OCTAVE_RUN {
-            for f in i..j {
-                folded[f] = raw[f].map(|x| x - 12.0 * shift[f]);
+        let before = p > 0 && near_gap(p - 1, p);
+        let after = q < voiced.len() && near_gap(q - 1, q);
+        if k != 0.0
+            && q - p <= OCTAVE_RUN
+            && (!before || is_octave(p - 1, p))
+            && (!after || is_octave(q - 1, q))
+        {
+            for &f in &voiced[p..q] {
+                folded[f] = raw[f].map(|x| x - 12.0 * k);
             }
         }
-        i = j;
+        p = q;
     }
     (0..n)
         .map(|i| {
@@ -355,6 +370,35 @@ mod tests {
         let n = one(&t, span(0, 1520));
         assert_eq!(
             n.iter().map(|n| n.midi).collect::<Vec<_>>(),
+            [57.0, 69.0, 57.0]
+        );
+    }
+
+    fn mids(parts: &[(usize, f32)]) -> Vec<f64> {
+        let n = one(&track(parts), span(0, 100_000));
+        n.iter().map(|n| n.midi).collect()
+    }
+
+    #[test]
+    fn an_octave_run_split_by_a_gap_is_one_run() {
+        let up = [(40, 220.0), (8, 440.0), (2, 0.0), (9, 440.0), (40, 220.0)];
+        assert_eq!(mids(&up), [57.0, 69.0, 57.0]);
+        let short = [(20, 220.0), (5, 440.0), (2, 0.0), (4, 440.0), (20, 220.0)];
+        assert_eq!(mids(&short), [57.0]);
+    }
+
+    #[test]
+    fn a_short_run_entered_by_a_non_octave_step_is_a_sung_note() {
+        assert_eq!(
+            mids(&[(40, 220.0), (10, 415.3), (40, 220.0)]),
+            [57.0, 68.0, 57.0]
+        );
+    }
+
+    #[test]
+    fn a_long_octave_run_is_kept_even_with_octave_edges() {
+        assert_eq!(
+            mids(&[(40, 220.0), (20, 440.0), (40, 220.0)]),
             [57.0, 69.0, 57.0]
         );
     }
