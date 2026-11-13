@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::align::{Copy, finish, words_of};
+use super::align::{Copy, Role, finish, shares, words_of};
 use super::melody::SAMPLE_RATE;
 use crate::api::{AlignLine, AlignedLine};
 
@@ -23,6 +23,8 @@ const TAIL_MS: u32 = 1500;
 const EXTRA_MS: u32 = 3000;
 /// Most cells (two bits each) the back-pointer table may hold: 100 MB.
 const MAX_CELLS: usize = 400_000_000;
+/// Marks a state no optional span is skipped to.
+const NO_JUMP: usize = usize::MAX;
 /// A frame is silent when its level is this far below the track's 95th percentile and part of a
 /// run of at least `MIN_SILENT_MS`.
 const SILENT_DB: f32 = -35.0;
@@ -329,36 +331,59 @@ struct Placed {
 /// The states of the lyrics (a star before each line with a token and after the last, each token
 /// then a blank); `spans` the word bounds, `bodies` each line's states after its star, `cols`
 /// each state's emission column, `in_word` the states silence may not hold (a word's tokens and
-/// the blanks between them).
+/// the blanks between them), `jump` the state an optional span is skipped from, per state it
+/// is skipped to (`NO_JUMP` elsewhere).
 struct Layout {
     cols: Vec<usize>,
     in_word: Vec<bool>,
+    jump: Vec<usize>,
     states: Vec<State>,
     spans: Vec<Vec<Option<(usize, usize)>>>,
     bodies: Vec<Range<usize>>,
 }
 
-/// The lyric lines as states, their columns looked up in `ids`.
-fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]], ids: &[u32]) -> Option<Layout> {
+/// The lyric lines (their words' tokens and roles) as states, their columns looked up in `ids`.
+/// An optional span can be jumped over: from the blank before its first token (the one ending the
+/// word before it, which takes the delimiter along) to the blank after its last token; a span
+/// opening the line jumps to the blank after the delimiter that follows it.
+fn layout(vocab: &Vocab, lines: &[(&[Vec<u32>], &[Role])], ids: &[u32]) -> Option<Layout> {
     let mut states = vec![];
     let mut spans: Vec<Vec<Option<(usize, usize)>>> = vec![];
     let mut bodies = vec![];
-    for words in lines {
+    let mut jumps: Vec<(usize, usize)> = vec![];
+    for (words, roles) in lines {
         let mut mine = vec![None; words.len()];
         let body = states.len() + 1;
         if words.iter().any(|w| !w.is_empty()) {
             states.extend([State::Star, State::Blank]);
-            let mut first = true;
+            let mut seq: Vec<(usize, usize, Option<u32>)> = vec![];
             for (i, w) in words.iter().enumerate().filter(|(_, w)| !w.is_empty()) {
-                if !first {
+                if !seq.is_empty() {
                     states.extend([State::Tok(vocab.delimiter), State::Blank]);
                 }
-                first = false;
                 let a = states.len();
                 for t in w.iter() {
                     states.extend([State::Tok(*t), State::Blank]);
                 }
                 mine[i] = Some((a, states.len() - 2));
+                let group = match roles[i] {
+                    Role::Optional(g) => Some(g),
+                    _ => None,
+                };
+                seq.push((a, states.len() - 2, group));
+            }
+            let mut k = 0;
+            while k < seq.len() {
+                let Some(g) = seq[k].2 else {
+                    k += 1;
+                    continue;
+                };
+                let m = (k..seq.len()).take_while(|j| seq[*j].2 == Some(g)).count() + k - 1;
+                let opens = k == 0;
+                let src = if opens { seq[k].0 - 1 } else { seq[k].0 - 3 };
+                let dst = seq[m].1 + if opens && m + 1 < seq.len() { 3 } else { 1 };
+                jumps.push((dst, src));
+                k = m + 1;
             }
         }
         spans.push(mine);
@@ -372,6 +397,10 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]], ids: &[u32]) -> Option<Layout> {
     for (a, b) in spans.iter().flatten().flatten() {
         in_word[*a..=*b].fill(true);
     }
+    let mut jump = vec![NO_JUMP; states.len()];
+    for (dst, src) in jumps {
+        jump[dst] = src;
+    }
     let cols = states
         .iter()
         .map(|s| match s {
@@ -384,6 +413,7 @@ fn layout(vocab: &Vocab, lines: &[&[Vec<u32>]], ids: &[u32]) -> Option<Layout> {
     Some(Layout {
         cols,
         in_word,
+        jump,
         states,
         spans,
         bodies,
@@ -450,7 +480,7 @@ fn state_ranges(band: &[(u32, u32)], frames: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Whether state `s` of `lay` may be passed to from two states before it.
+/// Whether state `s` may be reached from two states before it.
 fn skips(states: &[State]) -> Vec<bool> {
     (0..states.len())
         .map(|s| {
@@ -472,7 +502,7 @@ fn emit(lay: &Layout, band: &[(u32, u32)], row: &[f32], t: usize, s: usize) -> f
 }
 
 /// The best state of every frame, `None` when no path fits the bands. Back pointers (two bits a
-/// cell: stay, one state, two states) are kept only inside each frame's state range.
+/// cell: stay, one state, two states, a jump) are kept only inside each frame's state range.
 fn best_path(
     em: &Emissions,
     lay: &Layout,
@@ -518,6 +548,10 @@ fn best_path(
             if skip[s] && prev[s - 2] > best {
                 (best, from) = (prev[s - 2], 2);
             }
+            let j = lay.jump[s];
+            if j != NO_JUMP && prev[j] > best {
+                (best, from) = (prev[j], 3);
+            }
             let held = if quiet && lay.in_word[s] {
                 SILENT_PEN
             } else {
@@ -540,7 +574,10 @@ fn best_path(
         path[t] = s;
         if t > 0 {
             let at = offsets[t] + s - ranges[t].0;
-            s -= usize::from(back[at / 4] >> (at % 4 * 2) & 3);
+            s = match back[at / 4] >> (at % 4 * 2) & 3 {
+                3 => lay.jump[s],
+                back => s - usize::from(back),
+            };
         }
     }
     Ok(Some(path))
@@ -625,10 +662,14 @@ fn band_of(copies: &[Copy], i: usize, duration_ms: u32) -> Option<(u32, u32)> {
     (hi > lo).then_some((lo, hi))
 }
 
-/// The frames a copy's tokens need: one each, a delimiter between its words, a blank between two
-/// equal tokens in a row.
-fn frames_needed(words: &[Vec<u32>]) -> usize {
-    let words = words.iter().filter(|w| !w.is_empty());
+/// The frames a copy's required words need: one a token, a delimiter between words, a blank between
+/// two equal tokens in a row.
+fn frames_needed(words: &[Vec<u32>], roles: &[Role]) -> usize {
+    let words = words
+        .iter()
+        .zip(roles)
+        .filter(|(w, r)| !w.is_empty() && **r == Role::Word)
+        .map(|(w, _)| w);
     let repeats = words
         .clone()
         .map(|w| w.windows(2).filter(|p| p[0] == p[1]).count())
@@ -659,7 +700,11 @@ pub fn align(
         .map(|c| {
             c.words
                 .iter()
-                .map(|(s, e)| tokens(&c.text[*s as usize..*e as usize], vocab, language))
+                .zip(&c.roles)
+                .map(|((s, e), role)| match role {
+                    Role::Label => vec![],
+                    _ => tokens(&c.text[*s as usize..*e as usize], vocab, language),
+                })
                 .collect()
         })
         .collect();
@@ -685,7 +730,7 @@ pub fn align(
     // A band too short for its tokens reaches to the next one's end; still too short, the copy is timed
     // between its neighbours.
     for i in 0..copies.len() {
-        let need = frames_needed(&toks[i]) as u32 * FRAME_MS;
+        let need = frames_needed(&toks[i], &copies[i].roles) as u32 * FRAME_MS;
         if copies[i].window.is_some() && bands[i].1 - bands[i].0 < need {
             let next = (i + 1..copies.len())
                 .find(|k| copies[*k].window.is_some())
@@ -700,9 +745,13 @@ pub fn align(
         .iter()
         .map(|(lo, hi)| (lo / FRAME_MS, hi.div_ceil(FRAME_MS)))
         .collect();
-    let run: Vec<&[Vec<u32>]> = toks.iter().map(Vec::as_slice).collect();
-    let mut times: Vec<Option<(u32, u32)>> = vec![None; copies.iter().map(|c| c.words.len()).sum()];
-    let (mut found, mut at) = (0, 0);
+    let run: Vec<(&[Vec<u32>], &[Role])> = toks
+        .iter()
+        .zip(&copies)
+        .map(|(t, c)| (t.as_slice(), c.roles.as_slice()))
+        .collect();
+    let total = copies.iter().map(|c| c.words.len()).sum();
+    let (mut times, mut found, mut at) = (vec![None; total], vec![false; total], 0);
     if let Some(lay) = layout(vocab, &run, &em.ids)
         && let Some(placed) = viterbi(em, &lay, &frames, silent)?
     {
@@ -710,18 +759,14 @@ pub fn align(
             for (wi, p) in line.iter().enumerate() {
                 if let Some(p) = p {
                     times[at + wi] = Some((p.start * FRAME_MS, p.end * FRAME_MS));
-                    found += usize::from(p.score >= MIN_SCORE);
+                    found[at + wi] = p.score >= MIN_SCORE;
                 }
             }
             at += copy.words.len();
         }
     }
-    let share = if times.is_empty() {
-        0.0
-    } else {
-        found as f64 / times.len() as f64
-    };
-    Ok((finish(&copies, &mut times), share))
+    let (matched, share) = shares(&copies, &found);
+    Ok((finish(&copies, &mut times, &matched), share))
 }
 
 #[cfg(test)]
@@ -1060,6 +1105,9 @@ mod tests {
                 if skip[s] && prev[s - 2] > best {
                     (best, from) = (prev[s - 2], 2);
                 }
+                if lay.jump[s] != NO_JUMP && prev[lay.jump[s]] > best {
+                    (best, from) = (prev[lay.jump[s]], 3);
+                }
                 let held = if silent.get(t) == Some(&true) && lay.in_word[s] {
                     SILENT_PEN
                 } else {
@@ -1077,7 +1125,10 @@ mod tests {
         let mut path = vec![0; frames];
         for t in (0..frames).rev() {
             path[t] = s;
-            s -= back[t * n + s];
+            s = match back[t * n + s] {
+                3 => lay.jump[s],
+                from => s - from,
+            };
         }
         Some(path)
     }
@@ -1096,17 +1147,26 @@ mod tests {
 
     #[test]
     fn the_banded_search_walks_the_dense_tables_path() {
-        let (mut rng, mut found) = (Lcg(7), 0);
+        let (mut rng, mut found, mut jumps) = (Lcg(7), 0, 0);
         for _ in 0..200 {
             let lines: Vec<AlignLine> = (0..1 + rng.below(4))
                 .map(|_| {
-                    let words: Vec<String> = (0..1 + rng.below(4))
+                    let mut words: Vec<String> = (0..1 + rng.below(5))
                         .map(|_| {
                             (0..1 + rng.below(4))
                                 .map(|_| ["a", "b", "c", "'", "é"][rng.below(5) as usize])
                                 .collect()
                         })
                         .collect();
+                    let (from, len) = (rng.below(words.len() as u32) as usize, 1 + rng.below(2));
+                    if rng.below(2) == 0 {
+                        words[from].insert(0, '(');
+                        let to = (from + len as usize).min(words.len()) - 1;
+                        words[to].push(')');
+                    }
+                    if rng.below(4) == 0 {
+                        words.push("x2".into());
+                    }
                     line(&words.join(" "))
                 })
                 .collect();
@@ -1119,18 +1179,25 @@ mod tests {
             let silent: Vec<bool> = (0..frames)
                 .map(|t| (t / 7) % 3 == rng.below(3) as usize)
                 .collect();
-            let toks: Vec<Vec<Vec<u32>>> = lines
+            let copies = words_of(&lines);
+            let toks: Vec<Vec<Vec<u32>>> = copies
                 .iter()
-                .map(|l| {
-                    l.text
-                        .split(' ')
-                        .map(|w| tokens(w, &vocab(), "xx"))
+                .map(|c| {
+                    let text = |(s, e): &(u32, u32)| &c.text[*s as usize..*e as usize];
+                    c.words
+                        .iter()
+                        .map(|w| tokens(text(w), &vocab(), "xx"))
                         .collect()
                 })
                 .collect();
-            let run: Vec<&[Vec<u32>]> = toks.iter().map(Vec::as_slice).collect();
+            let run: Vec<(&[Vec<u32>], &[Role])> = toks
+                .iter()
+                .zip(&copies)
+                .map(|(t, c)| (t.as_slice(), c.roles.as_slice()))
+                .collect();
             let lay = layout(&vocab(), &run, &ids).unwrap();
-            let bands: Vec<(u32, u32)> = lines
+            jumps += lay.jump.iter().filter(|j| **j != NO_JUMP).count();
+            let bands: Vec<(u32, u32)> = copies
                 .iter()
                 .map(|_| {
                     let lo = rng.below(frames as u32 / 2);
@@ -1142,7 +1209,92 @@ mod tests {
             found += usize::from(sparse.is_some());
             assert_eq!(sparse, dense_path(&em, &lay, &band, &silent));
         }
-        assert!(found > 100, "{found} cases had a path");
+        assert!(found > 100 && jumps > 50, "{found} paths, {jumps} jumps");
+    }
+
+    fn starts(out: &[AlignedLine]) -> Vec<u32> {
+        out.iter()
+            .flat_map(|l| &l.words)
+            .map(|w| w.start_ms)
+            .collect()
+    }
+
+    #[test]
+    fn a_parenthesised_word_nobody_sings_is_skipped_and_leaves_the_matched_share() {
+        let marks = [(5, 2, 0.9), (30, 3, 0.9)];
+        let (out, share) = run(&[line("a (c) b")], &emissions(60, &marks));
+        assert_eq!(starts(&out)[0], 100);
+        assert_eq!(starts(&out)[2], 600);
+        assert_eq!(
+            (out[0].words[0].end_ms, share, out[0].matched),
+            (120, 1.0, 1.0)
+        );
+        forward(&out);
+        let sung = [
+            (5, 2, 0.9),
+            (12, DELIM, 0.9),
+            (18, 4, 0.9),
+            (24, DELIM, 0.9),
+            (30, 3, 0.9),
+        ];
+        let (out, share) = run(&[line("a (c) b")], &emissions(60, &sung));
+        assert_eq!((starts(&out), share), (vec![100, 360, 600], 1.0));
+    }
+
+    #[test]
+    fn a_translation_in_parentheses_after_the_sung_part_is_skipped() {
+        let marks = [(25, 2, 0.9), (40, 3, 0.9), (150, 4, 0.9), (170, 2, 0.9)];
+        let em = emissions(260, &marks);
+        let tail = "c a b c a b c a b c a b";
+        let lines = |tail: String| {
+            [
+                timed(&format!("a b {tail}"), 0, 3000),
+                timed("c a", 3000, 4000),
+            ]
+        };
+        let (out, share) = run(&lines(format!("({tail})")), &em);
+        assert_eq!(starts(&out)[..2], [500, 800]);
+        assert_eq!(starts(&out)[14..], [3000, 3400]);
+        assert_eq!((share, out[0].matched, out[1].matched), (1.0, 1.0, 1.0));
+        forward(&out);
+        let (_, bare) = run(&lines(tail.into()), &em);
+        assert!(bare < 0.3, "{bare}");
+    }
+
+    #[test]
+    fn a_line_sung_once_loses_nothing_for_its_xn_copies() {
+        let marks = [(5, 2, 0.9), (7, DELIM, 0.9), (10, 3, 0.9)];
+        let (out, share) = run(&[line("a b x2")], &emissions(40, &marks));
+        assert_eq!((out.len(), share), (2, 1.0));
+        assert_eq!((out[0].matched, out[1].matched), (1.0, 1.0));
+        forward(&out);
+        let twice = [
+            (5, 2, 0.9),
+            (7, DELIM, 0.9),
+            (10, 3, 0.9),
+            (25, 2, 0.9),
+            (27, DELIM, 0.9),
+            (30, 3, 0.9),
+        ];
+        let (out, share) = run(&[line("a b x2")], &emissions(40, &twice));
+        assert_eq!((starts(&out), share), (vec![100, 200, 500, 600], 1.0));
+    }
+
+    #[test]
+    fn a_section_label_has_no_tokens_and_is_not_counted() {
+        let (out, share) = run(&[line("[b] a")], &emissions(30, &[(5, 2, 0.9)]));
+        assert_eq!((out[0].words.len(), share, out[0].matched), (2, 1.0, 1.0));
+        assert_eq!(out[0].words[1].start_ms, 100);
+        forward(&out);
+    }
+
+    #[test]
+    fn each_line_reports_the_share_of_its_words_found() {
+        let marks = [(5, 2, 0.9), (10, 3, 0.9), (60, 3, 0.9), (70, 2, 0.9)];
+        let (out, share) = run(&[line("a b c"), line("b a")], &emissions(100, &marks));
+        assert!((out[0].matched - 2.0 / 3.0).abs() < 1e-9);
+        assert_eq!(out[1].matched, 1.0);
+        assert!((share - 0.8).abs() < 1e-9);
     }
 
     #[test]

@@ -1005,6 +1005,11 @@
             "description": "Index of the request line.",
             "minimum": 0
           },
+          "matched": {
+            "type": "number",
+            "format": "double",
+            "description": "Share of the copy's words found, 0 to 1: a word in parentheses or in a repeat counts only\nwhen found and a `[...]` label never, so a copy with nothing left to find is 1."
+          },
           "repeat": {
             "type": "integer",
             "format": "int32",

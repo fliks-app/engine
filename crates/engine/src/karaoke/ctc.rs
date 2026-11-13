@@ -573,4 +573,128 @@ mod tests {
         assert_eq!(em.frames(), 5);
         assert_eq!(net.calls, [MIN_SAMPLES]);
     }
+
+    /// A WAV of 16 kHz mono 16-bit samples as floats.
+    #[cfg(feature = "karaoke")]
+    fn read_wav(path: &Path) -> Vec<f32> {
+        let b = std::fs::read(path).unwrap();
+        let mut at = 12;
+        while &b[at..at + 4] != b"data" {
+            at += 8 + u32::from_le_bytes(b[at + 4..at + 8].try_into().unwrap()) as usize;
+        }
+        let n = u32::from_le_bytes(b[at + 4..at + 8].try_into().unwrap()) as usize;
+        let (samples, _) = b[at + 8..at + 8 + n].as_chunks::<2>();
+        samples
+            .iter()
+            .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
+            .collect()
+    }
+
+    /// The whole pipeline on the real tracks of `FLIKS_CTC_TRUTH` (`<id>.json` with `lang` and
+    /// `lines[{start, text}]`, `<id>.wav` the vocal stem, also in its `library-eval/`) with the
+    /// models of `FLIKS_CTC_MODELS`; `thresholds.json` there (`{id: {minMatched, maxLongWords,
+    /// maxSilentStarts, maxWall}}`, wall as a multiple of the audio) is what each must meet.
+    #[cfg(feature = "karaoke")]
+    #[test]
+    #[ignore = "needs FLIKS_CTC_TRUTH, FLIKS_CTC_MODELS and an ONNX Runtime (ORT_DYLIB_PATH)"]
+    fn real_tracks_meet_their_thresholds() {
+        use std::time::Instant;
+        let dir = std::path::PathBuf::from(std::env::var("FLIKS_CTC_TRUTH").unwrap());
+        let models = std::path::PathBuf::from(std::env::var("FLIKS_CTC_MODELS").unwrap());
+        let limits: serde_json::Value = std::fs::read(dir.join("thresholds.json"))
+            .map(|b| serde_json::from_slice(&b).unwrap())
+            .unwrap_or_default();
+        let backend = crate::karaoke::onnx::default_backend(&models);
+        let mut tracks: Vec<_> = [dir.clone(), dir.join("library-eval")]
+            .iter()
+            .filter_map(|d| std::fs::read_dir(d).ok())
+            .flatten()
+            .filter_map(|e| e.ok()?.path().file_stem().map(|s| s.to_owned()))
+            .map(|id| id.to_string_lossy().into_owned())
+            .filter(|id| !id.contains('.'))
+            .collect();
+        tracks.sort();
+        tracks.dedup();
+        let mut failures = vec![];
+        for id in tracks {
+            let Some(base) = [dir.clone(), dir.join("library-eval")]
+                .into_iter()
+                .find(|d| {
+                    d.join(format!("{id}.wav")).exists() && d.join(format!("{id}.json")).exists()
+                })
+            else {
+                continue;
+            };
+            let doc: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(base.join(format!("{id}.json"))).unwrap())
+                    .unwrap();
+            let rows: Vec<_> = doc["lines"].as_array().unwrap().iter().collect();
+            let start = |i: usize| rows[i]["start"].as_u64().unwrap() as u32;
+            let lines: Vec<AlignLine> = (0..rows.len())
+                .filter(|i| !rows[*i]["text"].as_str().unwrap().trim().is_empty())
+                .map(|i| AlignLine {
+                    text: rows[i]["text"].as_str().unwrap().to_owned(),
+                    start_ms: Some(start(i)),
+                    end_ms: Some(rows.get(i + 1).map_or(start(i) + 4000, |_| start(i + 1))),
+                })
+                .collect();
+            let lang = doc["lang"].as_str().unwrap();
+            let (model, case) = match lang {
+                "fr" => ("wav2vec2-ctc-fr", Case::Lower),
+                "en" => ("wav2vec2-ctc-en", Case::Upper),
+                _ => ("omniasr-ctc-300m", Case::Lower),
+            };
+            let export = read_export(&models.join(model).join("vocab.json"), case).unwrap();
+            let file = models.join(model).join("model.onnx");
+            let mut loaded = load(&*backend, &file, &[], &export).unwrap();
+            let pcm = read_wav(&base.join(format!("{id}.wav")));
+            let stop = AtomicBool::new(false);
+            let t0 = Instant::now();
+            let em =
+                emissions(&mut *loaded.net, &pcm, &lines, lang, &export, &stop, &|| ()).unwrap();
+            let t1 = Instant::now();
+            let silent = silent_frames(&pcm);
+            let (out, matched) = align(&lines, &export.vocab, lang, &silent, &em).unwrap();
+            let (net, vit) = (t1 - t0, t1.elapsed());
+            let words: Vec<_> = out.iter().flat_map(|l| &l.words).collect();
+            let long = words
+                .iter()
+                .filter(|w| w.end_ms - w.start_ms > 3000)
+                .count();
+            let quiet = words
+                .iter()
+                .filter(|w| silent.get((w.start_ms / FRAME_MS) as usize) == Some(&true))
+                .count() as f64
+                / words.len().max(1) as f64;
+            let audio = pcm.len() as f64 / SAMPLE_RATE as f64;
+            let wall = (net + vit).as_secs_f64() / audio;
+            eprintln!(
+                "{id}: matched {matched:.3} long {long} silent starts {quiet:.3} network {:.3}x align {:.4}x",
+                net.as_secs_f64() / audio,
+                vit.as_secs_f64() / audio
+            );
+            let limit = &limits[id.as_str()];
+            let want = |k: &str| limit[k].as_f64();
+            for (what, ok) in [
+                (
+                    "minMatched",
+                    want("minMatched").is_none_or(|m| matched >= m),
+                ),
+                (
+                    "maxLongWords",
+                    want("maxLongWords").is_none_or(|m| long as f64 <= m),
+                ),
+                (
+                    "maxSilentStarts",
+                    want("maxSilentStarts").is_none_or(|m| quiet <= m),
+                ),
+                ("maxWall", want("maxWall").is_none_or(|m| wall <= m)),
+            ] {
+                if !ok {
+                    failures.push(format!("{id}: {what}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{failures:?}");
+    }
 }
