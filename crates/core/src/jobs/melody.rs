@@ -68,6 +68,8 @@ const STEP_FRAMES: usize = 4;
 const MERGE: f64 = 0.75;
 const MERGE_GAP: usize = 10;
 const MAX_SPANS: usize = 100_000;
+/// Longest a note held at a span's end is followed past it (the alignment's own hold cap).
+const HOLD_MS: u32 = 4000;
 
 pub fn validate(kind: &JobKind) -> Result<(), String> {
     let JobKind::Melody { spans, .. } = kind else {
@@ -342,8 +344,16 @@ fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
 
 /// Notes of one span: cut where the pitch moves a semitone for four frames or the voice stops for
 /// more than 128 ms; a note under 96 ms lengthens its neighbour or is dropped, then equal ones merge.
-fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
+fn notes(clean: &[Option<f64>], span: MelodySpan, until_ms: u32) -> Vec<MelodyNote> {
     let (first, end) = frame_range(span, clean.len());
+    let hold = frame_range(
+        MelodySpan {
+            start_ms: span.start_ms,
+            end_ms: until_ms,
+        },
+        clean.len(),
+    )
+    .1;
     let mut closed: Vec<Open> = vec![];
     let (mut cur, mut pending, mut gap): (Option<Open>, Vec<(usize, f64)>, usize) =
         (None, vec![], 0);
@@ -391,19 +401,22 @@ fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
             continue;
         }
         let (first, last) = (closed[k].first, closed[k].last);
-        if let Some(p) = closed[..k]
+        let own = median(&closed[k].vals);
+        let p = closed[..k]
             .iter()
             .rposition(long)
-            .filter(|&p| first <= closed[p].last + MAX_GAP + 1)
-        {
-            closed[p].last = closed[p].last.max(last);
-        } else if let Some(n) = closed[k + 1..]
+            .filter(|&p| first <= closed[p].last + MAX_GAP + 1);
+        let n = closed[k + 1..]
             .iter()
             .position(long)
             .map(|n| n + k + 1)
-            .filter(|&n| closed[n].first <= last + MAX_GAP + 1)
-        {
-            closed[n].first = closed[n].first.min(first);
+            .filter(|&n| closed[n].first <= last + MAX_GAP + 1);
+        let dist = |j: usize| (median(&closed[j].vals) - own).abs();
+        match (p, n) {
+            (Some(p), Some(n)) if dist(n) < dist(p) => closed[n].first = closed[n].first.min(first),
+            (Some(p), _) => closed[p].last = closed[p].last.max(last),
+            (None, Some(n)) => closed[n].first = closed[n].first.min(first),
+            _ => {}
         }
     }
     let kept = closed.into_iter().filter(long);
@@ -420,11 +433,25 @@ fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
             _ => merged.push(o),
         }
     }
+    if let Some(o) = merged.last_mut().filter(|o| o.last + MAX_GAP >= end) {
+        let pitch = median(&o.vals);
+        let mut off = 0;
+        for (k, v) in clean.iter().enumerate().take(hold).skip(end) {
+            if v.is_some_and(|v| (v - pitch).abs() <= SPLIT) {
+                (o.last, off) = (k, 0);
+            } else {
+                off += 1;
+                if off > MAX_GAP {
+                    break;
+                }
+            }
+        }
+    }
     merged
         .into_iter()
         .map(|o| MelodyNote {
             start_ms: ((o.first as f64 * FRAME_MS).round() as u32).max(span.start_ms),
-            end_ms: (((o.last + 1) as f64 * FRAME_MS).round() as u32).min(span.end_ms),
+            end_ms: (((o.last + 1) as f64 * FRAME_MS).round() as u32).min(until_ms),
             midi: (median(&o.vals) * 100.0).round() / 100.0,
         })
         .collect()
@@ -432,7 +459,20 @@ fn notes(clean: &[Option<f64>], span: MelodySpan) -> Vec<MelodyNote> {
 
 pub fn spans_notes(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Vec<MelodyNote>> {
     let clean = cleaned(track, spans);
-    spans.iter().map(|s| notes(&clean, *s)).collect()
+    spans
+        .iter()
+        .map(|s| {
+            let next = spans
+                .iter()
+                .map(|o| o.start_ms)
+                .filter(|&t| t >= s.end_ms)
+                .min();
+            let until = next
+                .unwrap_or(u32::MAX)
+                .min(s.end_ms.saturating_add(HOLD_MS));
+            notes(&clean, *s, until)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -476,6 +516,30 @@ mod tests {
         assert_eq!((n[0].midi, n[1].midi), (57.0, 64.0));
         assert_eq!((n[0].start_ms, n[0].end_ms), (0, 480));
         assert_eq!((n[1].start_ms, n[1].end_ms), (640, 1120));
+    }
+
+    #[test]
+    fn a_note_held_past_the_span_end_follows_the_voice_to_the_next_span() {
+        let t = track(&[(30, 220.0), (30, 220.0), (10, 0.0), (30, 330.0)]);
+        let n = one(&t, span(0, 480));
+        assert_eq!((n.len(), n[0].end_ms), (1, 960));
+        let n = spans_notes(&t, &[span(0, 480), span(800, 1000)]).remove(0);
+        assert_eq!(n[0].end_ms, 800);
+    }
+
+    #[test]
+    fn a_held_note_stops_where_the_pitch_changes() {
+        let t = track(&[(30, 220.0), (10, 220.0), (30, 330.0)]);
+        let n = one(&t, span(0, 480));
+        assert_eq!((n.len(), n[0].end_ms), (1, 640));
+    }
+
+    #[test]
+    fn a_scoop_joins_the_next_note_not_the_previous_tail() {
+        let t = track(&[(30, 220.0), (3, 246.94), (30, 261.6256)]);
+        let n = one(&t, span(0, 1000));
+        assert_eq!(n.len(), 2);
+        assert_eq!((n[0].end_ms, n[1].start_ms), (480, 480));
     }
 
     #[test]
@@ -678,7 +742,7 @@ mod tests {
         assert_eq!(all[0].len(), 1);
         assert_eq!(all[0][0].midi, 64.0);
         assert!(all[1].is_empty());
-        assert_eq!(all[2][0].end_ms, 250);
+        assert_eq!(all[2][0].end_ms, 480);
     }
 
     #[test]
