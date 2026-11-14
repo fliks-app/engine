@@ -28,14 +28,27 @@ const HARMONICS: u32 = 8;
 const HARMONIC_FIT: f64 = 0.5;
 /// Frames on each side (4 s) of the sung frames whose median is the register.
 const REGISTER_REACH: usize = 250;
-/// Frames on each side (640 ms) whose median a frame an octave away is folded back to.
-const OCTAVE_REACH: usize = 40;
-/// Semitones from that median within which an octave-shifted frame counts as an octave error.
-const OCTAVE_FIT: f64 = 2.0;
-/// An octave-shifted run of more voiced frames than this (192 ms) is a sung leap, not a tracker error.
-const OCTAVE_RUN: usize = 12;
-/// Semitones a run's entry or exit step may sit from a whole octave to count as an octave error.
-const OCTAVE_STEP: f64 = 0.75;
+/// Semitones a step between two sung runs may span before it costs: a sung leap.
+const LEAP: f64 = 5.0;
+/// A step of at least this many semitones, or a gap over `MAX_GAP`, cuts a run for the octave pass.
+const RUN_BREAK: f64 = 9.0;
+/// Cost per voiced frame of moving a run an octave (a run of 14 frames weighs a 12 st leap).
+const SHIFT_COST: f64 = 1.0;
+/// Cost per frame and per semitone a run sits further than `FREE_REGISTER` from the local register.
+const PULL: f64 = 1.0;
+const FREE_REGISTER: f64 = 3.0;
+/// Time (ms) over which a step across a gap stops counting.
+const GAP_DECAY_MS: f64 = 600.0;
+/// Octave-like steps within `REGISTER_REACH` frames that make a leap cost double, up to `HOP_MAX` times:
+/// a singer seldom leaps an octave often, a tracker flipping between two voices does.
+const HOP_STEP: usize = 2;
+/// Semitones from which a step between runs counts as an octave-like hop.
+const HOP_SEMITONES: f64 = 10.0;
+const HOP_MAX: f64 = 4.0;
+/// Extra cost per semitone a state change's step sits off a whole octave beyond `OCTAVE_STEP`.
+const OFF_OCTAVE: f64 = 6.0;
+/// Semitones a run's entry or exit step may sit from a whole octave at no extra cost.
+const OCTAVE_STEP: f64 = 0.5;
 /// Frames on each side of the smoothing median: two irons out vibrato.
 const SMOOTH: usize = 2;
 /// A note is dropped under this many voiced frames (96 ms).
@@ -150,6 +163,120 @@ fn near(v: &[Option<f64>], i: usize, reach: usize) -> Option<f64> {
     (!w.is_empty()).then(|| median(&w))
 }
 
+/// A stretch of voiced frames with no big step or long gap inside, which moves an octave as one.
+struct Run {
+    first: usize,
+    last: usize,
+    frames: usize,
+    median: f64,
+    head: f64,
+    tail: f64,
+}
+
+/// `raw` with each run moved by the octave (-1, 0 or 1) the cheapest path over the runs picks: a step
+/// costs what it exceeds `LEAP` by, less across a gap, a move costs per frame, and a run is pulled
+/// toward the register nearby.
+fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
+    let voiced: Vec<usize> = (0..raw.len()).filter(|&i| raw[i].is_some()).collect();
+    let at = |f: usize| raw[f].unwrap_or(0.0);
+    let mut runs: Vec<Run> = vec![];
+    let mut p = 0;
+    while p < voiced.len() {
+        let mut q = p + 1;
+        while q < voiced.len()
+            && voiced[q] - voiced[q - 1] - 1 <= MAX_GAP
+            && (at(voiced[q]) - at(voiced[q - 1])).abs() < RUN_BREAK
+        {
+            q += 1;
+        }
+        let vals: Vec<f64> = voiced[p..q].iter().map(|&f| at(f)).collect();
+        runs.push(Run {
+            first: voiced[p],
+            last: voiced[q - 1],
+            frames: q - p,
+            median: median(&vals),
+            head: vals[0],
+            tail: vals[vals.len() - 1],
+        });
+        p = q;
+    }
+    if runs.len() < 2 {
+        return raw.to_vec();
+    }
+    let octave_steps: Vec<usize> = runs
+        .windows(2)
+        .map(|w| usize::from((w[1].head - w[0].tail).abs() >= HOP_SEMITONES))
+        .collect();
+    let crowd: Vec<f64> = (0..runs.len())
+        .map(|t| {
+            let (lo, hi) = (
+                runs[t].first.saturating_sub(REGISTER_REACH),
+                runs[t].last + REGISTER_REACH,
+            );
+            let hops = (1..runs.len())
+                .filter(|&u| octave_steps[u - 1] == 1 && runs[u].first >= lo && runs[u].first <= hi)
+                .count();
+            (hops as f64 / HOP_STEP as f64).clamp(1.0, HOP_MAX)
+        })
+        .collect();
+    let pull: Vec<[f64; 3]> = runs
+        .iter()
+        .enumerate()
+        .map(|(t, r)| {
+            let mid = (r.first + r.last) / 2;
+            let reg = near(raw, mid, REGISTER_REACH).unwrap_or(r.median);
+            [-12.0, 0.0, 12.0].map(|s| {
+                let excess = (r.median + s - reg).abs() - FREE_REGISTER;
+                r.frames as f64
+                    * (PULL * (crowd[t] - 1.0) * excess.max(0.0)
+                        + if s == 0.0 { 0.0 } else { SHIFT_COST })
+            })
+        })
+        .collect();
+    let step = |t: usize, from: usize, to: usize| -> f64 {
+        let (a, b) = (&runs[t - 1], &runs[t]);
+        let (sa, sb) = ([-12.0, 0.0, 12.0][from], [-12.0, 0.0, 12.0][to]);
+        let gap_ms = (b.first - a.last - 1) as f64 * FRAME_MS;
+        let d = ((b.head + sb) - (a.tail + sa)).abs();
+        let raw_step = (b.head - a.tail).abs();
+        let off = (raw_step - 12.0 * (raw_step / 12.0).round()).abs();
+        let moved = if from == to {
+            0.0
+        } else {
+            OFF_OCTAVE * (off - OCTAVE_STEP).max(0.0)
+        };
+        (d - LEAP).max(0.0) * (-gap_ms / GAP_DECAY_MS).exp() * crowd[t] + moved
+    };
+    let mut cost = pull[0];
+    let mut back: Vec<[usize; 3]> = vec![[0; 3]];
+    for t in 1..runs.len() {
+        let mut next = [0.0; 3];
+        let mut from = [0; 3];
+        for to in 0..3 {
+            let (best, arg) = (0..3)
+                .map(|f| (cost[f] + step(t, f, to), f))
+                .min_by(|x, y| x.0.total_cmp(&y.0))
+                .unwrap_or((0.0, 1));
+            next[to] = best + pull[t][to];
+            from[to] = arg;
+        }
+        cost = next;
+        back.push(from);
+    }
+    let mut state = (0..3)
+        .min_by(|&x, &y| cost[x].total_cmp(&cost[y]))
+        .unwrap_or(1);
+    let mut out = raw.to_vec();
+    for t in (0..runs.len()).rev() {
+        let shift = [-12.0, 0.0, 12.0][state];
+        for v in out[runs[t].first..=runs[t].last].iter_mut().flatten() {
+            *v += shift;
+        }
+        state = back[t][state];
+    }
+    out
+}
+
 /// The MIDI pitch of every frame, `None` when unvoiced: frames out of the singer's register (the
 /// median of the spans' voiced frames nearby) dropped unless a harmonic of the voice, short octave
 /// errors folded back, then smoothed.
@@ -183,46 +310,7 @@ fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
             .map(|k| x - 12.0 * f64::from(k).log2())
             .find(|y| (y - voice).abs() <= HARMONIC_FIT);
     }
-    let shift: Vec<f64> = (0..n)
-        .map(|i| {
-            let (Some(x), Some(r)) = (raw[i], near(&raw, i, OCTAVE_REACH)) else {
-                return 0.0;
-            };
-            let k = ((x - r) / 12.0).round();
-            if k != 0.0 && (x - 12.0 * k - r).abs() <= OCTAVE_FIT {
-                k
-            } else {
-                0.0
-            }
-        })
-        .collect();
-    let mut folded = raw.clone();
-    let voiced: Vec<usize> = (0..n).filter(|&i| raw[i].is_some()).collect();
-    let near_gap = |a: usize, b: usize| voiced[b] - voiced[a] - 1 <= MAX_GAP;
-    let is_octave = |a: usize, b: usize| {
-        let d = (raw[voiced[a]].unwrap_or(0.0) - raw[voiced[b]].unwrap_or(0.0)).abs();
-        d >= 12.0 - OCTAVE_STEP && (d - 12.0 * (d / 12.0).round()).abs() <= OCTAVE_STEP
-    };
-    let mut p = 0;
-    while p < voiced.len() {
-        let k = shift[voiced[p]];
-        let mut q = p + 1;
-        while q < voiced.len() && shift[voiced[q]] == k && near_gap(q - 1, q) {
-            q += 1;
-        }
-        let before = p > 0 && near_gap(p - 1, p);
-        let after = q < voiced.len() && near_gap(q - 1, q);
-        if k != 0.0
-            && q - p <= OCTAVE_RUN
-            && (!before || is_octave(p - 1, p))
-            && (!after || is_octave(q - 1, q))
-        {
-            for &f in &voiced[p..q] {
-                folded[f] = raw[f].map(|x| x - 12.0 * k);
-            }
-        }
-        p = q;
-    }
+    let folded = fold_octaves(&raw);
     (0..n)
         .map(|i| {
             folded[i]?;
@@ -416,6 +504,15 @@ mod tests {
         assert_eq!(mids(&up), [57.0, 69.0, 57.0]);
         let short = [(20, 220.0), (5, 440.0), (2, 0.0), (4, 440.0), (20, 220.0)];
         assert_eq!(mids(&short), [57.0]);
+    }
+
+    #[test]
+    fn alternating_runs_an_octave_apart_come_out_as_one_register() {
+        let hops: Vec<(usize, f32)> = (0..8)
+            .map(|i| (20, if i % 2 == 0 { 220.0 } else { 440.0 }))
+            .collect();
+        let m = mids(&hops);
+        assert!(m.iter().all(|&x| (x - m[0]).abs() < 1.0), "{m:?}");
     }
 
     #[test]
