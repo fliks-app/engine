@@ -26,6 +26,7 @@
 
 ## Deviations
 
+- sprite: one decoding pass per file (`jobs.md` section 5) instead of one ffmpeg per tile; per-frame seeks stay as its fallback. On a 43 min AV1 1080p episode (519 tiles, a keyframe every ~10 s), the per-frame runs (VAAPI, 7 workers) took 635 s wall and 231 s CPU, with half the CPU in the kernel from ~520 process and device starts; the full-decode pass took 338 s and 43 s CPU, the keyframes-only pass 3.5 s. The per-frame `-noaccurate_seek` frame is near the mark, the pass's frame is the one on screen at it (closer to an accurate seek). New setting `streaming.spriteDecode` (`auto`, `keyframes`, `full`).
 - throttle: a running run with no viewer is paused (the TS left it running); a run the session no longer plays must not encode ahead during its grace window. `Early` runs and already-paused runs are unchanged.
 - decide: the TS throws `No audio encoder for group codec` when a track must re-encode into a group codec that cannot be encoded. That state is unreachable (only an all-copy group settles on such a codec), so the port falls back to AAC instead of failing.
 - decide: no vector is skipped, so the test allowlist `SKIPPED` is empty; the fuzz exclusion list `EXCLUDED` is empty too.

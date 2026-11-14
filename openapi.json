@@ -2291,6 +2291,7 @@
               "gpuRenderNode": "auto",
               "qsvPreset": "faster",
               "segmentDuration": 3.0,
+              "spriteDecode": "auto",
               "subtitlePrewarm": "playback",
               "throttleEnabled": true,
               "throttleThresholdSeconds": 90.0,
@@ -7471,6 +7472,15 @@
           }
         }
       },
+      "SpriteDecode": {
+        "type": "string",
+        "description": "How the sprite job decodes its single pass: `auto` keeps keyframes alone when the file's\nfirst seconds show at least one per tile interval, else decodes every frame.",
+        "enum": [
+          "auto",
+          "keyframes",
+          "full"
+        ]
+      },
       "SpriteMeta": {
         "type": "object",
         "description": "`sprite.json`: tile `i` covers `[i * interval, (i + 1) * interval)` seconds of content.",
@@ -7696,6 +7706,11 @@
             "type": "number",
             "format": "double",
             "default": 3.0
+          },
+          "spriteDecode": {
+            "$ref": "#/components/schemas/SpriteDecode",
+            "description": "Absent: `auto`.",
+            "default": "auto"
           },
           "subtitlePrewarm": {
             "$ref": "#/components/schemas/SubtitlePrewarm",

@@ -62,8 +62,77 @@ fn talk() -> ! {
     }
 }
 
-/// A frame (240x135) or tile (10 x rows of them) run: a JPEG header at the output path.
+/// A JPEG that is only a start-of-frame header of `w` x `h`.
+fn jpeg_header(w: u16, h: u16) -> Vec<u8> {
+    let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08];
+    jpg.extend(h.to_be_bytes());
+    jpg.extend(w.to_be_bytes());
+    jpg.extend([0x03; 10]);
+    jpg.extend([0xFF, 0xD9]);
+    jpg
+}
+
+/// The sprite's single pass: logs `keyframes` or `full` to `<input>.pass`, then writes the
+/// `-frames:v` frames of the pattern with `-progress` lines. `hangsprite` hangs, `failsprite` and
+/// `passfailsprite` fail (the job falls back to frame runs), `flakysprite` skips every 4th frame.
+fn sprite_pass(mode: &str, args: &[String]) {
+    let after = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let decode = if args.iter().any(|a| a == "nokey") {
+        "keyframes"
+    } else {
+        "full"
+    };
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(format!("{}.pass", after("-i")))
+        .unwrap();
+    let _ = writeln!(log, "{decode}");
+    match mode {
+        "hangsprite" => {
+            println!("out_time_us=0");
+            let _ = std::io::stdout().flush();
+            hang()
+        }
+        "failsprite" | "passfailsprite" => std::process::exit(1),
+        _ => {}
+    }
+    let count: u32 = after("-frames:v").parse().unwrap();
+    let interval: u64 = args
+        .iter()
+        .find_map(|a| a.split("fps=1/").nth(1))
+        .and_then(|s| s.split(':').next()?.parse().ok())
+        .unwrap();
+    let pattern = args.last().unwrap();
+    for i in 1..=count {
+        if mode == "flakysprite" && i.is_multiple_of(4) {
+            continue;
+        }
+        put(
+            Path::new(&pattern.replace("%04d", &format!("{i:04}"))),
+            jpeg_header(240, 135),
+        );
+        if i.is_multiple_of(10) {
+            println!("out_time_us={}", u64::from(i - 1) * interval * 1_000_000);
+            let _ = std::io::stdout().flush();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    println!("progress=end");
+}
+
+/// A frame (240x135) or tile (10 x rows of them) run: a JPEG header at the output path. The
+/// keyframe probe sees a keyframe every 2 s; the single pass is `sprite_pass`.
 fn sprite(mode: &str, args: &[String]) {
+    if args.iter().any(|a| a == "packet=pts_time,flags") {
+        for i in 0..=45 {
+            println!("{}.000000,K__", i * 2);
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "-progress") {
+        return sprite_pass(mode, args);
+    }
     let rows = args
         .iter()
         .find_map(|a| a.strip_prefix("tile=10x"))
@@ -100,12 +169,7 @@ fn sprite(mode: &str, args: &[String]) {
         _ => std::thread::sleep(Duration::from_millis(50)),
     }
     let (w, h) = rows.map_or((240u16, 135u16), |r| (2400, 135 * r));
-    let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08];
-    jpg.extend(h.to_be_bytes());
-    jpg.extend(w.to_be_bytes());
-    jpg.extend([0x03; 10]);
-    jpg.extend([0xFF, 0xD9]);
-    put(Path::new(args.last().unwrap()), jpg);
+    put(Path::new(args.last().unwrap()), jpeg_header(w, h));
 }
 
 const ASS: &str = include_str!("../../../../fixtures/jobs/subtitles/served.ass");
@@ -510,7 +574,9 @@ fn main() {
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("merge" | "failmerge" | "hangmerge") => merge(m, &args),
-        m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
+        m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite" | "passfailsprite") => {
+            sprite(m, &args)
+        }
         m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
         | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),
         "sync" => {

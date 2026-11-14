@@ -143,6 +143,11 @@ async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
         .map(|d| d.unwrap().file_name())
         .collect();
     assert_eq!(left.len(), 2, "frames removed: {left:?}");
+    assert_eq!(
+        std::fs::read_to_string(pass_log(&file)).unwrap(),
+        "keyframes\n",
+        "one pass; `auto` saw a keyframe every interval"
+    );
     // Already generated: answered from sprite.json without a run.
     let again = submit(&e, 7, &file, false).await;
     assert_ne!(again, id);
@@ -343,6 +348,37 @@ async fn failed_frames_are_backfilled_and_the_sprite_still_tiles() {
     let v = done_json(&ev);
     assert_eq!(v["state"], "done", "{v}");
     assert_eq!(v["result"]["sprite"]["count"], 60);
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
+/// What the fake's single passes decoded, one line each (`keyframes` or `full`).
+fn pass_log(file: &std::path::Path) -> PathBuf {
+    PathBuf::from(format!("{}.pass", file.display()))
+}
+
+#[tokio::test]
+async fn sprite_decode_full_skips_the_keyframe_shortcut() {
+    let (e, file) = engine_of("sprite", json!({ "spriteDecode": "full" })).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit(&e, 7, &file, false).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    assert_eq!(done_json(&ev)["state"], "done");
+    assert_eq!(std::fs::read_to_string(pass_log(&file)).unwrap(), "full\n");
+}
+
+#[tokio::test]
+async fn a_failed_pass_falls_back_to_frame_runs() {
+    let (e, file) = engine_of("passfailsprite", json!({ "ffmpegSlots": 3 })).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit(&e, 7, &file, false).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    let v = done_json(&ev);
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["sprite"]["count"], 60);
+    assert_eq!(
+        std::fs::read_to_string(pass_log(&file)).unwrap(),
+        "keyframes\n"
+    );
     assert!(e.ffmpeg_pids().is_empty());
 }
 
