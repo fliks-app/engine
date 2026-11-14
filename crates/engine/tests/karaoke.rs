@@ -1,6 +1,5 @@
-//! The model manager and the `Separate`, `Align` and `Melody` jobs: a local file server for the
-//! downloads, and a fake network backend (splitting by frequency, a zero-crossing pitch) on the
-//! real ffmpeg for the jobs. Tests that need ffmpeg skip without it.
+//! The model manager and the `Separate`, `Align` and `Melody` jobs: a local file server and a fake
+//! network backend on the real ffmpeg. Tests that need ffmpeg skip without it.
 mod runtime_common;
 use axum::{
     Router,
@@ -11,6 +10,7 @@ use axum::{
 use fliks_engine::karaoke::models::{Entry, FileEntry, Manager};
 use fliks_engine::karaoke::{Backend, BackendInfo, Loaded, Net, Tensor, Tools, Warm};
 use fliks_engine_core::api::{EngineEvent, HwAccel, ModelKind};
+use fliks_engine_core::jobs::ctc::Case;
 use runtime_common::*;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -51,6 +51,9 @@ fn entry(id: &'static str, kind: ModelKind, default: bool, files: Vec<FileEntry>
         licence_text: "MIT text".into(),
         clear: true,
         default,
+        homepage: "https://models.test/card",
+        languages: &[],
+        ctc: None,
         files,
     }
 }
@@ -138,6 +141,8 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
     let list = e.control("GET", "/v1/models", None).await.json();
     assert_eq!(list["modelsDir"], dir.to_string_lossy().as_ref());
     assert_eq!(list["runtime"]["onnx"], false);
+    assert_eq!(list["orphans"], json!([]));
+    assert!(list["usedBytes"].is_number());
     assert!(
         list["models"]
             .as_array()
@@ -182,7 +187,8 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
         );
         let m = settle(&e, id, "failed").await;
         assert!(m["error"].as_str().unwrap().contains(why), "{m}");
-        let left: Vec<_> = std::fs::read_dir(dir.join(id)).unwrap().flatten().collect();
+        let stage = dir.join(format!(".{id}.new"));
+        let left: Vec<_> = std::fs::read_dir(stage).unwrap().flatten().collect();
         assert!(left.is_empty(), "no partial file is kept: {left:?}");
     }
 
@@ -202,6 +208,198 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
             .status,
         404
     );
+}
+
+/// A manager of one melody model `good` (two files of `PLAIN`) and the file server behind it.
+async fn good_manager(e: &Engine, tag: &str) -> PathBuf {
+    let base = server().await;
+    let dir = e.root.join(format!("models-{tag}"));
+    e.rt.karaoke.replace(
+        Manager::new(
+            dir.clone(),
+            vec![entry(
+                "good",
+                ModelKind::Melody,
+                true,
+                vec![
+                    file("a.bin", format!("{base}/ok"), PLAIN),
+                    file("b.bin", format!("{base}/ok"), PLAIN),
+                ],
+            )],
+            e.rt.events.clone(),
+        ),
+        Arc::new(NoOnnx),
+    );
+    dir
+}
+
+#[tokio::test]
+async fn a_verify_that_finds_a_changed_file_fails_and_a_download_repairs_it() {
+    let e = engine().await;
+    let dir = good_manager(&e, "verify").await;
+    e.control("POST", "/v1/models/good/download", None).await;
+    let m = settle(&e, "good", "installed").await;
+    assert_eq!(m["installedVersion"], "7");
+    assert!(m["diskBytes"].as_f64().unwrap() > 0.0);
+
+    for _ in 0..30 {
+        let r = e.control("POST", "/v1/models/good/verify", None).await;
+        assert_eq!(
+            r.status, 202,
+            "a verify that ends at once is still accepted"
+        );
+        settle(&e, "good", "installed").await;
+    }
+
+    std::fs::write(dir.join("good/a.bin"), vec![b'x'; PLAIN.len()]).unwrap();
+    e.control("POST", "/v1/models/good/verify", None).await;
+    let m = settle(&e, "good", "failed").await;
+    assert!(m["error"].as_str().unwrap().contains("a.bin"), "{m}");
+    let models = e.rt.karaoke.models();
+    let err = models.pick(None, ModelKind::Melody).err().unwrap();
+    assert!(err.contains("failed its verification"), "{err}");
+
+    e.control("POST", "/v1/models/good/download", None).await;
+    settle(&e, "good", "installed").await;
+    assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
+    assert!(
+        models.pick(None, ModelKind::Melody).is_ok(),
+        "the repair clears it"
+    );
+    assert_eq!(
+        e.control("POST", "/v1/models/nope/verify", None)
+            .await
+            .status,
+        404
+    );
+}
+
+#[tokio::test]
+async fn a_verify_of_an_absent_model_is_refused() {
+    let e = engine().await;
+    good_manager(&e, "verify-absent").await;
+    assert_eq!(
+        e.control("POST", "/v1/models/good/verify", None)
+            .await
+            .status,
+        409
+    );
+}
+
+/// Leaves `good` installed at version 6, with files that are not the manifest's.
+fn install_old_version(dir: &Path) {
+    std::fs::create_dir_all(dir.join("good")).unwrap();
+    let old = b"old";
+    for n in ["a.bin", "b.bin"] {
+        std::fs::write(dir.join("good").join(n), old).unwrap();
+    }
+    let files: Vec<_> = ["a.bin", "b.bin"]
+        .iter()
+        .map(|n| json!({"name": n, "sha256": sha(old), "size": old.len()}))
+        .collect();
+    let rec = json!({"version": "6", "files": files});
+    std::fs::write(dir.join("good/.installed.json"), rec.to_string()).unwrap();
+}
+
+#[tokio::test]
+async fn an_outdated_model_is_replaced_once_the_new_files_are_verified() {
+    let e = engine().await;
+    let dir = good_manager(&e, "outdated").await;
+    install_old_version(&dir);
+    let m = settle(&e, "good", "installed").await;
+    assert_eq!(
+        (&m["installedVersion"], &m["outdated"]),
+        (&json!("6"), &json!(true))
+    );
+    assert_eq!(
+        e.rt.karaoke
+            .models()
+            .pick(None, ModelKind::Melody)
+            .unwrap()
+            .version,
+        "6",
+        "the old files keep running"
+    );
+
+    let r = e.control("POST", "/v1/models/good/download", None).await;
+    assert_eq!(r.status, 202);
+    let mut m = Value::Null;
+    for _ in 0..100 {
+        let list = e.control("GET", "/v1/models", None).await.json();
+        m = list["models"][0].clone();
+        if m["outdated"] == false && m["state"] == "installed" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        (&m["state"], &m["installedVersion"]),
+        (&json!("installed"), &json!("7"))
+    );
+    assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), PLAIN);
+    assert!(!dir.join(".good.new").exists() && !dir.join(".good.old").exists());
+}
+
+#[tokio::test]
+async fn a_failed_update_leaves_the_installed_version_working() {
+    let e = engine().await;
+    let base = server().await;
+    let dir = e.root.join("models-failed-update");
+    let bad = FileEntry {
+        sha256: Box::leak(sha(b"something else").into_boxed_str()),
+        ..file("a.bin", format!("{base}/ok"), PLAIN)
+    };
+    e.rt.karaoke.replace(
+        Manager::new(
+            dir.clone(),
+            vec![entry("good", ModelKind::Melody, true, vec![bad])],
+            e.rt.events.clone(),
+        ),
+        Arc::new(NoOnnx),
+    );
+    install_old_version(&dir);
+    e.control("POST", "/v1/models/good/download", None).await;
+    for _ in 0..100 {
+        let m = e.control("GET", "/v1/models", None).await.json();
+        if m["models"][0]["error"].is_string() {
+            assert_eq!(m["models"][0]["state"], "installed");
+            assert_eq!(m["models"][0]["outdated"], true);
+            assert_eq!(std::fs::read(dir.join("good/a.bin")).unwrap(), b"old");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the update never failed");
+}
+
+#[tokio::test]
+async fn orphan_directories_are_listed_and_removed() {
+    let e = engine().await;
+    let dir = good_manager(&e, "orphans").await;
+    std::fs::create_dir_all(dir.join("stray")).unwrap();
+    std::fs::write(dir.join("stray/x.bin"), b"12345").unwrap();
+    std::fs::create_dir_all(dir.join(".cache")).unwrap();
+    std::fs::write(dir.join("loose-file"), b"1").unwrap();
+    std::fs::create_dir_all(dir.join("media")).unwrap();
+    std::fs::write(dir.join("media/film.mkv"), b"1").unwrap();
+
+    let list = e.control("GET", "/v1/models", None).await.json();
+    assert_eq!(
+        list["orphans"],
+        json!([{"name": "stray", "sizeBytes": 5.0}])
+    );
+    assert!(list["usedBytes"].as_f64().unwrap() >= 6.0);
+
+    for name in [".cache", "good", "loose-file", "media"] {
+        let r = e
+            .control("DELETE", &format!("/v1/models/orphans/{name}"), None)
+            .await;
+        assert_eq!(r.status, 404, "{name}");
+    }
+    let r = e.control("DELETE", "/v1/models/orphans/stray", None).await;
+    assert_eq!(r.status, 204);
+    assert!(!dir.join("stray").exists() && dir.join(".cache").exists());
+    assert!(dir.join("media/film.mkv").exists());
 }
 
 struct NoOnnx;
@@ -383,6 +581,43 @@ impl Net for CrossingNet {
     }
 }
 
+/// A CTC network that hears a tone as `a` and silence as the blank, 20 ms a frame.
+struct ToneNet;
+
+impl Net for ToneNet {
+    fn run(&mut self, mut inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+        assert_eq!(inputs[0].0, "input_values");
+        let audio = inputs.remove(0).1.data;
+        let frames = (audio.len() - 400) / 320 + 1;
+        let mut data = vec![];
+        for f in 0..frames {
+            let w = &audio[f * 320..(f * 320 + 320).min(audio.len())];
+            let rms = (w.iter().map(|v| v * v).sum::<f32>() / w.len() as f32).sqrt();
+            data.extend(if rms > 0.01 {
+                [0.0, 0.0, 0.0, 10.0]
+            } else {
+                [10.0, 0.0, 0.0, 0.0]
+            });
+        }
+        Ok(vec![Tensor {
+            shape: vec![1, frames as i64, 4],
+            data,
+        }])
+    }
+}
+
+/// A CTC network on a device that runs a short call, then dies on a real one.
+struct FlakyNet;
+
+impl Net for FlakyNet {
+    fn run(&mut self, inputs: Vec<(&'static str, Tensor)>) -> Result<Vec<Tensor>, String> {
+        if inputs[0].1.data.len() > 3200 {
+            return Err("device out of memory".into());
+        }
+        ToneNet.run(inputs)
+    }
+}
+
 struct Fake;
 
 impl Backend for Fake {
@@ -397,16 +632,25 @@ impl Backend for Fake {
 
     fn load(&self, file: &Path, allow: Option<&[String]>, _: &[Warm]) -> Result<Loaded, String> {
         let name = file.file_name().unwrap().to_string_lossy();
+        let model = file
+            .parent()
+            .and_then(|d| d.file_name())
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let provider = allow
+            .and_then(|a| a.first().cloned())
+            .unwrap_or_else(|| "cpu".into());
         let net: Box<dyn Net> = match &*name {
             "vocals.onnx" => Box::new(SplitNet { keep_high: true }),
             "accompaniment.onnx" => Box::new(SplitNet { keep_high: false }),
+            _ if model == "ctc-flaky" && provider != "cpu" => Box::new(FlakyNet),
+            _ if model.starts_with("ctc-") => Box::new(ToneNet),
             _ => Box::new(CrossingNet),
         };
         Ok(Loaded {
             net,
-            provider: allow
-                .and_then(|a| a.first().cloned())
-                .unwrap_or_else(|| "cpu".into()),
+            provider,
+            warmed: vec![],
         })
     }
 }
@@ -791,4 +1035,295 @@ async fn align_repeats_a_failed_gpu_run_on_the_cpu() {
     let r = run_kind(&e, &stem, kind).await;
     assert_eq!(r["state"], "done", "{r}");
     assert_eq!(r["result"]["align"]["backend"], "cpu");
+}
+
+const CTC_VOCAB: &str = r#"{"sampleRate":16000,"frameMs":20,"doNormalize":false,"blank":0,
+    "delimiter":2,"vocab":{"0":"<pad>","1":"<unk>","2":"|","3":"a"}}"#;
+
+/// A vocabulary with a token the 4-class `ToneNet` has no class for.
+const WIDE_VOCAB: &str = r#"{"sampleRate":16000,"frameMs":20,"doNormalize":false,"blank":0,
+    "delimiter":2,"vocab":{"0":"<pad>","2":"|","3":"a","9":"b"}}"#;
+
+/// An engine on the fake backend whose manager holds CTC models (`ctc-ok`, `ctc-flaky` whose GPU
+/// runs die, `ctc-broken` and `ctc-wide` with bad vocabularies) and the recogniser's model.
+async fn ctc_engine() -> Option<Engine> {
+    let e = real().await?;
+    let mut entries = vec![];
+    for (id, vocab) in [
+        ("ctc-ok", CTC_VOCAB),
+        ("ctc-flaky", CTC_VOCAB),
+        ("ctc-broken", "not json"),
+        ("ctc-wide", WIDE_VOCAB),
+    ] {
+        std::fs::create_dir_all(e.root.join("ctc-models").join(id)).unwrap();
+        for (name, bytes) in [
+            ("model.onnx", &b"onnx"[..]),
+            ("vocab.json", vocab.as_bytes()),
+        ] {
+            std::fs::write(e.root.join("ctc-models").join(id).join(name), bytes).unwrap();
+        }
+        let files = vec![
+            file("model.onnx", String::new(), b"onnx"),
+            file("vocab.json", String::new(), vocab.as_bytes()),
+        ];
+        entries.push(Entry {
+            ctc: Some(Case::Lower),
+            ..entry(id, ModelKind::Alignment, false, files)
+        });
+    }
+    std::fs::create_dir_all(e.root.join("ctc-models/whisper-test")).unwrap();
+    std::fs::write(e.root.join("ctc-models/whisper-test/model.bin"), b"bin").unwrap();
+    entries.push(entry(
+        "whisper-test",
+        ModelKind::Alignment,
+        true,
+        vec![file("model.bin", String::new(), b"bin")],
+    ));
+    e.rt.karaoke.replace(
+        Manager::new(e.root.join("ctc-models"), entries, e.rt.events.clone()),
+        Arc::new(Fake),
+    );
+    Some(e)
+}
+
+/// A second of tone, a second of silence, a second of tone.
+fn tone_silence_tone(e: &Engine, stem: &Path) -> bool {
+    make(
+        e,
+        stem,
+        "sine=frequency=220:sample_rate=16000:duration=1[a];\
+         anullsrc=r=16000:cl=mono:d=1[s];\
+         sine=frequency=220:sample_rate=16000:duration=1[b];\
+         [a][s][b]concat=n=3:v=0:a=1[o]",
+    )
+}
+
+#[tokio::test]
+async fn align_places_the_lyrics_with_the_ctc_model_on_the_provider_the_request_allows() {
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = |providers: Value| {
+        json!({ "type": "Align", "providers": providers, "lines": [
+            { "text": "a", "startMs": 0, "endMs": 1000 },
+            { "text": "a", "startMs": 2000, "endMs": 3000 }] })
+    };
+    let r = run_kind(&e, &stem, kind(json!(["directml"]))).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("ctc-ok"), Some("ctc-directml"))
+    );
+    let start = |i: usize| a["lines"][i]["words"][0]["startMs"].as_i64().unwrap();
+    assert!(start(0) <= 60, "{a}");
+    assert!((start(1) - 2000).abs() <= 60, "{a}");
+    assert!(a["matched"].as_f64().unwrap() > 0.9, "{a}");
+    let r = run_kind(
+        &e,
+        &stem,
+        json!({ "type": "Align", "lines": [{ "text": "a a" }] }),
+    )
+    .await;
+    assert_eq!(r["result"]["align"]["backend"], "ctc-cpu", "{r}");
+    assert!(r["result"]["align"].get("fallback").is_none(), "{r}");
+}
+
+#[tokio::test]
+async fn align_repeats_a_ctc_run_that_dies_on_the_gpu_on_the_cpu() {
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc-gpu");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-flaky", "providers": ["directml"],
+        "lines": [{ "text": "a", "startMs": 0, "endMs": 1000 }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("ctc-flaky"), Some("ctc-cpu"))
+    );
+    assert!(a["matched"].as_f64().unwrap() > 0.9, "{a}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn align_ends_the_job_on_a_source_with_no_audio_instead_of_falling_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(e) = ctc_engine().await else { return };
+    let d = dir(&e, "ctc-empty");
+    let script = d.join("whisper-cli");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -of ] && of=\"$2\"; shift; done\n\
+         echo '{\"transcription\":[{\"offsets\":{\"from\":100,\"to\":500},\"text\":\" a\"}]}' > \"$of.json\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    e.rt.karaoke.set_tools(Tools {
+        whisper: Some(script.to_string_lossy().into_owned()),
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let stem = d.join("vocals.flac");
+    if !make(
+        &e,
+        &stem,
+        "anullsrc=r=16000:cl=mono:d=1,atrim=end_sample=0[o]",
+    ) {
+        eprintln!("ffmpeg cannot make the empty audio: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-ok", "lines": [{ "text": "a" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "failed", "{r}");
+    assert!(
+        r["error"].as_str().unwrap().contains("no audio decoded"),
+        "{r}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn align_falls_back_to_the_recogniser_when_the_ctc_model_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(e) = ctc_engine().await else { return };
+    let dd = dir(&e, "ctc-fallback");
+    let script = dd.join("whisper-cli");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -of ] && of=\"$2\"; shift; done\n\
+         echo '{\"transcription\":[{\"offsets\":{\"from\":100,\"to\":500},\"text\":\" a\"}]}' > \"$of.json\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    e.rt.karaoke.set_tools(Tools {
+        whisper: Some(script.to_string_lossy().into_owned()),
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let stem = dd.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let kind = json!({ "type": "Align", "model": "ctc-broken", "lines": [{ "text": "a" }] });
+    let r = run_kind(&e, &stem, kind).await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(
+        (a["model"].as_str(), a["backend"].as_str()),
+        (Some("whisper-test"), Some("cpu"))
+    );
+    assert!(
+        a["fallback"]
+            .as_str()
+            .unwrap()
+            .contains("not a CTC vocabulary"),
+        "{a}"
+    );
+}
+
+#[tokio::test]
+async fn align_reports_the_ctc_failure_when_there_is_no_recogniser_to_fall_back_on() {
+    let Some(e) = ctc_engine().await else { return };
+    e.rt.karaoke.set_tools(Tools {
+        whisper: None,
+        pitch_ffmpeg: None,
+        whisper_backend: "cpu",
+    });
+    let d = dir(&e, "ctc-no-fallback");
+    let stem = d.join("vocals.flac");
+    if !tone_silence_tone(&e, &stem) {
+        eprintln!("ffmpeg cannot make the tones: skipped");
+        return;
+    }
+    let run = |model: &'static str| {
+        let kind = json!({ "type": "Align", "model": model, "lines": [{ "text": "a" }] });
+        run_kind(&e, &stem, kind)
+    };
+    let r = run("ctc-broken").await;
+    assert_eq!(r["state"], "failed", "{r}");
+    assert!(
+        r["error"]
+            .as_str()
+            .unwrap()
+            .contains("not a CTC vocabulary"),
+        "{r}"
+    );
+    let r = run("ctc-wide").await;
+    assert!(r["error"].as_str().unwrap().contains("token 9"), "{r}");
+}
+
+/// The real model, with `FLIKS_CTC_MODELS`, `FLIKS_CTC_STEM`, `FLIKS_CTC_LINES` and
+/// `FLIKS_CTC_OTHER_LINES` (`{ "lang", "lines": [{ "start", "text" }] }`) and `ORT_DYLIB_PATH` set.
+#[tokio::test]
+async fn align_runs_a_real_ctc_model_when_one_is_given() {
+    let var = |n: &str| std::env::var(n).ok();
+    let (Some(models), Some(stem), Some(lines), Some(other)) = (
+        var("FLIKS_CTC_MODELS"),
+        var("FLIKS_CTC_STEM"),
+        var("FLIKS_CTC_LINES"),
+        var("FLIKS_CTC_OTHER_LINES"),
+    ) else {
+        eprintln!("FLIKS_CTC_{{MODELS,STEM,LINES,OTHER_LINES}} not all set: skipped");
+        return;
+    };
+    let e = engine().await;
+    let models = PathBuf::from(models);
+    e.rt.karaoke.replace(
+        Manager::new(
+            models.clone(),
+            fliks_engine::karaoke::models::manifest(),
+            e.rt.events.clone(),
+        ),
+        fliks_engine::karaoke::onnx::default_backend(&models),
+    );
+    let read = |p: String| -> Value { serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap() };
+    let (truth, other) = (read(lines), read(other));
+    let stem = Path::new(&stem);
+    let align = async |lines: &Value, timed: bool| {
+        let lines: Vec<Value> = lines["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| json!({ "text": l["text"], "startMs": timed.then(|| l["start"].clone()) }))
+            .collect();
+        let kind = json!({ "type": "Align", "language": truth["lang"], "lines": lines });
+        let r = run_kind(&e, stem, kind).await;
+        assert_eq!(r["state"], "done", "{r}");
+        r["result"]["align"].clone()
+    };
+    let a = align(&truth, true).await;
+    assert!(a["backend"].as_str().unwrap().starts_with("ctc-"), "{a}");
+    let mut last = 0;
+    for w in a["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|l| l["words"].as_array().unwrap())
+    {
+        let (s, t) = (w["startMs"].as_u64().unwrap(), w["endMs"].as_u64().unwrap());
+        assert!(s >= last && t > s, "{w}");
+        last = s;
+    }
+    let matched = |a: &Value| a["matched"].as_f64().unwrap();
+    let whole = align(&truth, false).await;
+    let wrong = align(&other, true).await;
+    eprintln!(
+        "matched: lyrics {:.2}, whole track {:.2}, other lyrics {:.2}",
+        matched(&a),
+        matched(&whole),
+        matched(&wrong)
+    );
+    assert!(matched(&a) > 0.5, "{a}");
+    assert!(matched(&wrong) < 0.3, "{wrong}");
 }

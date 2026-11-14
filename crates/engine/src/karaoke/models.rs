@@ -4,19 +4,22 @@ use crate::events::Events;
 use crate::lock::Locked;
 use bytes::Bytes;
 use fliks_engine_core::api::{
-    EngineEvent, ModelFile, ModelInfo, ModelKind, ModelLicence, ModelState, job_errors,
+    EngineEvent, ModelEngine, ModelFile, ModelInfo, ModelKind, ModelLicence, ModelOrphan,
+    ModelState, job_errors,
 };
+use fliks_engine_core::jobs::ctc::Case;
 use http_body_util::{BodyExt, Empty};
 use hyper::{Request, StatusCode, Uri};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 const MAX_REDIRECTS: usize = 5;
@@ -34,6 +37,13 @@ pub struct Entry {
     pub licence_text: String,
     pub clear: bool,
     pub default: bool,
+    /// The model's card or repository.
+    pub homepage: &'static str,
+    /// Two-letter codes of the languages an alignment model is for; empty: every language.
+    pub languages: &'static [&'static str],
+    /// The case of the characters of an alignment model run as a CTC network (else the speech
+    /// recogniser's).
+    pub ctc: Option<Case>,
     pub files: Vec<FileEntry>,
 }
 
@@ -63,12 +73,35 @@ const SWIFTF0: &str = "MIT License. Copyright (c) 2025-2026 Lars Nieradzik.";
 const WHISPER: &str = "MIT License. Copyright (c) 2022 OpenAI. The ggml conversion is \
 published by the whisper.cpp project.";
 
+const APACHE: &str = "Licensed under the Apache License, Version 2.0 \
+(https://www.apache.org/licenses/LICENSE-2.0): the weights are used, converted to ONNX in half \
+precision, and not otherwise modified, on an \"AS IS\" basis, without warranties or conditions of \
+any kind.";
+const WAV2VEC2_FR: &str = "Apache-2.0. wav2vec2 XLSR-53 (Meta AI), fine-tuned on French by Jonatas \
+Grosman (jonatasgrosman/wav2vec2-large-xlsr-53-french).";
+const WAV2VEC2_EN: &str = "Apache-2.0. wav2vec2 Large LV-60 self-trained, 960 h (Meta AI, \
+facebook/wav2vec2-large-960h-lv60-self).";
+const OMNIASR: &str = "Apache-2.0. Omnilingual ASR CTC 300M (Meta AI, facebook/omniASR-CTC-300M), \
+ONNX conversion published by OpenVoiceOS (OpenVoiceOS/omnilingual-asr-ctc-300m-onnx).";
+
 const SPLEETER_REV: &str = "7001ba316a615cacddb3f9ef3ec416661a277e26";
 const SWIFTF0_REV: &str = "d1ba77fe5331310b778ebe126b6cb3656d41d24f";
 const WHISPER_REV: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
 
 fn whisper_url(file: &str) -> String {
     format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/{WHISPER_REV}/{file}")
+}
+
+/// A CTC model's file: the release asset `<id>.<name>` of the engine's repository.
+fn ctc_file(id: &str, name: &'static str, sha256: &'static str, size: u64) -> FileEntry {
+    FileEntry {
+        name,
+        url: format!(
+            "https://github.com/fliks-app/engine/releases/download/models-ctc-v1/{id}.{name}"
+        ),
+        sha256,
+        size,
+    }
 }
 
 /// The models this engine knows. Pinned to a revision of their repository: a moved file fails
@@ -89,6 +122,9 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SPLEETER),
             clear: true,
             default: true,
+            homepage: "https://github.com/deezer/spleeter",
+            languages: &[],
+            ctc: None,
             files: vec![
                 FileEntry {
                     name: "vocals.onnx",
@@ -113,6 +149,9 @@ pub fn manifest() -> Vec<Entry> {
             licence_text: with_mit(SWIFTF0),
             clear: true,
             default: true,
+            homepage: "https://github.com/lars76/swift-f0",
+            languages: &[],
+            ctc: None,
             files: vec![FileEntry {
                 name: "model.onnx",
                 url: format!(
@@ -125,18 +164,102 @@ pub fn manifest() -> Vec<Entry> {
         Entry {
             id: "whisper-small-q5_1",
             kind: ModelKind::Alignment,
-            name: "Whisper small, 5-bit (190 MB)",
+            name: "Whisper small, 5-bit",
             version: "1",
             licence: "MIT",
             licence_text: with_mit(WHISPER),
             clear: true,
             default: true,
+            homepage: "https://huggingface.co/ggerganov/whisper.cpp",
+            languages: &[],
+            ctc: None,
             files: vec![FileEntry {
                 name: "model.bin",
                 url: whisper_url("ggml-small-q5_1.bin"),
                 sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
                 size: 190_085_487,
             }],
+        },
+        Entry {
+            id: "wav2vec2-ctc-fr",
+            kind: ModelKind::Alignment,
+            name: "wav2vec2 French, CTC",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{WAV2VEC2_FR} {APACHE}"),
+            clear: true,
+            default: false,
+            homepage: "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-french",
+            languages: &["fr"],
+            ctc: Some(Case::Lower),
+            files: vec![
+                ctc_file(
+                    "wav2vec2-ctc-fr",
+                    "model.onnx",
+                    "b868c38eb5e124ffb6ddbcd8482f47239cb4066db97b67ceb47a9c80c2bd62db",
+                    634_197_385,
+                ),
+                ctc_file(
+                    "wav2vec2-ctc-fr",
+                    "vocab.json",
+                    "061a54098e7993f516da7edb41d0404411ff9cb786c7bbcf2f69b1926a6bf060",
+                    1026,
+                ),
+            ],
+        },
+        Entry {
+            id: "wav2vec2-ctc-en",
+            kind: ModelKind::Alignment,
+            name: "wav2vec2 English, CTC",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{WAV2VEC2_EN} {APACHE}"),
+            clear: true,
+            default: false,
+            homepage: "https://huggingface.co/facebook/wav2vec2-large-960h-lv60-self",
+            languages: &["en"],
+            ctc: Some(Case::Upper),
+            files: vec![
+                ctc_file(
+                    "wav2vec2-ctc-en",
+                    "model.onnx",
+                    "cc20dc5db7ed39b8f3bbbb34bbb5a9b3a3e1468701ed414562901c134275cdfd",
+                    634_142_034,
+                ),
+                ctc_file(
+                    "wav2vec2-ctc-en",
+                    "vocab.json",
+                    "11c0856d5dbcfd9f3cf8a8d138a782df7e6d1e7f97e4315bc1e4b1609aeaa09e",
+                    643,
+                ),
+            ],
+        },
+        Entry {
+            id: "omniasr-ctc-300m",
+            kind: ModelKind::Alignment,
+            name: "Omnilingual ASR 300M, CTC",
+            version: "1",
+            licence: "Apache-2.0",
+            licence_text: format!("{OMNIASR} {APACHE}"),
+            clear: true,
+            default: false,
+            homepage: "https://huggingface.co/facebook/omniASR-CTC-300M",
+            languages: &[],
+            ctc: Some(Case::Lower),
+            files: vec![
+                ctc_file(
+                    "omniasr-ctc-300m",
+                    "model.onnx",
+                    "1c92b3c113e9a3574b812e039433db2bf588d31ca90769179d2a4acf1b9fddd0",
+                    652_837_719,
+                ),
+                ctc_file(
+                    "omniasr-ctc-300m",
+                    "vocab.json",
+                    "333eb690077bb195de573f85afbfb0b6ec296c520c8b416ec9fd7edaa0dee104",
+                    173_163,
+                ),
+            ],
         },
     ]
 }
@@ -156,13 +279,53 @@ fn with_mit(note: &str) -> String {
     format!("{note} {MIT}")
 }
 
+/// Written into a model's directory once its files are verified.
+const RECORD: &str = ".installed.json";
+
+/// Written into a model's directory when a verification found its files bad; it survives a
+/// restart and a job refuses the model until a new install replaces the directory.
+const DAMAGED: &str = ".verify-failed";
+
+/// What an install left on disk: the manifest version it came from and each file's hash.
+#[derive(Serialize, Deserialize)]
+struct Record {
+    version: String,
+    files: Vec<RecordFile>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RecordFile {
+    name: String,
+    sha256: String,
+    size: u64,
+}
+
 struct Download {
     /// Tells a task's own entry from a later one of the same model.
     generation: u64,
     bytes: u64,
+    rate: Option<f64>,
     error: Option<String>,
     cancel: watch::Sender<bool>,
     running: bool,
+    /// A verification, not a download.
+    verify: bool,
+}
+
+/// Why a model could not be deleted.
+pub enum DeleteError {
+    Verifying,
+    Io(String),
+}
+
+/// What a download or verify request did.
+pub enum Outcome {
+    /// Installed and current: nothing to fetch.
+    Current(ModelInfo),
+    /// The task runs, started by this request or an earlier one.
+    Accepted(ModelInfo),
+    /// The other kind of task runs, or there is nothing to verify.
+    Refused(&'static str),
 }
 
 struct Inner {
@@ -179,7 +342,9 @@ pub struct Manager(Arc<Inner>);
 /// A model picked for a job, with where its files are.
 pub struct Picked {
     pub id: &'static str,
-    pub version: &'static str,
+    /// The version on disk, which an outdated model still runs.
+    pub version: String,
+    pub ctc: Option<Case>,
     pub dir: PathBuf,
 }
 
@@ -189,8 +354,44 @@ impl Picked {
     }
 }
 
+struct Status {
+    state: ModelState,
+    verifying: bool,
+    outdated: bool,
+    bytes: u64,
+    rate: Option<f64>,
+    error: Option<String>,
+}
+
+/// Paces a task's progress events to one a second and measures its rate.
+struct Ticker {
+    at: Instant,
+    bytes: u64,
+}
+
+impl Ticker {
+    fn start(bytes: u64) -> Self {
+        Self {
+            at: Instant::now(),
+            bytes,
+        }
+    }
+
+    /// The bytes per second since the last tick, once a second has passed.
+    fn due(&mut self, bytes: u64) -> Option<f64> {
+        let s = self.at.elapsed();
+        if s < PROGRESS_EVERY {
+            return None;
+        }
+        let rate = (bytes - self.bytes) as f64 / s.as_secs_f64();
+        *self = Self::start(bytes);
+        Some(rate)
+    }
+}
+
 impl Manager {
     pub fn new(dir: PathBuf, entries: Vec<Entry>, events: Events) -> Self {
+        recover(&dir, &entries);
         Self(Arc::new(Inner {
             dir,
             entries,
@@ -212,27 +413,83 @@ impl Manager {
         self.0.dir.join(e.id)
     }
 
-    /// Every file is on disk with its size (the hash was checked before it was kept).
-    fn installed(&self, e: &Entry) -> bool {
+    /// Where a download is built before it replaces the installed copy.
+    fn staging_dir(&self, e: &Entry) -> PathBuf {
+        self.0.dir.join(format!(".{}.new", e.id))
+    }
+
+    fn record(&self, e: &Entry) -> Option<Record> {
+        let raw = std::fs::read(self.model_dir(e).join(RECORD)).ok()?;
+        serde_json::from_slice(&raw).ok()
+    }
+
+    /// The files an install holds: the recorded ones, else the manifest's.
+    fn expected(e: &Entry, rec: Option<&Record>) -> Vec<RecordFile> {
+        match rec {
+            Some(r) => r
+                .files
+                .iter()
+                .map(|f| RecordFile {
+                    name: f.name.clone(),
+                    sha256: f.sha256.clone(),
+                    size: f.size,
+                })
+                .collect(),
+            None => e
+                .files
+                .iter()
+                .map(|f| RecordFile {
+                    name: f.name.into(),
+                    sha256: f.sha256.into(),
+                    size: f.size,
+                })
+                .collect(),
+        }
+    }
+
+    /// Every expected file is on disk with its size (the hash was checked before it was kept).
+    fn present(&self, e: &Entry, rec: Option<&Record>) -> bool {
         let dir = self.model_dir(e);
-        e.files
+        Self::expected(e, rec)
             .iter()
-            .all(|f| std::fs::metadata(dir.join(f.name)).is_ok_and(|m| m.len() == f.size))
+            .all(|f| std::fs::metadata(dir.join(&f.name)).is_ok_and(|m| m.len() == f.size))
+    }
+
+    fn installed(&self, e: &Entry) -> bool {
+        self.present(e, self.record(e).as_ref())
+    }
+
+    /// Why the last verification of `e` failed, until a new install replaces its directory.
+    fn damaged(&self, e: &Entry) -> Option<String> {
+        std::fs::read_to_string(self.model_dir(e).join(DAMAGED)).ok()
+    }
+
+    fn status(&self, e: &Entry, rec: Option<&Record>) -> Status {
+        let total: u64 = e.files.iter().map(|f| f.size).sum();
+        let installed = self.present(e, rec);
+        let damaged = self.damaged(e);
+        let dl = self.0.downloads.locked();
+        let d = dl.get(e.id);
+        let (state, bytes, rate) = match d {
+            Some(d) if d.running => (ModelState::Downloading, d.bytes, d.rate),
+            _ if damaged.is_some() => (ModelState::Failed, 0, None),
+            _ if installed => (ModelState::Installed, total, None),
+            Some(Download { error: Some(_), .. }) => (ModelState::Failed, 0, None),
+            _ => (ModelState::Absent, 0, None),
+        };
+        Status {
+            state,
+            verifying: d.is_some_and(|d| d.running && d.verify),
+            outdated: installed && rec.is_some_and(|r| r.version != e.version),
+            bytes,
+            rate,
+            error: d.and_then(|d| d.error.clone()).or(damaged),
+        }
     }
 
     fn info(&self, e: &Entry) -> ModelInfo {
-        let total: u64 = e.files.iter().map(|f| f.size).sum();
-        let (state, bytes, error) = {
-            let dl = self.0.downloads.locked();
-            match dl.get(e.id) {
-                Some(d) if d.running => (ModelState::Downloading, d.bytes, None),
-                _ if self.installed(e) => (ModelState::Installed, total, None),
-                Some(Download {
-                    error: Some(err), ..
-                }) => (ModelState::Failed, 0, Some(err.clone())),
-                _ => (ModelState::Absent, 0, None),
-            }
-        };
+        let rec = self.record(e);
+        let st = self.status(e, rec.as_ref());
         ModelInfo {
             id: e.id.into(),
             kind: e.kind,
@@ -254,9 +511,22 @@ impl Manager {
                     size_bytes: f.size as f64,
                 })
                 .collect(),
-            state,
-            downloaded_bytes: bytes as f64,
-            error,
+            languages: e.languages.iter().map(|l| (*l).into()).collect(),
+            engine: (e.kind == ModelKind::Alignment).then_some(if e.ctc.is_some() {
+                ModelEngine::Ctc
+            } else {
+                ModelEngine::Whisper
+            }),
+            homepage: e.homepage.into(),
+            size_bytes: e.files.iter().map(|f| f.size).sum::<u64>() as f64,
+            disk_bytes: dir_size(&self.model_dir(e)) as f64,
+            installed_version: rec.map(|r| r.version),
+            outdated: st.outdated,
+            state: st.state,
+            verifying: st.verifying,
+            downloaded_bytes: st.bytes as f64,
+            bytes_per_second: st.rate,
+            error: st.error,
         }
     }
 
@@ -266,6 +536,48 @@ impl Manager {
 
     pub fn get(&self, id: &str) -> Option<ModelInfo> {
         self.entry(id).map(|e| self.info(e))
+    }
+
+    /// Free space of the filesystem that holds (or will hold) the models directory.
+    pub fn free_bytes(&self) -> Option<u64> {
+        let near = self.0.dir.ancestors().find(|p| p.exists())?;
+        crate::jobs::disk::free_bytes(near)
+    }
+
+    /// What the models directory takes on disk, caches included.
+    pub fn used_bytes(&self) -> u64 {
+        dir_size(&self.0.dir)
+    }
+
+    /// Directories holding model files that no manifest entry names; hidden ones are caches and
+    /// staging.
+    pub fn orphans(&self) -> Vec<ModelOrphan> {
+        let Ok(rd) = std::fs::read_dir(&self.0.dir) else {
+            return vec![];
+        };
+        let mut v: Vec<_> = rd
+            .flatten()
+            .filter(|d| d.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|d| {
+                let name = d.file_name().into_string().ok()?;
+                let orphan = !name.starts_with('.') && self.entry(&name).is_none();
+                (orphan && holds_model_file(&d.path())).then(|| ModelOrphan {
+                    size_bytes: dir_size(&d.path()) as f64,
+                    name,
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| a.name.cmp(&b.name));
+        v
+    }
+
+    /// Removes an orphan directory; `Ok(false)` when `name` is not one.
+    pub async fn delete_orphan(&self, name: &str) -> Result<bool, String> {
+        if !self.orphans().iter().any(|o| o.name == name) {
+            return Ok(false);
+        }
+        remove_dir(self.0.dir.join(name)).await?;
+        Ok(true)
     }
 
     fn emit(&self, id: &str) {
@@ -297,7 +609,8 @@ impl Manager {
                 format!("{} is not a {kind:?} model", e.id).to_lowercase(),
             ));
         }
-        if !self.installed(e) {
+        let rec = self.record(e);
+        if !self.present(e, rec.as_ref()) {
             return Err(job_errors::message(
                 job_errors::MODEL_MISSING,
                 format!(
@@ -306,67 +619,185 @@ impl Manager {
                 ),
             ));
         }
+        if let Some(why) = self.damaged(e) {
+            return Err(job_errors::message(
+                job_errors::MODEL_MISSING,
+                format!(
+                    "{} failed its verification: {why} (POST /v1/models/{}/download repairs it)",
+                    e.id, e.id
+                ),
+            ));
+        }
         Ok(Picked {
             id: e.id,
-            version: e.version,
+            version: rec.map_or_else(|| e.version.into(), |r| r.version),
+            ctc: e.ctc,
             dir: self.model_dir(e),
         })
     }
 
-    /// Starts the download of `id` unless it is installed or already running; `None` for an
-    /// unknown id. The hash of every file is checked before the file is kept.
-    pub fn start(&self, id: &str) -> Option<ModelInfo> {
-        let e = self.entry(id)?;
-        if !self.installed(e) {
-            let (tx, rx) = watch::channel(false);
-            let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
-            {
-                let mut dl = self.0.downloads.locked();
-                if dl.get(id).is_some_and(|d| d.running) {
-                    drop(dl);
-                    return self.get(id);
-                }
-                dl.insert(
-                    id.into(),
-                    Download {
-                        generation,
-                        bytes: 0,
-                        error: None,
-                        cancel: tx,
-                        running: true,
-                    },
-                );
-            }
-            let me = self.clone();
-            let id = e.id;
-            tokio::spawn(async move {
-                let result = me.fetch(id, generation, rx).await;
-                {
-                    let mut dl = me.0.downloads.locked();
-                    if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
-                        d.running = false;
-                        d.error = result.err();
-                    }
-                }
-                me.emit(id);
-            });
-            self.emit(id);
+    /// The model of an `Align`: `id`, else the first installed CTC model for `language` (the
+    /// specific entries come first in the manifest), else the default recogniser.
+    pub fn pick_aligner(&self, id: Option<&str>, language: Option<&str>) -> Result<Picked, String> {
+        let ctc = self.0.entries.iter().find(|e| {
+            e.kind == ModelKind::Alignment
+                && e.ctc.is_some()
+                && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
+                && self.installed(e)
+                && self.damaged(e).is_none()
+        });
+        match (id, ctc) {
+            (None, Some(e)) => self.pick(Some(e.id), ModelKind::Alignment),
+            _ => self.pick(id, ModelKind::Alignment),
         }
-        self.get(id)
     }
 
-    /// Removes the model, stopping its download; false for an unknown id.
-    pub async fn delete(&self, id: &str) -> bool {
-        let Some(e) = self.entry(id) else {
-            return false;
-        };
-        if let Some(d) = self.0.downloads.locked().remove(id) {
-            d.cancel.send_replace(true);
+    /// Runs `run` as the task of `id`; its result becomes the entry's error. A task of the same
+    /// kind already running stands for this one, the other kind refuses it.
+    fn spawn<F, Fut>(&self, id: &'static str, verify: bool, run: F) -> Result<(), &'static str>
+    where
+        F: FnOnce(Manager, u64, watch::Receiver<bool>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
+        let (tx, rx) = watch::channel(false);
+        let generation = self.0.generations.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut dl = self.0.downloads.locked();
+            if let Some(d) = dl.get(id).filter(|d| d.running) {
+                return if d.verify == verify {
+                    Ok(())
+                } else if d.verify {
+                    Err("a verification is running")
+                } else {
+                    Err("a download is running")
+                };
+            }
+            dl.insert(
+                id.into(),
+                Download {
+                    generation,
+                    bytes: 0,
+                    rate: None,
+                    error: None,
+                    cancel: tx,
+                    running: true,
+                    verify,
+                },
+            );
         }
-        let dir = self.model_dir(e);
-        let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+        let me = self.clone();
+        tokio::spawn(async move {
+            let result = run(me.clone(), generation, rx).await;
+            {
+                let mut dl = me.0.downloads.locked();
+                if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
+                    d.running = false;
+                    d.rate = None;
+                    d.error = result.err();
+                }
+            }
+            me.emit(id);
+        });
         self.emit(id);
-        true
+        Ok(())
+    }
+
+    /// Starts the download of `id` (a new install, an update, the repair of a damaged copy; the
+    /// installed copy runs until every file is hash-checked); `None` for an unknown id.
+    pub fn start(&self, id: &str) -> Option<Outcome> {
+        let e = self.entry(id)?;
+        let st = self.status(e, self.record(e).as_ref());
+        if st.state == ModelState::Installed && !st.outdated {
+            return self.get(id).map(Outcome::Current);
+        }
+        let id = e.id;
+        let started = self.spawn(id, false, move |me, generation, rx| async move {
+            me.fetch(id, generation, rx).await
+        });
+        Some(match started {
+            Ok(()) => Outcome::Accepted(self.get(id)?),
+            Err(why) => Outcome::Refused(why),
+        })
+    }
+
+    /// Re-hashes the files of an installed model, whose mismatch leaves it `failed`; `None` for
+    /// an unknown id.
+    pub fn verify(&self, id: &str) -> Option<Outcome> {
+        let e = self.entry(id)?;
+        if !self.installed(e) {
+            return Some(Outcome::Refused("not installed"));
+        }
+        let id = e.id;
+        let started = self.spawn(id, true, move |me, generation, rx| async move {
+            let verdict = me.check(id, generation, rx).await;
+            me.record_verdict(id, generation, &verdict);
+            verdict
+        });
+        Some(match started {
+            Ok(()) => Outcome::Accepted(self.get(id)?),
+            Err(why) => Outcome::Refused(why),
+        })
+    }
+
+    /// Keeps a verification's verdict on disk, unless the model was deleted meanwhile.
+    fn record_verdict(&self, id: &str, generation: u64, verdict: &Result<(), String>) {
+        let Some(e) = self.entry(id).filter(|_| self.is_current(id, generation)) else {
+            return;
+        };
+        let marker = self.model_dir(e).join(DAMAGED);
+        let _ = match verdict {
+            Ok(()) => std::fs::remove_file(marker),
+            Err(why) => std::fs::write(marker, why),
+        };
+    }
+
+    /// Removes the model, stopping its download; `Ok(false)` for an unknown id. A verification
+    /// is not stopped: its files are what it checks.
+    pub async fn delete(&self, id: &str) -> Result<bool, DeleteError> {
+        let Some(e) = self.entry(id) else {
+            return Ok(false);
+        };
+        {
+            let mut dl = self.0.downloads.locked();
+            if dl.get(id).is_some_and(|d| d.running && d.verify) {
+                return Err(DeleteError::Verifying);
+            }
+            if let Some(d) = dl.remove(id) {
+                d.cancel.send_replace(true);
+            }
+        }
+        let removed = remove_dir(self.staging_dir(e)).await;
+        let removed = removed.and(remove_dir(self.model_dir(e)).await);
+        self.emit(id);
+        removed.map(|()| true).map_err(DeleteError::Io)
+    }
+
+    async fn check(
+        &self,
+        id: &'static str,
+        generation: u64,
+        cancel: watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        let e = self.entry(id).ok_or("unknown model")?;
+        let dir = self.model_dir(e);
+        let mut done = 0;
+        for f in Self::expected(e, self.record(e).as_ref()) {
+            let digest = self
+                .hash_file(
+                    &dir.join(&f.name),
+                    id,
+                    generation,
+                    done,
+                    cancel.clone(),
+                    true,
+                )
+                .await?;
+            if digest != f.sha256 {
+                return Err(format!("{} does not match its sha256 ({digest})", f.name));
+            }
+            done += f.size;
+        }
+        Ok(())
     }
 
     async fn fetch(
@@ -376,20 +807,25 @@ impl Manager {
         cancel: watch::Receiver<bool>,
     ) -> Result<(), String> {
         let e = self.entry(id).ok_or("unknown model")?;
-        let dir = self.model_dir(e);
-        tokio::fs::create_dir_all(&dir)
+        let stage = self.staging_dir(e);
+        tokio::fs::create_dir_all(&stage)
             .await
-            .map_err(|e| format!("create {}: {e}", dir.display()))?;
+            .map_err(|e| format!("create {}: {e}", stage.display()))?;
         let client = client();
         let mut done_before = 0u64;
         for f in &e.files {
-            let dest = dir.join(f.name);
-            if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size) {
+            let dest = stage.join(f.name);
+            if std::fs::metadata(&dest).is_ok_and(|m| m.len() == f.size)
+                && self
+                    .hash_file(&dest, id, generation, done_before, cancel.clone(), false)
+                    .await
+                    .is_ok_and(|d| d == f.sha256)
+            {
                 done_before += f.size;
                 self.set_bytes(id, generation, done_before);
                 continue;
             }
-            let part = dir.join(format!("{}.part", f.name));
+            let part = stage.join(format!("{}.part", f.name));
             let r = self
                 .fetch_file(
                     &client,
@@ -412,6 +848,41 @@ impl Manager {
                 .map_err(|e| format!("keep {}: {e}", f.name))?;
             done_before += f.size;
         }
+        let record = Record {
+            version: e.version.into(),
+            files: Self::expected(e, None),
+        };
+        write_synced(
+            &stage.join(RECORD),
+            &serde_json::to_vec(&record).map_err(|e| e.to_string())?,
+        )
+        .await
+        .map_err(|e| format!("write {RECORD}: {e}"))?;
+        sync_dir(&stage).await;
+        self.swap(e, id, generation).await
+    }
+
+    /// Puts the staged copy in place of the installed one.
+    async fn swap(&self, e: &Entry, id: &str, generation: u64) -> Result<(), String> {
+        if !self.is_current(id, generation) {
+            return Err("cancelled".into());
+        }
+        let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
+        let old = self.0.dir.join(format!(".{}.old", e.id));
+        let _ = tokio::fs::remove_dir_all(&old).await;
+        let had = match tokio::fs::rename(&dir, &old).await {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+            Err(err) => return Err(format!("replace {}: {err}", e.id)),
+        };
+        if let Err(err) = tokio::fs::rename(&stage, &dir).await {
+            if had {
+                let _ = tokio::fs::rename(&old, &dir).await;
+            }
+            return Err(format!("install {}: {err}", e.id));
+        }
+        sync_dir(&self.0.dir).await;
+        let _ = tokio::fs::remove_dir_all(&old).await;
         Ok(())
     }
 
@@ -422,10 +893,54 @@ impl Manager {
         }
     }
 
+    fn set_rate(&self, id: &str, generation: u64, rate: f64) {
+        let mut dl = self.0.downloads.locked();
+        if let Some(d) = dl.get_mut(id).filter(|d| d.generation == generation) {
+            d.rate = Some(rate);
+        }
+    }
+
     /// False once the model was deleted (and maybe restarted) since this task began.
     fn is_current(&self, id: &str, generation: u64) -> bool {
         let dl = self.0.downloads.locked();
         dl.get(id).is_some_and(|d| d.generation == generation)
+    }
+
+    /// The sha256 of a file, reported as progress after `done_before` bytes of the task; the
+    /// `rate` of hashing is the task's speed only for a verification.
+    async fn hash_file(
+        &self,
+        path: &Path,
+        id: &str,
+        generation: u64,
+        done_before: u64,
+        mut cancel: watch::Receiver<bool>,
+        rate: bool,
+    ) -> Result<String, String> {
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
+        let mut buf = vec![0u8; 1 << 20];
+        let (mut got, mut tick) = (0u64, Ticker::start(done_before));
+        loop {
+            let n = tokio::select! {
+                _ = cancel.wait_for(|c| *c) => return Err("cancelled".into()),
+                r = file.read(&mut buf) => r.map_err(|e| format!("read {}: {e}", path.display()))?,
+            };
+            if n == 0 {
+                return Ok(hex(hash.finish().as_ref()));
+            }
+            hash.update(&buf[..n]);
+            got += n as u64;
+            self.set_bytes(id, generation, done_before + got);
+            if let Some(per_second) = tick.due(done_before + got) {
+                if rate {
+                    self.set_rate(id, generation, per_second);
+                }
+                self.emit(id);
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -444,7 +959,7 @@ impl Manager {
             .await
             .map_err(|e| format!("create {}: {e}", part.display()))?;
         let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
-        let (mut got, mut last) = (0u64, Instant::now() - PROGRESS_EVERY);
+        let (mut got, mut tick) = (0u64, Ticker::start(done_before));
         loop {
             let frame = tokio::select! {
                 _ = cancel.wait_for(|c| *c) => return Err("cancelled".into()),
@@ -465,8 +980,8 @@ impl Manager {
                 .await
                 .map_err(|e| format!("write {}: {e}", part.display()))?;
             self.set_bytes(id, generation, done_before + got);
-            if last.elapsed() >= PROGRESS_EVERY {
-                last = Instant::now();
+            if let Some(rate) = tick.due(done_before + got) {
+                self.set_rate(id, generation, rate);
                 self.emit(id);
             }
         }
@@ -481,6 +996,86 @@ impl Manager {
             .await
             .map_err(|e| format!("write {}: {e}", part.display()))
     }
+}
+
+/// Writes `bytes` to `path` and fsyncs it.
+async fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    file.write_all(bytes).await?;
+    file.sync_all().await
+}
+
+/// Makes the renames inside `dir` durable; best effort, a directory cannot be opened on Windows.
+async fn sync_dir(dir: &Path) {
+    if let Ok(d) = tokio::fs::File::open(dir).await {
+        let _ = d.sync_all().await;
+    }
+}
+
+/// Removes a directory tree off the runtime; a directory that is not there is fine.
+async fn remove_dir(dir: PathBuf) -> Result<(), String> {
+    let shown = dir.display().to_string();
+    let removed = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir))
+        .await
+        .map_err(|e| e.to_string())?;
+    match removed {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("remove {shown}: {e}")),
+        _ => Ok(()),
+    }
+}
+
+/// Whether `dir` directly holds a file a model is made of.
+fn holds_model_file(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten().any(|f| {
+            let name = f.file_name();
+            let name = name.to_string_lossy();
+            name == RECORD || name.ends_with(".onnx") || name.ends_with(".bin")
+        })
+    })
+}
+
+/// Finishes what a crash left of a swap: a `.<id>.old` goes back in place of a missing `<id>`,
+/// every other one is dropped, as is the staging of an id the manifest no longer has.
+fn recover(dir: &Path, entries: &[Entry]) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let known = |id: &str| entries.iter().any(|e| e.id == id);
+    for d in rd.flatten() {
+        let name = d.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_prefix('.') else {
+            continue;
+        };
+        let drop = match (stem.strip_suffix(".old"), stem.strip_suffix(".new")) {
+            (Some(id), _) if known(id) && !dir.join(id).exists() => {
+                if let Err(e) = std::fs::rename(d.path(), dir.join(id)) {
+                    tracing::warn!(id, "restoring the model a crash interrupted: {e}");
+                }
+                false
+            }
+            (Some(_), _) => true,
+            (_, Some(id)) => !known(id),
+            _ => false,
+        };
+        if drop {
+            let _ = std::fs::remove_dir_all(d.path());
+        }
+    }
+}
+
+/// Bytes under `p`, symlinks not followed.
+fn dir_size(p: &Path) -> u64 {
+    let Ok(rd) = std::fs::read_dir(p) else {
+        return 0;
+    };
+    rd.flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 fn hex(b: &[u8]) -> String {
@@ -575,8 +1170,67 @@ mod tests {
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
             }
         }
+        for e in m.iter().filter(|e| e.ctc.is_some()) {
+            let names: Vec<_> = e.files.iter().map(|f| f.name).collect();
+            assert_eq!(names, ["model.onnx", "vocab.json"], "{}", e.id);
+            assert!(e.kind == ModelKind::Alignment && !e.default);
+            assert!(e.homepage.starts_with("https://"));
+            assert!(e.languages.iter().all(|l| l.len() == 2));
+            let url = format!("/models-ctc-v1/{}.model.onnx", e.id);
+            assert!(e.files[0].url.ends_with(&url));
+        }
         let ids: std::collections::HashSet<_> = m.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), m.len());
+    }
+
+    fn dir_with(ids: &[&str]) -> (PathBuf, Manager) {
+        let d = std::env::temp_dir().join(format!("aligners-{}-{}", std::process::id(), ids.len()));
+        let m = Manager::new(d.clone(), manifest(), Events::default());
+        for id in ids {
+            let e = m.entry(id).unwrap();
+            std::fs::create_dir_all(m.model_dir(e)).unwrap();
+            for f in &e.files {
+                let file = std::fs::File::create(m.model_dir(e).join(f.name)).unwrap();
+                file.set_len(f.size).unwrap();
+            }
+        }
+        (d, m)
+    }
+
+    #[test]
+    fn an_aligner_is_the_installed_ctc_model_of_the_language_else_the_recogniser() {
+        let (d, m) = dir_with(&["wav2vec2-ctc-fr", "omniasr-ctc-300m", "whisper-small-q5_1"]);
+        let id = |model, lang| m.pick_aligner(model, lang).map(|p| p.id);
+        assert_eq!(id(None, Some("fr")), Ok("wav2vec2-ctc-fr"));
+        assert_eq!(id(None, Some("de")), Ok("omniasr-ctc-300m"));
+        assert_eq!(id(None, None), Ok("omniasr-ctc-300m"));
+        assert_eq!(
+            id(Some("whisper-small-q5_1"), Some("fr")),
+            Ok("whisper-small-q5_1")
+        );
+        assert!(m.pick_aligner(None, Some("fr")).unwrap().ctc.is_some());
+        // The English model is not installed: Omnilingual serves it.
+        assert_eq!(id(None, Some("en")), Ok("omniasr-ctc-300m"));
+        assert!(
+            id(Some("wav2vec2-ctc-en"), Some("en"))
+                .unwrap_err()
+                .contains("not installed")
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+        let (d, m) = dir_with(&["whisper-small-q5_1"]);
+        let p = m.pick_aligner(None, Some("fr")).unwrap();
+        assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", None));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_ticker_reports_the_rate_once_a_second() {
+        let mut t = Ticker::start(0);
+        assert_eq!(t.due(5), None);
+        t.at = Instant::now() - Duration::from_secs(2);
+        let rate = t.due(2000).unwrap();
+        assert!((900.0..=1000.0).contains(&rate), "{rate}");
+        assert_eq!(t.due(2001), None);
     }
 
     #[test]
@@ -628,6 +1282,11 @@ mod tests {
     }
 
     fn test_manager(url: String) -> Manager {
+        let dir = std::env::temp_dir().join(format!("fliks-models-{}", std::process::id()));
+        manager_in(dir, url)
+    }
+
+    fn manager_in(dir: PathBuf, url: String) -> Manager {
         let entry = Entry {
             id: "t",
             kind: ModelKind::Melody,
@@ -637,6 +1296,9 @@ mod tests {
             licence_text: "MIT".into(),
             clear: true,
             default: true,
+            homepage: "",
+            languages: &[],
+            ctc: None,
             files: vec![FileEntry {
                 name: "m.bin",
                 url,
@@ -644,8 +1306,128 @@ mod tests {
                 size: 4,
             }],
         };
-        let dir = std::env::temp_dir().join(format!("fliks-models-{}", std::process::id()));
         Manager::new(dir, vec![entry], Events::default())
+    }
+
+    /// `t` installed (its file has the manifest's size), and a task that runs until cancelled.
+    fn installed_manager(tag: &str) -> Manager {
+        let dir = std::env::temp_dir().join(format!("fliks-{tag}-{}", std::process::id()));
+        let m = manager_in(dir.join("models"), String::new());
+        std::fs::create_dir_all(dir.join("models/t")).unwrap();
+        std::fs::write(dir.join("models/t/m.bin"), b"1234").unwrap();
+        m
+    }
+
+    async fn hold(_: Manager, _: u64, mut stop: watch::Receiver<bool>) -> Result<(), String> {
+        let _ = stop.wait_for(|c| *c).await;
+        Ok(())
+    }
+
+    async fn idle(m: &Manager) {
+        for _ in 0..200 {
+            if m.get("t").unwrap().state != ModelState::Downloading {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the task never ended");
+    }
+
+    #[tokio::test]
+    async fn a_task_of_the_other_kind_is_refused_and_a_verification_is_not_cancelled() {
+        let m = installed_manager("kinds");
+        m.spawn("t", true, hold).unwrap();
+        assert!(matches!(m.start("t"), Some(Outcome::Refused(r)) if r.contains("verification")));
+        assert!(matches!(m.verify("t"), Some(Outcome::Accepted(_))));
+        let info = m.get("t").unwrap();
+        assert_eq!(
+            (info.state, info.verifying),
+            (ModelState::Downloading, true)
+        );
+        assert!(matches!(m.delete("t").await, Err(DeleteError::Verifying)));
+        assert!(m.installed(m.entry("t").unwrap()), "the files stay");
+        m.0.downloads.locked()["t"].cancel.send_replace(true);
+        idle(&m).await;
+
+        m.spawn("t", false, hold).unwrap();
+        assert!(matches!(m.verify("t"), Some(Outcome::Refused(r)) if r.contains("download")));
+        assert!(matches!(m.start("t"), Some(Outcome::Accepted(_))));
+        let info = m.get("t").unwrap();
+        assert_eq!(
+            (info.state, info.verifying),
+            (ModelState::Downloading, false)
+        );
+        assert!(matches!(m.delete("t").await, Ok(true)));
+        assert!(!m.model_dir(m.entry("t").unwrap()).exists());
+        std::fs::remove_dir_all(m.dir().parent().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_model_a_verification_failed_is_not_picked_before_or_after_a_restart() {
+        let m = installed_manager("damaged");
+        let e = m.entry("t").unwrap();
+        assert!(m.pick(None, ModelKind::Melody).is_ok());
+        m.spawn("t", true, |me, generation, _| async move {
+            let verdict = Err("m.bin does not match its sha256 (x)".to_string());
+            me.record_verdict("t", generation, &verdict);
+            verdict
+        })
+        .unwrap();
+        idle(&m).await;
+        let err = m.pick(None, ModelKind::Melody).err().unwrap();
+        assert!(err.contains("failed its verification"), "{err}");
+        assert_eq!(m.get("t").unwrap().state, ModelState::Failed);
+        assert!(m.installed(e), "a new verification may still clear it");
+
+        let again = manager_in(m.dir().to_owned(), String::new());
+        assert_eq!(again.get("t").unwrap().state, ModelState::Failed);
+        assert!(again.pick(None, ModelKind::Melody).is_err());
+        std::fs::remove_dir_all(m.dir().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_crashed_swap_is_finished_at_start() {
+        let d = std::env::temp_dir().join(format!("fliks-recover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        for n in [
+            ".t.old",
+            ".t.new",
+            ".gone.old",
+            ".gone.new",
+            ".other.old",
+            ".shader-cache",
+            "other",
+        ] {
+            std::fs::create_dir_all(d.join(n)).unwrap();
+        }
+        std::fs::write(d.join(".t.old/m.bin"), b"1234").unwrap();
+        let _ = manager_in(d.clone(), String::new());
+        assert!(d.join("t/m.bin").exists() && !d.join(".t.old").exists());
+        assert!(d.join(".t.new").exists(), "a staged download resumes");
+        for n in [".gone.old", ".gone.new", ".other.old"] {
+            assert!(!d.join(n).exists(), "{n}");
+        }
+        assert!(d.join(".shader-cache").exists() && d.join("other").exists());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn only_a_directory_with_model_files_is_an_orphan() {
+        let m = installed_manager("orphans");
+        let d = m.dir().to_owned();
+        for (dir, file) in [
+            ("weights", "model.onnx"),
+            ("whisper", "ggml.bin"),
+            ("half", ".installed.json"),
+            ("backups", "dump.sql"),
+            ("media", "film.mkv"),
+        ] {
+            std::fs::create_dir_all(d.join(dir)).unwrap();
+            std::fs::write(d.join(dir).join(file), b"x").unwrap();
+        }
+        let names: Vec<_> = m.orphans().into_iter().map(|o| o.name).collect();
+        assert_eq!(names, ["half", "weights", "whisper"]);
+        std::fs::remove_dir_all(d.parent().unwrap()).unwrap();
     }
 
     #[tokio::test]
@@ -660,7 +1442,7 @@ mod tests {
         reached(&n, 1).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(n.load(Ordering::SeqCst), 1);
-        m.delete("t").await;
+        let _ = m.delete("t").await;
     }
 
     #[tokio::test]
@@ -669,7 +1451,7 @@ mod tests {
         let m = test_manager(url);
         m.start("t");
         reached(&n, 1).await;
-        m.delete("t").await;
+        let _ = m.delete("t").await;
         m.start("t");
         reached(&n, 2).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -677,6 +1459,6 @@ mod tests {
         let info = m.get("t").unwrap();
         assert_eq!(info.state, ModelState::Downloading);
         assert!(info.error.is_none());
-        m.delete("t").await;
+        let _ = m.delete("t").await;
     }
 }

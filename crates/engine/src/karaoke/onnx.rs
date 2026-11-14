@@ -240,15 +240,16 @@ mod imp {
             warm: &[Warm],
         ) -> Result<Loaded, String> {
             let env = self.env().as_ref().map_err(Clone::clone)?;
-            let (net, provider) = first_working(
+            let ((net, warmed), provider) = first_working(
                 &providers(env),
                 allow,
                 |name| warm_up(OrtNet(session(env, file, Some(name))?), warm),
-                || session(env, file, None).map(OrtNet),
+                || Ok((OrtNet(session(env, file, None)?), vec![])),
             )?;
             Ok(Loaded {
                 net: Box::new(net),
                 provider,
+                warmed,
             })
         }
     }

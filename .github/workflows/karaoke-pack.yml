@@ -70,7 +70,7 @@ jobs:
           cargo build --release -p fliks-engine --bin fliks-engine --example provider-check --features karaoke
           Copy-Item target/release/fliks-engine.exe, target/release/examples/provider-check.exe out/
           $env:FLIKS_ENGINE_TOKEN = 't'
-          $env:FLIKS_MODELS_DIR = "$PWD\models"
+          $env:FLIKS_DATA_DIR = "$PWD"
           $h = @{ Authorization = 'Bearer t' }
           function Get-Runtime {
             $p = Start-Process out/fliks-engine.exe -ArgumentList '--listen', '127.0.0.1:7411' -PassThru -NoNewWindow -RedirectStandardError engine.log

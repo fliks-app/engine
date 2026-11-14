@@ -1,5 +1,5 @@
 //! Whether a real Vulkan device is usable, asked of the loader the recogniser would use.
-//! Spec: `docs/spec/karaoke.md` section 4, rule 7.
+//! Spec: `docs/spec/karaoke.md` section 4, rule 9.
 
 /// True when the loader lists a device that is not a software rasteriser.
 #[cfg(target_os = "linux")]

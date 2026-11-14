@@ -17,15 +17,59 @@ pub const SILENCE_PEAK: f32 = 1e-3;
 /// Lowest and highest pitch the network scores, in Hz.
 pub const FMIN: f32 = 46.875;
 pub const FMAX: f32 = 2093.75;
-/// Confidence from which a frame is voiced.
-const VOICED: f32 = 0.5;
-/// A note is dropped under this many frames (48 ms).
-const MIN_FRAMES: usize = 3;
-/// Unvoiced frames a note bridges (80 ms): a consonant inside a word.
-const MAX_GAP: usize = 5;
+/// Confidence from which a frame is voiced: a separated stem keeps bleed, so sung frames often score
+/// 0.2 to 0.4; the register filter drops the instruments this lets in.
+const VOICED: f32 = 0.25;
+/// Semitones a frame may sit from the singer's median: further out is a harmonic or another instrument.
+const REGISTER: f64 = 15.0;
+/// Highest harmonic number an out-of-register frame is tried as.
+const HARMONICS: u32 = 8;
+/// Semitones from the voice nearby within which a frame divided by a harmonic number is that harmonic.
+const HARMONIC_FIT: f64 = 0.5;
+/// Frames on each side (4 s) of the sung frames whose median is the register.
+const REGISTER_REACH: usize = 250;
+/// Semitones a step between two sung runs may span before it costs: a sung leap.
+const LEAP: f64 = 5.0;
+/// A step of at least this many semitones, or a gap over `MAX_GAP`, cuts a run for the octave pass.
+const RUN_BREAK: f64 = 9.0;
+/// Cost per voiced frame of moving a run an octave (14 frames weigh the two edges of a 12 st leap, 7 each).
+const SHIFT_COST: f64 = 1.0;
+/// Cost per frame and per semitone a run sits further than `FREE_REGISTER` from the local register.
+const PULL: f64 = 1.0;
+/// Semitones a run may sit from the local register before it is pulled.
+const FREE_REGISTER: f64 = 8.0;
+/// Times the path is decoded again with the register of the previous path.
+const REDECODES: usize = 3;
+/// Octave shifts the path chooses from, in tie-break order.
+const SHIFTS: [f64; 3] = [0.0, -12.0, 12.0];
+/// Time (ms) over which a step across a gap stops counting.
+const GAP_DECAY_MS: f64 = 600.0;
+/// Contiguous octave-like steps within `REGISTER_REACH` frames per crowding unit, up to `HOP_MAX`:
+/// a singer seldom leaps an octave often, a tracker flipping between two voices does.
+const HOP_STEP: usize = 2;
+/// Semitones from which a step between runs counts as an octave-like hop.
+const HOP_SEMITONES: f64 = 10.0;
+const HOP_MAX: f64 = 4.0;
+/// Extra cost per semitone a state change's step sits off a whole octave beyond `OCTAVE_STEP`.
+const OFF_OCTAVE: f64 = 6.0;
+/// Semitones a run's entry or exit step may sit from a whole octave at no extra cost.
+const OCTAVE_STEP: f64 = 0.5;
+/// Frames on each side of the smoothing median: two irons out vibrato.
+const SMOOTH: usize = 2;
+/// A note is dropped under this many voiced frames (96 ms).
+const MIN_FRAMES: usize = 6;
+/// Unvoiced frames a note bridges (128 ms): a consonant inside a word.
+const MAX_GAP: usize = 8;
 /// Semitones a frame may sit from its note's median before it starts a new note.
-const SPLIT: f64 = 0.8;
+const SPLIT: f64 = 1.0;
+/// Frames off the note's median that start the next note (64 ms).
+const STEP_FRAMES: usize = 4;
+/// Two notes this close (semitones), with at most `MERGE_GAP` frames (160 ms) between them, are one.
+const MERGE: f64 = 0.75;
+const MERGE_GAP: usize = 10;
 const MAX_SPANS: usize = 100_000;
+/// Longest a note held at a span's end is followed past it (the alignment's own hold cap).
+const HOLD_MS: u32 = 4000;
 
 pub fn validate(kind: &JobKind) -> Result<(), String> {
     let JobKind::Melody { spans, .. } = kind else {
@@ -110,48 +154,215 @@ impl Open {
     }
 }
 
-/// Notes of one span: voiced frames, smoothed, cut where the pitch moves a semitone for three
-/// frames or the voice stops for more than 80 ms.
-pub fn notes(track: &PitchTrack, span: MelodySpan) -> Vec<MelodyNote> {
-    let n = track.hz.len().min(track.confidence.len());
+fn frame_range(span: MelodySpan, n: usize) -> (usize, usize) {
     let first = ((f64::from(span.start_ms) / FRAME_MS).floor() as usize).min(n);
     let end = ((f64::from(span.end_ms) / FRAME_MS).ceil() as usize).min(n);
-    let raw: Vec<Option<f64>> = (first..end)
-        .map(|i| (track.confidence[i] >= VOICED && track.hz[i] > 0.0).then(|| midi(track.hz[i])))
+    (first, end)
+}
+
+/// The median of the voiced values within `reach` frames of `i`.
+fn near(v: &[Option<f64>], i: usize, reach: usize) -> Option<f64> {
+    let w: Vec<f64> = v[i.saturating_sub(reach)..(i + reach + 1).min(v.len())]
+        .iter()
+        .flatten()
+        .copied()
         .collect();
-    // A median over the voiced neighbours drops single-frame spikes.
-    let smooth: Vec<Option<f64>> = (0..raw.len())
-        .map(|i| {
-            raw[i]?;
-            let near: Vec<f64> = raw[i.saturating_sub(1)..(i + 2).min(raw.len())]
-                .iter()
-                .flatten()
-                .copied()
-                .collect();
-            Some(median(&near))
+    (!w.is_empty()).then(|| median(&w))
+}
+
+/// A stretch of voiced frames with no big step or long gap inside, which moves an octave as one.
+struct Run {
+    first: usize,
+    last: usize,
+    frames: usize,
+    median: f64,
+    head: f64,
+    tail: f64,
+}
+
+/// `raw` with each run moved by the octave (-1, 0 or 1) the cheapest path over the runs picks: steps
+/// cost what they exceed `LEAP` by, moves cost per frame, crowded hops pull a run to the register.
+fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
+    let voiced: Vec<usize> = (0..raw.len()).filter(|&i| raw[i].is_some()).collect();
+    let at = |f: usize| raw[f].unwrap_or(0.0);
+    let mut runs: Vec<Run> = vec![];
+    let mut p = 0;
+    while p < voiced.len() {
+        let mut q = p + 1;
+        while q < voiced.len()
+            && voiced[q] - voiced[q - 1] - 1 <= MAX_GAP
+            && (at(voiced[q]) - at(voiced[q - 1])).abs() < RUN_BREAK
+        {
+            q += 1;
+        }
+        let vals: Vec<f64> = voiced[p..q].iter().map(|&f| at(f)).collect();
+        runs.push(Run {
+            first: voiced[p],
+            last: voiced[q - 1],
+            frames: q - p,
+            median: median(&vals),
+            head: vals[0],
+            tail: vals[vals.len() - 1],
+        });
+        p = q;
+    }
+    if runs.len() < 2 {
+        return raw.to_vec();
+    }
+    let contiguous = |t: usize| runs[t].first - runs[t - 1].last - 1 <= MAX_GAP;
+    let hops: Vec<bool> = (1..runs.len())
+        .map(|t| contiguous(t) && (runs[t].head - runs[t - 1].tail).abs() >= HOP_SEMITONES)
+        .collect();
+    let crowd: Vec<f64> = runs
+        .iter()
+        .map(|r| {
+            let (lo, hi) = (
+                r.first.saturating_sub(REGISTER_REACH),
+                r.last + REGISTER_REACH,
+            );
+            let n = (1..runs.len())
+                .filter(|&u| hops[u - 1] && runs[u].first >= lo && runs[u].first <= hi)
+                .count();
+            (n as f64 / HOP_STEP as f64).clamp(1.0, HOP_MAX)
         })
         .collect();
-    let mut out = vec![];
-    let mut close = |o: Open| {
-        if o.vals.len() >= MIN_FRAMES {
-            let start = ((first + o.first) as f64 * FRAME_MS).round() as u32;
-            let stop = ((first + o.last + 1) as f64 * FRAME_MS).round() as u32;
-            out.push(MelodyNote {
-                start_ms: start.max(span.start_ms),
-                end_ms: stop.min(span.end_ms),
-                midi: (median(&o.vals) * 100.0).round() / 100.0,
-            });
-        }
+    let step = |t: usize, from: usize, to: usize| -> f64 {
+        let (a, b) = (&runs[t - 1], &runs[t]);
+        let gap_ms = (b.first - a.last - 1) as f64 * FRAME_MS;
+        let d = ((b.head + SHIFTS[to]) - (a.tail + SHIFTS[from])).abs();
+        let raw_step = (b.head - a.tail).abs();
+        let off = (raw_step - 12.0 * (raw_step / 12.0).round()).abs();
+        let moved = if from == to {
+            0.0
+        } else {
+            OFF_OCTAVE * (off - OCTAVE_STEP).max(0.0)
+        };
+        (d - LEAP).max(0.0) * (-gap_ms / GAP_DECAY_MS).exp() * crowd[t] + moved
     };
+    let decode = |track: &[Option<f64>]| -> Vec<usize> {
+        let place: Vec<[f64; 3]> = runs
+            .iter()
+            .enumerate()
+            .map(|(t, r)| {
+                let reg = near(track, (r.first + r.last) / 2, REGISTER_REACH).unwrap_or(r.median);
+                SHIFTS.map(|s| {
+                    let excess = ((r.median + s - reg).abs() - FREE_REGISTER).max(0.0);
+                    r.frames as f64
+                        * (PULL * (crowd[t] - 1.0) * excess
+                            + if s == 0.0 { 0.0 } else { SHIFT_COST })
+                })
+            })
+            .collect();
+        let mut cost = place[0];
+        let mut back: Vec<[usize; 3]> = vec![[0; 3]];
+        for (t, p) in place.iter().enumerate().skip(1) {
+            let mut next = [0.0; 3];
+            let mut from = [0; 3];
+            for to in 0..3 {
+                let (best, arg) = (0..3)
+                    .map(|f| (cost[f] + step(t, f, to), f))
+                    .min_by(|x, y| x.0.total_cmp(&y.0))
+                    .unwrap_or((0.0, 0));
+                next[to] = best + p[to];
+                from[to] = arg;
+            }
+            cost = next;
+            back.push(from);
+        }
+        let mut state = (0..3)
+            .min_by(|&x, &y| cost[x].total_cmp(&cost[y]))
+            .unwrap_or(0);
+        let mut path = vec![0; runs.len()];
+        for t in (0..runs.len()).rev() {
+            path[t] = state;
+            state = back[t][state];
+        }
+        path
+    };
+    let apply = |path: &[usize]| {
+        let mut out = raw.to_vec();
+        for (r, &s) in runs.iter().zip(path) {
+            for v in out[r.first..=r.last].iter_mut().flatten() {
+                *v += SHIFTS[s];
+            }
+        }
+        out
+    };
+    let mut path = decode(raw);
+    for _ in 0..REDECODES {
+        let next = decode(&apply(&path));
+        if next == path {
+            break;
+        }
+        path = next;
+    }
+    apply(&path)
+}
+
+/// The MIDI pitch of every frame, `None` when unvoiced: frames out of the singer's register (the
+/// median of the spans' voiced frames nearby) dropped unless a harmonic of the voice, short octave
+/// errors folded back, then smoothed.
+fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
+    let n = track.hz.len().min(track.confidence.len());
+    let mut raw: Vec<Option<f64>> = (0..n)
+        .map(|i| (track.confidence[i] >= VOICED && track.hz[i] > 0.0).then(|| midi(track.hz[i])))
+        .collect();
+    let mut sung: Vec<Option<f64>> = vec![None; n];
+    for s in spans {
+        let (a, b) = frame_range(*s, n);
+        sung[a..b].copy_from_slice(&raw[a..b]);
+    }
+    let Some(global) = near(&sung, 0, n) else {
+        return vec![None; n];
+    };
+    let mut out_of_register = vec![];
+    for (i, v) in raw.iter_mut().enumerate() {
+        let register = near(&sung, i, REGISTER_REACH).unwrap_or(global);
+        if let Some(x) = v.filter(|x| (x - register).abs() > REGISTER) {
+            out_of_register.push((i, x));
+            *v = None;
+        }
+    }
+    let in_register = raw.clone();
+    for (i, x) in out_of_register {
+        let Some(voice) = near(&in_register, i, MAX_GAP) else {
+            continue;
+        };
+        raw[i] = (2..=HARMONICS)
+            .map(|k| x - 12.0 * f64::from(k).log2())
+            .find(|y| (y - voice).abs() <= HARMONIC_FIT);
+    }
+    let folded = fold_octaves(&raw);
+    (0..n)
+        .map(|i| {
+            folded[i]?;
+            near(&folded, i, SMOOTH)
+        })
+        .collect()
+}
+
+/// Notes of one span: cut where the pitch moves a semitone for four frames or the voice stops for
+/// more than 128 ms; a note under 96 ms lengthens its neighbour or is dropped, then equal ones merge.
+fn notes(clean: &[Option<f64>], span: MelodySpan, until_ms: u32) -> Vec<MelodyNote> {
+    let (first, end) = frame_range(span, clean.len());
+    let hold = frame_range(
+        MelodySpan {
+            start_ms: span.start_ms,
+            end_ms: until_ms,
+        },
+        clean.len(),
+    )
+    .1;
+    let mut closed: Vec<Open> = vec![];
     let (mut cur, mut pending, mut gap): (Option<Open>, Vec<(usize, f64)>, usize) =
         (None, vec![], 0);
-    for (i, v) in smooth.into_iter().enumerate() {
-        let Some(v) = v else {
+    for (i, v) in clean.iter().enumerate().take(end).skip(first) {
+        let Some(v) = *v else {
             gap += 1;
             if gap > MAX_GAP {
                 pending.clear();
                 if let Some(o) = cur.take() {
-                    close(o);
+                    closed.push(o);
                 }
             }
             continue;
@@ -162,7 +373,6 @@ pub fn notes(track: &PitchTrack, span: MelodySpan) -> Vec<MelodyNote> {
             continue;
         };
         if (v - median(&c.vals)).abs() <= SPLIT {
-            // Frames that strayed and came back were noise inside the note.
             for (j, pv) in pending.drain(..) {
                 c.vals.push(pv);
                 c.last = j;
@@ -171,26 +381,101 @@ pub fn notes(track: &PitchTrack, span: MelodySpan) -> Vec<MelodyNote> {
             c.last = i;
         } else {
             pending.push((i, v));
-            if pending.len() >= MIN_FRAMES {
+            if pending.len() >= STEP_FRAMES {
                 let mut next = Open::new(pending[0].0, pending[0].1);
                 for (j, pv) in pending.drain(..).skip(1) {
                     next.vals.push(pv);
                     next.last = j;
                 }
                 if let Some(old) = cur.replace(next) {
-                    close(old);
+                    closed.push(old);
                 }
             }
         }
     }
-    if let Some(o) = cur {
-        close(o);
+    closed.extend(cur);
+    let long = |o: &Open| o.vals.len() >= MIN_FRAMES;
+    for k in 0..closed.len() {
+        if long(&closed[k]) {
+            continue;
+        }
+        let (first, last) = (closed[k].first, closed[k].last);
+        let own = median(&closed[k].vals);
+        let p = closed[..k]
+            .iter()
+            .rposition(long)
+            .filter(|&p| first <= closed[p].last + MAX_GAP + 1);
+        let n = closed[k + 1..]
+            .iter()
+            .position(long)
+            .map(|n| n + k + 1)
+            .filter(|&n| closed[n].first <= last + MAX_GAP + 1);
+        let dist = |j: usize| (median(&closed[j].vals) - own).abs();
+        match (p, n) {
+            // A next note already extended back over an earlier fragment keeps the time after it.
+            (Some(p), Some(n)) if closed[n].first < first || dist(n) < dist(p) => {
+                closed[n].first = closed[n].first.min(first)
+            }
+            (Some(p), _) => closed[p].last = closed[p].last.max(last),
+            (None, Some(n)) => closed[n].first = closed[n].first.min(first),
+            _ => {}
+        }
     }
-    out
+    let kept = closed.into_iter().filter(long);
+    let mut merged: Vec<Open> = vec![];
+    for o in kept {
+        match merged.last_mut() {
+            Some(m)
+                if o.first - m.last - 1 <= MERGE_GAP
+                    && (median(&o.vals) - median(&m.vals)).abs() <= MERGE =>
+            {
+                m.last = o.last;
+                m.vals.extend(o.vals);
+            }
+            _ => merged.push(o),
+        }
+    }
+    if let Some(o) = merged.last_mut().filter(|o| o.last + MAX_GAP >= end) {
+        let pitch = median(&o.vals);
+        let mut off = 0;
+        for (k, v) in clean.iter().enumerate().take(hold).skip(end) {
+            if v.is_some_and(|v| (v - pitch).abs() <= SPLIT) {
+                (o.last, off) = (k, 0);
+            } else {
+                off += 1;
+                if off > MAX_GAP {
+                    break;
+                }
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .map(|o| MelodyNote {
+            start_ms: ((o.first as f64 * FRAME_MS).round() as u32).max(span.start_ms),
+            end_ms: (((o.last + 1) as f64 * FRAME_MS).round() as u32).min(until_ms),
+            midi: (median(&o.vals) * 100.0).round() / 100.0,
+        })
+        .collect()
 }
 
 pub fn spans_notes(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Vec<MelodyNote>> {
-    spans.iter().map(|s| notes(track, *s)).collect()
+    let clean = cleaned(track, spans);
+    spans
+        .iter()
+        .map(|s| {
+            let next = spans
+                .iter()
+                .map(|o| o.start_ms)
+                .filter(|&t| t > s.start_ms)
+                .min();
+            let until = next
+                .unwrap_or(u32::MAX)
+                .min(s.end_ms.saturating_add(HOLD_MS))
+                .max(s.end_ms);
+            notes(&clean, *s, until)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -206,6 +491,10 @@ mod tests {
             }
         }
         t
+    }
+
+    fn one(t: &PitchTrack, s: MelodySpan) -> Vec<MelodyNote> {
+        spans_notes(t, &[s]).remove(0)
     }
 
     fn span(a: u32, b: u32) -> MelodySpan {
@@ -225,7 +514,7 @@ mod tests {
     #[test]
     fn a_silence_splits_two_notes_and_each_takes_its_median() {
         let t = track(&[(30, 220.0), (10, 0.0), (30, 329.6276)]);
-        let n = notes(&t, span(0, 1280));
+        let n = one(&t, span(0, 1280));
         assert_eq!(n.len(), 2);
         assert_eq!((n[0].midi, n[1].midi), (57.0, 64.0));
         assert_eq!((n[0].start_ms, n[0].end_ms), (0, 480));
@@ -233,19 +522,234 @@ mod tests {
     }
 
     #[test]
+    fn a_note_held_past_the_span_end_follows_the_voice_to_the_next_span() {
+        let t = track(&[(30, 220.0), (30, 220.0), (10, 0.0), (30, 330.0)]);
+        let n = one(&t, span(0, 480));
+        assert_eq!((n.len(), n[0].end_ms), (1, 960));
+        let n = spans_notes(&t, &[span(0, 480), span(800, 1000)]).remove(0);
+        assert_eq!(n[0].end_ms, 800);
+    }
+
+    #[test]
+    fn overlapping_spans_do_not_extend_a_hold_over_the_next_span() {
+        let t = track(&[(300, 220.0)]);
+        let n = spans_notes(&t, &[span(0, 1000), span(900, 2000)]).remove(0);
+        assert_eq!(n.last().unwrap().end_ms, 1000);
+    }
+
+    #[test]
+    fn a_held_note_stops_where_the_pitch_changes() {
+        let t = track(&[(30, 220.0), (10, 220.0), (30, 330.0)]);
+        let n = one(&t, span(0, 480));
+        assert_eq!((n.len(), n[0].end_ms), (1, 640));
+    }
+
+    #[test]
+    fn two_fragments_between_notes_never_overlap_them() {
+        let t = track(&[(30, 220.0), (5, 277.18), (5, 233.08), (30, 293.66)]);
+        let n = one(&t, span(0, 1200));
+        assert!(n.windows(2).all(|w| w[0].end_ms <= w[1].start_ms));
+    }
+
+    #[test]
+    fn a_scoop_joins_the_next_note_not_the_previous_tail() {
+        let t = track(&[(30, 220.0), (3, 246.94), (30, 261.6256)]);
+        let n = one(&t, span(0, 1000));
+        assert_eq!(n.len(), 2);
+        assert_eq!((n[0].end_ms, n[1].start_ms), (480, 480));
+    }
+
+    #[test]
     fn a_step_without_a_gap_is_two_notes_and_a_spike_is_none() {
         let mut t = track(&[(20, 220.0), (20, 261.6256)]);
-        assert_eq!(notes(&t, span(0, 640)).len(), 2);
+        assert_eq!(one(&t, span(0, 640)).len(), 2);
         t = track(&[(10, 220.0), (1, 440.0), (10, 220.0)]);
-        let n = notes(&t, span(0, 400));
+        let n = one(&t, span(0, 400));
         assert_eq!(n.len(), 1);
         assert_eq!(n[0].midi, 57.0);
     }
 
     #[test]
+    fn a_burst_far_out_of_the_register_is_dropped() {
+        let t = track(&[(40, 220.0), (20, 1396.913), (40, 220.0)]);
+        let n = one(&t, span(0, 1600));
+        assert_eq!(n.iter().map(|n| n.midi).collect::<Vec<_>>(), [57.0, 57.0]);
+        assert_eq!((n[0].end_ms, n[1].start_ms), (640, 960));
+    }
+
+    #[test]
+    fn an_octave_error_inside_a_note_is_folded_back() {
+        let t = track(&[(20, 220.0), (8, 440.0), (20, 220.0)]);
+        let n = one(&t, span(0, 768));
+        assert_eq!(n.len(), 1);
+        assert_eq!(n[0].midi, 57.0);
+    }
+
+    #[test]
+    fn a_sung_octave_leap_between_two_notes_is_kept() {
+        let t = track(&[(40, 220.0), (15, 440.0), (40, 220.0)]);
+        let n = one(&t, span(0, 1520));
+        assert_eq!(
+            n.iter().map(|n| n.midi).collect::<Vec<_>>(),
+            [57.0, 69.0, 57.0]
+        );
+    }
+
+    fn mids(parts: &[(usize, f32)]) -> Vec<f64> {
+        let n = one(&track(parts), span(0, 100_000));
+        n.iter().map(|n| n.midi).collect()
+    }
+
+    #[test]
+    fn an_octave_run_split_by_a_gap_is_one_run() {
+        let up = [(40, 220.0), (8, 440.0), (2, 0.0), (9, 440.0), (40, 220.0)];
+        assert_eq!(mids(&up), [57.0, 69.0, 57.0]);
+        let short = [(20, 220.0), (5, 440.0), (2, 0.0), (4, 440.0), (20, 220.0)];
+        assert_eq!(mids(&short), [57.0]);
+    }
+
+    #[test]
+    fn alternating_runs_an_octave_apart_come_out_as_one_register() {
+        let hops: Vec<(usize, f32)> = (0..8)
+            .map(|i| (20, if i % 2 == 0 { 220.0 } else { 440.0 }))
+            .collect();
+        let m = mids(&hops);
+        assert!(m.iter().all(|&x| (x - m[0]).abs() < 1.0), "{m:?}");
+    }
+
+    fn semis(parts: &[(usize, u32)]) -> Vec<f64> {
+        let hz: Vec<(usize, f32)> = parts
+            .iter()
+            .map(|&(n, m)| (n, if m == 0 { 0.0 } else { midi_hz(m) }))
+            .collect();
+        mids(&hz)
+    }
+
+    fn midi_hz(m: u32) -> f32 {
+        440.0 * 2f32.powf((m as f32 - 69.0) / 12.0)
+    }
+
+    #[test]
+    fn two_voices_answering_across_gaps_are_not_folded() {
+        let unit = [(40, 164.81), (30, 0.0), (40, 369.99), (30, 0.0)];
+        let duet: Vec<(usize, f32)> = unit.iter().cycle().take(16).copied().collect();
+        assert_eq!(mids(&duet), [52.0, 66.0].repeat(4));
+    }
+
+    #[test]
+    fn phrase_jumps_across_pauses_are_kept() {
+        let unit = [(40, 220.0), (62, 0.0), (40, 440.0), (62, 0.0)];
+        let solo: Vec<(usize, f32)> = unit.iter().cycle().take(12).copied().collect();
+        assert_eq!(mids(&solo), [57.0, 69.0].repeat(3));
+    }
+
+    #[test]
+    fn a_held_leap_with_one_edge_and_a_tie_are_kept() {
+        assert_eq!(mids(&[(40, 220.0), (10, 440.0)]), [57.0, 69.0]);
+        assert_eq!(mids(&[(7, 220.0), (7, 440.0)]), [57.0, 69.0]);
+    }
+
+    #[test]
+    fn hops_across_pauses_do_not_crowd_a_leap() {
+        let hops = [(20, 57), (20, 69), (20, 57), (20, 69), (20, 57)];
+        let tail = [(60, 0), (60, 64), (60, 0), (40, 57)];
+        let parts: Vec<_> = hops.iter().chain(&tail).copied().collect();
+        assert_eq!(semis(&parts), [57.0, 64.0, 57.0]);
+    }
+
+    #[test]
+    fn a_leap_in_a_crowded_line_follows_the_register_of_the_decoded_path() {
+        let flips: Vec<_> = (0..4).flat_map(|_| [(8, 57), (8, 69)]).collect();
+        let line = [
+            (20, 0),
+            (15, 60),
+            (15, 64),
+            (15, 67),
+            (18, 52),
+            (15, 67),
+            (15, 64),
+        ];
+        let parts: Vec<_> = flips.iter().chain(&line).copied().collect();
+        assert!(semis(&parts).contains(&64.0), "{:?}", semis(&parts));
+    }
+
+    #[test]
+    fn the_same_leap_without_crowding_is_kept() {
+        let parts = [
+            (30, 60),
+            (20, 0),
+            (15, 60),
+            (15, 64),
+            (15, 67),
+            (18, 52),
+            (15, 67),
+            (15, 64),
+        ];
+        assert!(semis(&parts).contains(&52.0), "{:?}", semis(&parts));
+    }
+
+    #[test]
+    fn a_short_run_entered_by_a_non_octave_step_is_a_sung_note() {
+        assert_eq!(
+            mids(&[(40, 220.0), (10, 415.3), (40, 220.0)]),
+            [57.0, 68.0, 57.0]
+        );
+    }
+
+    #[test]
+    fn a_long_octave_run_is_kept_even_with_octave_edges() {
+        assert_eq!(
+            mids(&[(40, 220.0), (20, 440.0), (40, 220.0)]),
+            [57.0, 69.0, 57.0]
+        );
+    }
+
+    #[test]
+    fn a_high_section_far_from_the_rest_of_the_track_is_kept() {
+        let t = track(&[(800, 220.0), (400, 880.0)]);
+        let n = one(&t, span(0, 19_200));
+        assert!(n.iter().any(|n| n.midi == 81.0 && n.end_ms >= 19_000));
+    }
+
+    #[test]
+    fn voiced_frames_count_for_the_minimum_not_the_span() {
+        let t = track(&[(1, 220.0), (8, 0.0), (1, 220.0)]);
+        assert!(one(&t, span(0, 200)).is_empty());
+    }
+
+    #[test]
+    fn a_fragment_between_two_equal_notes_is_dropped_and_they_merge() {
+        let t = track(&[(20, 220.0), (4, 329.6276), (20, 220.0)]);
+        let n = one(&t, span(0, 704));
+        assert_eq!(n.len(), 1);
+        assert_eq!((n[0].midi, n[0].end_ms), (57.0, 704));
+    }
+
+    #[test]
     fn a_short_gap_inside_a_word_is_bridged() {
         let t = track(&[(10, 220.0), (3, 0.0), (10, 220.0)]);
-        assert_eq!(notes(&t, span(0, 500)).len(), 1);
+        assert_eq!(one(&t, span(0, 500)).len(), 1);
+    }
+
+    #[test]
+    fn a_short_note_lengthens_the_note_before_it() {
+        let t = track(&[(40, 220.0), (5, 246.94), (8, 0.0), (20, 196.0)]);
+        let n = one(&t, span(0, 1200));
+        assert_eq!(n.iter().map(|n| n.midi).collect::<Vec<_>>(), [57.0, 55.0]);
+        assert_eq!(n[0].end_ms, 720);
+    }
+
+    #[test]
+    fn a_short_note_lengthens_the_note_after_it_when_none_precedes() {
+        let t = track(&[(5, 246.94), (3, 0.0), (20, 196.0)]);
+        let n = one(&t, span(0, 800));
+        assert_eq!(n.iter().map(|n| n.midi).collect::<Vec<_>>(), [55.0]);
+        assert_eq!(n[0].start_ms, 0);
+    }
+
+    #[test]
+    fn a_fifth_harmonic_out_of_the_register_is_folded_to_the_voice() {
+        assert_eq!(mids(&[(40, 220.0), (12, 1100.0), (40, 220.0)]), [57.0]);
     }
 
     #[test]
@@ -255,7 +759,7 @@ mod tests {
         assert_eq!(all[0].len(), 1);
         assert_eq!(all[0][0].midi, 64.0);
         assert!(all[1].is_empty());
-        assert_eq!(all[2][0].end_ms, 250);
+        assert_eq!(all[2][0].end_ms, 480);
     }
 
     #[test]

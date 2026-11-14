@@ -102,7 +102,7 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
     Ok(JobResult::Separate {
         separate: SeparateMeta {
             model: picked.id.into(),
-            model_version: picked.version.into(),
+            model_version: picked.version.clone(),
             provider,
             vocals: file(Stem::Vocals),
             instrumental: file(Stem::Instrumental),

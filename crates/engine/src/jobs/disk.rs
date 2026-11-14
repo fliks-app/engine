@@ -17,7 +17,7 @@ fn disk_verdict(free: Option<u64>, min: f64, dir: &Path) -> Result<(), String> {
 
 #[cfg(unix)]
 #[allow(clippy::useless_conversion)]
-pub(super) fn free_bytes(p: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(p: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(p.as_os_str().as_bytes()).ok()?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -27,7 +27,7 @@ pub(super) fn free_bytes(p: &Path) -> Option<u64> {
 }
 
 #[cfg(windows)]
-pub(super) fn free_bytes(p: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(p: &Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let w: Vec<u16> = p.as_os_str().encode_wide().chain([0]).collect();
@@ -44,7 +44,7 @@ pub(super) fn free_bytes(p: &Path) -> Option<u64> {
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(super) fn free_bytes(_: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(_: &Path) -> Option<u64> {
     None
 }
 

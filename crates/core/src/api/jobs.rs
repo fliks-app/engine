@@ -116,18 +116,23 @@ pub enum JobKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         providers: Option<Vec<String>>,
     },
-    /// Times the words of `lines` on the vocal stem `media` names: speech recognition gives word
-    /// times, the known words are matched onto them. Lines with times keep within them. Needs an
-    /// `alignment` model and the speech recogniser.
+    /// Times the words of `lines` on the vocal stem `media` names: a CTC network forces the known
+    /// words onto the audio, else speech recognition gives word times they are matched onto.
+    /// Lines with times keep within them. Needs an `alignment` model.
     #[schema(title = "AlignJob")]
     Align {
         lines: Vec<AlignLine>,
-        /// ISO 639-1 code of the singing; absent: detected.
+        /// ISO 639 code of the singing; absent: detected from the lyrics.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         language: Option<String>,
-        /// An `alignment` model id; absent: the default one.
+        /// An `alignment` model id; absent: the installed CTC model of the language, else the
+        /// speech recogniser's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// Hardware providers a CTC network may run on (`cpu` always may); absent or empty: the
+        /// CPU only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        providers: Option<Vec<String>>,
     },
     /// The notes sung in each of `spans` of the vocal stem `media` names. Needs a `melody` model
     /// and an ONNX runtime.

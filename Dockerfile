@@ -123,9 +123,9 @@ RUN mkdir -p /etc/OpenCL/vendors && echo 'libnvidia-opencl.so.1' > /etc/OpenCL/v
 
 # group=root + g=u: writable by an arbitrary uid with gid 0 (`--user <uid> --group-add 0`); mount a volume to keep it.
 ENV FLIKS_TRANSCODE_DIR=/transcode
-# Downloaded models (`/v1/models`); a volume here keeps them across container replacements.
-ENV FLIKS_MODELS_DIR=/models
-RUN mkdir -p /transcode /models && chgrp 0 /transcode /models && chmod g=u /transcode /models
+# Downloaded models live in `/data/models` (`/v1/models`); a volume on `/data` keeps them across container replacements.
+ENV FLIKS_DATA_DIR=/data
+RUN mkdir -p /transcode /data && chgrp 0 /transcode /data && chmod g=u /transcode /data
 
 EXPOSE 7400 4848
 ENTRYPOINT ["fliks-engine"]

@@ -1,10 +1,13 @@
 //! What the audio jobs share: outputs written beside their final names, journaled for a boot
 //! sweep and published without overwriting, and the typed errors of a missing model or runtime.
 use crate::cache::{MERGE_JOURNAL, file_id};
-use crate::jobs::Ctx;
+use crate::jobs::{Cmd, Ctx, tail};
+use crate::proc::{Ffmpeg, Pipes};
 use crate::safe_write::{exists, publish, taken};
 use fliks_engine_core::api::job_errors;
+use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncReadExt;
 
 struct Claim {
     out: PathBuf,
@@ -152,4 +155,58 @@ impl Drop for StopOnDrop {
     fn drop(&mut self) {
         self.0.store(true, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+/// The decoder of the job's media: its first audio stream as 16 kHz mono f32 on stdout.
+pub fn pcm_cmd(ctx: &Ctx) -> Cmd {
+    let argv: Vec<String> = [
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-i",
+        &ctx.media_path(),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-f",
+        "f32le",
+        "-ac",
+        "1",
+        "-ar",
+        &SAMPLE_RATE.to_string(),
+        "pipe:1",
+    ]
+    .map(String::from)
+    .to_vec();
+    Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout())
+}
+
+/// Every sample the `pcm_cmd` run `p` decodes.
+pub async fn read_pcm(ctx: &Ctx, p: &Ffmpeg) -> Result<Vec<f32>, String> {
+    let mut out = p.take_stdout().ok_or("no decoder output")?;
+    let mut bytes = vec![];
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = out
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("decode: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buf[..n]);
+        ctx.pulse();
+    }
+    match p.wait().await.code {
+        Some(0) => {}
+        code => return Err(format!("ffmpeg exited with {code:?}: {}", tail(p, 2))),
+    }
+    Ok(bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect())
 }

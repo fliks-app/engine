@@ -47,6 +47,7 @@ ring = "0.17"
 webrtc-vad = "0.4"
 lofty = "0.25"
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-23", "cuda", "openvino", "coreml", "migraphx", "directml"], optional = true }
+whatlang = "0.18.0"
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 libloading = "0.9"
