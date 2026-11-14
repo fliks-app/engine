@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.0](https://github.com/fliks-app/engine/compare/v1.22.0...v1.23.0) (2026-11-14)
+
+
+### Features
+
+* **karaoke:** CTC lyrics alignment and model manager v2 ([#234](https://github.com/fliks-app/engine/issues/234)) ([4831437](https://github.com/fliks-app/engine/commit/48314378585fbe9318c0d96ec2624c66e7816f59))
+
+
+### Bug Fixes
+
+* **runtime:** reap the run of a rendition the session no longer plays ([#232](https://github.com/fliks-app/engine/issues/232)) ([b84c447](https://github.com/fliks-app/engine/commit/b84c4476f70068d47fe9ffb0620c6910d0b108e4))
+
 ## [1.22.0](https://github.com/fliks-app/engine/compare/v1.21.3...v1.22.0) (2026-11-11)
 
 
