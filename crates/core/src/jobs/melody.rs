@@ -36,10 +36,15 @@ const RUN_BREAK: f64 = 9.0;
 const SHIFT_COST: f64 = 1.0;
 /// Cost per frame and per semitone a run sits further than `FREE_REGISTER` from the local register.
 const PULL: f64 = 1.0;
-const FREE_REGISTER: f64 = 3.0;
+/// Semitones a run may sit from the local register before it is pulled.
+const FREE_REGISTER: f64 = 8.0;
+/// Times the path is decoded again with the register of the previous path.
+const REDECODES: usize = 3;
+/// Octave shifts the path chooses from, in tie-break order.
+const SHIFTS: [f64; 3] = [0.0, -12.0, 12.0];
 /// Time (ms) over which a step across a gap stops counting.
 const GAP_DECAY_MS: f64 = 600.0;
-/// Octave-like steps within `REGISTER_REACH` frames that make a leap cost double, up to `HOP_MAX` times:
+/// Contiguous octave-like steps within `REGISTER_REACH` frames per crowding unit, up to `HOP_MAX`:
 /// a singer seldom leaps an octave often, a tracker flipping between two voices does.
 const HOP_STEP: usize = 2;
 /// Semitones from which a step between runs counts as an octave-like hop.
@@ -174,8 +179,8 @@ struct Run {
 }
 
 /// `raw` with each run moved by the octave (-1, 0 or 1) the cheapest path over the runs picks: a step
-/// costs what it exceeds `LEAP` by, less across a gap, a move costs per frame, and a run is pulled
-/// toward the register nearby.
+/// costs what it exceeds `LEAP` by, less across a gap, a move costs per frame, and where hops crowd a
+/// run far from the register of the path itself is pulled back.
 fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
     let voiced: Vec<usize> = (0..raw.len()).filter(|&i| raw[i].is_some()).collect();
     let at = |f: usize| raw[f].unwrap_or(0.0);
@@ -203,41 +208,27 @@ fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
     if runs.len() < 2 {
         return raw.to_vec();
     }
-    let octave_steps: Vec<usize> = runs
-        .windows(2)
-        .map(|w| usize::from((w[1].head - w[0].tail).abs() >= HOP_SEMITONES))
+    let contiguous = |t: usize| runs[t].first - runs[t - 1].last - 1 <= MAX_GAP;
+    let hops: Vec<bool> = (1..runs.len())
+        .map(|t| contiguous(t) && (runs[t].head - runs[t - 1].tail).abs() >= HOP_SEMITONES)
         .collect();
-    let crowd: Vec<f64> = (0..runs.len())
-        .map(|t| {
-            let (lo, hi) = (
-                runs[t].first.saturating_sub(REGISTER_REACH),
-                runs[t].last + REGISTER_REACH,
-            );
-            let hops = (1..runs.len())
-                .filter(|&u| octave_steps[u - 1] == 1 && runs[u].first >= lo && runs[u].first <= hi)
-                .count();
-            (hops as f64 / HOP_STEP as f64).clamp(1.0, HOP_MAX)
-        })
-        .collect();
-    let pull: Vec<[f64; 3]> = runs
+    let crowd: Vec<f64> = runs
         .iter()
-        .enumerate()
-        .map(|(t, r)| {
-            let mid = (r.first + r.last) / 2;
-            let reg = near(raw, mid, REGISTER_REACH).unwrap_or(r.median);
-            [-12.0, 0.0, 12.0].map(|s| {
-                let excess = (r.median + s - reg).abs() - FREE_REGISTER;
-                r.frames as f64
-                    * (PULL * (crowd[t] - 1.0) * excess.max(0.0)
-                        + if s == 0.0 { 0.0 } else { SHIFT_COST })
-            })
+        .map(|r| {
+            let (lo, hi) = (
+                r.first.saturating_sub(REGISTER_REACH),
+                r.last + REGISTER_REACH,
+            );
+            let n = (1..runs.len())
+                .filter(|&u| hops[u - 1] && runs[u].first >= lo && runs[u].first <= hi)
+                .count();
+            (n as f64 / HOP_STEP as f64).clamp(1.0, HOP_MAX)
         })
         .collect();
     let step = |t: usize, from: usize, to: usize| -> f64 {
         let (a, b) = (&runs[t - 1], &runs[t]);
-        let (sa, sb) = ([-12.0, 0.0, 12.0][from], [-12.0, 0.0, 12.0][to]);
         let gap_ms = (b.first - a.last - 1) as f64 * FRAME_MS;
-        let d = ((b.head + sb) - (a.tail + sa)).abs();
+        let d = ((b.head + SHIFTS[to]) - (a.tail + SHIFTS[from])).abs();
         let raw_step = (b.head - a.tail).abs();
         let off = (raw_step - 12.0 * (raw_step / 12.0).round()).abs();
         let moved = if from == to {
@@ -247,34 +238,64 @@ fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
         };
         (d - LEAP).max(0.0) * (-gap_ms / GAP_DECAY_MS).exp() * crowd[t] + moved
     };
-    let mut cost = pull[0];
-    let mut back: Vec<[usize; 3]> = vec![[0; 3]];
-    for (t, p) in pull.iter().enumerate().skip(1) {
-        let mut next = [0.0; 3];
-        let mut from = [0; 3];
-        for to in 0..3 {
-            let (best, arg) = (0..3)
-                .map(|f| (cost[f] + step(t, f, to), f))
-                .min_by(|x, y| x.0.total_cmp(&y.0))
-                .unwrap_or((0.0, 1));
-            next[to] = best + p[to];
-            from[to] = arg;
+    let decode = |track: &[Option<f64>]| -> Vec<usize> {
+        let place: Vec<[f64; 3]> = runs
+            .iter()
+            .enumerate()
+            .map(|(t, r)| {
+                let reg = near(track, (r.first + r.last) / 2, REGISTER_REACH).unwrap_or(r.median);
+                SHIFTS.map(|s| {
+                    let excess = ((r.median + s - reg).abs() - FREE_REGISTER).max(0.0);
+                    r.frames as f64
+                        * (PULL * (crowd[t] - 1.0) * excess
+                            + if s == 0.0 { 0.0 } else { SHIFT_COST })
+                })
+            })
+            .collect();
+        let mut cost = place[0];
+        let mut back: Vec<[usize; 3]> = vec![[0; 3]];
+        for (t, p) in place.iter().enumerate().skip(1) {
+            let mut next = [0.0; 3];
+            let mut from = [0; 3];
+            for to in 0..3 {
+                let (best, arg) = (0..3)
+                    .map(|f| (cost[f] + step(t, f, to), f))
+                    .min_by(|x, y| x.0.total_cmp(&y.0))
+                    .unwrap_or((0.0, 0));
+                next[to] = best + p[to];
+                from[to] = arg;
+            }
+            cost = next;
+            back.push(from);
         }
-        cost = next;
-        back.push(from);
-    }
-    let mut state = (0..3)
-        .min_by(|&x, &y| cost[x].total_cmp(&cost[y]))
-        .unwrap_or(1);
-    let mut out = raw.to_vec();
-    for t in (0..runs.len()).rev() {
-        let shift = [-12.0, 0.0, 12.0][state];
-        for v in out[runs[t].first..=runs[t].last].iter_mut().flatten() {
-            *v += shift;
+        let mut state = (0..3)
+            .min_by(|&x, &y| cost[x].total_cmp(&cost[y]))
+            .unwrap_or(0);
+        let mut path = vec![0; runs.len()];
+        for t in (0..runs.len()).rev() {
+            path[t] = state;
+            state = back[t][state];
         }
-        state = back[t][state];
+        path
+    };
+    let apply = |path: &[usize]| {
+        let mut out = raw.to_vec();
+        for (r, &s) in runs.iter().zip(path) {
+            for v in out[r.first..=r.last].iter_mut().flatten() {
+                *v += SHIFTS[s];
+            }
+        }
+        out
+    };
+    let mut path = decode(raw);
+    for _ in 0..REDECODES {
+        let next = decode(&apply(&path));
+        if next == path {
+            break;
+        }
+        path = next;
     }
-    out
+    apply(&path)
 }
 
 /// The MIDI pitch of every frame, `None` when unvoiced: frames out of the singer's register (the
@@ -513,6 +534,77 @@ mod tests {
             .collect();
         let m = mids(&hops);
         assert!(m.iter().all(|&x| (x - m[0]).abs() < 1.0), "{m:?}");
+    }
+
+    fn semis(parts: &[(usize, u32)]) -> Vec<f64> {
+        let hz: Vec<(usize, f32)> = parts
+            .iter()
+            .map(|&(n, m)| (n, if m == 0 { 0.0 } else { midi_hz(m) }))
+            .collect();
+        mids(&hz)
+    }
+
+    fn midi_hz(m: u32) -> f32 {
+        440.0 * 2f32.powf((m as f32 - 69.0) / 12.0)
+    }
+
+    #[test]
+    fn two_voices_answering_across_gaps_are_not_folded() {
+        let unit = [(40, 164.81), (30, 0.0), (40, 369.99), (30, 0.0)];
+        let duet: Vec<(usize, f32)> = unit.iter().cycle().take(16).copied().collect();
+        assert_eq!(mids(&duet), [52.0, 66.0].repeat(4));
+    }
+
+    #[test]
+    fn phrase_jumps_across_pauses_are_kept() {
+        let unit = [(40, 220.0), (62, 0.0), (40, 440.0), (62, 0.0)];
+        let solo: Vec<(usize, f32)> = unit.iter().cycle().take(12).copied().collect();
+        assert_eq!(mids(&solo), [57.0, 69.0].repeat(3));
+    }
+
+    #[test]
+    fn a_held_leap_with_one_edge_and_a_tie_are_kept() {
+        assert_eq!(mids(&[(40, 220.0), (10, 440.0)]), [57.0, 69.0]);
+        assert_eq!(mids(&[(7, 220.0), (7, 440.0)]), [57.0, 69.0]);
+    }
+
+    #[test]
+    fn hops_across_pauses_do_not_crowd_a_leap() {
+        let hops = [(20, 57), (20, 69), (20, 57), (20, 69), (20, 57)];
+        let tail = [(60, 0), (60, 64), (60, 0), (40, 57)];
+        let parts: Vec<_> = hops.iter().chain(&tail).copied().collect();
+        assert_eq!(semis(&parts), [57.0, 64.0, 57.0]);
+    }
+
+    #[test]
+    fn a_leap_in_a_crowded_line_follows_the_register_of_the_decoded_path() {
+        let flips: Vec<_> = (0..4).flat_map(|_| [(8, 57), (8, 69)]).collect();
+        let line = [
+            (20, 0),
+            (15, 60),
+            (15, 64),
+            (15, 67),
+            (18, 52),
+            (15, 67),
+            (15, 64),
+        ];
+        let parts: Vec<_> = flips.iter().chain(&line).copied().collect();
+        assert!(semis(&parts).contains(&64.0), "{:?}", semis(&parts));
+    }
+
+    #[test]
+    fn the_same_leap_without_crowding_is_kept() {
+        let parts = [
+            (30, 60),
+            (20, 0),
+            (15, 60),
+            (15, 64),
+            (15, 67),
+            (18, 52),
+            (15, 67),
+            (15, 64),
+        ];
+        assert!(semis(&parts).contains(&52.0), "{:?}", semis(&parts));
     }
 
     #[test]
