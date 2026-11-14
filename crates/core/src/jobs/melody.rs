@@ -249,7 +249,7 @@ fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
     };
     let mut cost = pull[0];
     let mut back: Vec<[usize; 3]> = vec![[0; 3]];
-    for t in 1..runs.len() {
+    for (t, p) in pull.iter().enumerate().skip(1) {
         let mut next = [0.0; 3];
         let mut from = [0; 3];
         for to in 0..3 {
@@ -257,7 +257,7 @@ fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
                 .map(|f| (cost[f] + step(t, f, to), f))
                 .min_by(|x, y| x.0.total_cmp(&y.0))
                 .unwrap_or((0.0, 1));
-            next[to] = best + pull[t][to];
+            next[to] = best + p[to];
             from[to] = arg;
         }
         cost = next;
