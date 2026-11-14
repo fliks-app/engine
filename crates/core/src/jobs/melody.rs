@@ -413,7 +413,10 @@ fn notes(clean: &[Option<f64>], span: MelodySpan, until_ms: u32) -> Vec<MelodyNo
             .filter(|&n| closed[n].first <= last + MAX_GAP + 1);
         let dist = |j: usize| (median(&closed[j].vals) - own).abs();
         match (p, n) {
-            (Some(p), Some(n)) if dist(n) < dist(p) => closed[n].first = closed[n].first.min(first),
+            // A next note already extended back over an earlier fragment keeps the time after it.
+            (Some(p), Some(n)) if closed[n].first < first || dist(n) < dist(p) => {
+                closed[n].first = closed[n].first.min(first)
+            }
             (Some(p), _) => closed[p].last = closed[p].last.max(last),
             (None, Some(n)) => closed[n].first = closed[n].first.min(first),
             _ => {}
@@ -532,6 +535,13 @@ mod tests {
         let t = track(&[(30, 220.0), (10, 220.0), (30, 330.0)]);
         let n = one(&t, span(0, 480));
         assert_eq!((n.len(), n[0].end_ms), (1, 640));
+    }
+
+    #[test]
+    fn two_fragments_between_notes_never_overlap_them() {
+        let t = track(&[(30, 220.0), (5, 277.18), (5, 233.08), (30, 293.66)]);
+        let n = one(&t, span(0, 1200));
+        assert!(n.windows(2).all(|w| w[0].end_ms <= w[1].start_ms));
     }
 
     #[test]
