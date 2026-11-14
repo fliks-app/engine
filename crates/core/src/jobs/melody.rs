@@ -32,7 +32,7 @@ const REGISTER_REACH: usize = 250;
 const LEAP: f64 = 5.0;
 /// A step of at least this many semitones, or a gap over `MAX_GAP`, cuts a run for the octave pass.
 const RUN_BREAK: f64 = 9.0;
-/// Cost per voiced frame of moving a run an octave (a run of 14 frames weighs a 12 st leap).
+/// Cost per voiced frame of moving a run an octave (14 frames weigh the two edges of a 12 st leap, 7 each).
 const SHIFT_COST: f64 = 1.0;
 /// Cost per frame and per semitone a run sits further than `FREE_REGISTER` from the local register.
 const PULL: f64 = 1.0;
@@ -180,9 +180,8 @@ struct Run {
     tail: f64,
 }
 
-/// `raw` with each run moved by the octave (-1, 0 or 1) the cheapest path over the runs picks: a step
-/// costs what it exceeds `LEAP` by, less across a gap, a move costs per frame, and where hops crowd a
-/// run far from the register of the path itself is pulled back.
+/// `raw` with each run moved by the octave (-1, 0 or 1) the cheapest path over the runs picks: steps
+/// cost what they exceed `LEAP` by, moves cost per frame, crowded hops pull a run to the register.
 fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
     let voiced: Vec<usize> = (0..raw.len()).filter(|&i| raw[i].is_some()).collect();
     let at = |f: usize| raw[f].unwrap_or(0.0);
@@ -468,11 +467,12 @@ pub fn spans_notes(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Vec<MelodyNo
             let next = spans
                 .iter()
                 .map(|o| o.start_ms)
-                .filter(|&t| t >= s.end_ms)
+                .filter(|&t| t > s.start_ms)
                 .min();
             let until = next
                 .unwrap_or(u32::MAX)
-                .min(s.end_ms.saturating_add(HOLD_MS));
+                .min(s.end_ms.saturating_add(HOLD_MS))
+                .max(s.end_ms);
             notes(&clean, *s, until)
         })
         .collect()
@@ -528,6 +528,13 @@ mod tests {
         assert_eq!((n.len(), n[0].end_ms), (1, 960));
         let n = spans_notes(&t, &[span(0, 480), span(800, 1000)]).remove(0);
         assert_eq!(n[0].end_ms, 800);
+    }
+
+    #[test]
+    fn overlapping_spans_do_not_extend_a_hold_over_the_next_span() {
+        let t = track(&[(300, 220.0)]);
+        let n = spans_notes(&t, &[span(0, 1000), span(900, 2000)]).remove(0);
+        assert_eq!(n.last().unwrap().end_ms, 1000);
     }
 
     #[test]
