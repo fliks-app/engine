@@ -343,6 +343,7 @@ fn every_wire_key_is_in_its_schema() {
         AlignedLine,
         AlignedWord,
         KaraokeRuntime,
+        LrcFit,
         MelodyMeta,
         MelodyNote,
         MelodySpan,

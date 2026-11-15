@@ -5,9 +5,9 @@ use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::align::{Copy, Role, finish, shares, words_of};
+use super::align::{Aligned, Copy, Role, Run, choose, finish, shares, words_of};
 use super::melody::SAMPLE_RATE;
-use crate::api::{AlignLine, AlignedLine};
+use crate::api::AlignLine;
 
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
@@ -891,15 +891,32 @@ pub fn fits(
     }
 }
 
-/// The lines placed by CTC forced alignment in one Viterbi pass, and the share of words found:
-/// `em` the track's emissions for `lyric_ids`, `voice` its levels.
+/// The lines placed by CTC forced alignment, and the share of words found: `em` the track's
+/// emissions for `lyric_ids`, `voice` its levels. When the timed pass finds little, the same
+/// emissions are searched again without the times and with the times mapped by a fit on that
+/// pass, and the best pass is kept (see `prefer`).
 pub fn align(
     lines: &[AlignLine],
     vocab: &Vocab,
     language: &str,
     voice: &Voicing,
     em: &Emissions,
-) -> Result<(Vec<AlignedLine>, f64), AlignError> {
+) -> Result<Aligned, AlignError> {
+    let timed = pass(lines, vocab, language, voice, em)?;
+    let duration_ms = em.frames() as u32 * FRAME_MS;
+    Ok(choose(lines, duration_ms, timed, |l| {
+        pass(l, vocab, language, voice, em).ok()
+    }))
+}
+
+/// One Viterbi pass over all the lyrics with the times they carry.
+fn pass(
+    lines: &[AlignLine],
+    vocab: &Vocab,
+    language: &str,
+    voice: &Voicing,
+    em: &Emissions,
+) -> Result<Run, AlignError> {
     let duration_ms = em.frames() as u32 * FRAME_MS;
     let plan = plan(lines, vocab, language, duration_ms);
     let total = plan.copies.iter().map(|c| c.words.len()).sum();
@@ -920,12 +937,14 @@ pub fn align(
     Ok((
         finish(&plan.copies, &mut times, &matched, duration_ms),
         share,
+        found,
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::AlignedLine;
 
     const BLANK: u32 = 0;
     const DELIM: u32 = 1;
@@ -984,7 +1003,8 @@ mod tests {
     fn run_voiced(lines: &[AlignLine], em: &[f32], voice: &Voicing) -> (Vec<AlignedLine>, f64) {
         let ids = lyric_ids(lines, &vocab(), "xx");
         let em = Emissions::from_logits(em, CLASSES, &ids);
-        align(lines, &vocab(), "xx", voice, &em).unwrap()
+        let a = align(lines, &vocab(), "xx", voice, &em).unwrap();
+        (a.lines, a.matched)
     }
 
     fn forward(out: &[AlignedLine]) {
@@ -1623,9 +1643,100 @@ mod tests {
         let lines = [line(&text.join(" "))];
         let ids = lyric_ids(&lines, &vocab(), "xx");
         let em = Emissions::from_logits(&emissions(30_000, &[]), CLASSES, &ids);
-        let (out, _) = align(&lines, &vocab(), "xx", &Voicing::default(), &em).unwrap();
+        let out = align(&lines, &vocab(), "xx", &Voicing::default(), &em)
+            .unwrap()
+            .lines;
         assert_eq!(out[0].words.len(), 800);
         forward(&out);
+    }
+
+    /// 40 lines of three distinct letters sung from `1 s + 2 s * k`, the letters 100 ms apart.
+    fn sung(extra: usize) -> (Vec<String>, Vec<f32>) {
+        let texts: Vec<String> = (0..40)
+            .map(|k| {
+                let c = |d: usize| ["a", "b", "c"][(k / 3usize.pow(d as u32)) % 3];
+                format!("{}{}{}{}", c(0), c(1), c(2), c(3))
+            })
+            .collect();
+        let mut marks = vec![];
+        for (k, t) in texts.iter().enumerate() {
+            for (i, ch) in t.bytes().enumerate() {
+                marks.push(((50 + 100 * k + 5 * i), (ch - b'a') as u32 + 2, 0.9));
+            }
+        }
+        (texts, emissions(50 + 100 * (40 + extra), &marks))
+    }
+
+    fn lyrics(texts: &[String], at: impl Fn(u32) -> u32) -> Vec<AlignLine> {
+        let t = |k: usize| 1000 + 2000 * k as u32;
+        texts
+            .iter()
+            .enumerate()
+            .map(|(k, x)| timed(x, at(t(k)), at(t(k) + 1000)))
+            .collect()
+    }
+
+    fn aligned(lines: &[AlignLine], em: &[f32]) -> (Aligned, Run) {
+        let ids = lyric_ids(lines, &vocab(), "xx");
+        let em = Emissions::from_logits(em, CLASSES, &ids);
+        let v = Voicing::default();
+        let a = align(lines, &vocab(), "xx", &v, &em).unwrap();
+        (a, pass(lines, &vocab(), "xx", &v, &em).unwrap())
+    }
+
+    #[test]
+    fn line_times_drifting_out_of_the_bands_are_mapped_onto_the_audio() {
+        let (texts, em) = sung(0);
+        let lines = lyrics(&texts, |t| ((f64::from(t) - 1000.0) / 0.88) as u32);
+        let (got, timed_only) = aligned(&lines, &em);
+        assert!(got.matched > 0.95, "{}", got.matched);
+        assert!(timed_only.1 < got.matched - 0.1, "{}", timed_only.1);
+        let fit = got.lrc_fit.unwrap();
+        assert!((fit.scale - 0.88).abs() < 0.01 && fit.unreliable, "{fit:?}");
+        let first: Vec<u32> = got.lines.iter().map(|l| l.words[0].start_ms).collect();
+        assert!(
+            first
+                .iter()
+                .enumerate()
+                .all(|(k, s)| s.abs_diff(1000 + 2000 * k as u32) <= 60)
+        );
+    }
+
+    #[test]
+    fn accurate_line_times_keep_the_timed_result() {
+        let (mut texts, em) = sung(0);
+        texts.extend(["cc ba".into(), "ab ab".into()]);
+        let em = [em.clone(), emissions(0, &[])].concat();
+        let lines = lyrics(&texts, |t| t);
+        let (got, timed_only) = aligned(&lines, &em);
+        assert!(
+            timed_only.1 < 0.99,
+            "the other passes must run: {}",
+            timed_only.1
+        );
+        assert_eq!((got.lines, got.matched), (timed_only.0, timed_only.1));
+    }
+
+    #[test]
+    fn ten_minutes_of_wrongly_timed_lyrics_stay_in_the_table() {
+        let mut rng = Lcg(5);
+        let lines: Vec<AlignLine> = (0..100)
+            .map(|k| {
+                let words: Vec<String> = (0..8)
+                    .map(|_| {
+                        (0..2 + rng.below(8))
+                            .map(|_| ["a", "b", "c"][rng.below(3) as usize])
+                            .collect()
+                    })
+                    .collect();
+                timed(&words.join(" "), 5000 * k, 5000 * k + 4000)
+            })
+            .collect();
+        let ids = lyric_ids(&lines, &vocab(), "xx");
+        let em = Emissions::from_logits(&emissions(30_000, &[]), CLASSES, &ids);
+        let a = align(&lines, &vocab(), "xx", &Voicing::default(), &em).unwrap();
+        assert_eq!(a.lines.len(), 100);
+        forward(&a.lines);
     }
 
     #[test]

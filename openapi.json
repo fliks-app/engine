@@ -970,6 +970,17 @@
               "$ref": "#/components/schemas/AlignedLine"
             }
           },
+          "lrcFit": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LrcFit",
+                "description": "How the request's line times map onto the audio, reported whichever pass placed the words;\nabsent when no line had times or too few lines were found to fit one."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "matched": {
             "type": "number",
             "format": "double",
@@ -4894,6 +4905,29 @@
           "vetted": {
             "type": "boolean",
             "description": "Refuse loopback, link-local, private and other internal addresses on every hop (redirects,\nplaylist entries, segments); only http(s). Set for provider-supplied URLs, off for LAN sources."
+          }
+        }
+      },
+      "LrcFit": {
+        "type": "object",
+        "description": "The line times of an `Align` request against the audio: `audio = offsetMs + scale * lrc`.",
+        "required": [
+          "offsetMs",
+          "scale",
+          "unreliable"
+        ],
+        "properties": {
+          "offsetMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "scale": {
+            "type": "number",
+            "format": "double"
+          },
+          "unreliable": {
+            "type": "boolean",
+            "description": "The times were made for another recording: the scale is over 3 % from 1, the offset over\n1 s, or the last line starts after the audio ends."
           }
         }
       },
