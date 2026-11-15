@@ -213,11 +213,19 @@ pub struct PassArgs<'a> {
     pub layout: Layout,
     pub seek_offset: f64,
     pub keyframes_only: bool,
+    /// `video[0].codec`: VP9 drops packets for its keyframes only.
+    pub codec: &'a str,
 }
+
+/// VP9's keyframes only: the non-key packets dropped before the decoder, since the VP9 decoders
+/// (native, libvpx, VAAPI) ignore `-skip_frame nokey`. Same frames as `-skip_frame` on the other
+/// codecs, but an input bitstream filter fails on older ffmpeg (6.1), where `-skip_frame` works.
+pub const VP9_KEYFRAMES_ONLY: &str = "noise=drop=not(key)";
 
 /// Every frame of the sheet in one run: the file decoded once (keyframes only when asked), then
 /// `fps=1/interval:round=up` keeps, for each mark, the frame on screen at it (`round=down` keeps
-/// the last frame before the next mark, one interval late). `-progress` lines on stdout.
+/// the last frame before the next mark, one interval late). `fps` comes before the scale chain:
+/// only the kept frames are scaled (and downloaded from the GPU). `-progress` lines on stdout.
 pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
     let f = FrameArgs {
         input_path: a.input_path,
@@ -229,6 +237,7 @@ pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
     };
     let input = Input::Pass {
         keyframes_only: a.keyframes_only,
+        vp9: a.codec == "vp9",
     };
     let (mut v, vf) = input_and_filter(e, &f, input)?;
     // Always anchored: without `start_time`, `fps` starts at the first frame it gets, and a first
@@ -243,7 +252,7 @@ pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
         "-frames:v",
         &count,
         "-vf",
-        &format!("{vf},{fps}"),
+        &format!("{fps},{vf}"),
         "-q:v",
         "5",
         "-start_number",
@@ -261,7 +270,7 @@ pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
 #[derive(Clone, Copy)]
 enum Input<'a> {
     Seek(&'a str),
-    Pass { keyframes_only: bool },
+    Pass { keyframes_only: bool, vp9: bool },
 }
 
 /// The argv up to the input, and the scale (crop, tone-map) chain, of one extractor.
@@ -352,6 +361,11 @@ fn input_and_filter(
         Input::Seek(ss) => push(&mut v, &["-noaccurate_seek", "-ss", ss]),
         Input::Pass {
             keyframes_only: true,
+            vp9: true,
+        } => push(&mut v, &["-bsf:v", VP9_KEYFRAMES_ONLY]),
+        Input::Pass {
+            keyframes_only: true,
+            ..
         } => push(&mut v, &["-skip_frame", "nokey"]),
         Input::Pass { .. } => {}
     }
@@ -582,6 +596,7 @@ mod tests {
             layout: l,
             seek_offset: 0.0,
             keyframes_only: true,
+            codec: "av1",
         };
         let vaapi = Extractor::Vaapi {
             device: "/dev/dri/renderD128".into(),
@@ -591,8 +606,8 @@ mod tests {
             got,
             "-nostdin -hide_banner -loglevel error -threads 1 -hwaccel vaapi -hwaccel_device \
              /dev/dri/renderD128 -hwaccel_output_format vaapi -skip_frame nokey -an -sn -dn -i \
-             /m/e.mkv -frames:v 519 -vf scale_vaapi=240:-2:format=nv12,hwdownload,format=nv12,\
-             fps=1/5:round=up:start_time=0 -q:v 5 -start_number 1 -nostats -progress pipe:1 -y \
+             /m/e.mkv -frames:v 519 -vf fps=1/5:round=up:start_time=0,\
+             scale_vaapi=240:-2:format=nv12,hwdownload,format=nv12 -q:v 5 -start_number 1 -nostats -progress pipe:1 -y \
              /c/f/frame-%04d.jpg"
         );
         let full = PassArgs {
@@ -605,9 +620,22 @@ mod tests {
             got,
             "-nostdin -hide_banner -loglevel error -threads 1 -analyzeduration 0 -probesize \
              5000000 -an -sn -dn -i /m/e.mkv -frames:v 519 -vf \
-             scale=240:-1,fps=1/5:round=up:start_time=1.5 -q:v 5 -start_number 1 -nostats \
+             fps=1/5:round=up:start_time=1.5,scale=240:-1 -q:v 5 -start_number 1 -nostats \
              -progress pipe:1 -y /c/f/frame-%04d.jpg"
         );
+        // VP9 decoders ignore -skip_frame: its keyframes only drops packets instead.
+        let vp9 = PassArgs { codec: "vp9", ..a };
+        let got = pass_args(&Extractor::Software, &vp9).unwrap().join(" ");
+        assert!(got.contains(" -bsf:v noise=drop=not(key) -analyzeduration 0 "));
+        assert!(!got.contains("skip_frame"));
+        let vp9_full = PassArgs {
+            keyframes_only: false,
+            ..vp9
+        };
+        let got = pass_args(&Extractor::Software, &vp9_full)
+            .unwrap()
+            .join(" ");
+        assert!(!got.contains("-bsf"));
         let qsv = Extractor::Qsv {
             device: "/d".into(),
         };

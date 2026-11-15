@@ -77,7 +77,10 @@ fn jpeg_header(w: u16, h: u16) -> Vec<u8> {
 /// `passfailsprite` fail (the job falls back to frame runs), `flakysprite` skips every 4th frame.
 fn sprite_pass(mode: &str, args: &[String]) {
     let after = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
-    let decode = if args.iter().any(|a| a == "nokey") {
+    let decode = if args
+        .iter()
+        .any(|a| a == "nokey" || a == "noise=drop=not(key)")
+    {
         "keyframes"
     } else {
         "full"

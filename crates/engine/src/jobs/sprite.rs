@@ -139,6 +139,7 @@ async fn single_pass(ctx: &Ctx, info: &MediaInfo, l: Layout, frames: &Path) -> R
             layout: l,
             seek_offset: offset,
             keyframes_only,
+            codec,
         },
     )?;
     tracing::debug!(job = ctx.job.id, keyframes_only, "sprite single pass");
