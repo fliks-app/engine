@@ -39,20 +39,35 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
+      - name: Restore the pack
+        id: pack
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: out/karaoke
+          # The toolchain is not in the key: bump v1 to rebuild the same pins.
+          key: karaoke-pack-v1-${{ matrix.name }}-${{ matrix.os }}-${{ hashFiles('tools/karaoke-pack/**') }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: karaoke-pack
+          # PR caches would evict main's from the repository's 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: MSYS2 toolchain
         if: matrix.msys
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: MINGW64
           path-type: inherit
+          # A restored pack only needs zip for the archive.
           install: >-
-            make nasm unzip zip
+            zip
+            ${{ steps.pack.outputs.cache-hit != 'true' && 'make nasm unzip
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-meson mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-meson mingw-w64-x86_64-pkgconf' || '' }}
       - name: Meson
-        if: ${{ !matrix.msys }}
+        if: ${{ !matrix.msys && steps.pack.outputs.cache-hit != 'true' }}
         run: pip3 install --break-system-packages meson ninja
       - name: Build the pack
+        if: steps.pack.outputs.cache-hit != 'true'
         run: tools/karaoke-pack/build.sh ${{ matrix.name }} out
       - name: Engine with the pack
         if: ${{ !matrix.msys }}
@@ -113,6 +128,13 @@ jobs:
           ./ffmpeg-pitch* -hide_banner -filters | grep -q ' rubberband '
           ./whisper-cli* --help 2>&1 | grep -qi usage
           ls -l
+      - name: Save the pack
+        # PR caches would evict main's from the repository's 10 GB.
+        if: steps.pack.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: out/karaoke
+          key: ${{ steps.pack.outputs.cache-primary-key }}
       - name: Archive
         run: |
           cd out
