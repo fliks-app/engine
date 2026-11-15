@@ -447,8 +447,14 @@ async fn long_gop_hevc_is_never_keyframes_only() {
     assert_eq!(seek_log(&file).len(), 241);
 }
 
+// Elsewhere, or privileged, a promotion renices in place and the hung run is not stopped.
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn a_promotion_during_the_probe_or_the_pass_redoes_the_job() {
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0 || !fliks_engine::proc::background("x", &[]).0.eq("ionice") {
+        return;
+    }
     for (mode, log) in [("promoprobesprite", "probes"), ("promopasssprite", "pass")] {
         let (e, file) = engine_of(mode, json!({ "ffmpegSlots": 1 })).await;
         let req = |_| {
