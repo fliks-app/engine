@@ -314,6 +314,7 @@ fn every_wire_key_is_in_its_schema() {
         SessionKind,
         SessionSnapshot,
         SourceScan,
+        SpriteDecode,
         SpriteMeta,
         SrtSource,
         StreamPlan,

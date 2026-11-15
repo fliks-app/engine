@@ -605,6 +605,88 @@ async fn sprite_job_on_real_clips_is_served() {
 
 #[tokio::test]
 #[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
+async fn sprite_pass_on_a_late_video_start_keeps_a_frame_per_mark() {
+    use fliks_engine_core::jobs::sprite::*;
+    let p = play(late_h264_clip()).await;
+    let offset = seek_offset(&p.info);
+    assert!(offset > 1.0, "the video starts late: {offset}");
+    let l = layout(p.info.duration_seconds.unwrap());
+    let input = p.file.to_string_lossy();
+    for keyframes_only in [false, true] {
+        let dir = temp_dir("sprite-late");
+        let pattern = dir.join(FRAME_PATTERN);
+        let argv = pass_args(
+            &Extractor::Software,
+            &PassArgs {
+                input_path: &input,
+                frames_pattern: &pattern.to_string_lossy(),
+                crop: None,
+                thumb_width: THUMB_WIDTH,
+                hdr: false,
+                layout: l,
+                seek_offset: offset,
+                keyframes_only,
+                codec: "h264",
+                stream_index: p.info.video[0].stream_index,
+            },
+        )
+        .unwrap();
+        let out = std::process::Command::new(ffmpeg())
+            .args(&argv)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // 20 s of video from 1.5 s: marks 1.5, 3.5 ... 19.5 have a frame; the container's 22 s
+        // (the audio) asks for 12 tiles, and those past the video go to the seeks and backfill.
+        // Keyframes only, the last keyframe (19.5 s) is the stream's last frame and `fps` emits
+        // nothing for a mark it saw no frame past: the job seeks that tile too.
+        assert_eq!(l.count, 12);
+        let covered = if keyframes_only { 9 } else { 10 };
+        let frames: Vec<Vec<u8>> = (0..covered)
+            .map(|i| std::fs::read(dir.join(frame_name(i))).expect("a frame per covered mark"))
+            .collect();
+        assert!(!dir.join(frame_name(covered)).exists());
+        // Without `-fps_mode passthrough` frame 1 is duplicated into slot 0: tiles 1 and 2 equal,
+        // every tile one interval late and the last mark cut.
+        for (i, w) in frames.windows(2).enumerate() {
+            assert_ne!(
+                w[0],
+                w[1],
+                "tiles {} and {} (keyframes only: {keyframes_only})",
+                i + 1,
+                i + 2
+            );
+        }
+    }
+    // The job end to end on it.
+    let mut rx = p.e.rt.events.subscribe();
+    let r =
+        p.e.control(
+            "POST",
+            "/v1/jobs",
+            Some(json!({ "kind": { "type": "Sprite", "info": p.info },
+            "media": { "mediaFileId": 1, "path": p.file } })),
+        )
+        .await;
+    let id = r.json()["jobId"].as_str().unwrap().to_string();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(120), rx.recv()).await {
+            Ok(Ok(EngineEvent::BgJobDone { job_id, state, .. })) if job_id == id => {
+                assert_eq!(serde_json::to_value(state).unwrap(), "done");
+                break;
+            }
+            Ok(_) => {}
+            Err(_) => panic!("no BgJobDone"),
+        }
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(not(engine_e2e), ignore = "real ffmpeg: build with ENGINE_E2E=1")]
 async fn direct_play_byte_ranges_of_a_real_file() {
     let p = play(h264_clip(10)).await;
     let bytes = std::fs::read(&p.file).unwrap();

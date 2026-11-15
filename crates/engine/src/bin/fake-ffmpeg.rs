@@ -62,8 +62,126 @@ fn talk() -> ! {
     }
 }
 
-/// A frame (240x135) or tile (10 x rows of them) run: a JPEG header at the output path.
+/// A JPEG that is only a start-of-frame header of `w` x `h`.
+fn jpeg_header(w: u16, h: u16) -> Vec<u8> {
+    let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08];
+    jpg.extend(h.to_be_bytes());
+    jpg.extend(w.to_be_bytes());
+    jpg.extend([0x03; 10]);
+    jpg.extend([0xFF, 0xD9]);
+    jpg
+}
+
+/// The sprite's single pass: logs `keyframes` (`-skip_frame nokey`), `keyframes-bsf` (the VP9
+/// packet drop) or `full` to `<input>.pass`, then writes the `-frames:v` frames of the pattern
+/// with `-progress` lines. `hangsprite` hangs, `promopasssprite` hangs in its first pass only,
+/// `failsprite` fails, `passfailsprite` writes 8
+/// half-written frames then fails (the job falls back to frame runs), `flakysprite` skips every
+/// 4th frame.
+fn sprite_pass(mode: &str, args: &[String]) {
+    let after = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let decode = if args.iter().any(|a| a == "nokey") {
+        "keyframes"
+    } else if args.iter().any(|a| a == "noise=drop=not(key)") {
+        "keyframes-bsf"
+    } else {
+        "full"
+    };
+    assert!(
+        args.windows(2).any(|w| w == ["-fps_mode", "passthrough"]),
+        "the pass keeps fps's timestamps"
+    );
+    let passes = append_line(&format!("{}.pass", after("-i")), decode);
+    if mode == "promopasssprite" && passes == 1 {
+        println!("out_time_us=0");
+        let _ = std::io::stdout().flush();
+        hang()
+    }
+    match mode {
+        "hangsprite" => {
+            println!("out_time_us=0");
+            let _ = std::io::stdout().flush();
+            hang()
+        }
+        "failsprite" => std::process::exit(1),
+        "passfailsprite" => {
+            let pattern = args.last().unwrap();
+            for i in 1..=8 {
+                put(
+                    Path::new(&pattern.replace("%04d", &format!("{i:04}"))),
+                    b"\xFF",
+                );
+            }
+            std::process::exit(1)
+        }
+        _ => {}
+    }
+    let count: u32 = after("-frames:v").parse().unwrap();
+    let interval: u64 = args
+        .iter()
+        .find_map(|a| a.split("fps=1/").nth(1))
+        .and_then(|s| s.split(':').next()?.parse().ok())
+        .unwrap();
+    let pattern = args.last().unwrap();
+    for i in 1..=count {
+        if mode == "flakysprite" && i.is_multiple_of(4) {
+            continue;
+        }
+        put(
+            Path::new(&pattern.replace("%04d", &format!("{i:04}"))),
+            jpeg_header(240, 135),
+        );
+        if i.is_multiple_of(10) {
+            println!("out_time_us={}", u64::from(i - 1) * interval * 1_000_000);
+            let _ = std::io::stdout().flush();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    println!("progress=end");
+}
+
+/// Appends `line` to the log at `path`; returns its line count after.
+fn append_line(path: &str, line: &str) -> usize {
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    // One write: `writeln!` splits the text and the newline, and parallel runs interleave them.
+    let _ = log.write_all(format!("{line}\n").as_bytes());
+    drop(log);
+    std::fs::read_to_string(path).unwrap().lines().count()
+}
+
+/// A frame (240x135) or tile (10 x rows of them) run: a JPEG header at the output path, each
+/// frame run's number appended to `<input>.seeks`. The keyframe probe sees a keyframe every 2 s
+/// (`sparsesprite`: 10 s) over its `-read_intervals` window, from the one before its start;
+/// `probefailsprite` fails it, `promoprobesprite` hangs in the first one (logged to
+/// `<input>.probes`). The single pass is `sprite_pass`.
 fn sprite(mode: &str, args: &[String]) {
+    if args.iter().any(|a| a == "packet=pts_time,dts_time,flags") {
+        if mode == "probefailsprite" {
+            std::process::exit(1)
+        }
+        let probes = format!("{}.probes", args.last().unwrap());
+        if mode == "promoprobesprite" && append_line(&probes, "probe") == 1 {
+            hang()
+        }
+        let window = &args[args.iter().position(|a| a == "-read_intervals").unwrap() + 1];
+        let (start, len) = window.split_once("%+").unwrap();
+        let (start, len): (f64, f64) = (start.parse().unwrap(), len.parse().unwrap());
+        let gap = if mode == "sparsesprite" { 10.0 } else { 2.0 };
+        let mut t = (start / gap).floor() * gap;
+        while t <= start + len {
+            println!("{t:.6},{t:.6},K__");
+            println!("{:.6},N/A,___", t + 1.0);
+            t += gap;
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "-progress") {
+        return sprite_pass(mode, args);
+    }
     let rows = args
         .iter()
         .find_map(|a| a.strip_prefix("tile=10x"))
@@ -71,27 +189,36 @@ fn sprite(mode: &str, args: &[String]) {
     if rows.is_none() && !args.iter().any(|a| a == "-frames:v") {
         hang()
     }
-    if let (None, "flakysprite") = (rows, mode) {
+    if rows.is_none() {
+        let input = &args[args.iter().position(|a| a == "-i").unwrap() + 1];
         let n: u32 = args.last().unwrap()[..args.last().unwrap().len() - 4]
             .rsplit('-')
             .next()
             .unwrap()
             .parse()
             .unwrap();
-        if n.is_multiple_of(4) {
+        append_line(&format!("{input}.seeks"), &n.to_string());
+        if matches!(mode, "flakysprite" | "passfailsprite") && n.is_multiple_of(4) {
             std::process::exit(1)
         }
     }
     if rows.is_some() {
-        // The image2 tiler stops at the first gap: refuse one.
+        // The image2 tiler stops at the first gap and fails on a broken JPEG: refuse both.
         let pattern = &args[args.iter().position(|a| a == "-i").unwrap() + 1];
+        let frame = |i: usize| pattern.replace("%04d", &format!("{i:04}"));
         let present: Vec<bool> = (1..=999)
-            .map(|i| std::path::Path::new(&pattern.replace("%04d", &format!("{i:04}"))).exists())
+            .map(|i| std::path::Path::new(&frame(i)).exists())
             .collect();
         let first_gap = present.iter().position(|p| !p).unwrap();
         if present[first_gap..].iter().any(|p| *p) {
             eprintln!("gap in the frame sequence at {}", first_gap + 1);
             std::process::exit(1)
+        }
+        for i in 1..=first_gap {
+            if !std::fs::read(frame(i)).unwrap().starts_with(&[0xFF, 0xD8]) {
+                eprintln!("broken frame {i}");
+                std::process::exit(1)
+            }
         }
     }
     match (mode, rows) {
@@ -100,12 +227,7 @@ fn sprite(mode: &str, args: &[String]) {
         _ => std::thread::sleep(Duration::from_millis(50)),
     }
     let (w, h) = rows.map_or((240u16, 135u16), |r| (2400, 135 * r));
-    let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08];
-    jpg.extend(h.to_be_bytes());
-    jpg.extend(w.to_be_bytes());
-    jpg.extend([0x03; 10]);
-    jpg.extend([0xFF, 0xD9]);
-    put(Path::new(args.last().unwrap()), jpg);
+    put(Path::new(args.last().unwrap()), jpeg_header(w, h));
 }
 
 const ASS: &str = include_str!("../../../../fixtures/jobs/subtitles/served.ass");
@@ -510,7 +632,10 @@ fn main() {
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         m @ ("merge" | "failmerge" | "hangmerge") => merge(m, &args),
-        m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite") => sprite(m, &args),
+        m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite" | "passfailsprite"
+        | "sparsesprite" | "probefailsprite" | "promoprobesprite" | "promopasssprite") => {
+            sprite(m, &args)
+        }
         m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
         | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),
         "sync" => {

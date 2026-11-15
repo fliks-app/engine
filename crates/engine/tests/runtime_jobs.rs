@@ -56,12 +56,22 @@ async fn engine_on(f: &str, streaming: Value) -> (Engine, PathBuf) {
 }
 
 async fn submit(e: &Engine, id: u32, file: &std::path::Path, force: bool) -> String {
+    submit_info(e, id, file, force, info()).await
+}
+
+async fn submit_info(
+    e: &Engine,
+    id: u32,
+    file: &std::path::Path,
+    force: bool,
+    info: Value,
+) -> String {
     let r = e
         .control(
             "POST",
             "/v1/jobs",
             Some(json!({
-                "kind": { "type": "Sprite", "info": info() },
+                "kind": { "type": "Sprite", "info": info },
                 "media": { "mediaFileId": id, "path": file }, "force": force,
             })),
         )
@@ -143,6 +153,12 @@ async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
         .map(|d| d.unwrap().file_name())
         .collect();
     assert_eq!(left.len(), 2, "frames removed: {left:?}");
+    assert_eq!(
+        std::fs::read_to_string(pass_log(&file)).unwrap(),
+        "keyframes\n",
+        "one pass; `auto` saw a keyframe every interval"
+    );
+    assert!(seek_log(&file).is_empty(), "the pass wrote every frame");
     // Already generated: answered from sprite.json without a run.
     let again = submit(&e, 7, &file, false).await;
     assert_ne!(again, id);
@@ -343,6 +359,167 @@ async fn failed_frames_are_backfilled_and_the_sprite_still_tiles() {
     let v = done_json(&ev);
     assert_eq!(v["state"], "done", "{v}");
     assert_eq!(v["result"]["sprite"]["count"], 60);
+    // The pass skipped every 4th frame; the seeks for those failed too, then the backfill.
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+    let mut seeks = seek_log(&file);
+    seeks.sort_unstable();
+    assert_eq!(seeks, (1..=15).map(|k| k * 4).collect::<Vec<_>>());
+    assert!(e.ffmpeg_pids().is_empty());
+}
+
+/// What the fake's single passes decoded, one line each (`keyframes`, `keyframes-bsf`, `full`).
+fn pass_log(file: &std::path::Path) -> PathBuf {
+    PathBuf::from(format!("{}.pass", file.display()))
+}
+
+/// The tiles the fake's frame runs were asked for (1-based), in run order.
+fn seek_log(file: &std::path::Path) -> Vec<u32> {
+    read(&PathBuf::from(format!("{}.seeks", file.display())))
+        .lines()
+        .map(|l| l.parse().unwrap())
+        .collect()
+}
+
+fn read(p: &std::path::Path) -> String {
+    std::fs::read_to_string(p).unwrap_or_default()
+}
+
+/// A sprite job of `mode`'s fake over `info` with `streaming`, run to its end: its `BgJobDone`,
+/// the media file (for the logs) and the engine, which holds the directory of both.
+async fn sprite_run(mode: &str, streaming: Value, info: Value) -> (Value, PathBuf, Engine) {
+    let (e, file) = engine_of(mode, streaming).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit_info(&e, 7, &file, false, info).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    assert!(e.ffmpeg_pids().is_empty());
+    (done_json(&ev), file, e)
+}
+
+#[tokio::test]
+async fn sparse_keyframes_decode_everything_in_auto_and_not_in_keyframes() {
+    // A keyframe every 10 s for 2 s tiles: keyframes alone would repeat tiles.
+    let (v, file, _e) = sprite_run("sparsesprite", json!({}), info()).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "full\n");
+    assert!(seek_log(&file).is_empty());
+    let (v, file, _e) = sprite_run(
+        "sparsesprite",
+        json!({ "spriteDecode": "keyframes" }),
+        info(),
+    )
+    .await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+}
+
+#[tokio::test]
+async fn a_failed_keyframe_probe_means_a_full_pass() {
+    let (v, file, _e) = sprite_run("probefailsprite", json!({}), info()).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "full\n");
+}
+
+#[tokio::test]
+async fn long_gop_hevc_is_never_keyframes_only() {
+    let mut hevc_short = info();
+    hevc_short["video"][0]["codec"] = json!("hevc");
+    // 2 s GOPs at 24 fps (48 frames): in display order.
+    let (v, file, _e) = sprite_run("sprite", json!({}), hevc_short.clone()).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+    // 10 s GOPs (240 frames): shuffled keyframes, refused even when asked for; a 120 s file at
+    // 2 s tiles decodes less in one pass (60 x 10 s of GOPs > 120 s).
+    let (v, file, _e) = sprite_run(
+        "sparsesprite",
+        json!({ "spriteDecode": "keyframes" }),
+        hevc_short.clone(),
+    )
+    .await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "full\n");
+    // A 2 h film at 30 s tiles: 241 seeks of half a 10 s GOP cost less than the full pass.
+    let mut film = hevc_short;
+    film["durationSeconds"] = json!(7201.0);
+    let (v, file, _e) = sprite_run("sparsesprite", json!({ "ffmpegSlots": 4 }), film).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["sprite"]["count"], 241);
+    assert_eq!(read(&pass_log(&file)), "");
+    assert_eq!(seek_log(&file).len(), 241);
+}
+
+// Elsewhere, or privileged, a promotion renices in place and the hung run is not stopped.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_promotion_during_the_probe_or_the_pass_redoes_the_job() {
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0 || !fliks_engine::proc::background("x", &[]).0.eq("ionice") {
+        return;
+    }
+    for (mode, log) in [("promoprobesprite", "probes"), ("promopasssprite", "pass")] {
+        let (e, file) = engine_of(mode, json!({ "ffmpegSlots": 1 })).await;
+        let req = |_| {
+            serde_json::from_value(json!({
+                "kind": { "type": "Sprite", "info": info() },
+                "media": { "mediaFileId": 7, "path": file },
+            }))
+            .unwrap()
+        };
+        let mut rx = e.rt.events.subscribe();
+        let id = fliks_engine::jobs::submit(&e.rt, req(())).unwrap();
+        let first = PathBuf::from(format!("{}.{log}", file.display()));
+        until("the hung run", 30, || !read(&first).is_empty()).await;
+        let again = fliks_engine::jobs::submit_urgent(&e.rt, req(())).unwrap();
+        assert_eq!(again, id, "one job, one run key");
+        let (_, ev) = done(&mut rx, &id).await;
+        let v = done_json(&ev);
+        assert_eq!(v["state"], "done", "{mode}: {v}");
+        // Redone from the start: no full pass for a probe that read nothing, no frame runs.
+        let passes = if mode == "promopasssprite" {
+            "keyframes\nkeyframes\n"
+        } else {
+            "keyframes\n"
+        };
+        assert_eq!(read(&pass_log(&file)), passes, "{mode}");
+        assert!(seek_log(&file).is_empty(), "{mode}");
+        assert!(e.ffmpeg_pids().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn vp9_drops_packets_for_its_keyframes() {
+    let mut vp9 = info();
+    vp9["video"][0]["codec"] = json!("vp9");
+    let (v, file, _e) = sprite_run("sprite", json!({}), vp9).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(read(&pass_log(&file)), "keyframes-bsf\n");
+}
+
+#[tokio::test]
+async fn sprite_decode_full_skips_the_keyframe_shortcut() {
+    let (e, file) = engine_of("sprite", json!({ "spriteDecode": "full" })).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit(&e, 7, &file, false).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    assert_eq!(done_json(&ev)["state"], "done");
+    assert_eq!(std::fs::read_to_string(pass_log(&file)).unwrap(), "full\n");
+}
+
+#[tokio::test]
+async fn a_failed_pass_falls_back_to_frame_runs() {
+    let (e, file) = engine_of("passfailsprite", json!({ "ffmpegSlots": 3 })).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit(&e, 7, &file, false).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    let v = done_json(&ev);
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["sprite"]["count"], 60);
+    assert_eq!(
+        std::fs::read_to_string(pass_log(&file)).unwrap(),
+        "keyframes\n"
+    );
+    // Its 8 half-written frames were cleared: the failed seeks 4 and 8 are backfilled from
+    // their neighbours instead of reaching the tiler broken.
+    assert_eq!(seek_log(&file).len(), 60);
     assert!(e.ffmpeg_pids().is_empty());
 }
 

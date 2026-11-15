@@ -2302,6 +2302,7 @@
               "gpuRenderNode": "auto",
               "qsvPreset": "faster",
               "segmentDuration": 3.0,
+              "spriteDecode": "auto",
               "subtitlePrewarm": "playback",
               "throttleEnabled": true,
               "throttleThresholdSeconds": 90.0,
@@ -7505,6 +7506,15 @@
           }
         }
       },
+      "SpriteDecode": {
+        "type": "string",
+        "description": "How the sprite job extracts its frames: `auto` keeps keyframes alone when three samples of the\nfile show at least one per tile interval, else decodes every frame, or seeks each tile when\nthat decodes less (GOPs shorter than the interval on average). `keyframes` skips the samples,\nexcept for HEVC: with keyframes 128 frames apart or more, or an unknown frame rate, its\nkeyframes alone come out of order, and it goes the `auto` way in both modes.",
+        "enum": [
+          "auto",
+          "keyframes",
+          "full"
+        ]
+      },
       "SpriteMeta": {
         "type": "object",
         "description": "`sprite.json`: tile `i` covers `[i * interval, (i + 1) * interval)` seconds of content.",
@@ -7730,6 +7740,11 @@
             "type": "number",
             "format": "double",
             "default": 3.0
+          },
+          "spriteDecode": {
+            "$ref": "#/components/schemas/SpriteDecode",
+            "description": "Absent: `auto`.",
+            "default": "auto"
           },
           "subtitlePrewarm": {
             "$ref": "#/components/schemas/SubtitlePrewarm",

@@ -146,6 +146,22 @@ pub enum SubtitlePrewarm {
     Import,
 }
 
+/// How the sprite job extracts its frames: `auto` keeps keyframes alone when three samples of the
+/// file show at least one per tile interval, else decodes every frame, or seeks each tile when
+/// that decodes less (GOPs shorter than the interval on average). `keyframes` skips the samples,
+/// except for HEVC: with keyframes 128 frames apart or more, or an unknown frame rate, its
+/// keyframes alone come out of order, and it goes the `auto` way in both modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SpriteDecode {
+    #[default]
+    Auto,
+    /// Keyframes only: fastest; a tile repeats when keyframes sit further apart than the interval.
+    Keyframes,
+    /// Every frame in one pass: each tile is the frame on screen at its mark.
+    Full,
+}
+
 /// The `streaming_*` settings, already resolved by the host. Defaults match the host's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", default)]
@@ -174,6 +190,8 @@ pub struct StreamingConfig {
     pub subtitle_prewarm: SubtitlePrewarm,
     pub throttle_enabled: bool,
     pub throttle_threshold_seconds: f64,
+    /// Absent: `auto`.
+    pub sprite_decode: SpriteDecode,
 }
 
 impl Default for StreamingConfig {
@@ -193,6 +211,7 @@ impl Default for StreamingConfig {
             subtitle_prewarm: SubtitlePrewarm::Playback,
             throttle_enabled: true,
             throttle_threshold_seconds: 90.0,
+            sprite_decode: SpriteDecode::Auto,
         }
     }
 }
