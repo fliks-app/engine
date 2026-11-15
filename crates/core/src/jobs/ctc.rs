@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::align::{Aligned, Copy, Role, Run, choose, finish, shares, words_of};
+use super::align::{Aligned, Copy, Role, Run, choose, ended, finish, shares, words_of};
 use super::melody::SAMPLE_RATE;
 use crate::api::AlignLine;
 
@@ -902,8 +902,9 @@ pub fn align(
     voice: &Voicing,
     em: &Emissions,
 ) -> Result<Aligned, AlignError> {
-    let timed = pass(lines, vocab, language, voice, em)?;
     let duration_ms = em.frames() as u32 * FRAME_MS;
+    let lines = &ended(lines, duration_ms);
+    let timed = pass(lines, vocab, language, voice, em)?;
     Ok(choose(lines, duration_ms, timed, |l| {
         pass(l, vocab, language, voice, em).ok()
     }))
@@ -1245,6 +1246,18 @@ mod tests {
         assert_eq!((out[1].start_ms, out[2].start_ms), (4000, 6000));
         assert!(out[1].end_ms <= 6000 && out[2].end_ms <= 8000);
         assert_eq!(out[3].start_ms, 8400);
+        forward(&out);
+    }
+
+    #[test]
+    fn a_last_line_with_a_start_alone_is_timed_from_it() {
+        let em = emissions(500, &[(10, 2, 0.9)]);
+        let last = AlignLine {
+            start_ms: Some(6000),
+            ..line("b c")
+        };
+        let (out, _) = run(&[timed("a", 0, 1000), last], &em);
+        assert_eq!(out[1].start_ms, 6000);
         forward(&out);
     }
 
