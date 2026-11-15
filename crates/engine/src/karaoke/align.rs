@@ -6,7 +6,7 @@ use super::run::unsupported;
 use crate::jobs::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use fliks_engine_core::api::{AlignLine, AlignMeta, JobResult, ModelKind};
-use fliks_engine_core::jobs::align::{align, heard_from_json, words_of};
+use fliks_engine_core::jobs::align::{align_fitted, heard_from_json, words_of};
 
 /// Characters of the lyrics given to the recogniser as its prompt: it then hears those words.
 const PROMPT_CHARS: usize = 400;
@@ -69,15 +69,16 @@ async fn recognise(
     .await;
     let _ = tokio::fs::remove_dir_all(&scratch).await;
     let (heard, backend) = result?;
-    let (aligned, matched) = align(lines, &heard);
+    let aligned = align_fitted(lines, &heard);
     Ok(JobResult::Align {
         align: AlignMeta {
             model: picked.id.into(),
             model_version: picked.version.clone(),
             backend: backend.into(),
-            lines: aligned,
-            matched,
+            lines: aligned.lines,
+            matched: aligned.matched,
             fallback,
+            lrc_fit: aligned.lrc_fit,
         },
     })
 }

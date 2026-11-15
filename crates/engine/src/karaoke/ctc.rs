@@ -287,13 +287,14 @@ pub async fn run(
             .map_err(|e| e.to_string())
         })
         .await??;
-    Ok(placed.map(|(lines, matched)| AlignMeta {
+    Ok(placed.map(|a| AlignMeta {
         model: picked.id.into(),
         model_version: picked.version.clone(),
         backend: format!("ctc-{provider}"),
-        lines,
-        matched,
+        lines: a.lines,
+        matched: a.matched,
         fallback: None,
+        lrc_fit: a.lrc_fit,
     }))
 }
 
@@ -712,7 +713,8 @@ mod tests {
             )
             .unwrap();
             let t1 = Instant::now();
-            let (out, matched) = align(&lines, &export.vocab, lang, &voice, &em).unwrap();
+            let a = align(&lines, &export.vocab, lang, &voice, &em).unwrap();
+            let (out, matched) = (a.lines, a.matched);
             let (net, vit) = (t1 - t0, t1.elapsed());
             let words: Vec<_> = out.iter().flat_map(|l| &l.words).collect();
             let frames = |w: &&fliks_engine_core::api::AlignedWord| {

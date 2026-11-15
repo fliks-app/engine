@@ -252,6 +252,21 @@ pub struct AlignMeta {
     /// Why the speech recogniser placed the words instead of the CTC model: the CTC failure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<String>,
+    /// How the request's line times map onto the audio, absent when the lines had no times or
+    /// too few lines were found to fit one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lrc_fit: Option<LrcFit>,
+}
+
+/// The line times of an `Align` request against the audio: `audio = offsetMs + scale * lrc`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LrcFit {
+    pub offset_ms: f64,
+    pub scale: f64,
+    /// The times were made for another recording: the scale is over 3 % from 1, the offset over
+    /// 1 s, or the last line starts after the audio ends.
+    pub unreliable: bool,
 }
 
 /// A span of the vocal stem whose notes a `Melody` looks for (a word cue).
