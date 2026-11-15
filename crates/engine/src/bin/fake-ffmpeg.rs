@@ -147,7 +147,8 @@ fn append_line(path: &str, line: &str) -> usize {
         .append(true)
         .open(path)
         .unwrap();
-    let _ = writeln!(log, "{line}");
+    // One write: `writeln!` splits the text and the newline, and parallel runs interleave them.
+    let _ = log.write_all(format!("{line}\n").as_bytes());
     drop(log);
     std::fs::read_to_string(path).unwrap().lines().count()
 }
