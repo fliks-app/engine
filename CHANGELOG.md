@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.24.2](https://github.com/fliks-app/engine/compare/v1.24.1...v1.24.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **align:** time a line with a start and no end from its start ([#244](https://github.com/fliks-app/engine/issues/244)) ([2bbce92](https://github.com/fliks-app/engine/commit/2bbce926aade26e9279a6c3d578690bfcc944fbd))
+* **align:** time a timed line the network finds nothing of inside its own times ([#242](https://github.com/fliks-app/engine/issues/242)) ([ef67578](https://github.com/fliks-app/engine/commit/ef67578bc3f20e20f58053d4f11e294508dd1171))
+
+
+### Performance Improvements
+
+* **sprite:** extract the frames in one decoding pass ([#236](https://github.com/fliks-app/engine/issues/236)) ([cd363c1](https://github.com/fliks-app/engine/commit/cd363c183119488303249d92215be9be9ad29b82))
+
 ## [1.24.1](https://github.com/fliks-app/engine/compare/v1.24.0...v1.24.1) (2026-11-15)
 
 
