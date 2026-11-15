@@ -442,9 +442,22 @@ pub(super) fn choose(
 /// The lines placed on the audio (`duration_ms` long), and the share of lyric words that were
 /// heard; a request whose times do not fit the audio is placed by `choose`.
 pub fn align_fitted(lines: &[AlignLine], heard: &[Heard], duration_ms: u32) -> Aligned {
+    let lines = &ended(lines, duration_ms);
     choose(lines, duration_ms, run(lines, heard), |l| {
         Some(run(l, heard))
     })
+}
+
+/// The lines, a line with a start and no end ending where the next start is, else at `duration_ms`.
+pub(super) fn ended(lines: &[AlignLine], duration_ms: u32) -> Vec<AlignLine> {
+    let mut out = lines.to_vec();
+    for (i, l) in out.iter_mut().enumerate() {
+        let next = lines[i + 1..].iter().find_map(|n| n.start_ms);
+        if let (Some(s), None) = (l.start_ms, l.end_ms) {
+            l.end_ms = Some(next.unwrap_or(duration_ms).max(s));
+        }
+    }
+    out
 }
 
 /// The lines placed on the audio, and the share of lyric words that were heard.
@@ -1026,6 +1039,19 @@ mod tests {
             .collect();
         assert!(all.windows(2).all(|p| p[0].1 <= p[1].0 && p[0].0 <= p[0].1));
         assert!(all[0].0 >= 1000 && all[1].1 <= 3000);
+    }
+
+    #[test]
+    fn a_last_line_with_a_start_alone_keeps_to_it() {
+        let l = [
+            timed("one", 0, 1000),
+            AlignLine {
+                start_ms: Some(5000),
+                ..line("two")
+            },
+        ];
+        let out = align_fitted(&l, &heard(&[("one", 100, 400)]), 9000).lines;
+        assert_eq!(out[1].start_ms, 5000);
     }
 
     #[test]
