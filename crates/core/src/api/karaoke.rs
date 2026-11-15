@@ -252,8 +252,8 @@ pub struct AlignMeta {
     /// Why the speech recogniser placed the words instead of the CTC model: the CTC failure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<String>,
-    /// How the request's line times map onto the audio, absent when the lines had no times or
-    /// too few lines were found to fit one.
+    /// How the request's line times map onto the audio, reported whichever pass placed the words;
+    /// absent when no line had times or too few lines were found to fit one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lrc_fit: Option<LrcFit>,
 }

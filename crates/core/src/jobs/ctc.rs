@@ -5,12 +5,9 @@ use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::align::{
-    Aligned, Copy, GOOD_ENOUGH, Pass, Role, finish, fit_lrc, prefer, remap, shares, untimed,
-    words_of,
-};
+use super::align::{Aligned, Copy, Role, Run, choose, finish, shares, words_of};
 use super::melody::SAMPLE_RATE;
-use crate::api::{AlignLine, AlignedLine};
+use crate::api::AlignLine;
 
 /// Duration of one emission frame.
 pub const FRAME_MS: u32 = 20;
@@ -905,36 +902,11 @@ pub fn align(
     voice: &Voicing,
     em: &Emissions,
 ) -> Result<Aligned, AlignError> {
-    let (timed, share) = pass(lines, vocab, language, voice, em)?;
-    if share >= GOOD_ENOUGH || lines.iter().all(|l| l.start_ms.is_none()) {
-        return Ok(Aligned {
-            lines: timed,
-            matched: share,
-            lrc_fit: None,
-        });
-    }
+    let timed = pass(lines, vocab, language, voice, em)?;
     let duration_ms = em.frames() as u32 * FRAME_MS;
-    let again = |lines: &[AlignLine]| pass(lines, vocab, language, voice, em).ok();
-    let free = again(&untimed(lines));
-    let fit = free
-        .as_ref()
-        .and_then(|f| fit_lrc(lines, &f.0, duration_ms));
-    let remapped = fit.as_ref().and_then(|f| again(&remap(lines, f)));
-    let choice = prefer(
-        share,
-        free.as_ref().map(|f| f.1),
-        remapped.as_ref().map(|r| r.1),
-    );
-    let (lines, matched) = match (choice, free, remapped) {
-        (Pass::Remapped, _, Some(r)) => r,
-        (Pass::Untimed, Some(f), _) => f,
-        _ => (timed, share),
-    };
-    Ok(Aligned {
-        lines,
-        matched,
-        lrc_fit: fit,
-    })
+    Ok(choose(lines, duration_ms, timed, |l| {
+        pass(l, vocab, language, voice, em).ok()
+    }))
 }
 
 /// One Viterbi pass over all the lyrics with the times they carry.
@@ -944,7 +916,7 @@ fn pass(
     language: &str,
     voice: &Voicing,
     em: &Emissions,
-) -> Result<(Vec<AlignedLine>, f64), AlignError> {
+) -> Result<Run, AlignError> {
     let duration_ms = em.frames() as u32 * FRAME_MS;
     let plan = plan(lines, vocab, language, duration_ms);
     let total = plan.copies.iter().map(|c| c.words.len()).sum();
@@ -965,12 +937,14 @@ fn pass(
     Ok((
         finish(&plan.copies, &mut times, &matched, duration_ms),
         share,
+        found,
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::AlignedLine;
 
     const BLANK: u32 = 0;
     const DELIM: u32 = 1;
@@ -1702,7 +1676,7 @@ mod tests {
             .collect()
     }
 
-    fn aligned(lines: &[AlignLine], em: &[f32]) -> (Aligned, (Vec<AlignedLine>, f64)) {
+    fn aligned(lines: &[AlignLine], em: &[f32]) -> (Aligned, Run) {
         let ids = lyric_ids(lines, &vocab(), "xx");
         let em = Emissions::from_logits(em, CLASSES, &ids);
         let v = Voicing::default();
@@ -1740,7 +1714,7 @@ mod tests {
             "the other passes must run: {}",
             timed_only.1
         );
-        assert_eq!((got.lines, got.matched), timed_only);
+        assert_eq!((got.lines, got.matched), (timed_only.0, timed_only.1));
     }
 
     #[test]

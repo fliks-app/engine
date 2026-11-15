@@ -325,23 +325,24 @@ fn theil_sen(pts: &[(f64, f64)]) -> Option<(f64, f64)> {
     Some((median(pts.iter().map(|p| p.1 - b * p.0).collect()), b))
 }
 
-/// The map from the request's line times to the audio, fitted on the lines of `placed` (the
-/// lines placed without their times) found at `FIT_MATCHED`. `None` without enough lines or
-/// when the fit leaves its bounds.
-pub(super) fn fit_lrc(
-    lines: &[AlignLine],
-    placed: &[AlignedLine],
-    duration_ms: u32,
-) -> Option<LrcFit> {
-    let copies = words_of(lines);
-    let pts: Vec<(f64, f64)> = copies
-        .iter()
-        .zip(placed)
-        .filter(|(c, p)| {
-            c.repeat == 0 && p.matched >= FIT_MATCHED && c.roles.iter().any(|r| *r != Role::Label)
-        })
-        .filter_map(|(c, p)| Some((f64::from(c.window?.0), f64::from(p.words.first()?.start_ms))))
-        .collect();
+/// One placement pass: the lines, the share of words found and, per word in flat order, whether
+/// it was found.
+pub(super) type Run = (Vec<AlignedLine>, f64, Vec<bool>);
+
+/// The map from the request's line times to the audio, fitted on the first copy of every line of
+/// `run` that has a found word and is found at `FIT_MATCHED`, at that word's start. `None`
+/// without enough lines or when the fit leaves its bounds.
+pub(super) fn fit_lrc(lines: &[AlignLine], run: &Run, duration_ms: u32) -> Option<LrcFit> {
+    let (mut pts, mut at) = (vec![], 0);
+    for (c, p) in words_of(lines).iter().zip(&run.0) {
+        let first = (0..c.words.len()).find(|k| run.2[at + k] && c.roles[*k] == Role::Word);
+        at += c.words.len();
+        if let (0, true, Some(k), Some((s, _))) =
+            (c.repeat, p.matched >= FIT_MATCHED, first, c.window)
+        {
+            pts.push((f64::from(s), f64::from(p.words[k].start_ms)));
+        }
+    }
     let (offset_ms, scale) = theil_sen(&pts)?;
     if (scale - 1.0).abs() > FIT_MAX_SCALE_DEV || offset_ms.abs() > FIT_MAX_OFFSET_MS {
         return None;
@@ -396,36 +397,63 @@ pub(super) fn prefer(timed: f64, untimed: Option<f64>, remapped: Option<f64>) ->
     }
 }
 
-/// The lines placed on the audio, and the share of lyric words that were heard; a request whose
-/// times do not fit the audio is placed with the times mapped by a fit, or without them.
-pub fn align_fitted(lines: &[AlignLine], heard: &[Heard]) -> Aligned {
-    let (timed, share) = align(lines, heard);
-    let duration_ms = heard.iter().map(|h| h.end_ms).max().unwrap_or(0);
-    if share >= GOOD_ENOUGH || lines.iter().all(|l| l.start_ms.is_none()) {
-        return Aligned {
-            lines: timed,
-            matched: share,
-            lrc_fit: None,
-        };
-    }
-    let (free, free_share) = align(&untimed(lines), heard);
-    let fit = fit_lrc(lines, &free, duration_ms);
-    let remapped = fit.as_ref().map(|f| align(&remap(lines, f), heard));
-    let choice = prefer(share, Some(free_share), remapped.as_ref().map(|r| r.1));
-    let (out, matched) = match (choice, remapped) {
-        (Pass::Remapped, Some(r)) => r,
-        (Pass::Untimed, _) => (free, free_share),
-        _ => (timed, share),
+/// The result of `timed`, the pass over the lines as given, or of a better pass: `again` runs the
+/// same search on other lines (`None`: it failed). The track is `duration_ms` long.
+///
+/// When `timed` finds under `GOOD_ENOUGH`, the lines are searched untimed and with their times
+/// mapped by a fit on that pass; the timed pass is kept unless another finds `MIN_GAIN` more. A
+/// fit that is not unreliable never gives up the bands (they protect repeated choruses): only
+/// the mapped pass may replace the timed one. The fit is reported whichever pass is kept.
+pub(super) fn choose(
+    lines: &[AlignLine],
+    duration_ms: u32,
+    timed: Run,
+    again: impl Fn(&[AlignLine]) -> Option<Run>,
+) -> Aligned {
+    let done = |run: Run, lrc_fit| Aligned {
+        lines: run.0,
+        matched: run.1,
+        lrc_fit,
     };
-    Aligned {
-        lines: out,
-        matched,
-        lrc_fit: fit,
+    if lines.iter().all(|l| l.start_ms.is_none()) {
+        return done(timed, None);
     }
+    if timed.1 >= GOOD_ENOUGH {
+        let fit = fit_lrc(lines, &timed, duration_ms);
+        return done(timed, fit);
+    }
+    let free = again(&untimed(lines));
+    let fit = free.as_ref().and_then(|f| fit_lrc(lines, f, duration_ms));
+    let remapped = fit.as_ref().and_then(|f| again(&remap(lines, f)));
+    let allow_free = fit.is_none_or(|f| f.unreliable);
+    let choice = prefer(
+        timed.1,
+        free.as_ref().map(|f| f.1).filter(|_| allow_free),
+        remapped.as_ref().map(|r| r.1),
+    );
+    let run = match (choice, free, remapped) {
+        (Pass::Remapped, _, Some(r)) => r,
+        (Pass::Untimed, Some(f), _) => f,
+        _ => timed,
+    };
+    done(run, fit)
+}
+
+/// The lines placed on the audio (`duration_ms` long), and the share of lyric words that were
+/// heard; a request whose times do not fit the audio is placed by `choose`.
+pub fn align_fitted(lines: &[AlignLine], heard: &[Heard], duration_ms: u32) -> Aligned {
+    choose(lines, duration_ms, run(lines, heard), |l| {
+        Some(run(l, heard))
+    })
 }
 
 /// The lines placed on the audio, and the share of lyric words that were heard.
 pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
+    let (out, share, _) = run(lines, heard);
+    (out, share)
+}
+
+fn run(lines: &[AlignLine], heard: &[Heard]) -> Run {
     let copies = words_of(lines);
     let heard: Vec<Heard> = heard
         .iter()
@@ -460,7 +488,11 @@ pub fn align(lines: &[AlignLine], heard: &[Heard]) -> (Vec<AlignedLine>, f64) {
         .collect();
     let found: Vec<bool> = paired.iter().map(Option::is_some).collect();
     let (matched, share) = shares(&copies, &found);
-    (finish(&copies, &mut times, &matched, u32::MAX), share)
+    (
+        finish(&copies, &mut times, &matched, u32::MAX),
+        share,
+        found,
+    )
 }
 
 /// Per copy, and over the track, the share of its words found: the optional ones count only when
@@ -644,8 +676,8 @@ mod tests {
         }
     }
 
-    fn placed(lines: &[AlignLine], map: impl Fn(u32) -> u32) -> Vec<AlignedLine> {
-        lines
+    fn placed(lines: &[AlignLine], map: impl Fn(u32) -> u32) -> Run {
+        let out: Vec<AlignedLine> = lines
             .iter()
             .enumerate()
             .map(|(i, l)| {
@@ -665,7 +697,9 @@ mod tests {
                     }],
                 }
             })
-            .collect()
+            .collect();
+        let n = out.len();
+        (out, 1.0, vec![true; n])
     }
 
     #[test]
@@ -694,7 +728,10 @@ mod tests {
         assert!(fit_lrc(&lines, &exact, 100_000).unwrap().unreliable);
         let wild = placed(&lines, |t| t * 2);
         assert_eq!(fit_lrc(&lines, &wild, 400_000), None);
-        assert_eq!(fit_lrc(&lines[..5], &exact[..5], 200_000), None);
+        assert_eq!(
+            fit_lrc(&lines[..5], &placed(&lines[..5], |t| t + 200), 200_000),
+            None
+        );
     }
 
     #[test]
@@ -724,9 +761,108 @@ mod tests {
             })
             .collect();
         let (_, timed) = align(&lines, &heard);
-        let got = align_fitted(&lines, &heard);
+        let got = align_fitted(&lines, &heard, 62_000);
         assert!(timed < 0.5 && got.matched > 0.95, "{timed} {}", got.matched);
         assert!(got.lrc_fit.unwrap().unreliable);
+    }
+
+    fn with_share(mut r: Run, share: f64) -> Run {
+        r.1 = share;
+        r
+    }
+
+    #[test]
+    fn a_reliable_fit_keeps_the_bands_of_the_timed_lines() {
+        let lines: Vec<AlignLine> = (0..20).map(|k| lrc(k * 6000)).collect();
+        let again = |map: fn(u32) -> u32| {
+            let lines = lines.clone();
+            move |l: &[AlignLine]| {
+                let free = l[0].start_ms.is_none();
+                Some(with_share(
+                    placed(&lines, map),
+                    if free { 0.99 } else { 0.6 },
+                ))
+            }
+        };
+        let timed = || with_share(placed(&lines, |t| t), 0.5);
+        let near = choose(&lines, 200_000, timed(), again(|t| t + 200));
+        assert_eq!(
+            (near.matched, near.lrc_fit.map(|f| f.unreliable)),
+            (0.6, Some(false))
+        );
+        let far = choose(&lines, 200_000, timed(), again(|t| t * 9 / 10));
+        assert_eq!(
+            (far.matched, far.lrc_fit.map(|f| f.unreliable)),
+            (0.99, Some(true))
+        );
+    }
+
+    #[test]
+    fn the_fit_reports_on_a_timed_pass_that_found_everything() {
+        let lines: Vec<AlignLine> = (0..20).map(|k| lrc(k * 6000)).collect();
+        let got = choose(&lines, 200_000, placed(&lines, |t| t + 1500), |_| None);
+        assert!(got.lrc_fit.unwrap().unreliable);
+        let none = choose(&untimed(&lines), 200_000, placed(&lines, |t| t), |_| None);
+        assert_eq!(none.lrc_fit, None);
+    }
+
+    #[test]
+    fn the_recogniser_flags_a_last_line_past_the_real_track_length() {
+        let word = |k: u32| format!("w{}", (b'a' + k as u8) as char);
+        let heard: Vec<Heard> = (0..25)
+            .map(|k| Heard {
+                text: word(k),
+                start_ms: 1000 + 2000 * k,
+                end_ms: 1500 + 2000 * k,
+            })
+            .collect();
+        let mut lines: Vec<AlignLine> = (0..25)
+            .map(|k| AlignLine {
+                text: word(k),
+                start_ms: Some(1300 + 2000 * k),
+                end_ms: Some(2300 + 2000 * k),
+            })
+            .collect();
+        lines.push(lrc(100_000));
+        lines[25].text = "unheard".into();
+        let flag = |ms| align_fitted(&lines, &heard, ms).lrc_fit.unwrap().unreliable;
+        assert!(!flag(150_000));
+        assert!(flag(60_000));
+    }
+
+    #[test]
+    fn optional_and_unfound_words_do_not_feed_the_fit() {
+        let lines: Vec<AlignLine> = (0..20)
+            .map(|k| AlignLine {
+                text: "(a) b".into(),
+                start_ms: Some(k * 6000),
+                end_ms: Some(k * 6000 + 1000),
+            })
+            .collect();
+        let line = |k: u32, starts: [u32; 2]| AlignedLine {
+            line: k,
+            repeat: 0,
+            start_ms: starts[0],
+            end_ms: starts[1] + 100,
+            matched: 1.0,
+            words: ["(a)", "b"]
+                .iter()
+                .zip(starts)
+                .map(|(t, s)| AlignedWord {
+                    text: (*t).into(),
+                    byte_start: 0,
+                    byte_end: 1,
+                    start_ms: s,
+                    end_ms: s + 100,
+                })
+                .collect(),
+        };
+        let out: Vec<AlignedLine> = (0..20).map(|k| line(k, [0, k * 6000 + 200])).collect();
+        let run: Run = (out.clone(), 1.0, [true, true].repeat(20));
+        let fit = fit_lrc(&lines, &run, 200_000).unwrap();
+        assert!((fit.offset_ms - 200.0).abs() < 1.0 && (fit.scale - 1.0).abs() < 1e-6);
+        let only_optional: Run = (out, 1.0, [true, false].repeat(20));
+        assert_eq!(fit_lrc(&lines, &only_optional, 200_000), None);
     }
 
     #[test]

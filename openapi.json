@@ -974,7 +974,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/LrcFit",
-                "description": "How the request's line times map onto the audio, absent when the lines had no times or\ntoo few lines were found to fit one."
+                "description": "How the request's line times map onto the audio, reported whichever pass placed the words;\nabsent when no line had times or too few lines were found to fit one."
               },
               {
                 "type": "null"

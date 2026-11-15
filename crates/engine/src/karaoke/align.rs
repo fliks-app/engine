@@ -68,8 +68,8 @@ async fn recognise(
     )
     .await;
     let _ = tokio::fs::remove_dir_all(&scratch).await;
-    let (heard, backend) = result?;
-    let aligned = align_fitted(lines, &heard);
+    let (heard, backend, duration_ms) = result?;
+    let aligned = align_fitted(lines, &heard, duration_ms);
     Ok(JobResult::Align {
         align: AlignMeta {
             model: picked.id.into(),
@@ -91,7 +91,14 @@ async fn heard(
     lines: &[AlignLine],
     language: Option<&str>,
     backend: &'static str,
-) -> Result<(Vec<fliks_engine_core::jobs::align::Heard>, &'static str), String> {
+) -> Result<
+    (
+        Vec<fliks_engine_core::jobs::align::Heard>,
+        &'static str,
+        u32,
+    ),
+    String,
+> {
     let wav = scratch.join("vocals.wav");
     let decode: Vec<String> = [
         "-hide_banner",
@@ -116,6 +123,9 @@ async fn heard(
     .map(String::from)
     .to_vec();
     ctx.ffmpeg(&decode).await?;
+    // 16 kHz mono s16le: 32 bytes a millisecond.
+    let len = tokio::fs::metadata(&wav).await.map_or(0, |m| m.len());
+    let duration_ms = u32::try_from(len / 32).unwrap_or(u32::MAX);
     let prefix = scratch.join("words");
     let run = |gpu: bool| {
         let argv = whisper_argv(model, &wav, &prefix, language, lines, gpu);
@@ -144,7 +154,7 @@ async fn heard(
     let json = tokio::fs::read_to_string(prefix.with_extension("json"))
         .await
         .map_err(|e| format!("whisper wrote no words: {e}"))?;
-    Ok((heard_from_json(&json)?, backend))
+    Ok((heard_from_json(&json)?, backend, duration_ms))
 }
 
 /// The lyrics' first words, as one line.
