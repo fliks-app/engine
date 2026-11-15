@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/fliks-app/engine/compare/v1.24.0...v1.24.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **serve:** follow the replacement of a killed job before answering a wait ([#240](https://github.com/fliks-app/engine/issues/240)) ([61fa861](https://github.com/fliks-app/engine/commit/61fa861d7b9823ed69614b4c2c7a9de25e9c4d26))
+
 ## [1.24.0](https://github.com/fliks-app/engine/compare/v1.23.0...v1.24.0) (2026-11-15)
 
 
