@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/fliks-app/engine/compare/v1.23.0...v1.24.0) (2026-11-15)
+
+
+### Features
+
+* **karaoke:** align lyrics without trusting wrong line times ([#237](https://github.com/fliks-app/engine/issues/237)) ([597f533](https://github.com/fliks-app/engine/commit/597f53389ea34fca719cee5124fe6e97d3492431))
+
 ## [1.23.0](https://github.com/fliks-app/engine/compare/v1.22.0...v1.23.0) (2026-11-14)
 
 
