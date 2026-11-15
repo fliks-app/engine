@@ -50,7 +50,7 @@ jobs:
         with:
           key: karaoke-pack
           # PR caches would evict main's from the repository's 10 GB.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') }}
       - name: MSYS2 toolchain
         if: matrix.msys
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
@@ -130,7 +130,7 @@ jobs:
           ls -l
       - name: Save the pack
         # PR caches would evict main's from the repository's 10 GB.
-        if: steps.pack.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        if: steps.pack.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: out/karaoke
