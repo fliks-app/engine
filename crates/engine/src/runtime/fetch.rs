@@ -31,6 +31,10 @@ impl Runtime {
                 SegmentName::Init(_) => job.wait_init(track, left).await,
                 SegmentName::Segment(n) => job.wait_segment(track, n, left).await,
             };
+            // A killed job is being replaced under the key lock: wait it out to see the replacement.
+            if !ok && job.killed() {
+                drop(self.lock_for(&job.key).lock().await);
+            }
             match self.job(&job.key) {
                 Some(next)
                     if !ok
