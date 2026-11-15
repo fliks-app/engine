@@ -577,12 +577,13 @@ pub(super) fn finish(
 /// Times the words nothing was placed for: shared out, by length, between the placed words
 /// around them and inside their line's times, none past `end_ms`. The result never runs backwards.
 fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>], end_ms: u32) {
-    let flat: Vec<(u32, Option<(u32, u32)>)> = copies
+    // Per word: its weight, its copy's times and whether it opens its copy.
+    let flat: Vec<_> = copies
         .iter()
         .flat_map(|c| {
-            c.words.iter().map(move |(s, e)| {
+            c.words.iter().enumerate().map(move |(k, (s, e))| {
                 let key = norm(&c.text[*s as usize..*e as usize]);
-                (key.chars().count() as u32 + 1, c.window)
+                (key.chars().count() as u32 + 1, c.window, k == 0)
             })
         })
         .collect();
@@ -593,8 +594,8 @@ fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>], end_ms: u32) {
             i += 1;
             continue;
         }
-        let mut j = i;
-        while j < n && times[j].is_none() {
+        let mut j = i + 1;
+        while j < n && times[j].is_none() && !(flat[j].2 && flat[j].1.is_some()) {
             j += 1;
         }
         let weights: Vec<u32> = (i..j).map(|k| flat[k].0).collect();
@@ -604,15 +605,20 @@ fn fill(copies: &[Copy], times: &mut [Option<(u32, u32)>], end_ms: u32) {
             left = left.max(s);
         }
         let next = times.get(j).copied().flatten();
-        if let Some((s, _)) = next {
+        let after = times[j..].iter().flatten().next().copied();
+        if let Some((s, _)) = after {
             left = left.min(s);
         }
         let own = (total * MS_PER_CHAR).max(MIN_WORD_MS * (j - i) as u32);
         let mut right = next.map_or(left + own, |t| t.0);
+        // A timed line that ends the gap is not stretched past its own end to the next one.
         if let Some((_, e)) = flat[j - 1].1
-            && next.is_none()
+            && (next.is_none() || flat[j].2)
         {
-            right = right.max(left).min(e.max(left + MIN_WORD_MS));
+            right = (left + own).min(e.max(left + MIN_WORD_MS));
+        }
+        if let Some((s, _)) = after {
+            right = right.min(s);
         }
         if right <= left {
             right = left + MIN_WORD_MS * (j - i) as u32;
@@ -1020,6 +1026,20 @@ mod tests {
             .collect();
         assert!(all.windows(2).all(|p| p[0].1 <= p[1].0 && p[0].0 <= p[0].1));
         assert!(all[0].0 >= 1000 && all[1].1 <= 3000);
+    }
+
+    #[test]
+    fn unheard_lines_in_a_row_each_keep_to_their_own_times() {
+        let l = [
+            timed("one", 0, 1000),
+            timed("two two", 5000, 8000),
+            timed("three", 8000, 9000),
+            timed("one", 20_000, 21_000),
+        ];
+        let h = heard(&[("one", 100, 400), ("one", 20_100, 20_400)]);
+        let (out, _) = align(&l, &h);
+        assert_eq!((out[1].start_ms, out[2].start_ms), (5000, 8000));
+        assert!(out[1].end_ms <= 8000 && out[2].end_ms <= 9000);
     }
 
     #[test]

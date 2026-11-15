@@ -934,6 +934,14 @@ fn pass(
         }
     }
     let (matched, share) = shares(&plan.copies, &found);
+    // A timed copy with no word found has no anchor in the audio: `fill` times it in its window.
+    let mut at = 0;
+    for (copy, m) in plan.copies.iter().zip(&matched) {
+        if *m == 0.0 && copy.window.is_some() {
+            times[at..at + copy.words.len()].fill(None);
+        }
+        at += copy.words.len();
+    }
     Ok((
         finish(&plan.copies, &mut times, &matched, duration_ms),
         share,
@@ -1220,6 +1228,23 @@ mod tests {
         let (out, _) = run(&lines, &em);
         let starts: Vec<u32> = out.iter().map(|l| l.start_ms).collect();
         assert_eq!(starts, vec![100, 1200, 2000]);
+        forward(&out);
+    }
+
+    #[test]
+    fn timed_lines_nothing_is_heard_for_keep_to_their_own_times() {
+        let em = emissions(500, &[(10, 2, 0.9), (420, 2, 0.9)]);
+        let lines = [
+            timed("a", 0, 2000),
+            timed("b c", 4000, 6000),
+            timed("c b", 6000, 8000),
+            timed("a", 8000, 10_000),
+        ];
+        let (out, share) = run(&lines, &em);
+        assert_eq!(share, 2.0 / 6.0);
+        assert_eq!((out[1].start_ms, out[2].start_ms), (4000, 6000));
+        assert!(out[1].end_ms <= 6000 && out[2].end_ms <= 8000);
+        assert_eq!(out[3].start_ms, 8400);
         forward(&out);
     }
 
