@@ -7474,7 +7474,7 @@
       },
       "SpriteDecode": {
         "type": "string",
-        "description": "How the sprite job decodes its single pass: `auto` keeps keyframes alone when the file's\nfirst seconds show at least one per tile interval, else decodes every frame.",
+        "description": "How the sprite job extracts its frames: `auto` keeps keyframes alone when three samples of the\nfile show at least one per tile interval, else decodes every frame, or seeks each tile when\nthat decodes less (GOPs shorter than the interval on average). `keyframes` skips the samples,\nexcept for HEVC: with keyframes 128 frames apart or more, or an unknown frame rate, its\nkeyframes alone come out of order, and it goes the `auto` way in both modes.",
         "enum": [
           "auto",
           "keyframes",

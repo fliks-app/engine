@@ -146,8 +146,11 @@ pub enum SubtitlePrewarm {
     Import,
 }
 
-/// How the sprite job decodes its single pass: `auto` keeps keyframes alone when the file's
-/// first seconds show at least one per tile interval, else decodes every frame.
+/// How the sprite job extracts its frames: `auto` keeps keyframes alone when three samples of the
+/// file show at least one per tile interval, else decodes every frame, or seeks each tile when
+/// that decodes less (GOPs shorter than the interval on average). `keyframes` skips the samples,
+/// except for HEVC: with keyframes 128 frames apart or more, or an unknown frame rate, its
+/// keyframes alone come out of order, and it goes the `auto` way in both modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SpriteDecode {
@@ -155,7 +158,7 @@ pub enum SpriteDecode {
     Auto,
     /// Keyframes only: fastest; a tile repeats when keyframes sit further apart than the interval.
     Keyframes,
-    /// Every frame: each tile is the frame on screen at its mark.
+    /// Every frame in one pass: each tile is the frame on screen at its mark.
     Full,
 }
 

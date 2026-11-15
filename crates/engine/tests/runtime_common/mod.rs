@@ -527,6 +527,18 @@ pub fn h264_clip(seconds: u32) -> PathBuf {
     )
 }
 
+/// 20 s H.264 whose video starts at 1.5 s, its audio at 0 (a late first frame, as with B-frame
+/// or audio-first leads in MKV and TS).
+pub fn late_h264_clip() -> PathBuf {
+    clip(
+        "h264-late-1.5s.mkv",
+        &format!(
+            "-itsoffset 1.5 -f lavfi -i testsrc2=size=640x360:rate=24:duration=20 \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration=22 {X264} -c:a aac -ac 2"
+        ),
+    )
+}
+
 /// 10 s HEVC Main10 HDR10 1280x720 + AAC.
 pub fn hevc_hdr_clip() -> PathBuf {
     clip(

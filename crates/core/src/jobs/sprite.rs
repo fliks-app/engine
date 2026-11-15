@@ -122,35 +122,72 @@ pub fn frame_args(e: &Extractor, a: &FrameArgs) -> Result<Vec<String>, String> {
     Ok(v)
 }
 
-/// Seconds of packets the keyframe probe reads from the start of the file.
+/// Seconds of packets the keyframe probe reads when the file is too short for three windows.
 pub const KEYFRAME_PROBE_SECONDS: u32 = 90;
 
-/// Packet times and flags of the first video stream over its first `KEYFRAME_PROBE_SECONDS`
-/// (demux only, nothing decoded). Lines: `<pts_time>,<flags>`.
-pub fn keyframe_probe_args(input_path: &str) -> Vec<String> {
-    let window = format!("%+{KEYFRAME_PROBE_SECONDS}");
+/// Where the keyframe probe reads, as (start, seconds): the first `KEYFRAME_PROBE_SECONDS`
+/// of a short file; else three windows at 0, 1/3 and 2/3 of `duration`, each of 30 s or three
+/// intervals, so a busy opening does not speak for static scenes later on.
+pub fn keyframe_probe_windows(duration: f64, interval: u32) -> Vec<(f64, f64)> {
+    let len = f64::from(interval * 3).max(30.0);
+    if duration.is_nan() || duration <= 3.0 * f64::from(KEYFRAME_PROBE_SECONDS) {
+        return vec![(0.0, f64::from(KEYFRAME_PROBE_SECONDS))];
+    }
+    (0..3)
+        .map(|k| ((duration * f64::from(k) / 3.0).floor(), len))
+        .collect()
+}
+
+/// Packet times and flags of video stream `stream_index` (absolute, as `video[0].streamIndex`:
+/// never an attached picture) over one probe window (demux only, nothing decoded). Lines:
+/// `<pts_time>,<dts_time>,<flags>`.
+pub fn keyframe_probe_args(input_path: &str, stream_index: u32, window: (f64, f64)) -> Vec<String> {
+    let interval = format!("{}%+{}", js_string(window.0), js_string(window.1));
     strs(&[
         "-v",
         "error",
         "-select_streams",
-        "v:0",
+        &stream_index.to_string(),
         "-read_intervals",
-        &window,
+        &interval,
         "-show_entries",
-        "packet=pts_time,flags",
+        "packet=pts_time,dts_time,flags",
         "-of",
         "csv=p=0",
         input_path,
     ])
 }
 
-/// The time of a keyframe line of `keyframe_probe_args`, `None` for any other packet.
+/// The time of a keyframe line of `keyframe_probe_args` (`pts_time`, else `dts_time` when the
+/// container has no pts: AVI, some TS), `None` for any other packet.
 pub fn keyframe_time(line: &str) -> Option<f64> {
-    let (pts, flags) = line.trim().split_once(',')?;
+    let mut f = line.trim().split(',');
+    let (pts, dts, flags) = (f.next()?, f.next()?, f.next()?);
     if !flags.starts_with('K') {
         return None;
     }
-    pts.parse().ok()
+    pts.parse().ok().or_else(|| dts.parse().ok())
+}
+
+/// Per-frame seeks cost less than a full pass: a seek decodes about half a GOP and costs about
+/// twice a pass's frame (a process and a device start each; 519 seeks of an AV1 episode took 231 s
+/// CPU against 43 s for its full pass), so seeks win when `count * mean GOP` < `duration`. Long-GOP
+/// HEVC, where keyframes alone come out shuffled, then goes back to the frame runs.
+pub fn seeks_cheaper(windows: &[Vec<f64>], count: u32, duration: f64) -> bool {
+    let gaps: Vec<f64> = windows
+        .iter()
+        .flat_map(|w| {
+            let mut t = w.clone();
+            t.sort_by(f64::total_cmp);
+            t.dedup();
+            t.windows(2).map(|p| p[1] - p[0]).collect::<Vec<_>>()
+        })
+        .collect();
+    if gaps.is_empty() || duration <= 0.0 {
+        return false;
+    }
+    let mean = gaps.iter().sum::<f64>() / gaps.len() as f64;
+    f64::from(count) * mean < duration
 }
 
 /// The widest gap between two keyframes of the sample; `None` under two keyframes.
@@ -215,6 +252,8 @@ pub struct PassArgs<'a> {
     pub keyframes_only: bool,
     /// `video[0].codec`: VP9 drops packets for its keyframes only.
     pub codec: &'a str,
+    /// `video[0].streamIndex`, mapped so the pass reads the stream the probe and `codec` describe.
+    pub stream_index: u32,
 }
 
 /// VP9's keyframes only: the non-key packets dropped before the decoder, since the VP9 decoders
@@ -225,7 +264,10 @@ pub const VP9_KEYFRAMES_ONLY: &str = "noise=drop=not(key)";
 /// Every frame of the sheet in one run: the file decoded once (keyframes only when asked), then
 /// `fps=1/interval:round=up` keeps, for each mark, the frame on screen at it (`round=down` keeps
 /// the last frame before the next mark, one interval late). `fps` comes before the scale chain:
-/// only the kept frames are scaled (and downloaded from the GPU). `-progress` lines on stdout.
+/// only the kept frames are scaled (and downloaded from the GPU; VideoToolbox downloads every
+/// decoded frame anyway). `-fps_mode passthrough`: with a non-zero `start_time`, `fps` numbers its
+/// first frame 1, and the image2 muxer's CFR sync would duplicate it into slot 0, every tile one
+/// interval late. `-progress` lines on stdout.
 pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
     let f = FrameArgs {
         input_path: a.input_path,
@@ -249,6 +291,10 @@ pub fn pass_args(e: &Extractor, a: &PassArgs) -> Result<Vec<String>, String> {
     );
     let count = a.layout.count.to_string();
     v.extend(strs(&[
+        "-map",
+        &format!("0:{}", a.stream_index),
+        "-fps_mode",
+        "passthrough",
         "-frames:v",
         &count,
         "-vf",
@@ -521,11 +567,52 @@ mod tests {
 
     #[test]
     fn keyframe_probe_lines() {
-        assert_eq!(keyframe_time("12.345000,K__"), Some(12.345));
-        assert_eq!(keyframe_time("12.345000,K_D\n"), Some(12.345));
-        assert_eq!(keyframe_time("12.387000,___"), None);
-        assert_eq!(keyframe_time("N/A,K__"), None);
+        assert_eq!(keyframe_time("12.345000,12.300000,K__"), Some(12.345));
+        assert_eq!(keyframe_time("12.345000,12.300000,K_D\n"), Some(12.345));
+        assert_eq!(keyframe_time("12.387000,12.300000,___"), None);
+        assert_eq!(
+            keyframe_time("N/A,7.000000,K__"),
+            Some(7.0),
+            "no pts (AVI, some TS): the dts"
+        );
+        assert_eq!(keyframe_time("N/A,N/A,K__"), None);
+        assert_eq!(keyframe_time("12.345000,K__"), None);
         assert_eq!(keyframe_time("garbage"), None);
+        assert_eq!(
+            keyframe_probe_args("/m/e.mkv", 2, (2400.0, 90.0)).join(" "),
+            "-v error -select_streams 2 -read_intervals 2400%+90 -show_entries \
+             packet=pts_time,dts_time,flags -of csv=p=0 /m/e.mkv"
+        );
+    }
+
+    #[test]
+    fn keyframe_probe_spreads_over_long_files() {
+        assert_eq!(keyframe_probe_windows(120.0, 2), [(0.0, 90.0)]);
+        assert_eq!(keyframe_probe_windows(f64::NAN, 2), [(0.0, 90.0)]);
+        assert_eq!(
+            keyframe_probe_windows(2592.5, 5),
+            [(0.0, 30.0), (864.0, 30.0), (1728.0, 30.0)]
+        );
+        assert_eq!(
+            keyframe_probe_windows(7201.0, 30),
+            [(0.0, 90.0), (2400.0, 90.0), (4800.0, 90.0)]
+        );
+    }
+
+    #[test]
+    fn seeks_win_when_a_gop_is_shorter_than_an_interval() {
+        // 2 h film, 30 s interval (241 tiles), 10 s GOPs: 2410 < 7201.
+        let ten_s = vec![0.0, 10.0, 20.0, 30.0];
+        assert!(seeks_cheaper(
+            &[ten_s.clone(), vec![2400.0, 2410.0]],
+            241,
+            7201.0
+        ));
+        // 43 min episode, 5 s interval (519 tiles), 10 s GOPs: a pass decodes less.
+        assert!(!seeks_cheaper(&[ten_s], 519, 2592.5));
+        // The gap between two windows is not a GOP.
+        assert!(!seeks_cheaper(&[vec![0.0], vec![2400.0]], 241, 7201.0));
+        assert!(!seeks_cheaper(&[], 241, 7201.0));
     }
 
     #[test]
@@ -597,6 +684,7 @@ mod tests {
             seek_offset: 0.0,
             keyframes_only: true,
             codec: "av1",
+            stream_index: 0,
         };
         let vaapi = Extractor::Vaapi {
             device: "/dev/dri/renderD128".into(),
@@ -606,7 +694,7 @@ mod tests {
             got,
             "-nostdin -hide_banner -loglevel error -threads 1 -hwaccel vaapi -hwaccel_device \
              /dev/dri/renderD128 -hwaccel_output_format vaapi -skip_frame nokey -an -sn -dn -i \
-             /m/e.mkv -frames:v 519 -vf fps=1/5:round=up:start_time=0,\
+             /m/e.mkv -map 0:0 -fps_mode passthrough -frames:v 519 -vf fps=1/5:round=up:start_time=0,\
              scale_vaapi=240:-2:format=nv12,hwdownload,format=nv12 -q:v 5 -start_number 1 -nostats -progress pipe:1 -y \
              /c/f/frame-%04d.jpg"
         );
@@ -619,7 +707,7 @@ mod tests {
         assert_eq!(
             got,
             "-nostdin -hide_banner -loglevel error -threads 1 -analyzeduration 0 -probesize \
-             5000000 -an -sn -dn -i /m/e.mkv -frames:v 519 -vf \
+             5000000 -an -sn -dn -i /m/e.mkv -map 0:0 -fps_mode passthrough -frames:v 519 -vf \
              fps=1/5:round=up:start_time=1.5,scale=240:-1 -q:v 5 -start_number 1 -nostats \
              -progress pipe:1 -y /c/f/frame-%04d.jpg"
         );
