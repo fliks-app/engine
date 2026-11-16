@@ -44,6 +44,9 @@ pub struct Entry {
     /// The case of the characters of an alignment model run as a CTC network (else the speech
     /// recogniser's).
     pub ctc: Option<Case>,
+    /// `pick_aligner` may choose this model when the request names none; false: only a request
+    /// that names it runs it.
+    pub auto: bool,
     pub files: Vec<FileEntry>,
 }
 
@@ -136,6 +139,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/deezer/spleeter",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![
                 FileEntry {
@@ -163,6 +167,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/lars76/swift-f0",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "model.onnx",
@@ -184,6 +189,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://huggingface.co/ggerganov/whisper.cpp",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "model.bin",
@@ -203,6 +209,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-french",
             languages: &["fr"],
+            auto: true,
             ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
@@ -230,6 +237,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/wav2vec2-large-960h-lv60-self",
             languages: &["en"],
+            auto: true,
             ctc: Some(Case::Upper),
             files: vec![
                 ctc_file(
@@ -257,6 +265,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/omniASR-CTC-300M",
             languages: &[],
+            auto: true,
             ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
@@ -273,7 +282,7 @@ pub fn manifest() -> Vec<Entry> {
                 ),
             ],
         },
-        // Last: only a request that names it runs it (the training data's provenance is unknown).
+        // Never picked on its own: the training data's provenance is unknown.
         Entry {
             id: "w2v-bert-music-ctc",
             kind: ModelKind::Alignment,
@@ -288,6 +297,7 @@ pub fn manifest() -> Vec<Entry> {
                 "1be91455793f86de803ac0707303a0998e423ce1"
             ),
             languages: &[],
+            auto: false,
             ctc: Some(Case::Lower),
             files: vec![
                 ctc_file_in(
@@ -681,12 +691,13 @@ impl Manager {
         })
     }
 
-    /// The model of an `Align`: `id`, else the first installed CTC model for `language` (the
+    /// The model of an `Align`: `id`, else the first installed `auto` CTC model for `language` (the
     /// specific entries come first in the manifest), else the default recogniser.
     pub fn pick_aligner(&self, id: Option<&str>, language: Option<&str>) -> Result<Picked, String> {
         let ctc = self.0.entries.iter().find(|e| {
             e.kind == ModelKind::Alignment
                 && e.ctc.is_some()
+                && e.auto
                 && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
                 && self.installed(e)
                 && self.damaged(e).is_none()
@@ -1227,8 +1238,8 @@ mod tests {
         }
         let last = m.last().unwrap();
         assert_eq!(
-            (last.id, last.clear, last.default),
-            ("w2v-bert-music-ctc", false, false)
+            (last.id, last.clear, last.default, last.auto),
+            ("w2v-bert-music-ctc", false, false, false)
         );
         assert!(
             last.homepage
@@ -1275,6 +1286,16 @@ mod tests {
         let (d, m) = dir_with(&["whisper-small-q5_1"]);
         let p = m.pick_aligner(None, Some("fr")).unwrap();
         assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", None));
+        std::fs::remove_dir_all(&d).unwrap();
+        // An entry that is not `auto` is never picked on its own, even alone, only when named.
+        let (d, m) = dir_with(&["w2v-bert-music-ctc", "whisper-small-q5_1"]);
+        let id = |model, lang| m.pick_aligner(model, lang).map(|p| p.id);
+        assert_eq!(id(None, Some("fr")), Ok("whisper-small-q5_1"));
+        assert_eq!(id(None, None), Ok("whisper-small-q5_1"));
+        assert_eq!(
+            id(Some("w2v-bert-music-ctc"), None),
+            Ok("w2v-bert-music-ctc")
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1353,6 +1374,7 @@ mod tests {
             default: true,
             homepage: "",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "m.bin",

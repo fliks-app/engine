@@ -4,7 +4,7 @@ use super::models::Picked;
 use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Backend, Loaded, Net, Tensor, Warm};
 use crate::jobs::Ctx;
-use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass};
+use fliks_engine_core::api::{AlignLine, AlignMeta, AlignedLine, JobErrorClass, LrcFit};
 use fliks_engine_core::jobs::ctc::{
     AlignError, Case, Emissions, FRAME_MS, Vocab, Voicing, align, fits, lyric_ids,
 };
@@ -449,7 +449,12 @@ pub async fn run(
                     })
                 });
                 let placed = placed.map(|mut a| {
-                    shift(&mut a.lines, export.win.onset_ms, duration_ms);
+                    shift(
+                        &mut a.lines,
+                        &mut a.lrc_fit,
+                        export.win.onset_ms,
+                        duration_ms,
+                    );
                     a
                 });
                 (provider, placed)
@@ -470,7 +475,10 @@ pub async fn run(
 }
 
 /// Every time moved by `onset_ms` (a network that fires before or after the sound), inside the audio.
-fn shift(lines: &mut [AlignedLine], onset_ms: i32, end_ms: u32) {
+fn shift(lines: &mut [AlignedLine], fit: &mut Option<LrcFit>, onset_ms: i32, end_ms: u32) {
+    if let Some(f) = fit {
+        f.offset_ms += f64::from(onset_ms);
+    }
     let at =
         |t: &mut u32| *t = (i64::from(*t) + i64::from(onset_ms)).clamp(0, end_ms.into()) as u32;
     for l in lines {
@@ -650,7 +658,13 @@ mod tests {
             words,
         };
         let mut lines = [line(vec![word(30, 500), word(900, 1990)])];
-        shift(&mut lines, -60, 2000);
+        let mut fit = Some(LrcFit {
+            offset_ms: 1000.0,
+            scale: 1.0,
+            unreliable: false,
+        });
+        shift(&mut lines, &mut fit, -60, 2000);
+        assert_eq!(fit.map(|f| f.offset_ms), Some(940.0));
         let t: Vec<_> = lines[0]
             .words
             .iter()
@@ -658,7 +672,9 @@ mod tests {
             .collect();
         assert_eq!(t, [(0, 440), (840, 1930)]);
         assert_eq!((lines[0].start_ms, lines[0].end_ms), (0, 1930));
-        shift(&mut lines, 200, 2000);
+        shift(&mut lines, &mut fit, 200, 2000);
+        assert_eq!(fit.map(|f| f.offset_ms), Some(1140.0));
+        shift(&mut lines, &mut None, 0, 2000);
         assert_eq!(lines[0].words[1].end_ms, 2000);
     }
 

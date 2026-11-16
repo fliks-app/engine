@@ -53,6 +53,7 @@ fn entry(id: &'static str, kind: ModelKind, default: bool, files: Vec<FileEntry>
         default,
         homepage: "https://models.test/card",
         languages: &[],
+        auto: true,
         ctc: None,
         files,
     }
@@ -1067,6 +1068,7 @@ async fn ctc_engine() -> Option<Engine> {
             file("vocab.json", String::new(), vocab.as_bytes()),
         ];
         entries.push(Entry {
+            auto: true,
             ctc: Some(Case::Lower),
             ..entry(id, ModelKind::Alignment, false, files)
         });
