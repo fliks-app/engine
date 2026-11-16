@@ -35,7 +35,7 @@ def variants(fp32, out, half=True):
     quantize_dynamic(fp32, out / "model.int8.onnx", weight_type=QuantType.QInt8, op_types_to_quantize=["MatMul", "Gemm"])
 
 
-BERT = dict(input="fbank", chunkMs=15000, contextMs=2000, onsetMs=0, retryBlank=0.99)
+BERT = dict(input="fbank", chunkMs=15000, contextMs=2000, onsetMs=-30, retryBlank=0.99)
 
 
 def checkpoint(repo, rev, out):
