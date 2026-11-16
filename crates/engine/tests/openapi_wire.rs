@@ -357,6 +357,8 @@ fn every_wire_key_is_in_its_schema() {
         ModelState,
         ModelsResponse,
         SeparateMeta,
+        SeparateOutput,
+        StemUpload,
         StemFile,
     );
     let mut all: Vec<&str> = doc["components"]["schemas"]

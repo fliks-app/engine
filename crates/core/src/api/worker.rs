@@ -555,7 +555,7 @@ mod tests {
                 .get("features")
                 .is_none()
         );
-        let with = json!({ "instanceId": "w1", "engineVersion": "1", "devices": [],
+        let with = json!({ "instanceId": "w1", "engineVersion": "1", "devices": [], "jobs": [],
             "features": ["karaoke-separate", "onnx-cpu"] });
         let hello: WorkerHello = serde_json::from_value(with.clone()).unwrap();
         assert_eq!(serde_json::to_value(&hello).unwrap(), with);
