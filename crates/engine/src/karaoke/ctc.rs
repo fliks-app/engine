@@ -998,7 +998,8 @@ mod tests {
         );
         // No retry configured, or too little voiced audio.
         assert_eq!(run(whole / 2, None, &silent).1, vec![whole]);
-        assert_eq!(run(whole / 2, retry, &vec![true; 500]).1, vec![whole]);
+        let mostly_silent: Vec<bool> = (0..500).map(|f| f >= 50).collect();
+        assert_eq!(run(whole / 2, retry, &mostly_silent).1, vec![whole]);
     }
 
     /// A WAV of 16 kHz mono 16-bit samples as floats.
