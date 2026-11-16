@@ -44,6 +44,9 @@ pub struct Entry {
     /// The case of the characters of an alignment model run as a CTC network (else the speech
     /// recogniser's).
     pub ctc: Option<Case>,
+    /// `pick_aligner` may choose this model when the request names none; false: only a request
+    /// that names it runs it.
+    pub auto: bool,
     pub files: Vec<FileEntry>,
 }
 
@@ -84,6 +87,10 @@ facebook/wav2vec2-large-960h-lv60-self).";
 const OMNIASR: &str = "Apache-2.0. Omnilingual ASR CTC 300M (Meta AI, facebook/omniASR-CTC-300M), \
 ONNX conversion published by OpenVoiceOS (OpenVoiceOS/omnilingual-asr-ctc-300m-onnx).";
 
+const W2VBERT: &str = "MIT License, as the model card declares (it gives no copyright line). \
+w2v-BERT 2.0 music lyrics CTC by mrfakename (mrfakename/w2v-bert-2.0-music-lyrics-ctc), converted to \
+ONNX and quantised to 8 bits, not otherwise modified.";
+
 const SPLEETER_REV: &str = "7001ba316a615cacddb3f9ef3ec416661a277e26";
 const SWIFTF0_REV: &str = "d1ba77fe5331310b778ebe126b6cb3656d41d24f";
 const WHISPER_REV: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
@@ -94,11 +101,19 @@ fn whisper_url(file: &str) -> String {
 
 /// A CTC model's file: the release asset `<id>.<name>` of the engine's repository.
 fn ctc_file(id: &str, name: &'static str, sha256: &'static str, size: u64) -> FileEntry {
+    ctc_file_in("models-ctc-v1", id, name, sha256, size)
+}
+
+fn ctc_file_in(
+    release: &str,
+    id: &str,
+    name: &'static str,
+    sha256: &'static str,
+    size: u64,
+) -> FileEntry {
     FileEntry {
         name,
-        url: format!(
-            "https://github.com/fliks-app/engine/releases/download/models-ctc-v1/{id}.{name}"
-        ),
+        url: format!("https://github.com/fliks-app/engine/releases/download/{release}/{id}.{name}"),
         sha256,
         size,
     }
@@ -124,6 +139,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/deezer/spleeter",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![
                 FileEntry {
@@ -151,6 +167,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://github.com/lars76/swift-f0",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "model.onnx",
@@ -172,6 +189,7 @@ pub fn manifest() -> Vec<Entry> {
             default: true,
             homepage: "https://huggingface.co/ggerganov/whisper.cpp",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "model.bin",
@@ -191,6 +209,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-french",
             languages: &["fr"],
+            auto: true,
             ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
@@ -218,6 +237,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/wav2vec2-large-960h-lv60-self",
             languages: &["en"],
+            auto: true,
             ctc: Some(Case::Upper),
             files: vec![
                 ctc_file(
@@ -245,6 +265,7 @@ pub fn manifest() -> Vec<Entry> {
             default: false,
             homepage: "https://huggingface.co/facebook/omniASR-CTC-300M",
             languages: &[],
+            auto: true,
             ctc: Some(Case::Lower),
             files: vec![
                 ctc_file(
@@ -258,6 +279,40 @@ pub fn manifest() -> Vec<Entry> {
                     "vocab.json",
                     "333eb690077bb195de573f85afbfb0b6ec296c520c8b416ec9fd7edaa0dee104",
                     173_163,
+                ),
+            ],
+        },
+        // Never picked on its own: the training data's provenance is unknown.
+        Entry {
+            id: "w2v-bert-music-ctc",
+            kind: ModelKind::Alignment,
+            name: "w2v-BERT 2.0 music lyrics, CTC",
+            version: "1",
+            licence: "MIT",
+            licence_text: with_mit(W2VBERT),
+            clear: false,
+            default: false,
+            homepage: concat!(
+                "https://huggingface.co/mrfakename/w2v-bert-2.0-music-lyrics-ctc/tree/",
+                "1be91455793f86de803ac0707303a0998e423ce1"
+            ),
+            languages: &[],
+            auto: false,
+            ctc: Some(Case::Lower),
+            files: vec![
+                ctc_file_in(
+                    "models-ctc-v2",
+                    "w2v-bert-music-ctc",
+                    "model.onnx",
+                    "c1d3a505d173c85e1fed041dac65fa54854a84846e623066a5d44f0bac335a7f",
+                    814_086_516,
+                ),
+                ctc_file_in(
+                    "models-ctc-v2",
+                    "w2v-bert-music-ctc",
+                    "vocab.json",
+                    "577cd5eede5380feb7d563c4fab8b7dcb190f8322dfa3739c855474397070de6",
+                    14_650,
                 ),
             ],
         },
@@ -636,12 +691,13 @@ impl Manager {
         })
     }
 
-    /// The model of an `Align`: `id`, else the first installed CTC model for `language` (the
+    /// The model of an `Align`: `id`, else the first installed `auto` CTC model for `language` (the
     /// specific entries come first in the manifest), else the default recogniser.
     pub fn pick_aligner(&self, id: Option<&str>, language: Option<&str>) -> Result<Picked, String> {
         let ctc = self.0.entries.iter().find(|e| {
             e.kind == ModelKind::Alignment
                 && e.ctc.is_some()
+                && e.auto
                 && (e.languages.is_empty() || language.is_some_and(|l| e.languages.contains(&l)))
                 && self.installed(e)
                 && self.damaged(e).is_none()
@@ -1176,9 +1232,19 @@ mod tests {
             assert!(e.kind == ModelKind::Alignment && !e.default);
             assert!(e.homepage.starts_with("https://"));
             assert!(e.languages.iter().all(|l| l.len() == 2));
-            let url = format!("/models-ctc-v1/{}.model.onnx", e.id);
+            let url = format!("/{}.model.onnx", e.id);
             assert!(e.files[0].url.ends_with(&url));
+            assert!(e.files[0].url.contains("/releases/download/models-ctc-v"));
         }
+        let last = m.last().unwrap();
+        assert_eq!(
+            (last.id, last.clear, last.default, last.auto),
+            ("w2v-bert-music-ctc", false, false, false)
+        );
+        assert!(
+            last.homepage
+                .ends_with("1be91455793f86de803ac0707303a0998e423ce1")
+        );
         let ids: std::collections::HashSet<_> = m.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), m.len());
     }
@@ -1220,6 +1286,16 @@ mod tests {
         let (d, m) = dir_with(&["whisper-small-q5_1"]);
         let p = m.pick_aligner(None, Some("fr")).unwrap();
         assert_eq!((p.id, p.ctc), ("whisper-small-q5_1", None));
+        std::fs::remove_dir_all(&d).unwrap();
+        // An entry that is not `auto` is never picked on its own, even alone, only when named.
+        let (d, m) = dir_with(&["w2v-bert-music-ctc", "whisper-small-q5_1"]);
+        let id = |model, lang| m.pick_aligner(model, lang).map(|p| p.id);
+        assert_eq!(id(None, Some("fr")), Ok("whisper-small-q5_1"));
+        assert_eq!(id(None, None), Ok("whisper-small-q5_1"));
+        assert_eq!(
+            id(Some("w2v-bert-music-ctc"), None),
+            Ok("w2v-bert-music-ctc")
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1298,6 +1374,7 @@ mod tests {
             default: true,
             homepage: "",
             languages: &[],
+            auto: true,
             ctc: None,
             files: vec![FileEntry {
                 name: "m.bin",
