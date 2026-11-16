@@ -213,6 +213,9 @@ pub struct AlignedWord {
     pub byte_end: u32,
     pub start_ms: u32,
     pub end_ms: u32,
+    /// The word was not found in the audio: its times are interpolated.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub guessed: bool,
 }
 
 /// A line placed on the audio. A line marked `x2` (or `(x2)`, `[x2]`, `2x`) comes back once per
