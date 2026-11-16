@@ -1,10 +1,15 @@
 //! The `Separate` job: the decoded track through a two-stem mask network in chunks, the stems
 //! written as PCM, then encoded to Opus in one run. Spec: `docs/spec/karaoke.md` section 3.
+use super::models::Outcome;
 use super::run::{Outputs, StopOnDrop, unsupported};
 use super::{Net, Tensor, Warm};
 use crate::jobs::{Cmd, Ctx, ModelBusy, tail};
 use crate::proc::Pipes;
-use fliks_engine_core::api::{JobKind, JobResult, MediaInfo, ModelKind, SeparateMeta, StemFile};
+use fliks_engine_core::api::{
+    JobErrorClass, JobKind, JobResult, MediaInfo, ModelInfo, ModelKind, ModelState, SeparateMeta,
+    StemFile,
+};
+use fliks_engine_core::jobs::optimize::http_input;
 use fliks_engine_core::jobs::separate::{
     CHUNK_FRAMES, CHUNK_SAMPLES, CHUNK_SPAN, DEFAULT_BITRATE_KBPS, DEFAULT_GUIDE_VOCALS_GAIN, LEAD,
     MODEL_BINS, Overlap, SAMPLE_RATE, Stft, chunk_count, soft_masks,
@@ -42,6 +47,7 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
         guide_vocals_gain,
         bitrate_kbps,
         providers,
+        model_version,
         ..
     } = kind
     else {
@@ -54,7 +60,18 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
         guide.as_deref(),
     );
     let k = &ctx.rt.karaoke;
+    if let Some(wanted) = model_version {
+        ensure_model(ctx, model, wanted).await?;
+    }
     let picked = k.models().pick(model, ModelKind::Separation)?;
+    if let Some(wanted) = model_version
+        && picked.version != *wanted
+    {
+        return Err(JobErrorClass::Model.message(format!(
+            "{} is at version {}, not {wanted}",
+            picked.id, picked.version
+        )));
+    }
     let backend = k.backend();
     let runtime = backend.runtime();
     if !runtime.onnx {
@@ -111,6 +128,70 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
             duration_seconds: seconds,
         },
     })
+}
+
+#[derive(Debug, PartialEq)]
+enum Verdict {
+    Ready,
+    Install,
+    Refuse(String),
+}
+
+/// Whether the model can run at `wanted` as installed, after an install, or never.
+fn model_verdict(info: Option<&ModelInfo>, wanted: &str) -> Verdict {
+    let Some(m) = info else {
+        return Verdict::Refuse("unknown model".into());
+    };
+    if m.state == ModelState::Installed && m.installed_version.as_deref() == Some(wanted) {
+        Verdict::Ready
+    } else if m.version != wanted {
+        Verdict::Refuse(format!("manifest version is {}, not {wanted}", m.version))
+    } else if !m.licence.clear {
+        Verdict::Refuse("licence not clear".into())
+    } else {
+        Verdict::Install
+    }
+}
+
+/// Installs or updates the model to `wanted`, waiting for the download; a refusal is class `model`.
+async fn ensure_model(ctx: &Ctx, id: Option<&str>, wanted: &str) -> Result<(), String> {
+    let models = ctx.rt.karaoke.models();
+    let id = match id {
+        Some(id) => id.to_string(),
+        None => models
+            .list()
+            .into_iter()
+            .find(|m| m.kind == ModelKind::Separation && m.default)
+            .map(|m| m.id)
+            .ok_or_else(|| JobErrorClass::Model.message("no default model"))?,
+    };
+    let refuse = |why: &str| JobErrorClass::Model.message(format!("{id}: {why}"));
+    match model_verdict(models.get(&id).as_ref(), wanted) {
+        Verdict::Ready => return Ok(()),
+        Verdict::Refuse(why) => return Err(refuse(&why)),
+        Verdict::Install => {}
+    }
+    if let Some(Outcome::Refused(why)) = models.start(&id) {
+        return Err(refuse(why));
+    }
+    loop {
+        if ctx.cancelled() {
+            return Err(crate::jobs::CANCELLED.into());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let info = models.get(&id);
+        match model_verdict(info.as_ref(), wanted) {
+            Verdict::Ready => return Ok(()),
+            Verdict::Refuse(why) => return Err(refuse(&why)),
+            Verdict::Install => {}
+        }
+        if let Some(m) = &info
+            && m.state != ModelState::Downloading
+            && let Some(e) = &m.error
+        {
+            return Err(refuse(e));
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -198,11 +279,16 @@ async fn decode_and_separate(
     gain: f32,
     total_seconds: Option<f64>,
 ) -> Result<u64, String> {
+    let input = ctx.media_path();
+    let token = match &ctx.job.req.kind {
+        JobKind::Separate { input_token, .. } => input_token.as_deref(),
+        _ => None,
+    };
     let argv: Vec<String> = ["-hide_banner", "-loglevel", "warning", "-i"]
         .map(String::from)
         .into_iter()
         .chain([
-            ctx.media_path(),
+            input.clone(),
             "-map".into(),
             "0:a:0".into(),
             "-vn".into(),
@@ -217,6 +303,10 @@ async fn decode_and_separate(
             "pipe:1".into(),
         ])
         .collect();
+    let argv = match token {
+        Some(t) => http_input(argv, &input, Some(t)),
+        None => argv,
+    };
     let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout());
     let c = ctx.clone();
     ctx.pipeline(u64::MAX, vec![cmd], |p| async move {
@@ -401,4 +491,58 @@ fn write(
             .map_err(|e| format!("write scratch: {e}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fliks_engine_core::api::ModelLicence;
+
+    fn info(state: ModelState, installed: Option<&str>, version: &str, clear: bool) -> ModelInfo {
+        ModelInfo {
+            id: "m".into(),
+            kind: ModelKind::Separation,
+            name: "m".into(),
+            version: version.into(),
+            licence: ModelLicence {
+                name: "MIT".into(),
+                text: String::new(),
+                clear,
+            },
+            default: true,
+            files: vec![],
+            languages: vec![],
+            engine: None,
+            homepage: String::new(),
+            size_bytes: 0.0,
+            disk_bytes: 0.0,
+            installed_version: installed.map(String::from),
+            outdated: installed.is_some_and(|v| v != version),
+            state,
+            verifying: false,
+            downloaded_bytes: 0.0,
+            bytes_per_second: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn the_model_verdict_follows_the_installed_and_manifest_versions() {
+        use ModelState::{Absent, Failed, Installed};
+        let v = |m: ModelInfo| model_verdict(Some(&m), "2");
+        assert_eq!(v(info(Installed, Some("2"), "2", true)), Verdict::Ready);
+        assert_eq!(v(info(Installed, Some("2"), "3", true)), Verdict::Ready);
+        assert_eq!(v(info(Installed, Some("1"), "2", true)), Verdict::Install);
+        assert_eq!(v(info(Absent, None, "2", true)), Verdict::Install);
+        assert_eq!(v(info(Failed, Some("2"), "2", true)), Verdict::Install);
+        assert!(matches!(
+            v(info(Absent, None, "2", false)),
+            Verdict::Refuse(_)
+        ));
+        assert!(matches!(
+            v(info(Installed, Some("1"), "3", true)),
+            Verdict::Refuse(_)
+        ));
+        assert!(matches!(model_verdict(None, "2"), Verdict::Refuse(_)));
+    }
 }

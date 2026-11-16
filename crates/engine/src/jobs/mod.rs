@@ -297,7 +297,7 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
     Ok(id)
 }
 
-/// Starts the optimization or verification a worker leased, at once on `lane`: no wait for
+/// Starts the optimization, verification or separation a worker leased, at once on `lane`: no wait for
 /// `MAX_RUNNING`, the device's own limit applies in the slots. `lease` names it (never deduped).
 pub fn submit_leased(
     rt: &Arc<Runtime>,
