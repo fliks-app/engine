@@ -5,12 +5,15 @@
 
 Writes <out-dir>/{model.fp32,model.fp16,model.int8}.onnx (`input_values [1, n]` -> `logits [1, T, V]`,
 n dynamic, 20 ms per frame), vocab.json and card.json (licence and revision, read from the hub).
+A Wav2Vec2BertForCTC checkpoint (w2v-BERT) takes `input_features [1, T, 160]` (the SeamlessM4T fbank, made by
+the engine) instead, and gets only model.fp32.onnx (weights beside it, over 2 GB) and a single-file
+model.int8.onnx; its vocab.json adds `input`, `chunkMs`, `contextMs`, `onsetMs` and `retryBlank`.
 A repo that already ships `model.onnx` and `tokens.txt` (onnx-asr layout, input `x` (renamed), blank id 0, the
 real space as word delimiter) is converted from those files; any other goes through torch.
 Needs onnx, onnxruntime, huggingface_hub, plus torch, transformers and onnxscript
 for a checkpoint.
 """
-import json, sys
+import json, shutil, sys
 from pathlib import Path
 
 import onnx
@@ -26,14 +29,20 @@ def hub_json(repo, rev, name):
         return {}
 
 
-def variants(fp32, out):
-    onnx.save(convert_float_to_float16(onnx.load(fp32), keep_io_types=True), out / "model.fp16.onnx")
+def variants(fp32, out, half=True):
+    if half:
+        onnx.save(convert_float_to_float16(onnx.load(fp32), keep_io_types=True), out / "model.fp16.onnx")
     quantize_dynamic(fp32, out / "model.int8.onnx", weight_type=QuantType.QInt8, op_types_to_quantize=["MatMul", "Gemm"])
 
 
+BERT = dict(input="fbank", chunkMs=15000, contextMs=2000, onsetMs=0, retryBlank=0.99)
+
+
 def checkpoint(repo, rev, out):
+    import numpy as np
+    import onnxruntime as ort
     import torch
-    from transformers import Wav2Vec2ForCTC
+    from transformers import AutoModelForCTC
 
     class Net(torch.nn.Module):
         def __init__(self, m):
@@ -43,7 +52,12 @@ def checkpoint(repo, rev, out):
         def forward(self, input_values):
             return self.m(input_values).logits
 
-    model = Wav2Vec2ForCTC.from_pretrained(repo, revision=rev).eval()
+    class BertNet(Net):
+        def forward(self, input_features):
+            return self.m(input_features=input_features).logits
+
+    model = AutoModelForCTC.from_pretrained(repo, revision=rev).eval()
+    bert = type(model).__name__ == "Wav2Vec2BertForCTC"
     cfg, pre, tok = model.config, hub_json(repo, rev, "preprocessor_config.json"), hub_json(repo, rev, "tokenizer_config.json")
     vocab = json.load(open(hf_hub_download(repo, "vocab.json", revision=rev)))
     assert cfg.vocab_size == len(vocab) or cfg.vocab_size > max(vocab.values()), "vocab does not match the head"
@@ -52,6 +66,34 @@ def checkpoint(repo, rev, out):
                 unk=vocab.get(tok.get("unk_token", "<unk>")),
                 vocab={str(i): c for c, i in sorted(vocab.items(), key=lambda kv: kv[1])})
     fp32 = out / "model.fp32.onnx"
+    if bert:
+        meta.update(BERT, doNormalize=False)
+        from transformers import AutoFeatureExtractor
+
+        fe = AutoFeatureExtractor.from_pretrained(repo, revision=rev)
+
+        def feats(seconds):
+            t = np.arange(16000 * seconds) / 16000
+            wave = 0.1 * np.random.RandomState(seconds).randn(t.size) + 0.3 * np.sin(2 * np.pi * (200 + 80 * t) * t)
+            return torch.from_numpy(fe(wave.astype("float32"), sampling_rate=16000, return_tensors="np")["input_features"])
+
+        x, y = feats(6), feats(9)
+        with torch.no_grad():
+            ref = BertNet(model)(y).numpy()
+        scatter = out / ".scatter"
+        scatter.mkdir(exist_ok=True)
+        torch.onnx.export(BertNet(model), (x,), str(scatter / "m.onnx"), input_names=["input_features"],
+                          output_names=["logits"], dynamic_axes={"input_features": {1: "t"}, "logits": {1: "f"}},
+                          opset_version=17, dynamo=False)
+        # the exporter writes one file per weight: gather them into a single data file
+        onnx.save(onnx.load(str(scatter / "m.onnx")), str(fp32), save_as_external_data=True,
+                  all_tensors_to_one_file=True, location="model.fp32.onnx.data")
+        shutil.rmtree(scatter)
+        got = ort.InferenceSession(str(fp32), providers=["CPUExecutionProvider"]).run(None, {"input_features": y.numpy()})[0]
+        dev = float(np.abs(ref - got).max())
+        print(f"fp32 onnx against torch (another length): max abs {dev:.2e} on logits up to {np.abs(ref).max():.1f}")
+        assert dev < 1e-2, "the ONNX export does not match torch"
+        return fp32, meta
     n = torch.export.Dim("n", min=1600, max=16000 * 60)
     torch.onnx.export(Net(model), (torch.randn(1, 16000 * 5),), str(fp32), input_names=["input_values"],
                       output_names=["logits"], dynamic_shapes={"input_values": {1: n}}, external_data=False)
@@ -78,14 +120,14 @@ def main(repo, rev, out):
     out.mkdir(parents=True, exist_ok=True)
     info = model_info(repo, revision=rev)
     licence = (info.card_data.license if info.card_data else None) or ""
-    if licence != "apache-2.0":
-        sys.exit(f"{repo}: licence {licence!r}, only apache-2.0 is allowed")
+    if licence not in ("apache-2.0", "mit"):
+        sys.exit(f"{repo}: licence {licence!r}, only apache-2.0 and mit are allowed")
     names = {s.rfilename for s in info.siblings}
     fp32, meta = (onnx_asr if {"model.onnx", "tokens.txt"} <= names else checkpoint)(repo, rev, out)
     json.dump({"id": repo, "revision": info.sha, "frameMs": 20, **meta}, open(out / "vocab.json", "w"), ensure_ascii=False, indent=1)
     json.dump({"id": repo, "revision": info.sha, "license": licence,
                "url": f"https://huggingface.co/{repo}/tree/{info.sha}"}, open(out / "card.json", "w"), indent=1)
-    variants(fp32, out)
+    variants(fp32, out, half="input" not in meta)
 
 
 if __name__ == "__main__":
