@@ -45,7 +45,7 @@ mod imp {
         Backend, BackendInfo, Loaded, Net, PROVIDERS, Tensor, Warm, first_working, warm_up,
     };
     use ort::{
-        environment::Environment,
+        environment::{Environment, ThreadManager},
         ep::{self, ExecutionProvider},
         session::{Session, builder::SessionBuilder},
         value::Tensor as OrtTensor,
@@ -53,6 +53,25 @@ mod imp {
     use std::path::{Path, PathBuf};
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Pool threads at the lowest priority: Windows threads never inherit their creator's.
+    struct LowThreads;
+
+    impl ThreadManager for LowThreads {
+        type Thread = std::thread::JoinHandle<()>;
+
+        fn create(&self, work: impl FnOnce() + Send + 'static) -> ort::Result<Self::Thread> {
+            Ok(std::thread::spawn(move || {
+                crate::proc::lower_this_thread();
+                work();
+            }))
+        }
+
+        fn join(thread: Self::Thread) -> ort::Result<()> {
+            let _ = thread.join();
+            Ok(())
+        }
+    }
 
     /// ONNX Runtime from `ORT_DYLIB_PATH`, else the Windows ML runtime of the machine, else the bundle's,
     /// else `libonnxruntime` on the loader's path.
@@ -199,6 +218,9 @@ mod imp {
         let mut b = Session::builder(env).map_err(|e| e.to_string())?;
         b = b
             .with_intra_threads(crate::karaoke::threads())
+            .map_err(|e| e.to_string())?;
+        b = b
+            .with_thread_manager(LowThreads)
             .map_err(|e| e.to_string())?;
         if let Some(p) = provider {
             b = with_provider(b, env, p)?;

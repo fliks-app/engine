@@ -2,7 +2,7 @@
 //! written as PCM, then encoded to Opus in one run. Spec: `docs/spec/karaoke.md` section 3.
 use super::run::{Outputs, StopOnDrop, unsupported};
 use super::{Net, Tensor, Warm};
-use crate::jobs::{Cmd, Ctx, tail};
+use crate::jobs::{Cmd, Ctx, ModelBusy, tail};
 use crate::proc::Pipes;
 use fliks_engine_core::api::{JobKind, JobResult, MediaInfo, ModelKind, SeparateMeta, StemFile};
 use fliks_engine_core::jobs::separate::{
@@ -129,7 +129,7 @@ async fn build(
         picked.file("vocals.onnx"),
         picked.file("accompaniment.onnx"),
     );
-    let (vocals_net, acc_net, provider) = tokio::task::spawn_blocking({
+    let (vocals_net, acc_net, provider) = super::run::low({
         move || -> Result<_, String> {
             let warm: &[Warm] = &[("x", &NET_INPUT)];
             let (v, a) = (
@@ -224,15 +224,24 @@ async fn decode_and_separate(
         let stop = Arc::new(AtomicBool::new(false));
         let _guard = StopOnDrop(stop.clone());
         let (tx, rx) = mpsc::channel::<Vec<u8>>(8);
-        let driver = tokio::task::spawn_blocking({
+        let driver = super::run::low({
             let (c, stop) = (c.clone(), stop.clone());
             move || {
-                drive(rx, vocals_net, acc_net, sinks, gain, &stop, &|seconds| {
-                    c.pulse();
-                    if let Some(t) = total_seconds {
-                        c.progress((seconds / t * 95.0).clamp(0.0, 95.0));
-                    }
-                })
+                let busy = || c.model_busy();
+                drive(
+                    rx,
+                    (vocals_net, acc_net),
+                    sinks,
+                    gain,
+                    &stop,
+                    &busy,
+                    &|seconds| {
+                        c.pulse();
+                        if let Some(t) = total_seconds {
+                            c.progress((seconds / t * 95.0).clamp(0.0, 95.0));
+                        }
+                    },
+                )
             }
         });
         let mut out = p.take_stdout().ok_or("no decoder output")?;
@@ -269,11 +278,11 @@ async fn decode_and_separate(
 /// Reads PCM from `rx`, separates it chunk by chunk and writes the stems; blocking.
 fn drive(
     mut rx: mpsc::Receiver<Vec<u8>>,
-    mut vocals_net: Box<dyn Net>,
-    mut acc_net: Box<dyn Net>,
+    (mut vocals_net, mut acc_net): (Box<dyn Net>, Box<dyn Net>),
     mut sinks: Vec<Pcm>,
     gain: f32,
     stop: &AtomicBool,
+    busy: &dyn Fn() -> ModelBusy,
     progress: &dyn Fn(f64),
 ) -> Result<u64, String> {
     let stft = Stft::default();
@@ -305,6 +314,7 @@ fn drive(
         if stop.load(Relaxed) {
             return Err("stopped".into());
         }
+        let _computing = busy();
         let have = base + l.len();
         let samples = have.saturating_sub(LEAD);
         let at = from - base;

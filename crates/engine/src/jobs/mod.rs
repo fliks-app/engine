@@ -16,7 +16,7 @@ pub(crate) mod subtitles;
 mod sync;
 mod verify;
 
-pub use ctx::{Cmd, Ctx, tail};
+pub use ctx::{Cmd, Ctx, ModelBusy, tail};
 
 use crate::AppState;
 use crate::lock::Locked;
@@ -84,6 +84,8 @@ pub struct BgJob {
     promoted: AtomicBool,
     /// Bumped by `Ctx::pulse`: work the tools' stderr and CPU do not show (reading a file).
     activity: AtomicU64,
+    /// A model thread is computing: the stall rule waits `MODEL_STALL_MS`, not the lifetime's.
+    model_busy: AtomicBool,
     m: Mutex<JobMut>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -336,6 +338,7 @@ fn queue(
         urgent: watch::channel(urgent).0,
         promoted: AtomicBool::new(false),
         activity: AtomicU64::new(0),
+        model_busy: AtomicBool::new(false),
         m: Mutex::new(JobMut {
             state: BgJobState::Queued,
             pct: 0.0,

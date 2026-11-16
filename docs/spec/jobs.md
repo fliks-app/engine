@@ -35,7 +35,7 @@ One budget for every ffmpeg the engine runs: playback (session runs, I-frame and
 ## 4. Background runs
 
 - Spawned through `proc::Ffmpeg` (own process group, kill-on-drop, `PR_SET_PDEATHSIG`) behind `ionice -c3 nice -n19` when both are on PATH (Linux). [ts:common/utils/spawn-priority.ts] Every tool of a job goes through `Ctx::pipeline`: one slot for one process or for a pipeline of several (ffmpeg + fpcalc of a window), paused and stopped together. Binaries: `ffmpeg` (`FFMPEG_PATH`), `ffprobe` (`FFPROBE_PATH`), `fpcalc` (`FPCALC_PATH`, default `fpcalc`).
-- Every 200 ms: the slot's pause verdict is applied; `core::session::job_watch` (stderr lines and CPU time are progress, paused time exempt, `jobStallTimeoutMs`) kills a hung run, and a run past its timeout of unpaused wall time (30 s for a sprite frame or tile, the kind's own below) is killed. Either is a run failure (`<tool> stalled` / `<tool> timed out`). Bytes of the source read and lines parsed count as progress for the watchdog (`Ctx::pulse`), as stderr lines and CPU time do. [ts:thumb:672-690,735-745]
+- Every 200 ms: the slot's pause verdict is applied; `core::session::job_watch` (stderr lines and CPU time are progress, paused time exempt, `jobStallTimeoutMs`) kills a hung run, and while a karaoke model thread computes, the stall rule waits 30 minutes instead (`Ctx::model_busy`), and a run past its timeout of unpaused wall time (30 s for a sprite frame or tile, the kind's own below) is killed. Either is a run failure (`<tool> stalled` / `<tool> timed out`). Bytes of the source read and lines parsed count as progress for the watchdog (`Ctx::pulse`), as stderr lines and CPU time do. [ts:thumb:672-690,735-745]
 
 ## 5. Sprite (`core::jobs::sprite`, `engine::jobs::sprite`)
 

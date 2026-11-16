@@ -62,6 +62,11 @@ impl Ctx {
     }
 
     /// Marks progress the watchdog cannot see (bytes read, lines parsed).
+    pub fn model_busy(&self) -> ModelBusy {
+        self.job.model_busy.store(true, Relaxed);
+        ModelBusy(self.job.clone())
+    }
+
     pub fn pulse(&self) {
         self.job.activity.fetch_add(1, Relaxed);
     }
@@ -287,7 +292,8 @@ impl Ctx {
                 now_ms: now_ms(),
                 started_ms: 0,
                 last_progress_ms: last_progress,
-                paused,
+                paused: paused
+                    || model_grace(self.job.model_busy.load(Relaxed), now_ms() - last_progress),
                 cpu_delta_ms,
                 natural_end_ms: None,
             };
@@ -298,6 +304,23 @@ impl Ctx {
                 return "timed out";
             }
         }
+    }
+}
+
+/// How long a computing model thread may go without a pulse: at nice 19 a network call can take
+/// minutes on a busy host.
+const MODEL_STALL_MS: i64 = 30 * 60 * 1000;
+
+fn model_grace(busy: bool, since_progress_ms: i64) -> bool {
+    busy && since_progress_ms <= MODEL_STALL_MS
+}
+
+/// Marks a job's model thread as computing until dropped.
+pub struct ModelBusy(Arc<BgJob>);
+
+impl Drop for ModelBusy {
+    fn drop(&mut self) {
+        self.0.model_busy.store(false, Relaxed);
     }
 }
 
@@ -324,4 +347,16 @@ impl Cmd {
 pub fn tail(p: &Ffmpeg, n: usize) -> String {
     let t = p.stderr_tail();
     t[t.len().saturating_sub(n)..].join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_busy_model_thread_is_graced_for_thirty_minutes() {
+        assert!(model_grace(true, 29 * 60 * 1000));
+        assert!(!model_grace(true, MODEL_STALL_MS + 1));
+        assert!(!model_grace(false, 0));
+    }
 }

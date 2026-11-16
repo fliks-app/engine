@@ -396,7 +396,7 @@ pub async fn run(
     let allow = providers.unwrap_or_default().to_vec();
     let loaded = {
         let (backend, file, export) = (backend.clone(), file.clone(), export.clone());
-        tokio::task::spawn_blocking(move || load(&*backend, &file, &allow, &export))
+        super::run::low(move || load(&*backend, &file, &allow, &export))
             .await
             .map_err(|e| e.to_string())?
     };
@@ -419,7 +419,8 @@ pub async fn run(
             }
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
-            tokio::task::spawn_blocking(move || {
+            super::run::low(move || {
+                let _busy = c.model_busy();
                 let duration_ms = u32::try_from(pcm.len() / SAMPLES_PER_MS).unwrap_or(u32::MAX);
                 if fits(&lines, &export.vocab, &language, duration_ms).is_err() {
                     return (provider, Err(TOO_LARGE.to_string()));
