@@ -137,12 +137,14 @@ enum Verdict {
     Refuse(String),
 }
 
-/// Whether the model can run at `wanted` as installed, after an install, or never.
+/// Whether the model can run at `wanted` as installed, after an install, or never. A record-less
+/// install counts as the manifest's version, as `pick` does; a verification keeps it usable.
 fn model_verdict(info: Option<&ModelInfo>, wanted: &str) -> Verdict {
     let Some(m) = info else {
         return Verdict::Refuse("unknown model".into());
     };
-    if m.state == ModelState::Installed && m.installed_version.as_deref() == Some(wanted) {
+    let usable = m.state == ModelState::Installed || m.verifying;
+    if usable && m.installed_version.as_deref().unwrap_or(&m.version) == wanted {
         Verdict::Ready
     } else if m.version != wanted {
         Verdict::Refuse(format!("manifest version is {}, not {wanted}", m.version))
@@ -150,6 +152,22 @@ fn model_verdict(info: Option<&ModelInfo>, wanted: &str) -> Verdict {
         Verdict::Refuse("licence not clear".into())
     } else {
         Verdict::Install
+    }
+}
+
+/// What a poll of the model says: `Some` when the wait is over, `None` while it downloads.
+fn settled(info: Option<&ModelInfo>, wanted: &str) -> Option<Result<(), String>> {
+    match model_verdict(info, wanted) {
+        Verdict::Ready => Some(Ok(())),
+        Verdict::Refuse(why) => Some(Err(why)),
+        Verdict::Install => match info {
+            Some(m) if m.state == ModelState::Downloading => None,
+            Some(m) => Some(Err(m
+                .error
+                .clone()
+                .unwrap_or_else(|| "the install did not complete".into()))),
+            None => Some(Err("unknown model".into())),
+        },
     }
 }
 
@@ -179,17 +197,10 @@ async fn ensure_model(ctx: &Ctx, id: Option<&str>, wanted: &str) -> Result<(), S
             return Err(crate::jobs::CANCELLED.into());
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let info = models.get(&id);
-        match model_verdict(info.as_ref(), wanted) {
-            Verdict::Ready => return Ok(()),
-            Verdict::Refuse(why) => return Err(refuse(&why)),
-            Verdict::Install => {}
-        }
-        if let Some(m) = &info
-            && m.state != ModelState::Downloading
-            && let Some(e) = &m.error
-        {
-            return Err(refuse(e));
+        match settled(models.get(&id).as_ref(), wanted) {
+            Some(Ok(())) => return Ok(()),
+            Some(Err(why)) => return Err(refuse(&why)),
+            None => {}
         }
     }
 }
@@ -544,5 +555,32 @@ mod tests {
             Verdict::Refuse(_)
         ));
         assert!(matches!(model_verdict(None, "2"), Verdict::Refuse(_)));
+    }
+
+    #[test]
+    fn a_record_less_install_and_a_verification_are_ready() {
+        let mut m = info(ModelState::Installed, None, "2", true);
+        assert_eq!(model_verdict(Some(&m), "2"), Verdict::Ready);
+        m = info(ModelState::Downloading, Some("2"), "2", true);
+        m.verifying = true;
+        assert_eq!(model_verdict(Some(&m), "2"), Verdict::Ready);
+        let absent = info(ModelState::Absent, None, "2", true);
+        assert_eq!(model_verdict(Some(&absent), "2"), Verdict::Install);
+    }
+
+    #[test]
+    fn a_wait_ends_when_the_install_completes_fails_or_vanishes() {
+        use ModelState::{Absent, Downloading, Failed, Installed};
+        let s = |m: ModelInfo| settled(Some(&m), "2");
+        assert_eq!(s(info(Downloading, Some("1"), "2", true)), None);
+        assert_eq!(s(info(Installed, Some("2"), "2", true)), Some(Ok(())));
+        let mut failed = info(Failed, None, "2", true);
+        failed.error = Some("disk full".into());
+        assert_eq!(s(failed), Some(Err("disk full".into())));
+        assert!(matches!(s(info(Absent, None, "2", true)), Some(Err(_))));
+        assert!(matches!(
+            s(info(Installed, Some("1"), "2", true)),
+            Some(Err(_))
+        ));
     }
 }

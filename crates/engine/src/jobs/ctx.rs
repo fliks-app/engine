@@ -5,7 +5,7 @@ use crate::lock::Locked;
 use crate::proc::{Ffmpeg, Pipes, background};
 use crate::runtime::{Runtime, now_ms};
 use crate::slots::Lane;
-use fliks_engine_core::api::{EngineEvent, JobErrorClass, JobKind, PauseMode};
+use fliks_engine_core::api::{EngineEvent, JobErrorClass, JobKind, LifetimeConfig, PauseMode};
 use fliks_engine_core::jobs::sprite::RUN_TIMEOUT_MS;
 use fliks_engine_core::session::{JobWatch, JobWatchInput, job_watch};
 use std::future::Future;
@@ -61,12 +61,12 @@ impl Ctx {
         self.rt.map_media_path(&self.job.req.media.path)
     }
 
-    /// Marks progress the watchdog cannot see (bytes read, lines parsed).
     pub fn model_busy(&self) -> ModelBusy {
         self.job.model_busy.store(true, Relaxed);
         ModelBusy(self.job.clone())
     }
 
+    /// Marks progress the watchdog cannot see (bytes read, lines parsed).
     pub fn pulse(&self) {
         self.job.activity.fetch_add(1, Relaxed);
     }
@@ -292,12 +292,11 @@ impl Ctx {
                 now_ms: now_ms(),
                 started_ms: 0,
                 last_progress_ms: last_progress,
-                paused: paused
-                    || model_grace(self.job.model_busy.load(Relaxed), now_ms() - last_progress),
+                paused,
                 cpu_delta_ms,
                 natural_end_ms: None,
             };
-            if job_watch(&watch, lifetime) != JobWatch::Ok {
+            if stalled(&watch, self.job.model_busy.load(Relaxed), lifetime) {
                 return "stalled";
             }
             if active_ms > timeout_ms {
@@ -315,11 +314,22 @@ fn model_grace(busy: bool, since_progress_ms: i64) -> bool {
     busy && since_progress_ms <= MODEL_STALL_MS
 }
 
+/// The watchdog verdict of one tick: a computing model thread is exempt up to `MODEL_STALL_MS`.
+fn stalled(watch: &JobWatchInput, busy: bool, lifetime: &LifetimeConfig) -> bool {
+    let graced = JobWatchInput {
+        paused: watch.paused || model_grace(busy, watch.now_ms - watch.last_progress_ms),
+        ..*watch
+    };
+    job_watch(&graced, lifetime) != JobWatch::Ok
+}
+
 /// Marks a job's model thread as computing until dropped.
 pub struct ModelBusy(Arc<BgJob>);
 
 impl Drop for ModelBusy {
     fn drop(&mut self) {
+        // A finished network call is progress: the clock restarts when the grace ends.
+        self.0.activity.fetch_add(1, Relaxed);
         self.0.model_busy.store(false, Relaxed);
     }
 }
@@ -352,6 +362,45 @@ pub fn tail(p: &Ffmpeg, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn input(since_progress_ms: i64) -> JobWatchInput {
+        JobWatchInput {
+            now_ms: 10_000_000,
+            started_ms: 0,
+            last_progress_ms: 10_000_000 - since_progress_ms,
+            paused: false,
+            cpu_delta_ms: 0,
+            natural_end_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_busy_model_thread_survives_until_the_grace_ends() {
+        let cfg = LifetimeConfig::default();
+        assert!(!stalled(&input(5 * 60 * 1000), true, &cfg));
+        assert!(stalled(&input(MODEL_STALL_MS + 1), true, &cfg));
+        assert!(stalled(&input(5 * 60 * 1000), false, &cfg));
+    }
+
+    #[test]
+    fn releasing_the_busy_guard_counts_as_progress() {
+        let job = super::super::queue(
+            &mut super::super::Queue::default(),
+            serde_json::from_value(serde_json::json!({
+                "kind": { "type": "Verify", "payload": { "info": { "video": [], "audio": [], "subtitles": [] } } },
+                "media": { "mediaFileId": 1, "path": "/m/a.mkv" }
+            }))
+            .unwrap(),
+            "d".into(),
+            false,
+            None,
+        );
+        job.model_busy.store(true, Relaxed);
+        let before = job.activity.load(Relaxed);
+        drop(ModelBusy(job.clone()));
+        assert!(job.activity.load(Relaxed) > before);
+        assert!(!job.model_busy.load(Relaxed));
+    }
 
     #[test]
     fn a_busy_model_thread_is_graced_for_thirty_minutes() {
