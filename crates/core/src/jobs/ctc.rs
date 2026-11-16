@@ -944,7 +944,7 @@ fn pass(
         at += copy.words.len();
     }
     Ok((
-        finish(&plan.copies, &mut times, &matched, duration_ms),
+        finish(&plan.copies, &mut times, &found, &matched, duration_ms),
         share,
         found,
     ))
@@ -953,7 +953,7 @@ fn pass(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::AlignedLine;
+    use crate::api::{AlignedLine, AlignedWord};
 
     const BLANK: u32 = 0;
     const DELIM: u32 = 1;
@@ -1540,6 +1540,17 @@ mod tests {
         assert!((out[0].matched - 2.0 / 3.0).abs() < 1e-9);
         assert_eq!(out[1].matched, 1.0);
         assert!((share - 0.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_word_not_found_is_guessed() {
+        let marks = [(5, 2, 0.9), (10, 3, 0.9)];
+        let (out, _) = run(&[line("a b c")], &emissions(100, &marks));
+        let guessed: Vec<bool> = out[0].words.iter().map(|w| w.guessed).collect();
+        assert_eq!(guessed, [false, false, true]);
+        let json = |w: &AlignedWord| serde_json::to_string(w).unwrap();
+        assert!(!json(&out[0].words[0]).contains("guessed"));
+        assert!(json(&out[0].words[2]).contains("\"guessed\":true"));
     }
 
     #[test]

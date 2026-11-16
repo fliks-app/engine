@@ -1065,6 +1065,10 @@
             "format": "int32",
             "minimum": 0
           },
+          "guessed": {
+            "type": "boolean",
+            "description": "The word was not found in the audio: its times are interpolated."
+          },
           "startMs": {
             "type": "integer",
             "format": "int32",

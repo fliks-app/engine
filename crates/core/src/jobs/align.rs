@@ -502,7 +502,7 @@ fn run(lines: &[AlignLine], heard: &[Heard]) -> Run {
     let found: Vec<bool> = paired.iter().map(Option::is_some).collect();
     let (matched, share) = shares(&copies, &found);
     (
-        finish(&copies, &mut times, &matched, u32::MAX),
+        finish(&copies, &mut times, &found, &matched, u32::MAX),
         share,
         found,
     )
@@ -541,11 +541,12 @@ pub(super) fn shares(copies: &[Copy], found: &[bool]) -> (Vec<f64>, f64) {
 }
 
 /// The lines of `copies` from the word times in `times` (flat word order): the words nothing
-/// was placed for are timed first, see `fill`. `matched` is each copy's share found, `end_ms` the
-/// track's length.
+/// was placed for are timed first, see `fill`. `found` flags each word heard, `matched` is each
+/// copy's share found, `end_ms` the track's length.
 pub(super) fn finish(
     copies: &[Copy],
     times: &mut [Option<(u32, u32)>],
+    found: &[bool],
     matched: &[f64],
     end_ms: u32,
 ) -> Vec<AlignedLine> {
@@ -566,6 +567,7 @@ pub(super) fn finish(
                     byte_end: *e,
                     start_ms,
                     end_ms,
+                    guessed: !found[next + wi],
                 }
             })
             .collect();
@@ -713,6 +715,7 @@ mod tests {
                         byte_end: 1,
                         start_ms: s,
                         end_ms: s + 500,
+                        guessed: false,
                     }],
                 }
             })
@@ -873,6 +876,7 @@ mod tests {
                     byte_end: 1,
                     start_ms: s,
                     end_ms: s + 100,
+                    guessed: false,
                 })
                 .collect(),
         };
