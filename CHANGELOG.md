@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.0](https://github.com/fliks-app/engine/compare/v1.25.0...v1.26.0) (2026-11-16)
+
+
+### Features
+
+* **karaoke:** add the w2v-bert music lyrics CTC model as an opt-in aligner ([#248](https://github.com/fliks-app/engine/issues/248)) ([4753dbf](https://github.com/fliks-app/engine/commit/4753dbf8c50b4e6bd2a94808084df03658d9f0b1))
+
 ## [1.25.0](https://github.com/fliks-app/engine/compare/v1.24.2...v1.25.0) (2026-11-16)
 
 
