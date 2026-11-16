@@ -42,6 +42,7 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
         guide_vocals_gain,
         bitrate_kbps,
         providers,
+        ..
     } = kind
     else {
         return Err("not a Separate job".into());

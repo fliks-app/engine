@@ -359,6 +359,7 @@ impl Worker {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             devices: devices.to_vec(),
             jobs,
+            features: Vec::new(),
         };
         let answer = self
             .post("/engine/workers/hello", &body, CALL_TIMEOUT)
@@ -770,6 +771,7 @@ fn error_result(worker: &str, attempt: u32, e: &str) -> JobResultRequest {
         copy_reason: None,
         cpu_fallback: None,
         nothing_to_do: false,
+        separate: None,
     }
 }
 
@@ -787,6 +789,7 @@ fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRe
         copy_reason: None,
         cpu_fallback: None,
         nothing_to_do: false,
+        separate: None,
     };
     match &snap.result {
         Some(JobResult::Optimize { optimize }) if optimize.nothing_to_do => JobResultRequest {
