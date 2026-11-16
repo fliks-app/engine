@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/fliks-app/engine/compare/v1.24.2...v1.25.0) (2026-11-16)
+
+
+### Features
+
+* **karaoke:** mark the words the alignment did not find ([#246](https://github.com/fliks-app/engine/issues/246)) ([c2679db](https://github.com/fliks-app/engine/commit/c2679db9f02b659965bba01857fd5ae1fa0e3136))
+
 ## [1.24.2](https://github.com/fliks-app/engine/compare/v1.24.1...v1.24.2) (2026-11-15)
 
 
