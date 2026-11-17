@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/fliks-app/engine/compare/v1.27.0...v1.28.0) (2026-11-17)
+
+
+### Features
+
+* **jobs:** add a generic pcm job ([#252](https://github.com/fliks-app/engine/issues/252)) ([1e55bf9](https://github.com/fliks-app/engine/commit/1e55bf97bb84371a8a43ca6256d8c66133e48436))
+
 ## [1.27.0](https://github.com/fliks-app/engine/compare/v1.26.0...v1.27.0) (2026-11-17)
 
 
