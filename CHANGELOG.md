@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0](https://github.com/fliks-app/engine/compare/v1.26.0...v1.27.0) (2026-11-17)
+
+
+### Features
+
+* **karaoke:** run model threads at low priority and separate on remote workers ([#250](https://github.com/fliks-app/engine/issues/250)) ([c81bd02](https://github.com/fliks-app/engine/commit/c81bd022225b11fc6d52427ef3928afd04d01397))
+
 ## [1.26.0](https://github.com/fliks-app/engine/compare/v1.25.0...v1.26.0) (2026-11-16)
 
 
