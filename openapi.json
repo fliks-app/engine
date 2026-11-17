@@ -3691,6 +3691,43 @@
           },
           {
             "type": "object",
+            "title": "PcmJob",
+            "description": "The audio of `media` decoded to raw signed 16-bit little-endian PCM written at `output`,\nwhole or not at all: `rate` Hz (absent: 24000), `channels` interleaved channels (absent: 1).",
+            "required": [
+              "output",
+              "type"
+            ],
+            "properties": {
+              "channels": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "output": {
+                "type": "string",
+                "description": "Absolute path; the job fails when it exists."
+              },
+              "rate": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Pcm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "title": "SeparateJob",
             "description": "The vocals and the accompaniment of the audio file `media` names, as Opus files written at\nthe absolute paths given (at least one). `guide` is the accompaniment with the vocals\nkept low, to sing along. Needs a separation model (`GET /v1/models`) and an ONNX runtime.",
             "required": [
@@ -4103,6 +4140,25 @@
                 "type": "string",
                 "enum": [
                   "Merge"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file is at the request's `output`.",
+            "required": [
+              "pcm",
+              "type"
+            ],
+            "properties": {
+              "pcm": {
+                "$ref": "#/components/schemas/PcmMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Pcm"
                 ]
               }
             }
@@ -6379,6 +6435,37 @@
           "suspend",
           "restart"
         ]
+      },
+      "PcmMeta": {
+        "type": "object",
+        "description": "The PCM file a `Pcm` wrote.",
+        "required": [
+          "path",
+          "bytes",
+          "rate",
+          "channels"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "format": "double",
+            "description": "f64: no 64-bit integers on the wire."
+          },
+          "channels": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "The `output` of the request."
+          },
+          "rate": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "Performer": {
         "type": "object",

@@ -1736,3 +1736,83 @@ async fn merge_job_with_the_real_ffmpeg_copies_or_encodes_and_chapters_the_parts
     }
     assert!(e.ffmpeg_pids().is_empty());
 }
+
+fn pcm_kind(output: &std::path::Path) -> Value {
+    json!({ "type": "Pcm", "output": output })
+}
+
+#[tokio::test]
+async fn pcm_job_publishes_the_file_never_overwrites_and_cleans_up_on_failure() {
+    let (e, file) = engine_of("pcm", json!({})).await;
+    let out = e.root.join("stems/v.pcm");
+    let v = run_kind(&e, 7, &file, pcm_kind(&out)).await;
+    let want = json!({ "type": "Pcm", "pcm": { "path": out, "bytes": 100.0,
+        "rate": 24000, "channels": 1 } });
+    assert_eq!(
+        (v["state"].as_str(), &v["result"]),
+        (Some("done"), &want),
+        "{v}"
+    );
+    assert_eq!(
+        files_in(&e.root.join("stems")),
+        ["v.pcm"],
+        "no temporary file"
+    );
+    let v = run_kind(&e, 7, &file, pcm_kind(&out)).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(std::fs::read(&out).unwrap().len(), 100);
+    let r = post(&e, 7, &file, json!({ "type": "Pcm", "output": "v.pcm" })).await;
+    assert_eq!(r.status, 400, "{}", r.text());
+
+    let (e, file) = engine_of("failpcm", json!({})).await;
+    let out = e.root.join("stems/f.pcm");
+    let v = run_kind(&e, 7, &file, pcm_kind(&out)).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(files_in(&e.root.join("stems")), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn pcm_job_with_the_real_ffmpeg_writes_rate_channels_and_two_bytes_per_sample() {
+    let ffprobe = fliks_engine::tool_path("FFPROBE_PATH", "ffprobe");
+    let pause = if cfg!(unix) { "signal" } else { "stdin" };
+    let hw = host(HwAccel::None, "/dev/dri/renderD128", pause);
+    let e = engine_with_tools(hw, &ffmpeg(), &ffprobe, "fpcalc", json!({})).await;
+    let dir = temp_dir("pcm-real");
+    let src = dir.join("tone.flac");
+    let made = tool_ok(
+        &e.ffmpeg,
+        &[
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2:sample_rate=44100",
+        ]
+        .iter()
+        .chain(&[src.to_str().unwrap()])
+        .map(std::ffi::OsStr::new)
+        .collect::<Vec<_>>(),
+    );
+    if !made {
+        eprintln!("ffmpeg not available: skipped");
+        return;
+    }
+    e.stub.file(7, &src);
+    for (name, rate, channels) in [("a.pcm", None, None), ("b.pcm", Some(16000), Some(2))] {
+        let out = dir.join(name);
+        let mut kind = pcm_kind(&out);
+        kind["rate"] = json!(rate);
+        kind["channels"] = json!(channels);
+        let v = run_kind(&e, 7, &src, kind).await;
+        assert_eq!(v["state"], "done", "{name}: {v}");
+        let (r, c) = (rate.unwrap_or(24000), channels.unwrap_or(1));
+        assert_eq!(v["result"]["pcm"]["rate"], r);
+        assert_eq!(v["result"]["pcm"]["channels"], c);
+        let got = std::fs::metadata(&out).unwrap().len() as i64;
+        let want = i64::from(r * c * 2 * 2);
+        assert!(
+            (got - want).abs() <= i64::from(c * 2 * 1024),
+            "{name}: {got} vs {want}"
+        );
+    }
+}

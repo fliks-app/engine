@@ -10,6 +10,7 @@ pub mod melody;
 pub mod merge;
 pub mod ocr;
 pub mod optimize;
+pub mod pcm;
 pub mod scan;
 pub mod separate;
 pub mod sprite;

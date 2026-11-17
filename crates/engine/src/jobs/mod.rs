@@ -8,6 +8,7 @@ mod fingerprint;
 mod merge;
 mod ocr;
 mod optimize;
+mod pcm;
 mod run;
 mod scan;
 mod sprite;
@@ -230,6 +231,11 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Merge { parts, output, .. } => {
             fliks_engine_core::jobs::merge::validate(parts, output)?;
         }
+        JobKind::Pcm {
+            output,
+            rate,
+            channels,
+        } => fliks_engine_core::jobs::pcm::validate(output, *rate, *channels)?,
         JobKind::Separate { .. } => fliks_engine_core::jobs::separate::validate(kind)?,
         JobKind::Align { .. } => fliks_engine_core::jobs::align::validate(kind)?,
         JobKind::Melody { .. } => fliks_engine_core::jobs::melody::validate(kind)?,
@@ -431,6 +437,11 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             output,
             tags,
         } => merge::run(ctx, parts, output, tags.as_ref()).await,
+        JobKind::Pcm {
+            output,
+            rate,
+            channels,
+        } => pcm::run(ctx, output, *rate, *channels).await,
         JobKind::Fingerprint {
             window,
             max_lookup_minutes,

@@ -82,6 +82,17 @@ pub enum JobKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tags: Option<MediaTags>,
     },
+    /// The audio of `media` decoded to raw signed 16-bit little-endian PCM written at `output`,
+    /// whole or not at all: `rate` Hz (absent: 24000), `channels` interleaved channels (absent: 1).
+    #[schema(title = "PcmJob")]
+    Pcm {
+        /// Absolute path; the job fails when it exists.
+        output: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rate: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channels: Option<u32>,
+    },
     /// The vocals and the accompaniment of the audio file `media` names, as Opus files written at
     /// the absolute paths given (at least one). `guide` is the accompaniment with the vocals
     /// kept low, to sing along. Needs a separation model (`GET /v1/models`) and an ONNX runtime.
@@ -236,6 +247,7 @@ impl JobKind {
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
             JobKind::Cover { .. } => "Cover",
             JobKind::Merge { .. } => "Merge",
+            JobKind::Pcm { .. } => "Pcm",
             JobKind::Separate { .. } => "Separate",
             JobKind::Align { .. } => "Align",
             JobKind::Melody { .. } => "Melody",
@@ -257,6 +269,7 @@ impl JobKind {
             | JobKind::Cover { info } => Some(info),
             JobKind::Fingerprint { .. }
             | JobKind::Merge { .. }
+            | JobKind::Pcm { .. }
             | JobKind::Align { .. }
             | JobKind::Melody { .. }
             | JobKind::Optimize { .. }
@@ -275,7 +288,7 @@ impl JobKind {
             | JobKind::SubtitleToSrt { .. }
             | JobKind::Optimize { .. }
             | JobKind::Verify { .. } => VIDEO_ONLY,
-            JobKind::SubtitleSync { .. } => ANY,
+            JobKind::SubtitleSync { .. } | JobKind::Pcm { .. } => ANY,
             JobKind::Cover { .. }
             | JobKind::Merge { .. }
             | JobKind::Separate { .. }
@@ -303,6 +316,7 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("SubtitleToSrt", VIDEO_ONLY),
     ("Cover", AUDIO_ONLY),
     ("Merge", AUDIO_ONLY),
+    ("Pcm", ANY),
     ("Separate", AUDIO_ONLY),
     ("Align", AUDIO_ONLY),
     ("Melody", AUDIO_ONLY),
@@ -361,6 +375,18 @@ pub struct MergeMeta {
     pub chapters: Vec<Chapter>,
     /// The audio was encoded again to AAC; false when the parts' AAC was copied.
     pub reencoded: bool,
+}
+
+/// The PCM file a `Pcm` wrote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PcmMeta {
+    /// The `output` of the request.
+    pub path: String,
+    /// f64: no 64-bit integers on the wire.
+    pub bytes: f64,
+    pub rate: u32,
+    pub channels: u32,
 }
 
 /// The stored cover of `GET /v1/covers/{mediaFileId}`.
@@ -468,6 +494,10 @@ pub enum JobResult {
     Merge {
         merge: MergeMeta,
     },
+    /// The file is at the request's `output`.
+    Pcm {
+        pcm: PcmMeta,
+    },
     /// The stems are at the request's paths.
     Separate {
         separate: SeparateMeta,
@@ -543,6 +573,7 @@ mod tests {
                 "index": 0 } }),
             json!({ "type": "Cover", "info": info() }),
             json!({ "type": "Merge", "parts": [], "output": "/a.m4b" }),
+            json!({ "type": "Pcm", "output": "/a.pcm" }),
             json!({ "type": "Separate", "info": info(), "vocals": "/v.opus",
                 "modelVersion": "2", "inputToken": "t" }),
             json!({ "type": "Align", "lines": [] }),

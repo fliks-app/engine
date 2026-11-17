@@ -631,6 +631,12 @@ fn main() {
         "nomedia" => nomedia(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
+        // 100 bytes at the output (last argument), or a partial file and exit 1.
+        "pcm" => put(Path::new(args.last().unwrap()), [0u8; 100]),
+        "failpcm" => {
+            std::fs::write(args.last().unwrap(), b"partial").unwrap();
+            std::process::exit(1)
+        }
         m @ ("merge" | "failmerge" | "hangmerge") => merge(m, &args),
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite" | "passfailsprite"
         | "sparsesprite" | "probefailsprite" | "promoprobesprite" | "promopasssprite") => {
