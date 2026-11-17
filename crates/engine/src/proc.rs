@@ -106,6 +106,56 @@ pub fn background(cmd: &str, args: &[String]) -> (String, Vec<String>) {
     (cmd.into(), args.to_vec())
 }
 
+/// Puts the calling thread at the lowest priority the OS offers, best effort: nice 19 and the idle
+/// I/O class (Linux), background QoS (macOS), idle thread priority (Windows).
+pub fn lower_this_thread() {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: plain syscalls on the calling thread; IOPRIO_WHO_PROCESS = 1, idle class 3.
+        let tid = unsafe { libc::syscall(libc::SYS_gettid) } as libc::id_t;
+        let nice = unsafe { libc::setpriority(libc::PRIO_PROCESS, tid, 19) };
+        let io = unsafe { libc::syscall(libc::SYS_ioprio_set, 1, tid as i32, 3 << 13) };
+        if nice != 0 || io != 0 {
+            tracing::debug!(nice, io, "could not lower the model thread");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: sets the QoS class of the calling thread.
+        let r = unsafe {
+            libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_BACKGROUND, 0)
+        };
+        if r != 0 {
+            tracing::debug!(r, "could not lower the model thread");
+        }
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_IDLE,
+        };
+        // SAFETY: the pseudo handle of the calling thread.
+        if unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE) } == 0 {
+            tracing::debug!("could not lower the model thread");
+        }
+    }
+}
+
+/// The nice value of the calling thread.
+#[cfg(all(test, target_os = "linux"))]
+pub fn thread_nice() -> i64 {
+    std::fs::read_to_string("/proc/thread-self/stat")
+        .unwrap()
+        .rsplit(')')
+        .next()
+        .unwrap()
+        .split(' ')
+        .nth(17)
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
 /// Kill-on-close job: the child tree dies with the engine. The handle is intentionally never closed.
 #[cfg(windows)]
 pub fn assign_to_job(child: &Child) {
@@ -493,6 +543,20 @@ mod tests {
         assert!(is_own(pid));
         child.wait().await.unwrap();
         assert!(!is_own(pid));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_lowered_thread_runs_at_nice_19_and_leaves_its_caller_alone() {
+        let before = thread_nice();
+        let inside = std::thread::spawn(|| {
+            lower_this_thread();
+            thread_nice()
+        })
+        .join()
+        .unwrap();
+        assert_eq!(inside, 19);
+        assert_eq!(thread_nice(), before);
     }
 
     #[cfg(target_os = "linux")]

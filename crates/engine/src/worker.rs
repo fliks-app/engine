@@ -1,10 +1,12 @@
 //! The worker loop: this engine pulls `Optimize` and `Verify` jobs from the host (`hello`, `lease`
 //! per device, `heartbeat`, `result`) and runs them as leased jobs on their device's slot lane.
 //! Protocol and fencing: `PROTOCOL.md`; sharing with playback: `docs/spec/jobs.md` section 3.
+use crate::cache::Cache;
 use crate::jobs::{self, BgJob};
 use crate::lock::Locked;
 use crate::resolve::Host;
 use crate::runtime::Runtime;
+use crate::safe_write::sha256_file;
 use crate::slots::{CPU_DEVICE, Lane};
 use axum::body::Bytes;
 use axum::http::{Request, StatusCode, header};
@@ -12,7 +14,8 @@ use fliks_engine_core::api::{
     BgJobState, HEADER_ATTEMPT, HEADER_UPLOAD_COMPLETE, HEADER_UPLOAD_OFFSET, HEADER_WORKER_ID,
     HwAccel, JobError, JobErrorClass, JobHeartbeatRequest, JobHeartbeatResponse, JobKind,
     JobRequest, JobResult, JobResultRequest, JobSnapshot, LeaseRef, LeaseRequest, LeasedJob,
-    MediaRef, UploadAck, WorkerDevice, WorkerHello, WorkerHelloResponse, WorkerSettings,
+    MediaRef, STEM_NAMES, SeparateMeta, SeparateOutput, StemUpload, UploadAck, WorkerDevice,
+    WorkerHello, WorkerHelloResponse, WorkerSettings,
 };
 use fliks_engine_core::hw::Detected;
 use http_body_util::{BodyExt, Full};
@@ -359,6 +362,7 @@ impl Worker {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             devices: devices.to_vec(),
             jobs,
+            features: self.rt.karaoke.features(&self.rt.ffmpeg).await,
         };
         let answer = self
             .post("/engine/workers/hello", &body, CALL_TIMEOUT)
@@ -451,8 +455,8 @@ impl Worker {
     async fn accept(self: &Arc<Self>, leased: LeasedJob, device: &WorkerDevice) {
         let (id, attempt, lease_s) = (leased.id, leased.attempt, leased.lease_s);
         let lane = Lane::new(device.id.clone());
-        let remote = leased.input_path.is_none();
-        let started = request(leased).and_then(|req| {
+        let remote = leased.input_path.is_none() || matches!(leased.kind, JobKind::Separate { .. });
+        let started = request(leased, &self.rt.cache).and_then(|req| {
             jobs::submit_leased(&self.rt, req, lane, &format!("lease:{id}:{attempt}"))
         });
         match started {
@@ -515,10 +519,10 @@ impl Worker {
             }
         }
         let snap = job.snapshot();
-        let mut body = None;
+        let (mut body, mut stems) = (None, Vec::new());
         if !fenced && !dropped.load(Relaxed) && remote {
             match self.upload(id, attempt, &snap, &mut pulse).await {
-                Ok(()) => {}
+                Ok(uploaded) => stems = uploaded,
                 Err(Upload::Fenced) => fenced = true,
                 Err(Upload::Failed(e)) => body = Some(error_result(&self.instance, attempt, &e)),
             }
@@ -528,7 +532,8 @@ impl Worker {
             jobs::cancel(&self.rt, &job.id).await;
             remove_staged(&snap);
         } else if snap.state != BgJobState::Cancelled {
-            let body = body.unwrap_or_else(|| result_request(&self.instance, attempt, &snap));
+            let body =
+                body.unwrap_or_else(|| result_request(&self.instance, attempt, &snap, &stems));
             let delivered = self.deliver(id, body, pulse.deadline).await;
             // A remote output was copied to the host; a local one is the host's to take.
             if remote || !delivered {
@@ -579,22 +584,53 @@ impl Worker {
         }
     }
 
-    /// Sends a remote job's output in `uploadChunkBytes` chunks, resuming from what the host holds.
+    /// Sends a remote job's outputs; a `Separate`'s stems come back with their size and SHA-256.
     async fn upload(
         &self,
         id: u32,
         attempt: u32,
         snap: &JobSnapshot,
         pulse: &mut Pulse,
-    ) -> Result<(), Upload> {
-        let Some(JobResult::Optimize { optimize }) = &snap.result else {
-            return Ok(());
-        };
-        if optimize.nothing_to_do {
-            return Ok(());
+    ) -> Result<Vec<StemUpload>, Upload> {
+        match &snap.result {
+            Some(JobResult::Optimize { optimize }) if !optimize.nothing_to_do => {
+                let path = Path::new(&optimize.staged_path);
+                self.upload_file(id, attempt, None, path, pulse).await?;
+                Ok(Vec::new())
+            }
+            Some(JobResult::Separate { separate }) => {
+                let mut stems = Vec::new();
+                for (name, path) in stem_files(separate) {
+                    let p = path.clone();
+                    let sha256 = tokio::task::spawn_blocking(move || sha256_file(&p, || {}))
+                        .await
+                        .map_err(|e| Upload::Failed(JobErrorClass::Engine.message(e)))?
+                        .map_err(io_failed)?;
+                    let size = tokio::fs::metadata(&path).await.map_err(io_failed)?.len();
+                    self.upload_file(id, attempt, Some(name), &path, pulse)
+                        .await?;
+                    stems.push(StemUpload {
+                        name: name.into(),
+                        size: size as f64,
+                        sha256,
+                    });
+                }
+                Ok(stems)
+            }
+            _ => Ok(Vec::new()),
         }
+    }
+
+    /// One file in `uploadChunkBytes` chunks (`?name=` for a stem), resuming from what the host holds.
+    async fn upload_file(
+        &self,
+        id: u32,
+        attempt: u32,
+        name: Option<&str>,
+        path: &Path,
+        pulse: &mut Pulse,
+    ) -> Result<(), Upload> {
         let chunk = self.setting(|s| u64::from(s.upload_chunk_bytes)).max(1);
-        let path = Path::new(&optimize.staged_path);
         let total = tokio::fs::metadata(path)
             .await
             .map_err(|e| {
@@ -621,7 +657,8 @@ impl Worker {
                 .map_err(io_failed)?;
             file.read_exact(&mut buf).await.map_err(io_failed)?;
             let last = offset + len >= total;
-            let req = Request::put(self.url(&format!("/engine/jobs/{id}/output")))
+            let query = name.map_or_else(String::new, |n| format!("?name={n}"));
+            let req = Request::put(self.url(&format!("/engine/jobs/{id}/output{query}")))
                 .header(HEADER_UPLOAD_OFFSET, offset.to_string())
                 .header(HEADER_ATTEMPT, attempt.to_string())
                 .header(HEADER_WORKER_ID, &self.instance)
@@ -714,8 +751,10 @@ impl Worker {
 }
 
 /// The engine job a lease asks for; the lease's paths and staging file go into the payload.
-fn request(l: LeasedJob) -> Result<JobRequest, String> {
+fn request(l: LeasedJob, cache: &Cache) -> Result<JobRequest, String> {
     let LeasedJob {
+        id,
+        attempt,
         kind,
         input_path,
         staged_path,
@@ -738,6 +777,36 @@ fn request(l: LeasedJob) -> Result<JobRequest, String> {
         }
         JobKind::Verify { .. } if input_path.is_none() => {
             return Err(JobErrorClass::Access.message("a verification reads a local file"));
+        }
+        JobKind::Separate {
+            info,
+            model,
+            guide_vocals_gain,
+            bitrate_kbps,
+            providers,
+            model_version,
+            ..
+        } => {
+            let out = |name: &str| {
+                let path = cache.remote_staged(format!("{id}-{attempt}-{name}"));
+                Some(path.to_string_lossy().into_owned())
+            };
+            JobKind::Separate {
+                info,
+                model,
+                vocals: out("vocals"),
+                instrumental: out("instrumental"),
+                guide: out("guide"),
+                guide_vocals_gain,
+                bitrate_kbps,
+                providers,
+                model_version,
+                input_token: if input_path.is_none() {
+                    input_token
+                } else {
+                    None
+                },
+            }
         }
         other => other,
     };
@@ -770,11 +839,17 @@ fn error_result(worker: &str, attempt: u32, e: &str) -> JobResultRequest {
         copy_reason: None,
         cpu_fallback: None,
         nothing_to_do: false,
+        separate: None,
     }
 }
 
 /// The result of an ended job: the optimization's output facts, or its `<class>: <message>` error.
-fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRequest {
+fn result_request(
+    worker: &str,
+    attempt: u32,
+    snap: &JobSnapshot,
+    stems: &[StemUpload],
+) -> JobResultRequest {
     let ok = |out_size, out_sha256, out_info| JobResultRequest {
         worker_id: worker.into(),
         attempt,
@@ -787,6 +862,7 @@ fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRe
         copy_reason: None,
         cpu_fallback: None,
         nothing_to_do: false,
+        separate: None,
     };
     match &snap.result {
         Some(JobResult::Optimize { optimize }) if optimize.nothing_to_do => JobResultRequest {
@@ -807,6 +883,16 @@ fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRe
             )
         },
         Some(JobResult::Verify { .. }) => ok(0.0, None, None),
+        Some(JobResult::Separate { separate }) => JobResultRequest {
+            separate: Some(SeparateOutput {
+                model: separate.model.clone(),
+                model_version: separate.model_version.clone(),
+                provider: separate.provider.clone(),
+                duration_seconds: separate.duration_seconds,
+                stems: stems.to_vec(),
+            }),
+            ..ok(0.0, None, None)
+        },
         _ => error_result(
             worker,
             attempt,
@@ -819,15 +905,32 @@ fn result_request(worker: &str, attempt: u32, snap: &JobSnapshot) -> JobResultRe
 
 /// A finished output the host will never read: the lease was lost.
 fn remove_staged(snap: &JobSnapshot) {
-    if let Some(JobResult::Optimize { optimize }) = &snap.result {
-        let _ = std::fs::remove_file(PathBuf::from(&optimize.staged_path));
+    match &snap.result {
+        Some(JobResult::Optimize { optimize }) => {
+            let _ = std::fs::remove_file(PathBuf::from(&optimize.staged_path));
+        }
+        Some(JobResult::Separate { separate }) => {
+            for (_, path) in stem_files(separate) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        _ => {}
     }
+}
+
+/// The stems a `Separate` wrote, by their `STEM_NAMES`.
+fn stem_files(s: &SeparateMeta) -> Vec<(&'static str, PathBuf)> {
+    [&s.vocals, &s.instrumental, &s.guide]
+        .into_iter()
+        .zip(STEM_NAMES)
+        .filter_map(|(f, name)| Some((name, PathBuf::from(&f.as_ref()?.path))))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fliks_engine_core::api::{JobPriority, MediaInfo, OptimizeLevel, OptimizeMeta};
+    use fliks_engine_core::api::{JobPriority, MediaInfo, OptimizeLevel, OptimizeMeta, StemFile};
 
     #[tokio::test]
     async fn the_client_accepts_an_https_url() {
@@ -974,14 +1077,19 @@ mod tests {
     #[test]
     fn a_failed_job_reports_its_error_class() {
         let snap = snapshot(BgJobState::Failed, None, Some("nospace: 10 bytes free"));
-        let r = result_request("w", 3, &snap);
+        let r = result_request("w", 3, &snap, &[]);
         let e = r.error.expect("error");
         assert!(!r.ok && r.attempt == 3);
         assert_eq!(
             (e.class, e.message.as_str()),
             (JobErrorClass::Nospace, "10 bytes free")
         );
-        let plain = result_request("w", 1, &snapshot(BgJobState::Failed, None, Some("boom")));
+        let plain = result_request(
+            "w",
+            1,
+            &snapshot(BgJobState::Failed, None, Some("boom")),
+            &[],
+        );
         assert_eq!(plain.error.unwrap().class, JobErrorClass::Engine);
     }
 
@@ -1004,7 +1112,7 @@ mod tests {
             }),
             None,
         );
-        let r = result_request("w", 1, &snap);
+        let r = result_request("w", 1, &snap, &[]);
         assert!(r.ok && r.out_size == 12.0 && r.out_sha256.as_deref() == Some("ab"));
         assert_eq!(r.level, Some(OptimizeLevel::Remux));
         assert!(!r.nothing_to_do);
@@ -1029,12 +1137,206 @@ mod tests {
             }),
             None,
         );
-        let r = result_request("w", 1, &snap);
+        let r = result_request("w", 1, &snap, &[]);
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["level"], "remux");
         assert_eq!(v["copyReason"], "low_savings");
         assert_eq!(v["cpuFallback"], true);
         assert_eq!(v["nothingToDo"], true);
         assert!(r.ok && r.out_sha256.is_none() && r.out_info.is_none());
+    }
+
+    fn separate_lease(input_path: Option<&str>, input_url: Option<&str>) -> LeasedJob {
+        let kind = JobKind::Separate {
+            info: MediaInfo::default(),
+            model: Some("m".into()),
+            vocals: None,
+            instrumental: None,
+            guide: None,
+            guide_vocals_gain: None,
+            bitrate_kbps: None,
+            providers: None,
+            model_version: Some("2".into()),
+            input_token: None,
+        };
+        serde_json::from_value(serde_json::json!({
+            "id": 7, "attempt": 2, "leaseS": 60, "kind": kind,
+            "inputPath": input_path, "inputUrl": input_url, "inputToken": "tk"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_separate_lease_stages_its_stems_and_keeps_the_token_for_a_url_only() {
+        let cache = crate::cache::Cache::from_env();
+        let stem = |name: &str| {
+            cache
+                .remote_staged(format!("7-2-{name}"))
+                .to_string_lossy()
+                .into_owned()
+        };
+        let by_path = request(separate_lease(Some("/m/a.flac"), None), &cache).unwrap();
+        let JobKind::Separate {
+            vocals,
+            instrumental,
+            guide,
+            input_token,
+            model_version,
+            ..
+        } = by_path.kind
+        else {
+            panic!("not a separate job");
+        };
+        assert_eq!(by_path.media.path, "/m/a.flac");
+        assert_eq!(
+            (vocals, instrumental, guide),
+            (
+                Some(stem("vocals")),
+                Some(stem("instrumental")),
+                Some(stem("guide"))
+            )
+        );
+        assert_eq!((input_token, model_version), (None, Some("2".into())));
+        let by_url = request(separate_lease(None, Some("http://h/i")), &cache).unwrap();
+        let JobKind::Separate { input_token, .. } = by_url.kind else {
+            panic!("not a separate job");
+        };
+        assert_eq!(
+            (by_url.media.path.as_str(), input_token.as_deref()),
+            ("http://h/i", Some("tk"))
+        );
+        let none = request(separate_lease(None, None), &cache).unwrap_err();
+        assert!(none.starts_with("access: "), "{none}");
+    }
+
+    #[test]
+    fn a_separated_job_reports_its_stems_and_leaves_no_output_size() {
+        let file = |p: &str| StemFile {
+            path: p.into(),
+            bytes: 3.0,
+        };
+        let snap = snapshot(
+            BgJobState::Done,
+            Some(JobResult::Separate {
+                separate: SeparateMeta {
+                    model: "m".into(),
+                    model_version: "2".into(),
+                    provider: "cpu".into(),
+                    vocals: Some(file("/v")),
+                    instrumental: Some(file("/i")),
+                    guide: Some(file("/g")),
+                    duration_seconds: 1.5,
+                },
+            }),
+            None,
+        );
+        let stems = [StemUpload {
+            name: "vocals".into(),
+            size: 3.0,
+            sha256: "ab".into(),
+        }];
+        let r = result_request("w", 1, &snap, &stems);
+        let s = r.separate.expect("separate");
+        assert!(r.ok && r.out_size == 0.0 && r.out_sha256.is_none());
+        assert_eq!(
+            (
+                s.model_version.as_str(),
+                s.provider.as_str(),
+                s.duration_seconds
+            ),
+            ("2", "cpu", 1.5)
+        );
+        assert_eq!(s.stems, stems);
+        assert_eq!(
+            stem_files(&SeparateMeta {
+                vocals: None,
+                ..match &snap.result {
+                    Some(JobResult::Separate { separate }) => separate.clone(),
+                    _ => unreachable!(),
+                }
+            })
+            .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn two_named_uploads_land_in_two_buffers() {
+        use axum::{
+            Router,
+            extract::{Query, State},
+            response::IntoResponse,
+            routing::put,
+        };
+        type Held = Arc<Mutex<HashMap<String, Vec<u8>>>>;
+        async fn chunk(
+            State(held): State<Held>,
+            Query(q): Query<HashMap<String, String>>,
+            body: Bytes,
+        ) -> axum::response::Response {
+            let name = q.get("name").cloned().unwrap_or_default();
+            held.lock()
+                .unwrap()
+                .entry(name)
+                .or_default()
+                .extend_from_slice(&body);
+            StatusCode::OK.into_response()
+        }
+        let held: Held = Arc::default();
+        let app = Router::new()
+            .route("/engine/jobs/{id}/output", put(chunk))
+            .with_state(held.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let hw = crate::hw::Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
+        let rt = Runtime::new(hw, crate::cache::Cache::from_env(), "ffmpeg".into());
+        let w = Worker {
+            rt,
+            host: Host { url, token: None },
+            instance: "w".into(),
+            client: client(),
+            held: Mutex::new(HashMap::new()),
+            settings: Mutex::new(WorkerSettings {
+                upload_chunk_bytes: 4,
+                ..default_settings()
+            }),
+        };
+        let dir = std::env::temp_dir().join(format!("fliks-stems-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut files = Vec::new();
+        for (name, body) in [("v", "vocals-data"), ("i", "instr"), ("g", "guide-bytes")] {
+            let p = dir.join(name);
+            std::fs::write(&p, body).unwrap();
+            files.push(Some(StemFile {
+                path: p.to_string_lossy().into_owned(),
+                bytes: body.len() as f64,
+            }));
+        }
+        let snap = snapshot(
+            BgJobState::Done,
+            Some(JobResult::Separate {
+                separate: SeparateMeta {
+                    model: "m".into(),
+                    model_version: "2".into(),
+                    provider: "cpu".into(),
+                    vocals: files[0].clone(),
+                    instrumental: files[1].clone(),
+                    guide: files[2].clone(),
+                    duration_seconds: 1.0,
+                },
+            }),
+            None,
+        );
+        let mut pulse = Pulse::new(60, 3600);
+        let stems = w.upload(1, 1, &snap, &mut pulse).await.ok().unwrap();
+        let held = held.lock().unwrap();
+        assert_eq!(held["vocals"], b"vocals-data");
+        assert_eq!(held["instrumental"], b"instr");
+        assert_eq!(held["guide"], b"guide-bytes");
+        assert_eq!(stems.len(), 3);
+        assert_eq!(stems[1].size, 5.0);
+        assert_eq!(stems[1].sha256.len(), 64);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

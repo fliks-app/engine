@@ -3367,7 +3367,8 @@
           "network",
           "verify",
           "busy",
-          "stale"
+          "stale",
+          "model"
         ]
       },
       "JobFamilies": {
@@ -3723,6 +3724,13 @@
               "info": {
                 "$ref": "#/components/schemas/MediaInfo"
               },
+              "inputToken": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Bearer token of a remote read: `media.path` is the lease's `inputUrl` (set by the worker loop)."
+              },
               "instrumental": {
                 "type": [
                   "string",
@@ -3735,6 +3743,13 @@
                   "null"
                 ],
                 "description": "A `separation` model id; absent: the default one."
+              },
+              "modelVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The version of `model` the stems must come from (a host that leases the job sets it): the engine\ninstalls or updates the model when its manifest has that version and its licence is clear,\nelse fails `model`."
               },
               "providers": {
                 "type": [
@@ -4266,6 +4281,17 @@
             "format": "double",
             "description": "Bytes of the staged output; 0 for a `Verify`."
           },
+          "separate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SeparateOutput",
+                "description": "`Separate` only; `outSize`/`outSha256` stay 0/absent."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "workerId": {
             "type": "string"
           }
@@ -4568,7 +4594,7 @@
           },
           "kind": {
             "$ref": "#/components/schemas/JobKind",
-            "description": "`Optimize` or `Verify`, with its payload."
+            "description": "`Optimize`, `Verify` or `Separate`, with its payload."
           },
           "leaseS": {
             "type": "integer",
@@ -7308,6 +7334,40 @@
           }
         }
       },
+      "SeparateOutput": {
+        "type": "object",
+        "description": "What a leased `Separate` produced (`SeparateMeta` minus the worker's paths).",
+        "required": [
+          "model",
+          "modelVersion",
+          "provider",
+          "durationSeconds",
+          "stems"
+        ],
+        "properties": {
+          "durationSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelVersion": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider that ran the networks, or `cpu`."
+          },
+          "stems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StemUpload"
+            },
+            "description": "All three of `STEM_NAMES`."
+          }
+        }
+      },
       "SessionAction": {
         "type": "string",
         "enum": [
@@ -7616,6 +7676,29 @@
           "path": {
             "type": "string",
             "description": "The request's path."
+          }
+        }
+      },
+      "StemUpload": {
+        "type": "object",
+        "description": "One stem a leased `Separate` uploaded.",
+        "required": [
+          "name",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "One of `STEM_NAMES`."
+          },
+          "sha256": {
+            "type": "string",
+            "description": "Lowercase hex SHA-256 of the uploaded file."
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -8438,6 +8521,13 @@
           },
           "engineVersion": {
             "type": "string"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The engine's `hello.features` (`karaoke-separate`, `onnx-<provider>`...); empty from older workers."
           },
           "instanceId": {
             "type": "string",

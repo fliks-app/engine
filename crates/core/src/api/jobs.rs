@@ -115,6 +115,22 @@ pub enum JobKind {
         /// runtime lists but `openvino`; empty: the CPU only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         providers: Option<Vec<String>>,
+        /// The version of `model` the stems must come from (a host that leases the job sets it): the engine
+        /// installs or updates the model when its manifest has that version and its licence is clear,
+        /// else fails `model`.
+        #[serde(
+            default,
+            rename = "modelVersion",
+            skip_serializing_if = "Option::is_none"
+        )]
+        model_version: Option<String>,
+        /// Bearer token of a remote read: `media.path` is the lease's `inputUrl` (set by the worker loop).
+        #[serde(
+            default,
+            rename = "inputToken",
+            skip_serializing_if = "Option::is_none"
+        )]
+        input_token: Option<String>,
     },
     /// Times the words of `lines` on the vocal stem `media` names: a CTC network forces the known
     /// words onto the audio, else speech recognition gives word times they are matched onto.
@@ -527,13 +543,15 @@ mod tests {
                 "index": 0 } }),
             json!({ "type": "Cover", "info": info() }),
             json!({ "type": "Merge", "parts": [], "output": "/a.m4b" }),
-            json!({ "type": "Separate", "info": info(), "vocals": "/v.opus" }),
+            json!({ "type": "Separate", "info": info(), "vocals": "/v.opus",
+                "modelVersion": "2", "inputToken": "t" }),
             json!({ "type": "Align", "lines": [] }),
             json!({ "type": "Melody", "spans": [] }),
         ];
         assert_eq!(kinds.len(), JOB_FAMILIES.len());
         for k in kinds {
-            let kind: JobKind = serde_json::from_value(k).unwrap();
+            let kind: JobKind = serde_json::from_value(k.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&kind).unwrap()["type"], k["type"]);
             let row = JOB_FAMILIES.iter().find(|(n, _)| *n == kind.name());
             assert_eq!(row.map(|r| r.1), Some(kind.families()), "{}", kind.name());
         }

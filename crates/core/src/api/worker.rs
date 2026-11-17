@@ -14,6 +14,8 @@ pub const HEADER_ATTEMPT: &str = "X-Fliks-Attempt";
 pub const HEADER_WORKER_ID: &str = "X-Fliks-Worker-Id";
 /// Size of an output chunk.
 pub const UPLOAD_CHUNK_BYTES: u32 = 8 * 1024 * 1024;
+/// Names of the stems a leased `Separate` uploads (`PUT /engine/jobs/{id}/output?name=<name>`).
+pub const STEM_NAMES: [&str; 3] = ["vocals", "instrumental", "guide"];
 
 /// How a device holds a job that must yield to playback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -58,6 +60,9 @@ pub struct WorkerHello {
     /// Leases still held; the host puts every other lease of this instance back in the queue.
     #[serde(default)]
     pub jobs: Vec<LeaseRef>,
+    /// The engine's `hello.features` (`karaoke-separate`, `onnx-<provider>`...); empty from older workers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
 }
 
 /// Settings the host imposes; path access and mappings are the admin's, never the worker's.
@@ -104,7 +109,7 @@ pub struct LeasedJob {
     /// Fencing counter, +1 on each lease; every later call of the job carries it.
     pub attempt: u32,
     pub lease_s: u32,
-    /// `Optimize` or `Verify`, with its payload.
+    /// `Optimize`, `Verify` or `Separate`, with its payload.
     pub kind: JobKind,
     /// Local read: the source and the staging file to write, both on the worker's filesystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,6 +338,9 @@ pub enum JobErrorClass {
     Busy,
     /// The source no longer matches the queue-time snapshot.
     Stale,
+    /// The worker cannot run the model at the version the job names (not in its manifest, licence
+    /// not clear, download failed); another worker may.
+    Model,
 }
 
 impl JobErrorClass {
@@ -348,6 +356,7 @@ impl JobErrorClass {
             Self::Verify => "verify",
             Self::Busy => "busy",
             Self::Stale => "stale",
+            Self::Model => "model",
         }
     }
 
@@ -358,7 +367,7 @@ impl JobErrorClass {
 
     /// The class and text of a failure made by `message`; any other text is an `engine` failure.
     pub fn from_message(s: &str) -> (Self, &str) {
-        const ALL: [JobErrorClass; 10] = [
+        const ALL: [JobErrorClass; 11] = [
             JobErrorClass::Access,
             JobErrorClass::Io,
             JobErrorClass::Corrupt,
@@ -369,6 +378,7 @@ impl JobErrorClass {
             JobErrorClass::Verify,
             JobErrorClass::Busy,
             JobErrorClass::Stale,
+            JobErrorClass::Model,
         ];
         ALL.iter()
             .find_map(|c| {
@@ -388,6 +398,30 @@ pub struct JobError {
     /// End of the encoder's stderr; the host keeps 64 KiB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stderr_tail: Option<String>,
+}
+
+/// One stem a leased `Separate` uploaded.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StemUpload {
+    /// One of `STEM_NAMES`.
+    pub name: String,
+    pub size: f64,
+    /// Lowercase hex SHA-256 of the uploaded file.
+    pub sha256: String,
+}
+
+/// What a leased `Separate` produced (`SeparateMeta` minus the worker's paths).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SeparateOutput {
+    pub model: String,
+    pub model_version: String,
+    /// The provider that ran the networks, or `cpu`.
+    pub provider: String,
+    pub duration_seconds: f64,
+    /// All three of `STEM_NAMES`.
+    pub stems: Vec<StemUpload>,
 }
 
 /// `POST /engine/jobs/{id}/result`.
@@ -420,6 +454,9 @@ pub struct JobResultRequest {
     /// `Optimize` only: the video copy left nothing to change; no output was staged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nothing_to_do: bool,
+    /// `Separate` only; `outSize`/`outSha256` stay 0/absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separate: Option<SeparateOutput>,
 }
 
 #[cfg(test)]
@@ -500,9 +537,67 @@ mod tests {
             copy_reason: None,
             cpu_fallback: None,
             nothing_to_do: false,
+            separate: None,
         };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["error"]["class"], "nospace");
         assert_eq!(v["workerId"], "w1");
+    }
+
+    #[test]
+    fn hello_features_default_empty_and_round_trip() {
+        let wire = json!({ "instanceId": "w1", "engineVersion": "1", "devices": [] });
+        let hello: WorkerHello = serde_json::from_value(wire.clone()).unwrap();
+        assert!(hello.features.is_empty());
+        assert!(
+            serde_json::to_value(&hello)
+                .unwrap()
+                .get("features")
+                .is_none()
+        );
+        let with = json!({ "instanceId": "w1", "engineVersion": "1", "devices": [], "jobs": [],
+            "features": ["karaoke-separate", "onnx-cpu"] });
+        let hello: WorkerHello = serde_json::from_value(with.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&hello).unwrap(), with);
+    }
+
+    #[test]
+    fn a_separate_result_serializes_its_stems() {
+        let r = JobResultRequest {
+            worker_id: "w1".into(),
+            attempt: 1,
+            ok: true,
+            out_size: 0.0,
+            out_sha256: None,
+            out_info: None,
+            error: None,
+            level: None,
+            copy_reason: None,
+            cpu_fallback: None,
+            nothing_to_do: false,
+            separate: Some(SeparateOutput {
+                model: "m".into(),
+                model_version: "2".into(),
+                provider: "cpu".into(),
+                duration_seconds: 1.5,
+                stems: vec![StemUpload {
+                    name: "vocals".into(),
+                    size: 3.0,
+                    sha256: "ab".into(),
+                }],
+            }),
+        };
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["separate"]["modelVersion"], "2");
+        assert_eq!(v["separate"]["durationSeconds"], 1.5);
+        assert_eq!(v["separate"]["stems"][0]["sha256"], "ab");
+        assert_eq!(serde_json::from_value::<JobResultRequest>(v).unwrap(), r);
+    }
+
+    #[test]
+    fn the_model_class_round_trips() {
+        let t = JobErrorClass::Model.message("x");
+        assert_eq!(t, "model: x");
+        assert_eq!(JobErrorClass::from_message(&t), (JobErrorClass::Model, "x"));
     }
 }

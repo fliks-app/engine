@@ -24,7 +24,7 @@ pub async fn run(
     }
     let file = picked.file("model.onnx");
     // SwiftF0 stays on the CPU: 10 ms a call, a GPU session costs more than it saves.
-    let loaded = tokio::task::spawn_blocking(move || backend.load(&file, Some(&[]), &[]))
+    let loaded = super::run::low(move || backend.load(&file, Some(&[]), &[]))
         .await
         .map_err(|e| e.to_string())??;
     ctx.pulse();
@@ -37,9 +37,12 @@ pub async fn run(
             let stop = Arc::new(AtomicBool::new(false));
             let _guard = StopOnDrop(stop.clone());
             let c = c.clone();
-            tokio::task::spawn_blocking(move || track(&mut *net, &pcm, &stop, &|| c.pulse()))
-                .await
-                .map_err(|e| e.to_string())?
+            super::run::low(move || {
+                let _busy = c.model_busy();
+                track(&mut *net, &pcm, &stop, &|| c.pulse())
+            })
+            .await
+            .map_err(|e| e.to_string())?
         })
         .await??;
     if track.hz.is_empty() {

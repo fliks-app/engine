@@ -9,6 +9,26 @@ use fliks_engine_core::jobs::melody::SAMPLE_RATE;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
 
+/// Starts `f` at once on a dedicated thread at the lowest priority: a reused blocking-pool thread
+/// could not be raised back, and the ONNX pool inherits the caller's priority.
+pub fn low<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> impl std::future::Future<Output = Result<T, String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let started = std::thread::Builder::new()
+        .name("fliks-model".into())
+        .spawn(move || {
+            crate::proc::lower_this_thread();
+            let _ = tx.send(f());
+        })
+        .map(drop)
+        .map_err(|e| e.to_string());
+    async move {
+        started?;
+        rx.await.map_err(|_| "model thread panicked".to_string())
+    }
+}
+
 struct Claim {
     out: PathBuf,
     tmp: PathBuf,
@@ -209,4 +229,19 @@ pub async fn read_pcm(ctx: &Ctx, p: &Ffmpeg) -> Result<Vec<f32>, String> {
         .iter()
         .map(|b| f32::from_le_bytes(*b))
         .collect())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use crate::proc::thread_nice;
+
+    #[tokio::test]
+    async fn a_model_run_never_lowers_a_tokio_thread() {
+        let base = tokio::task::spawn_blocking(thread_nice).await.unwrap();
+        assert_eq!(super::low(thread_nice).await.unwrap(), 19);
+        assert_eq!(
+            tokio::task::spawn_blocking(thread_nice).await.unwrap(),
+            base
+        );
+    }
 }
