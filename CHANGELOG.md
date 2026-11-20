@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.0](https://github.com/fliks-app/engine/compare/v1.28.0...v1.29.0) (2026-11-20)
+
+
+### Features
+
+* **hw:** log why each hardware backend was rejected ([#254](https://github.com/fliks-app/engine/issues/254)) ([0c65f05](https://github.com/fliks-app/engine/commit/0c65f0564aac9a1c70ed9bef00af73441a48d7a0))
+
+
+### Bug Fixes
+
+* **build:** download ONNX Runtime from NuGet ([#255](https://github.com/fliks-app/engine/issues/255)) ([f1bb05d](https://github.com/fliks-app/engine/commit/f1bb05d2860536fbe53d2ac3c470f8eedec91b01))
+
 ## [1.28.0](https://github.com/fliks-app/engine/compare/v1.27.0...v1.28.0) (2026-11-17)
 
 
