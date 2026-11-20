@@ -76,8 +76,8 @@ ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
 # ONNX Runtime (CPU) for the model jobs, loaded at run time by the engine. A CUDA or OpenVINO build
 # of the same library can be mounted over it (`ORT_DYLIB_PATH`).
 ARG ONNXRUNTIME_VERSION=1.31.1
-ARG ONNXRUNTIME_SHA256_AMD64=c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9
-ARG ONNXRUNTIME_SHA256_ARM64=5317505e2da99be65f8e2775ba3c2afd6d2961fd78aba1bd8f56159f48820c78
+# The NuGet package (every platform in one archive), as tools/karaoke-pack/pins.env.
+ARG ONNXRUNTIME_SHA256=6871ccbc97f3d5bdb4095a1dcec33aa78d56f6ed8de5980ef5fa1d9f2e7c679a
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 libvulkan1 mesa-vulkan-drivers \
@@ -98,14 +98,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && rm -f /tmp/jellyfin-ffmpeg.deb \
-  && if [ "$TARGETARCH" = "amd64" ]; then ORT_ARCH=x64; ORT_SHA="$ONNXRUNTIME_SHA256_AMD64"; else ORT_ARCH=aarch64; ORT_SHA="$ONNXRUNTIME_SHA256_ARM64"; fi \
-  && wget -q -O /tmp/ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
-  && echo "${ORT_SHA}  /tmp/ort.tgz" | sha256sum -c - \
-  && tar -xzf /tmp/ort.tgz -C /tmp \
-  && cp -a /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime*.so* /usr/local/lib/ \
-  && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/LICENSE /usr/share/doc/onnxruntime/LICENSE \
-  && install -D -m 644 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/ThirdPartyNotices.txt /usr/share/doc/onnxruntime/ThirdPartyNotices.txt \
-  && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-* \
+  && if [ "$TARGETARCH" = "amd64" ]; then ORT_ARCH=x64; else ORT_ARCH=arm64; fi \
+  && wget -q -O /tmp/ort.nupkg "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg" \
+  && echo "${ONNXRUNTIME_SHA256}  /tmp/ort.nupkg" | sha256sum -c - \
+  && python3 -m zipfile -e /tmp/ort.nupkg /tmp/ort \
+  && cp /tmp/ort/runtimes/linux-${ORT_ARCH}/native/libonnxruntime*.so /usr/local/lib/ \
+  && install -D -m 644 /tmp/ort/LICENSE /usr/share/doc/onnxruntime/LICENSE \
+  && install -D -m 644 /tmp/ort/ThirdPartyNotices.txt /usr/share/doc/onnxruntime/ThirdPartyNotices.txt \
+  && rm -rf /tmp/ort.nupkg /tmp/ort \
   && rm -f /usr/share/vulkan/icd.d/lvp_icd*.json \
   && apt-get purge -y wget python3-pip && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
