@@ -27,16 +27,13 @@ esac
 # ONNX Runtime: the official release (MIT), CPU on Windows, CoreML compiled in on macOS. The Windows ML
 # runtime of Microsoft (proprietary licence) is never shipped: the engine finds the one installed.
 mkdir "$work/ort" "$lic/onnxruntime"
+fetch "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$ONNXRUNTIME_VERSION/microsoft.ml.onnxruntime.$ONNXRUNTIME_VERSION.nupkg" "$ORT_SHA256" ort.nupkg
+unzip -q "$work/ort.nupkg" -d "$work/ort"
+o="$work/ort"
 if [ "$platform" = windows-x64 ]; then
-    fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-win-x64-$ONNXRUNTIME_VERSION.zip" "$ORT_SHA256_WINDOWS_X64" ort.zip
-    unzip -q "$work/ort.zip" -d "$work/ort"
-    o="$(echo "$work"/ort/*)" # the one extracted directory
-    cp "$o/lib/onnxruntime.dll" "$o/lib/onnxruntime_providers_shared.dll" "$dest/"
+    cp "$o/runtimes/win-x64/native/onnxruntime.dll" "$o/runtimes/win-x64/native/onnxruntime_providers_shared.dll" "$dest/"
 else
-    fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/onnxruntime-osx-arm64-$ONNXRUNTIME_VERSION.tgz" "$ORT_SHA256_DARWIN_ARM64" ort.tgz
-    tar -xzf "$work/ort.tgz" -C "$work/ort"
-    o="$(echo "$work"/ort/*)"
-    cp "$o/lib/libonnxruntime.$ONNXRUNTIME_VERSION.dylib" "$dest/libonnxruntime.dylib"
+    cp "$o/runtimes/osx-arm64/native/libonnxruntime.dylib" "$dest/libonnxruntime.dylib"
 fi
 cp "$o/LICENSE" "$o/ThirdPartyNotices.txt" "$lic/onnxruntime/"
 
