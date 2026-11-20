@@ -94,6 +94,7 @@ mod tests {
                 decoders: vec![],
                 disabled_encoders: vec![],
                 disabled_decoders: vec![],
+                rejected: vec![],
             },
         }
     }

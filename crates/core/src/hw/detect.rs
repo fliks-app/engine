@@ -38,6 +38,8 @@ pub struct Detected {
     pub decoders: Vec<String>,
     pub disabled_encoders: Vec<String>,
     pub disabled_decoders: Vec<String>,
+    /// Each backend test that failed, as `backend: ffmpeg errors`.
+    pub rejected: Vec<String>,
 }
 
 fn sample_path(tmp: &str, name: &str) -> String {
@@ -80,14 +82,28 @@ pub async fn detect_only<R: Runner>(
 ) -> Detected {
     let platform = dev.platform;
     let mut hw_accel = HwAccel::None;
+    let mut rejected = vec![];
     for (hw, cmd) in probe::hw_tests(dev) {
         if only.is_some_and(|o| o != hw) {
             continue;
         }
-        if r.run(&cmd).await.ok {
+        let o = r.run(&cmd).await;
+        if o.ok {
             hw_accel = hw;
             break;
         }
+        let why: Vec<&str> = o
+            .stderr
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        let why = if why.is_empty() {
+            "no output".into()
+        } else {
+            why.join("; ")
+        };
+        rejected.push(format!("{}: {why}", hw.as_str()));
     }
 
     let libfdk_aac = has_libfdk(r).await;
@@ -151,6 +167,7 @@ pub async fn detect_only<R: Runner>(
         decoders: dec_on,
         disabled_encoders: enc_off,
         disabled_decoders: dec_off,
+        rejected,
     }
 }
 

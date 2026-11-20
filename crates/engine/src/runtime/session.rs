@@ -747,6 +747,7 @@ mod tests {
                 decoders: vec![],
                 disabled_encoders: caps.disabled_encoders.clone(),
                 disabled_decoders: caps.disabled_decoders.clone(),
+                rejected: vec![],
             },
         }
     }

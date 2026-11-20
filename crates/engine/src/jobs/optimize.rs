@@ -838,6 +838,7 @@ mod tests {
             decoders: vec![],
             disabled_encoders: disabled.iter().map(|s| s.to_string()).collect(),
             disabled_decoders: vec![],
+            rejected: vec![],
         };
         let d = detected(&["hevc_nvenc_main10"], &["hevc_nvenc"]);
         assert!(optimize_encoders(&d).is_empty());

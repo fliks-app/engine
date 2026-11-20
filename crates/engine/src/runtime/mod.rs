@@ -413,6 +413,7 @@ mod tests {
                 decoders: vec![],
                 disabled_encoders: off.iter().map(|s| s.to_string()).collect(),
                 disabled_decoders: vec![],
+                rejected: vec![],
             },
         };
         let devices = vec![
