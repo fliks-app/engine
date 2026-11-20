@@ -24,6 +24,7 @@ fn snap(hw: HwAccel, node: &str) -> Snapshot {
             decoders: vec!["cpu".into()],
             disabled_encoders: vec![],
             disabled_decoders: vec![],
+            rejected: vec![],
         },
         gpus: vec![],
         pause_capability: "stdin".into(),

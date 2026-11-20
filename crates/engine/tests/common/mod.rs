@@ -16,6 +16,7 @@ pub fn cpu_host() -> Arc<Hw> {
             decoders: vec![],
             disabled_encoders: vec![],
             disabled_decoders: vec![],
+            rejected: vec![],
         },
         gpus: vec![],
         pause_capability: "none".into(),

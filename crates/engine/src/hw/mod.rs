@@ -153,7 +153,19 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
                 pause.get_or_init(|| probe_stdin_pause(&ffmpeg))
             );
             let fallback = found[0].detected.clone();
+            let rejected: Vec<String> = found
+                .iter()
+                .flat_map(|f| {
+                    f.detected
+                        .rejected
+                        .iter()
+                        .map(|r| format!("{} {r}", f.render_node))
+                })
+                .collect();
             let devices: Vec<HwDevice> = assemble(&gpus, found);
+            if devices.is_empty() {
+                tracing::info!(?rejected, "no hardware encoder, transcoding on the CPU");
+            }
             let (detected, render_node) = devices.first().map_or_else(
                 || {
                     let primary = node.clone().unwrap_or_else(|| DEFAULT_RENDER_NODE.into());

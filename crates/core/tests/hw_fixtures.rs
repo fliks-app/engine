@@ -182,6 +182,10 @@ fn replays_every_fixture() {
     assert!(!all.is_empty(), "fixtures/hw is empty");
     for (name, f) in &all {
         let (d, gpus, pause, seen) = run(f);
+        if name == "linux-cpu-only.json" {
+            let nvenc = "nvenc: Device creation failed: -22.; Error initializing the nvenc device";
+            assert_eq!(d.rejected.last().map(String::as_str), Some(nvenc));
+        }
         let want = &f["expected"];
         let mut out = vec![];
         let host_caps = serde_json::to_value(d.host_caps()).unwrap();

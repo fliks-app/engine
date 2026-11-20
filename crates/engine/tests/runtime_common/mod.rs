@@ -173,6 +173,7 @@ pub fn host(hw: HwAccel, render_node: &str, pause: &str) -> Arc<Hw> {
         decoders: vec![],
         disabled_encoders: vec![],
         disabled_decoders: vec![],
+        rejected: vec![],
     };
     let devices = (hw != HwAccel::None)
         .then(|| fliks_engine::hw::HwDevice {
