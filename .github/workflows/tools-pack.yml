@@ -44,7 +44,8 @@ jobs:
       - name: Smoke test the tools
         run: |
           cd out/tools
-          for t in ffmpeg ffprobe mkvmerge mkvpropedit; do ./$t* --version | head -1; done
+          for t in ffmpeg ffprobe; do ./$t* -version | head -1; done
+          for t in mkvmerge mkvpropedit; do ./$t* --version; done
           ./fpcalc* -version
           ./ffmpeg* -hide_banner -hwaccels
           ls -l
