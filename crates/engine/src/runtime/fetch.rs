@@ -3,7 +3,6 @@
 use super::{Fetch, Job, JobKind, Runtime, SEGMENT_WAIT, Session, layout_path};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
-use fliks_engine_core::api::HwAccel;
 use fliks_engine_core::mp4::grid_segment_index;
 use fliks_engine_core::session::{
     self as core_session, EARLY_PROBE_SEGMENTS, EARLY_WAIT_MS, ResolveInput, ResumeAction,
@@ -61,13 +60,10 @@ impl Runtime {
         let lock = self.lock_for(&key);
         let _g = self.lock_settled(&lock, &key).await;
         let mut restarts = 0;
-        let mut hw = self.start_hw();
-        if let Some(e) = self.job(&key) {
+        let prev = self.job(&key);
+        let hw = self.run_hw(prev.as_deref());
+        if let Some(e) = prev {
             restarts = e.restarts + 1;
-            // A run that fell back stays on the CPU.
-            if hw.0 != HwAccel::None {
-                hw.0 = e.hw;
-            }
             let quality_match = e.quality == quality;
             // Another rung: start where this request is (an init already asks for the resume floor).
             if !quality_match {

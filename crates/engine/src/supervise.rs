@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
 
 const STABLE_AFTER: Duration = Duration::from_secs(60);
-const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+/// Above the host's drain and flush, below the 30 s of the compose `stop_grace_period`.
+const STOP_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub async fn shutdown_signal() {
     #[cfg(unix)]

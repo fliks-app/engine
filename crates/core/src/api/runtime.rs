@@ -436,6 +436,9 @@ pub enum EngineEvent {
     #[serde(rename_all = "camelCase")]
     HwFallback {
         job_key: String,
+        /// The session whose run it was; its playlists now name a new init.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
         from: HwAccel,
         to: HwAccel,
         stderr_tail: Vec<String>,

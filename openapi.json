@@ -2577,6 +2577,13 @@
               "jobKey": {
                 "type": "string"
               },
+              "sessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The session whose run it was; its playlists now name a new init."
+              },
               "stderrTail": {
                 "type": "array",
                 "items": {
