@@ -102,7 +102,7 @@ pub(super) async fn probe_file(ctx: &Ctx, path: &str) -> Result<MediaInfo, Strin
         mkv_tags: true,
         crop_decode: None,
     };
-    let out = probe_stamped(path, ctx.rt.slots.clone(), &opts).await;
+    let out = probe_stamped(path, &ctx.rt, &opts).await;
     if !out.ok {
         let why = out.error.unwrap_or_default();
         return Err(opt::classify_stderr(std::slice::from_ref(&why)).message(why));

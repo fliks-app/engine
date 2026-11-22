@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS vobsub-ocr-build
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS vobsub-ocr-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl build-essential pkg-config clang libclang-dev \
     libtesseract-dev libleptonica-dev \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Speech recogniser of the `Align` job (MIT), with the Vulkan backend (a GPU when the host passes one,
 # else the CPU). A generic build for the architecture: the image runs on whatever CPU the host has,
 # so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
-FROM ubuntu:24.04 AS whisper-build
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS whisper-build
 ARG TARGETARCH
 ARG WHISPER_CPP_VERSION=v1.9.5
 ARG WHISPER_CPP_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # An ffmpeg with the `rubberband` filter (key changes): jellyfin-ffmpeg is built without it. Same
 # release as the main one; only the audio side matters, so nothing but opus is linked in.
-FROM ubuntu:24.04 AS pitch-ffmpeg-build
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS pitch-ffmpeg-build
 ARG FFMPEG_VERSION=8.1.2
 ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576eb7
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
      "librubberband (GPL-2.0-or-later) ${RB}, Ubuntu 24.04: source with 'apt source librubberband' or https://packages.ubuntu.com/source/noble/rubberband." \
      > /licenses/ffmpeg-pitch/SOURCE
 
-FROM rust:1.99.0-bookworm AS chef
+FROM rust:1.99.0-bookworm@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6 AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
 
@@ -68,17 +68,20 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked -p fliks-engine --bin fliks-engine --features karaoke
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289
 
 # Per-arch deb; Intel OpenCL (tonemap_opencl) is amd64-only, arm64 is CPU-only.
 ARG TARGETARCH
 ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
+ARG JELLYFIN_FFMPEG_SHA256_AMD64=0683c730f0cfa7d2edd321d5c4921ef17d4e6a33a9626c04bef9092c29f94e1e
+ARG JELLYFIN_FFMPEG_SHA256_ARM64=e8fc2af5e4b9644aab5d41bbeb7b4443ada4236993031ce0010de936685f55c4
 # ONNX Runtime (CPU) for the model jobs, loaded at run time by the engine. A CUDA or OpenVINO build
 # of the same library can be mounted over it (`ORT_DYLIB_PATH`).
 ARG ONNXRUNTIME_VERSION=1.31.1
 # The NuGet package (every platform in one archive), as tools/karaoke-pack/pins.env.
 ARG ONNXRUNTIME_SHA256=6871ccbc97f3d5bdb4095a1dcec33aa78d56f6ed8de5980ef5fa1d9f2e7c679a
 
+COPY tools/ocr-pip/requirements.txt /tmp/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 libvulkan1 mesa-vulkan-drivers \
     python3 python3-pip tesseract-ocr \
@@ -89,11 +92,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-srp tesseract-ocr-hrv tesseract-ocr-tur tesseract-ocr-ara tesseract-ocr-heb \
     tesseract-ocr-fas tesseract-ocr-hin tesseract-ocr-tha tesseract-ocr-vie tesseract-ocr-ind \
     tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-chi-sim \
-  && python3 -m pip install --no-cache-dir --break-system-packages opencv-python-headless \
-     appdirs babelfish cleanit click numpy pysrt pytesseract pyyaml setuptools trakit ffsubsync==0.5.1 \
-  && python3 -m pip install --no-cache-dir --break-system-packages --no-deps pgsrip \
+  && python3 -m pip install --no-cache-dir --break-system-packages --no-deps --require-hashes -r /tmp/requirements.txt \
+  && rm /tmp/requirements.txt \
   && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-opencl-icd; fi \
   && wget -q -O /tmp/jellyfin-ffmpeg.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_${TARGETARCH}.deb" \
+  && if [ "$TARGETARCH" = "amd64" ]; then FF_SHA256="$JELLYFIN_FFMPEG_SHA256_AMD64"; else FF_SHA256="$JELLYFIN_FFMPEG_SHA256_ARM64"; fi \
+  && echo "${FF_SHA256}  /tmp/jellyfin-ffmpeg.deb" | sha256sum -c - \
   && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \

@@ -101,6 +101,13 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag }}
 
+  tools-pack:
+    needs: release-please
+    if: needs.release-please.outputs.tag != '' && !inputs.dry_run
+    uses: ./.github/workflows/tools-pack.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
+
   contract:
     needs: release-please
     if: needs.release-please.outputs.tag != ''

@@ -1,0 +1,66 @@
+# The tools pack of the desktop bundles: ffmpeg, ffprobe, fpcalc, mkvmerge and mkvpropedit in a `tools/`
+# directory, every download pinned by sha256 (tools/tools-pack/pins.env). Built on its own for a PR
+# that changes it, and by the release with a tag to attach it and its checksums.
+name: Tools pack
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        default: ''
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/tools-pack/**'
+      - '.github/workflows/tools-pack.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tools-pack-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: darwin-arm64, os: macos-15 }
+          - { name: windows-x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Build the pack
+        run: tools/tools-pack/build.sh ${{ matrix.name }} out
+      - name: Smoke test the tools
+        run: |
+          cd out/tools
+          for t in ffmpeg ffprobe mkvmerge mkvpropedit; do ./$t* --version | head -1; done
+          ./fpcalc* -version
+          ./ffmpeg* -hide_banner -hwaccels
+          ls -l
+      - name: Archive
+        run: |
+          cd out
+          if [ "${{ matrix.name }}" = windows-x64 ]; then A=fliks-engine-tools-${{ matrix.name }}.zip; 7z a -tzip -bso0 "$A" tools
+          else A=fliks-engine-tools-${{ matrix.name }}.tar.gz; tar -czf "$A" tools; fi
+          (sha256sum "$A" 2>/dev/null || shasum -a 256 "$A") > "$A.sha256"
+          cat "$A.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tools-pack-${{ matrix.name }}
+          path: out/fliks-engine-tools-*
+      - name: Attach to the release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" out/fliks-engine-tools-* --clobber --repo "$GITHUB_REPOSITORY"

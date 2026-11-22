@@ -49,6 +49,8 @@ pub fn is_own(pid: u32) -> bool {
 pub async fn spawn(cmd: &mut Command) -> io::Result<Child> {
     // CUDA's ordinals then match the PCI-bus ranks `cuda_index` computes.
     cmd.env("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
+    // No tool or Python helper needs the control-plane token.
+    cmd.env_remove("FLIKS_ENGINE_TOKEN");
     let child = spawn_retry(cmd).await?;
     #[cfg(unix)]
     if let Some(pid) = child.id().filter(|_| std::process::id() == 1) {

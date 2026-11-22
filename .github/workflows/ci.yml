@@ -81,6 +81,8 @@ jobs:
     timeout-minutes: 20
     env:
       JELLYFIN_FFMPEG_VERSION: 8.1.2-1
+      # The Dockerfile's JELLYFIN_FFMPEG_SHA256_AMD64.
+      JELLYFIN_FFMPEG_SHA256: 0683c730f0cfa7d2edd321d5c4921ef17d4e6a33a9626c04bef9092c29f94e1e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -90,6 +92,7 @@ jobs:
       - name: Install jellyfin-ffmpeg and chromaprint
         run: |
           wget -q -O /tmp/jf.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_amd64.deb"
+          echo "${JELLYFIN_FFMPEG_SHA256}  /tmp/jf.deb" | sha256sum -c -
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /tmp/jf.deb libchromaprint-tools mkvtoolnix
       - name: Real-ffmpeg tests (CPU only)
