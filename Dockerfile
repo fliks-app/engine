@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
      "librubberband (GPL-2.0-or-later) ${RB}, Ubuntu 24.04: source with 'apt source librubberband' or https://packages.ubuntu.com/source/noble/rubberband." \
      > /licenses/ffmpeg-pitch/SOURCE
 
-FROM rust:1.99.0-bookworm@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6 AS chef
+FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
 
