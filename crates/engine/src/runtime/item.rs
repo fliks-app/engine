@@ -81,17 +81,14 @@ impl Runtime {
     ) -> Option<Arc<Job>> {
         let key = s.item_key(part);
         let lock = self.lock_for(&key);
-        let _g = lock.lock().await;
+        // The watcher's last listing of an exited run says which segments it wrote.
+        let _g = self.lock_settled(&lock, &key).await;
         let mut restarts = 0;
         if let Some(e) = self.job(&key) {
             if warm {
                 return Some(e);
             }
             restarts = e.restarts + 1;
-            // The watcher's last listing of an exited run says which segments it wrote.
-            if e.proc.exited().is_some() {
-                e.settled().await;
-            }
             let present = e.m.locked().sets[0].clone();
             let unreachable = e.proc.exited().is_some() && !present.contains(requested);
             if !unreachable {

@@ -80,11 +80,14 @@ pub async fn heartbeat(
     Path(sid): Path<String>,
     Json(hb): Json<HeartbeatRequest>,
 ) -> Response {
-    let Some(sess) = s.rt.session(&sid) else {
+    let Some((sess, buried)) = s.rt.lookup(&sid) else {
         return Json(HeartbeatResponse { session_lost: true }).into_response();
     };
     if hb.owner_id.is_some() && hb.owner_id != sess.owner {
         return StatusCode::FORBIDDEN.into_response();
+    }
+    if buried {
+        s.rt.revive(&sess);
     }
     s.rt.heartbeat(&sess, &hb);
     Json(HeartbeatResponse {

@@ -85,6 +85,28 @@ fn subdirs(dir: &Path) -> Vec<(String, PathBuf)> {
         .unwrap_or_default()
 }
 
+/// Another filesystem cannot rename a directory: copy it beside `to`, then rename the copy, so a
+/// crash leaves no half sheet under `to`. False leaves `from` for the next boot.
+fn copy_dir_atomic(from: &Path, to: &Path) -> bool {
+    let tmp = to.with_file_name(format!(
+        "{}{MOVING}",
+        to.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    remove_dir(&tmp);
+    let copied = std::fs::create_dir_all(&tmp).is_ok()
+        && std::fs::read_dir(from).is_ok_and(|rd| {
+            rd.map(|e| e.and_then(|e| std::fs::copy(e.path(), tmp.join(e.file_name()))))
+                .all(|c| c.is_ok())
+        });
+    let done = copied && std::fs::rename(&tmp, to).is_ok();
+    if !done {
+        remove_dir(&tmp);
+    }
+    done
+}
+
+const MOVING: &str = ".moving";
+
 const OPT_PREFIX: &str = ".fliks-opt-";
 const SAMPLE_MARK: &str = ".sample";
 
@@ -166,37 +188,38 @@ impl Cache {
     }
 
     fn sprites_root(&self) -> PathBuf {
-        self.data_dir
-            .as_ref()
-            .unwrap_or(&self.root)
-            .join("sprites/v1")
+        self.durable_root().join("sprites/v1")
     }
 
-    /// Boot: sprites an older engine kept in the cache root move under the data directory.
+    /// Where the karaoke models live: the data directory, else the cache root.
+    pub fn models_dir(&self) -> PathBuf {
+        self.durable_root().join("models")
+    }
+
+    fn durable_root(&self) -> &Path {
+        self.data_dir.as_deref().unwrap_or(&self.root)
+    }
+
+    /// Boot: sprites an older engine kept in the cache root move under the data directory, and a
+    /// sheet there that lost its picture goes (`sprite.json` lands after `sprite.jpg`).
     pub fn move_sprites(&self) {
         let (old, new) = (self.root.join("sprites/v1"), self.sprites_root());
+        let _ = std::fs::create_dir_all(&new);
+        for (name, dir) in subdirs(&new) {
+            if name.ends_with(MOVING)
+                || (dir.join("sprite.json").exists() && !dir.join("sprite.jpg").exists())
+            {
+                remove_dir(&dir);
+            }
+        }
         if old == new {
             return;
         }
-        let _ = std::fs::create_dir_all(&new);
         for (name, from) in subdirs(&old) {
             let to = new.join(&name);
-            if to.exists() {
-                continue;
-            }
-            // Another filesystem cannot rename: copy the sheet, then drop the old one.
-            if std::fs::rename(&from, &to).is_err() {
-                let copied = std::fs::create_dir_all(&to).is_ok()
-                    && std::fs::read_dir(&from).is_ok_and(|rd| {
-                        rd.flatten()
-                            .filter(|e| e.path().is_file())
-                            .all(|e| std::fs::copy(e.path(), to.join(e.file_name())).is_ok())
-                    });
-                if copied {
-                    remove_dir(&from);
-                } else {
-                    remove_dir(&to);
-                }
+            // A sheet already there is the newer one.
+            if to.exists() || std::fs::rename(&from, &to).is_ok() || copy_dir_atomic(&from, &to) {
+                remove_dir(&from);
             }
         }
     }
@@ -464,6 +487,45 @@ mod tests {
         assert!(user.exists(), "not a merge temporary name");
         assert!(other.exists(), "another file now holds the name");
         assert!(!c.merge_dir("j1").exists() && !c.merge_dir("j3").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_models_live_under_the_data_directory_else_the_cache_root() {
+        let at =
+            |data: Option<&str>| Cache::new("/cache".into(), data.map(Into::into)).models_dir();
+        assert_eq!(at(Some("/data")), Path::new("/data/models"));
+        assert_eq!(at(None), Path::new("/cache/models"));
+    }
+
+    #[test]
+    fn sprites_move_whole_or_not_at_all() {
+        let root = std::env::temp_dir().join(format!("fliks-sprites-test-{}", std::process::id()));
+        let c = Cache::new(root.clone(), Some(root.join("data")));
+        let sheet = |dir: &Path, jpg: bool| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("sprite.json"), b"{}").unwrap();
+            if jpg {
+                std::fs::write(dir.join("sprite.jpg"), b"j").unwrap();
+            }
+        };
+        let (old, new) = (root.join("sprites/v1"), c.sprites_root());
+        sheet(&old.join("1"), true);
+        sheet(&old.join("2"), true);
+        sheet(&new.join("2"), true);
+        sheet(&new.join("3"), false);
+        std::fs::create_dir_all(new.join(format!("4{MOVING}"))).unwrap();
+        c.move_sprites();
+        assert!(new.join("1/sprite.jpg").exists() && !old.join("1").exists());
+        assert!(new.join("2/sprite.jpg").exists() && !old.join("2").exists());
+        assert!(!new.join("3").exists(), "a sheet without its picture goes");
+        assert!(!new.join(format!("4{MOVING}")).exists());
+        // The copy path (another filesystem) leaves nothing half done.
+        sheet(&old.join("5"), true);
+        assert!(copy_dir_atomic(&old.join("5"), &new.join("5")));
+        assert!(new.join("5/sprite.jpg").exists());
+        assert!(!copy_dir_atomic(&old.join("missing"), &new.join("6")));
+        assert!(!new.join("6").exists() && !new.join(format!("6{MOVING}")).exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 

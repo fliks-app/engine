@@ -11,6 +11,9 @@ use fliks_engine_core::session::{
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Buried sessions kept for a revive, oldest beat dropped first.
+const MAX_TOMBSTONES: usize = 10_000;
+
 impl Runtime {
     /// Session expiry, then the jobs no session owns are stopped, every `liveSessionGcIntervalMs`.
     pub async fn gc_tick(&self) {
@@ -44,6 +47,21 @@ impl Runtime {
                 }
                 keep
             });
+            // A revive window of a day must not let a flood of sessions grow without bound.
+            if reg.tombstones.len() > MAX_TOMBSTONES {
+                let mut beats: Vec<_> = reg
+                    .tombstones
+                    .iter()
+                    .map(|(sid, s)| (s.m.locked().last_beat_ms, sid.clone()))
+                    .collect();
+                beats.sort_unstable();
+                for (_, sid) in beats
+                    .into_iter()
+                    .take(reg.tombstones.len() - MAX_TOMBSTONES)
+                {
+                    gone.extend(reg.tombstones.remove(&sid));
+                }
+            }
             (expired, gone, take_orphans(&mut reg, now))
         };
         for sid in expired {

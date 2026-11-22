@@ -716,6 +716,35 @@ async fn a_revivable_expired_sid_keeps_serving() {
 }
 
 #[tokio::test]
+async fn only_a_grant_or_the_owners_heartbeat_revives_an_expired_sid() {
+    let (e, file) =
+        setup_with(json!({ "liveSessionTtlMs": 100, "sessionReviveTtlMs": 60000 })).await;
+    let sid = open(&e, &file, "alice").await["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    e.rt.gc_tick().await;
+    assert!(e.rt.peek(&sid).is_none());
+    // Host down, a credential nobody granted: the file keeps playing, the session stays buried.
+    e.stub.set_down(true);
+    let url = format!("/api/stream/7/master.m3u8?sid={sid}");
+    e.get(&url, "mallory-jwt", &[]).await;
+    assert!(e.rt.peek(&sid).is_none());
+    e.stub.set_down(false);
+    // Another owner's heartbeat is refused and revives nothing.
+    let hb = json!({ "ownerId": "bob", "positionS": 1.0, "state": "playing" });
+    let r = e
+        .control("POST", &format!("/v1/sessions/{sid}/heartbeat"), Some(hb))
+        .await;
+    assert_eq!(r.status, 403);
+    assert!(e.rt.peek(&sid).is_none());
+    // A granted request brings it back.
+    assert_eq!(e.get(&url, "alice-jwt", &[]).await.status, 200);
+    assert!(e.rt.peek(&sid).is_some());
+}
+
+#[tokio::test]
 async fn a_playback_run_below_the_free_space_floor_answers_503_and_spawns_nothing() {
     let (e, file) = setup().await;
     let mut config = e.control("GET", "/v1/config", None).await.json();

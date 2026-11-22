@@ -59,7 +59,7 @@ impl Runtime {
     ) -> Option<Arc<Job>> {
         let key = s.job_key();
         let lock = self.lock_for(&key);
-        let _g = lock.lock().await;
+        let _g = self.lock_settled(&lock, &key).await;
         let mut restarts = 0;
         let mut hw = self.start_hw();
         if let Some(e) = self.job(&key) {
@@ -120,11 +120,8 @@ impl Runtime {
     ) -> Option<Arc<Job>> {
         let key = s.key(JobKind::Remux);
         let lock = self.lock_for(&key);
-        let _g = lock.lock().await;
+        let _g = self.lock_settled(&lock, &key).await;
         if let Some(e) = self.job(&key) {
-            if e.proc.exited().is_some() {
-                e.settled().await;
-            }
             let input = ResolveInput {
                 run: e.existing_run(audio),
                 requested_segment: requested,
@@ -156,7 +153,7 @@ impl Runtime {
     ) -> Option<Arc<Job>> {
         let key = s.key(JobKind::Early);
         let lock = self.lock_for(&key);
-        let _g = lock.lock().await;
+        let _g = self.lock_settled(&lock, &key).await;
         if let Some(e) = self.job(&key) {
             let clean = e.proc.exited().is_some_and(|x| x.code == Some(0));
             if e.quality == quality && (e.producing() || clean) {

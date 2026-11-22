@@ -559,6 +559,37 @@ async fn a_request_the_client_moved_away_from_is_not_reported() {
 }
 
 #[tokio::test]
+async fn a_hardware_failure_after_segments_restarts_the_rung_on_a_fresh_init() {
+    let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = engine_with(hw, &fake("hwlate"), json!({})).await;
+    let file = e.root.join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    let mut ev = e.rt.events.subscribe();
+    let sid = open(
+        &e,
+        &file,
+        json!({ "selection": { "requestedQuality": "720p" } }),
+    )
+    .await;
+    event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let key = s.key(JobKind::Main);
+    until("the CPU run", 30, || {
+        e.rt.job(&key)
+            .is_some_and(|j| j.hw == HwAccel::None && j.has(0, 2))
+    })
+    .await;
+    let job = e.rt.job(&key).unwrap();
+    // The vaapi run's two segments and its init are gone: the CPU run starts at the first gap.
+    assert_eq!(job.start_segment, 2);
+    assert!(!job.has(0, 0) && !job.has(0, 1));
+    assert_eq!(std::fs::read(job.dir.join("init.mp4")).unwrap(), b"cpu");
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_hardware_failure_does_not_stop_the_next_run_from_trying_the_gpu() {
     let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
     let e = engine_with(hw, &fake("hwfail"), json!({})).await;
