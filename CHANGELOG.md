@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1](https://github.com/fliks-app/engine/compare/v1.29.0...v1.29.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **gateway:** forward the keyframes route to the host ([#257](https://github.com/fliks-app/engine/issues/257)) ([33521aa](https://github.com/fliks-app/engine/commit/33521aac1891b36875b27551442e536989b83e8d))
+
 ## [1.29.0](https://github.com/fliks-app/engine/compare/v1.28.0...v1.29.0) (2026-11-20)
 
 
