@@ -618,11 +618,12 @@ async fn a_prewarm_after_a_fallback_stays_on_the_cpu() {
     event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
     let s = e.rt.peek(&sid).unwrap();
     let key = s.key(JobKind::Main);
-    until("the CPU run ended", 30, || {
+    until("the CPU run", 30, || {
         e.rt.job(&key)
-            .is_some_and(|j| j.hw == HwAccel::None && !j.producing())
+            .is_some_and(|j| j.hw == HwAccel::None && j.producing())
     })
     .await;
+    e.rt.job(&key).unwrap().kill().await;
     while ev.try_recv().is_ok() {}
     e.rt.prewarm(&s, Some("720p"), None);
     let started = event(&mut ev, 60, |e| matches!(e, EngineEvent::JobStarted { .. })).await;
