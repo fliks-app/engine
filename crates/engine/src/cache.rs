@@ -10,8 +10,11 @@ const ACCESS_MARKER: &str = ".access";
 /// An entry's access mark is renewed at most this often.
 const TOUCH_EVERY: Duration = Duration::from_secs(600);
 
+#[derive(Clone)]
 pub struct Cache {
     pub root: PathBuf,
+    /// `FLIKS_DATA_DIR`: where results that are not disposable live (the seek-bar sprites).
+    data_dir: Option<PathBuf>,
 }
 
 /// One `<owner>/<file>/<hash>` directory found on disk.
@@ -86,6 +89,10 @@ const OPT_PREFIX: &str = ".fliks-opt-";
 const SAMPLE_MARK: &str = ".sample";
 
 impl Cache {
+    pub fn new(root: PathBuf, data_dir: Option<PathBuf>) -> Self {
+        Self { root, data_dir }
+    }
+
     /// The output a remote optimize job stages; `remove_remote_outputs` sweeps it.
     pub fn remote_staged(&self, id: impl std::fmt::Display) -> PathBuf {
         self.optimize_dir().join(format!("{OPT_PREFIX}{id}.tmp"))
@@ -141,7 +148,8 @@ impl Cache {
                 || std::env::temp_dir().join("fliks-transcode"),
                 PathBuf::from,
             );
-        Self { root }
+        let data_dir = var("FLIKS_DATA_DIR").map(|d| PathBuf::from(d.trim()));
+        Self { root, data_dir }
     }
 
     pub fn entry_dir(&self, owner: Option<&str>, file: u32, hash: &str) -> PathBuf {
@@ -154,7 +162,43 @@ impl Cache {
 
     /// The engine-generated `sprite.jpg` and `sprite.json` of a file.
     pub fn sprite_dir(&self, file: u32) -> PathBuf {
-        self.root.join("sprites/v1").join(file.to_string())
+        self.sprites_root().join(file.to_string())
+    }
+
+    fn sprites_root(&self) -> PathBuf {
+        self.data_dir
+            .as_ref()
+            .unwrap_or(&self.root)
+            .join("sprites/v1")
+    }
+
+    /// Boot: sprites an older engine kept in the cache root move under the data directory.
+    pub fn move_sprites(&self) {
+        let (old, new) = (self.root.join("sprites/v1"), self.sprites_root());
+        if old == new {
+            return;
+        }
+        let _ = std::fs::create_dir_all(&new);
+        for (name, from) in subdirs(&old) {
+            let to = new.join(&name);
+            if to.exists() {
+                continue;
+            }
+            // Another filesystem cannot rename: copy the sheet, then drop the old one.
+            if std::fs::rename(&from, &to).is_err() {
+                let copied = std::fs::create_dir_all(&to).is_ok()
+                    && std::fs::read_dir(&from).is_ok_and(|rd| {
+                        rd.flatten()
+                            .filter(|e| e.path().is_file())
+                            .all(|e| std::fs::copy(e.path(), to.join(e.file_name())).is_ok())
+                    });
+                if copied {
+                    remove_dir(&from);
+                } else {
+                    remove_dir(&to);
+                }
+            }
+        }
     }
 
     /// The `cover.jpg` or `cover.png` of an audio file.
@@ -379,7 +423,7 @@ mod tests {
     #[test]
     fn startup_removes_only_leftover_optimize_samples() {
         let root = std::env::temp_dir().join(format!("fliks-samples-{}", std::process::id()));
-        let c = Cache { root: root.clone() };
+        let c = Cache::new(root.clone(), None);
         let dir = c.optimize_dir();
         std::fs::create_dir_all(&dir).unwrap();
         let (sample, staged) = (
@@ -397,7 +441,7 @@ mod tests {
     #[test]
     fn boot_deletes_only_the_journaled_file_that_is_still_ours() {
         let root = std::env::temp_dir().join(format!("fliks-merge-test-{}", std::process::id()));
-        let c = Cache { root: root.clone() };
+        let c = Cache::new(root.clone(), None);
         let out = root.join("out/a.m4b");
         let tmp = root.join("out/.a.m4b.merge-0a1b2c3d.tmp");
         let other = root.join("out/.a.m4b.merge-ffffffff.tmp");
@@ -427,7 +471,7 @@ mod tests {
     #[test]
     fn a_second_engine_cannot_take_the_cache_root() {
         let root = std::env::temp_dir().join(format!("fliks-lock-test-{}", std::process::id()));
-        let c = Cache { root: root.clone() };
+        let c = Cache::new(root.clone(), None);
         let held = c.lock_exclusive().unwrap();
         assert!(c.lock_exclusive().is_err());
         drop(held);
@@ -438,7 +482,7 @@ mod tests {
     #[test]
     fn layout_scan_and_old_layout_purge() {
         let root = std::env::temp_dir().join(format!("fliks-cache-test-{}", std::process::id()));
-        let c = Cache { root: root.clone() };
+        let c = Cache::new(root.clone(), None);
         let rung = c.rung_dir(Some("7"), 42, "abc", "720p");
         std::fs::create_dir_all(&rung).unwrap();
         std::fs::write(rung.join("seg-0000.m4s"), [0u8; 10]).unwrap();
@@ -465,7 +509,7 @@ mod tests {
     #[tokio::test]
     async fn touch_marks_the_entry_used_at_most_every_ten_minutes() {
         let root = std::env::temp_dir().join(format!("fliks-touch-test-{}", std::process::id()));
-        let c = Cache { root: root.clone() };
+        let c = Cache::new(root.clone(), None);
         let seg = c.rung_dir(None, 3, "abc", "720p").join("seg-0000.m4s");
         std::fs::create_dir_all(seg.parent().unwrap()).unwrap();
         std::fs::write(&seg, b"x").unwrap();

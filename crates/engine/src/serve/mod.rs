@@ -26,13 +26,14 @@ use axum::body::Body;
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{MethodRouter, get};
 use axum::{Router, middleware};
 use bytes::BytesMut;
 use fliks_engine_core::api::{
     ResolveCredentialSource, ResolveMediaId, ResolvePurpose, ResolvedPart, SessionExpired,
 };
 use fliks_engine_core::decide::timeline::served_duration;
+use fliks_engine_core::session::RETRY_AFTER_SECONDS;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -60,44 +61,58 @@ async fn untrusted_source(mut req: Request) -> Request {
     req
 }
 
-fn routes(rt: Arc<Runtime>) -> Router {
-    Router::new()
-        .route("/api/stream/{id}", get(direct))
-        .route("/api/stream/{id}/master.m3u8", get(master))
-        .route("/api/stream/{id}/parts/{n}", get(part))
-        .route("/api/stream/{id}/item/index.m3u8", get(item::list))
-        .route("/api/stream/{id}/item/{seg}", get(item::file))
-        .route("/api/stream/{id}/iframe/index.m3u8", get(iframe_list))
-        .route("/api/stream/{id}/iframe/{seg}", get(iframe_seg))
-        .route("/api/stream/{id}/audio/{idx}/index.m3u8", get(audio_list))
-        .route("/api/stream/{id}/audio/{idx}/{seg}", get(audio_seg))
-        .route("/api/stream/{id}/thumbnails/{file}", get(sprite))
-        .route(
+/// Every served path with its handler: the router's routes, and what the gateway's table is tested against.
+fn table() -> Vec<(&'static str, MethodRouter<Arc<Runtime>>)> {
+    vec![
+        ("/api/stream/{id}", get(direct)),
+        ("/api/stream/{id}/master.m3u8", get(master)),
+        ("/api/stream/{id}/parts/{n}", get(part)),
+        ("/api/stream/{id}/item/index.m3u8", get(item::list)),
+        ("/api/stream/{id}/item/{seg}", get(item::file)),
+        ("/api/stream/{id}/iframe/index.m3u8", get(iframe_list)),
+        ("/api/stream/{id}/iframe/{seg}", get(iframe_seg)),
+        ("/api/stream/{id}/audio/{idx}/index.m3u8", get(audio_list)),
+        ("/api/stream/{id}/audio/{idx}/{seg}", get(audio_seg)),
+        ("/api/stream/{id}/thumbnails/{file}", get(sprite)),
+        (
             "/api/stream/{id}/subtitles/embedded/{idx}",
             get(embedded_vtt),
-        )
-        .route(
+        ),
+        (
             "/api/stream/{id}/subtitles/embedded/{idx}/download",
             get(embedded_download),
-        )
-        .route(
+        ),
+        (
             "/api/stream/{id}/subtitles/embedded/{idx}/index.m3u8",
             get(embedded_list),
-        )
-        .route("/api/stream/{id}/subtitles/{sub}", get(external_vtt))
-        .route(
+        ),
+        ("/api/stream/{id}/subtitles/{sub}", get(external_vtt)),
+        (
             "/api/stream/{id}/subtitles/{sub}/download",
             get(external_download),
-        )
-        .route(
+        ),
+        (
             "/api/stream/{id}/subtitles/{sub}/index.m3u8",
             get(external_list),
-        )
-        .route("/api/stream/{id}/{quality}/index.m3u8", get(variant))
-        .route("/api/stream/{id}/{quality}/{seg}", get(segment))
-        .route("/api/livetv/sessions/{sid}/index.m3u8", get(live_playlist))
-        .route("/api/livetv/sessions/{sid}/direct.ts", get(live_direct))
-        .route("/api/livetv/sessions/{sid}/{segment}", get(live_segment))
+        ),
+        ("/api/stream/{id}/{quality}/index.m3u8", get(variant)),
+        ("/api/stream/{id}/{quality}/{seg}", get(segment)),
+        ("/api/livetv/sessions/{sid}/index.m3u8", get(live_playlist)),
+        ("/api/livetv/sessions/{sid}/direct.ts", get(live_direct)),
+        ("/api/livetv/sessions/{sid}/{segment}", get(live_segment)),
+    ]
+}
+
+/// The paths of `table`, for the gateway's route test.
+#[cfg(test)]
+pub(crate) fn served_paths() -> Vec<&'static str> {
+    table().into_iter().map(|(p, _)| p).collect()
+}
+
+fn routes(rt: Arc<Runtime>) -> Router {
+    table()
+        .into_iter()
+        .fold(Router::new(), |r, (path, h)| r.route(path, h))
         .layer(middleware::map_response(cors))
         .with_state(rt)
 }
@@ -182,12 +197,15 @@ fn text(status: StatusCode, body: &str) -> Response {
     (status, body.to_string()).into_response()
 }
 
-fn retry() -> Response {
+fn retry(after_s: u32) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         [
-            (header::RETRY_AFTER, "2"),
-            (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate"),
+            (header::RETRY_AFTER, after_s.to_string()),
+            (
+                header::CACHE_CONTROL,
+                "no-store, no-cache, must-revalidate".to_string(),
+            ),
         ],
     )
         .into_response()
@@ -325,7 +343,7 @@ async fn access(
         subtitle_id,
         stream_index,
     };
-    let session = sid.map(|s| rt.session(s));
+    let session = sid.map(|s| rt.lookup(s));
     if let Some(None) = session {
         return Err(expired(sid.map(String::as_str)));
     }
@@ -334,7 +352,7 @@ async fn access(
         Err(ResolveError::Denied { .. }) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
         // Host down: a live session of this file keeps playing (callers map the host path).
         Err(ResolveError::Unavailable) => match &session {
-            Some(Some(s)) if s.media_file_id == id => Resolved {
+            Some(Some((s, _))) if s.media_file_id == id => Resolved {
                 path: s.req.decide.media.path.clone(),
                 owner: s.owner.clone(),
                 format: None,
@@ -353,15 +371,21 @@ async fn access(
                     })
                     .collect(),
             },
-            _ => return Err(retry()),
+            _ => return Err(retry(RETRY_AFTER_SECONDS)),
         },
     };
     let session = match session {
         None | Some(None) => None,
-        Some(Some(s)) if s.owner != resolved.owner || s.media_file_id != id => {
+        Some(Some((s, _))) if s.owner != resolved.owner || s.media_file_id != id => {
             return Err(text(StatusCode::FORBIDDEN, "Forbidden"));
         }
-        Some(Some(s)) => Some(s),
+        // Only a granted request brings an expired session back.
+        Some(Some((s, buried))) => {
+            if buried {
+                rt.revive(&s);
+            }
+            Some(s)
+        }
     };
     Ok(Access { resolved, session })
 }

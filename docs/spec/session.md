@@ -43,9 +43,8 @@ The cache TTL (4 h) and budget (20 GiB) are `streaming.cacheTtlMs` / `cacheMaxBy
 
 Decisions (all `<` / `<=` as in the TS):
 - `live_session_expired(lastBeat, pinned, now)`: `lastBeat < now - (pinned ? pinnedTtl : ttl)`. [ts:live-session.service.ts:642-647]
-- `tombstone_revivable(lastBeat, now)`: `!(lastBeat < now - reviveTtl)`; a presented sid revives it. [ts:live-session.service.ts:578-585]
+- `tombstone_revivable(lastBeat, now, pinned)`: `!(lastBeat < now - reviveTtl)`, for a pinned session `reviveTtl` is `pinnedTtl + pinnedReviveTtl` (a download paused for hours resumes on its own sid); a presented sid revives it, after the resolver granted the request. [ts:live-session.service.ts:578-585]
 - `session_to_evict(lastBeats, cap)`: at `len >= cap` the oldest beat (first on ties) goes. [ts:live-session.service.ts:439-452]
-- `job_idle(...)` = `cleanupStaleSessions` for one run: no base hash, or never paired with a viewer: idle fallback (`now - lastAccess <= jobFallbackTimeout` keeps it; past it the entry goes and the process is killed only if still running). Paired: a viewer clears the zero-live clock; a fetch within `jobGrace` keeps it; else the clock starts, and `jobGrace` later the run is reaped and killed (cache kept). [ts:transcoding/transcoding.service.ts:1553-1620]
 
 ## 4. Seek and quality switch (`resolve_existing`)
 
@@ -54,7 +53,7 @@ Decisions (all `<` / `<=` as in the TS):
 Inputs: the run (`exitCode?`, `signal`, `outputPending`, `startSegment`, `remux` + its assembler progress), `requestedSegment`, `qualityMatch`, the run's `SegmentSet`. Output `ResumeAction`: `Serve` (the segment is produced), `Wait` (attach, the segment is expected), or `Respawn { kill, startSegment?, purgeCache }` (the caller spawns again; the map entry stays until then).
 
 1. Exited 0 and quality matches: remux serves iff the assembler `can_serve(.., exited)`; otherwise `segment_nearby` (the segment or the one before). Reachable: reuse. Not: `Respawn { startSegment: requested }`, no kill.
-2. Not producing: killed or crashed (`signal` or non-zero exit) purges the cache dir unless remux; a clean exit for another quality does not. `Respawn { startSegment: none }`, no kill.
+2. Not producing (quality matches): a crash (`signal` or non-zero exit, not `killed`) purges the cache dir unless remux, a kill by the engine (`killed`) or a clean exit does not. `Respawn { startSegment }` is the requested segment, or the first gap at or after it when the cache is kept; no kill. For another quality: `startSegment: none`.
 3. Producing, quality differs: `Respawn` as is (the caller kills the old rung).
 4. Producing remux: reuse iff `can_serve(.., live)`, else `Respawn { kill, startSegment: requested }`.
 5. Producing transcode, segment not nearby: `runStarting` (requested in `[start, start + 15]` and nothing at or below `start` yet) or `within_reach(requested, 15)` (a segment in `[requested - 15, requested]`) waits; otherwise `Respawn { kill, startSegment: requested }`.

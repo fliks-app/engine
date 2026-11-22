@@ -8,7 +8,7 @@ use crate::slots::PlaybackSlot;
 use fliks_engine_core::api::{HwAccel, JobState, JobStats, SessionKind};
 use fliks_engine_core::mp4::has_samples;
 use fliks_engine_core::session::{
-    ExistingRun, PauseCapability, SegmentName, SegmentSet, parse_segment_name,
+    ExistingRun, PauseCapability, SegmentName, SegmentSet, SessionVariant, parse_segment_name,
     segment_index_to_seconds,
 };
 use std::path::{Path, PathBuf};
@@ -17,8 +17,13 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+/// How long the assembler of an exited run gets to finish before a request stops waiting for it.
+const SETTLE_WAIT: Duration = Duration::from_secs(60);
+
 /// `JobEnded.reason` of a run that exited cleanly without writing its first segment's samples.
 pub(super) const NO_MEDIA: &str = "no-media";
+/// `JobEnded.reason` of an early companion the watchdog stopped at its natural end.
+pub(super) const OVERRAN: &str = "overran";
 
 pub(super) struct JobMut {
     pub(super) sets: Vec<SegmentSet>,
@@ -43,6 +48,8 @@ pub(super) struct JobMut {
 pub struct Job {
     pub key: String,
     pub kind: JobKind,
+    /// The cache variant of the session that started it.
+    pub(super) variant: SessionVariant,
     pub hash: String,
     pub media_file_id: u32,
     pub owner: Option<String>,
@@ -299,6 +306,7 @@ impl Job {
         ExistingRun {
             exit_code: exit.and_then(|e| e.code),
             signal: exit.is_some_and(|e| e.signal),
+            killed: self.killed(),
             output_pending: self.m.locked().pending,
             start_segment: self.start_segment,
             remux: self.remux.is_some(),
@@ -321,7 +329,7 @@ impl Job {
 
     /// Waits until the watcher saw the run end and its output was assembled.
     pub(super) async fn settled(&self) {
-        self.wait_for(Duration::from_secs(3600), |_| false).await;
+        self.wait_for(SETTLE_WAIT, |_| false).await;
     }
 }
 

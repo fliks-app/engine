@@ -1,7 +1,8 @@
 //! HLS playlists, init and media segments, trick-play and audio renditions.
 
 use super::{
-    Q, S, duration_of, file_id, hls, playlist, prefix, retry, stream_body, text, token_param,
+    Q, RETRY_AFTER_SECONDS, S, duration_of, file_id, hls, playlist, prefix, retry, stream_body,
+    text, token_param,
 };
 use crate::events::Events;
 use crate::lock::Locked;
@@ -217,6 +218,17 @@ pub(super) async fn iframe_seg(
         Ok(v) => v,
         Err(r) => return r,
     };
+    let path = rt
+        .cache
+        .entry_dir(s.owner.as_deref(), id, &s.plan.profile_hash)
+        .join("iframe")
+        .join(format!("seg-{n}.ts"));
+    if let Ok(out) = tokio::fs::read(&path).await
+        && !out.is_empty()
+    {
+        rt.cache.touch(&path).await;
+        return frame(out);
+    }
     let v = s.req.decide.info.video.first();
     let crop = v.and_then(|v| v.crop.clone());
     let (w, h) = rung_source_size(v);
@@ -234,17 +246,36 @@ pub(super) async fn iframe_seg(
         timeline_offset_seconds: Some((1.0 - t.origin).max(0.0)),
     });
     match run_capture(&rt, &args, Duration::from_secs(20), &rt.ffmpeg).await {
-        Some(out) if !out.is_empty() => (
-            [
-                (header::CONTENT_TYPE, "video/mp2t"),
-                (header::CACHE_CONTROL, "public, max-age=3600"),
-            ],
-            out,
-        )
-            .into_response(),
+        Some(out) if !out.is_empty() => {
+            if let Err(e) = write_frame(&path, &out).await {
+                tracing::debug!(path = %path.display(), "trick-play cache: {e}");
+            }
+            frame(out)
+        }
         // A refused frame must stay retryable: some players drop trick play on a 404.
-        _ => retry(),
+        _ => retry(RETRY_AFTER_SECONDS),
     }
+}
+
+fn frame(out: Vec<u8>) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "video/mp2t"),
+            (header::CACHE_CONTROL, "private, max-age=3600"),
+        ],
+        out,
+    )
+        .into_response()
+}
+
+/// Whole or absent: written beside the frame, then renamed.
+async fn write_frame(path: &Path, out: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("{}.tmp", crate::random_hex(4)));
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    tokio::fs::write(&tmp, out).await?;
+    tokio::fs::rename(&tmp, path).await
 }
 
 /// stdout of a short playback ffmpeg run, `None` on failure or timeout.
@@ -255,7 +286,6 @@ pub(super) async fn run_capture(
     tool: &str,
 ) -> Option<Vec<u8>> {
     let _permit = rt.capture.acquire().await.ok()?;
-    let _slot = rt.slots.playback_on(None);
     let mut cmd = tokio::process::Command::new(tool);
     cmd.args(args)
         .stdin(std::process::Stdio::null())
@@ -469,14 +499,15 @@ pub(super) async fn respond(
             waited_ms,
             cache_hit,
         } => (path, job, waited_ms, cache_hit),
-        Fetch::Retry => return retry(),
+        Fetch::Retry(after_s) => return retry(after_s),
         Fetch::NotFound => return text(StatusCode::NOT_FOUND, "Segment not found"),
         Fetch::Failed => {
             let dir = rt
                 .cache
                 .entry_dir(s.owner.as_deref(), s.media_file_id, &s.hash);
+            // The reason (with the cache path) stays in the log, not in the answer.
             return match rt.check_disk(&dir).await {
-                Err(e) => text(StatusCode::SERVICE_UNAVAILABLE, &e),
+                Err(_) => retry(RETRY_AFTER_SECONDS),
                 Ok(()) => text(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg could not start"),
             };
         }
@@ -489,7 +520,7 @@ pub(super) async fn respond(
         Err(Unpackable::Gone) if job.as_ref().is_some_and(|j| j.discarded()) => {
             return text(StatusCode::NOT_FOUND, "Segment not found");
         }
-        Err(Unpackable::Gone) => return retry(),
+        Err(Unpackable::Gone) => return retry(RETRY_AFTER_SECONDS),
         Err(Unpackable::NoMedia) => {
             let at = if let SegmentName::Segment(n) = name {
                 n

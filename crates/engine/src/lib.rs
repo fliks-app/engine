@@ -8,6 +8,7 @@ pub mod jobs;
 pub mod karaoke;
 pub mod live;
 pub mod lock;
+pub mod logtap;
 pub mod probe;
 pub mod proc;
 pub mod remux;
@@ -277,7 +278,11 @@ async fn put_config(
     }
     *cur = Some(Arc::new(new.clone()));
     s.rt.slots.set_size(new.streaming.ffmpeg_slots);
-    s.hw.set_render_node(selected_render_node(&new.streaming.gpu_render_node));
+    s.hw.set_pin(hw::Pin {
+        node: selected_render_node(&new.streaming.gpu_render_node),
+        opencl_device: new.streaming.opencl_device.clone(),
+    });
+    karaoke::set_threads(new.streaming.ort_threads);
     Ok(Json(new))
 }
 

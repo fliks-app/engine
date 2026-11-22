@@ -199,16 +199,25 @@ async fn has_rubberband(ffmpeg: &str) -> bool {
     out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(" rubberband "))
 }
 
-/// Threads a model run takes: `FLIKS_ORT_THREADS`, else half the cores within 2 and 8.
+/// `streaming.ortThreads`; model sessions are built deep in the backend, so it is process-wide.
+static ORT_THREADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn set_threads(n: Option<u32>) {
+    ORT_THREADS.store(
+        n.unwrap_or(0) as usize,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// Threads a model run takes: `ortThreads`, else half the cores within 2 and 8.
 pub fn threads() -> usize {
-    std::env::var("FLIKS_ORT_THREADS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|n| *n > 0)
-        .unwrap_or_else(|| {
+    match ORT_THREADS.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => {
             let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
             (cores / 2).clamp(2, 8)
-        })
+        }
+        n => n,
+    }
 }
 
 /// `<FLIKS_DATA_DIR>/models` when the host names its data directory, else `<cache root>/models`.

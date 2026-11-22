@@ -9,6 +9,7 @@ pub const DEFAULT_MAX_SESSIONS_PER_OWNER: u32 = 10;
 pub const DEFAULT_JOB_GRACE_MS: u32 = 60_000;
 pub const DEFAULT_JOB_FALLBACK_TIMEOUT_MS: u32 = 30 * 60 * 1000;
 pub const DEFAULT_PINNED_SESSION_TTL_MS: u32 = 60 * 60 * 1000;
+pub const DEFAULT_PINNED_REVIVE_TTL_MS: u32 = 24 * 60 * 60 * 1000;
 pub const DEFAULT_CACHE_GC_INTERVAL_MS: u32 = 5 * 60 * 1000;
 pub const DEFAULT_JOB_STALL_TIMEOUT_MS: u32 = 30_000;
 
@@ -41,6 +42,10 @@ pub struct LifetimeConfig {
     /// Heartbeat TTL of pinned (download, offline) sessions.
     #[serde(default)]
     pub pinned_session_ttl_ms: u32,
+    /// How long after it was dropped a pinned session's id can still revive: a download paused or
+    /// queued past the TTL resumes on its own session instead of answering 410.
+    #[serde(default)]
+    pub pinned_revive_ttl_ms: u32,
     #[serde(default)]
     pub cache_gc_interval_ms: u32,
     /// A running, unpaused job with no output and no stderr line for this long is killed; 0 disables.
@@ -58,6 +63,7 @@ impl Default for LifetimeConfig {
             job_grace_ms: DEFAULT_JOB_GRACE_MS,
             job_fallback_timeout_ms: DEFAULT_JOB_FALLBACK_TIMEOUT_MS,
             pinned_session_ttl_ms: DEFAULT_PINNED_SESSION_TTL_MS,
+            pinned_revive_ttl_ms: DEFAULT_PINNED_REVIVE_TTL_MS,
             cache_gc_interval_ms: DEFAULT_CACHE_GC_INTERVAL_MS,
             job_stall_timeout_ms: DEFAULT_JOB_STALL_TIMEOUT_MS,
         }
@@ -80,6 +86,7 @@ impl LifetimeConfig {
             job_grace_ms: pick(self.job_grace_ms, d.job_grace_ms),
             job_fallback_timeout_ms: pick(self.job_fallback_timeout_ms, d.job_fallback_timeout_ms),
             pinned_session_ttl_ms: pick(self.pinned_session_ttl_ms, d.pinned_session_ttl_ms),
+            pinned_revive_ttl_ms: pick(self.pinned_revive_ttl_ms, d.pinned_revive_ttl_ms),
             cache_gc_interval_ms: pick(self.cache_gc_interval_ms, d.cache_gc_interval_ms),
             // Zero disables the watchdog, it is not "unset".
             job_stall_timeout_ms: self.job_stall_timeout_ms,

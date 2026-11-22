@@ -101,9 +101,10 @@ pub fn plan(
     (mode, caps)
 }
 
-/// Only H.264 survives a copy into fMP4 in every browser. [ts:services/livetv-session.service.ts:459-463]
-pub fn effective_mode(mode: LiveMode, probed_video: Option<&str>) -> LiveMode {
-    if mode == LiveMode::Remux && probed_video != Some("h264") {
+/// Only progressive H.264 survives a copy into fMP4 in every browser: a copied interlaced one
+/// combs. [ts:services/livetv-session.service.ts:459-463]
+pub fn effective_mode(mode: LiveMode, probed_video: Option<&str>, interlaced: bool) -> LiveMode {
+    if mode == LiveMode::Remux && (probed_video != Some("h264") || interlaced) {
         LiveMode::Transcode
     } else {
         mode
@@ -112,13 +113,17 @@ pub fn effective_mode(mode: LiveMode, probed_video: Option<&str>) -> LiveMode {
 
 /// A failover upstream the running init cannot describe needs a fresh transcode.
 /// [ts:services/livetv-session.service.ts:880-886]
-pub fn forces_transcode(probed_video: Option<&str>, active_video: Option<&str>) -> bool {
+pub fn forces_transcode(
+    probed_video: Option<&str>,
+    active_video: Option<&str>,
+    interlaced: bool,
+) -> bool {
     let codec = probed_video.unwrap_or("");
-    codec != "h264" || active_video.is_some_and(|a| a != codec)
+    codec != "h264" || interlaced || active_video.is_some_and(|a| a != codec)
 }
 
-/// ffprobe's `csv=p=0`: stream rows end with their type, the format row does not and may hold
-/// commas. [ts:services/livetv-session.service.ts:170-193]
+/// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its field order; the
+/// format row holds no type and may hold commas. [ts:services/livetv-session.service.ts:170-193]
 pub fn parse_probe_output(stdout: &str) -> LiveProbe {
     let mut p = LiveProbe::default();
     // JS `trim()`: \s, which includes \r.
@@ -127,13 +132,14 @@ pub fn parse_probe_output(stdout: &str) -> LiveProbe {
             continue;
         }
         let parts: Vec<&str> = line.split(',').collect();
-        let kind = parts[parts.len() - 1];
-        if !PROBE_STREAM_TYPES.contains(&kind) {
+        let Some(at) = parts.iter().position(|t| PROBE_STREAM_TYPES.contains(t)) else {
             p.container.get_or_insert_with(|| line.to_string());
             continue;
-        }
+        };
+        let kind = parts[at];
         if kind == "video" && p.video_codec.is_none() {
             p.video_codec = Some(parts[0].to_string());
+            p.field_order = parts.get(at + 1).map(|f| f.to_string());
         }
         if kind == "audio" && p.audio_codec.is_none() {
             p.audio_codec = Some(parts[0].to_string());
@@ -206,7 +212,7 @@ pub fn probe_args(
         "-probesize",
         "5000000",
         "-show_entries",
-        "format=format_name:stream=codec_type,codec_name",
+        "format=format_name:stream=codec_type,codec_name,field_order",
         "-of",
         "csv=p=0",
     ]
@@ -380,6 +386,34 @@ pub fn qoe_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_probe_reads_the_field_order_of_the_video() {
+        let p = parse_probe_output("h264,video,tt\naac,audio\nmpegts\n");
+        assert_eq!(
+            (
+                p.video_codec.as_deref(),
+                p.audio_codec.as_deref(),
+                p.interlaced()
+            ),
+            (Some("h264"), Some("aac"), Some(true))
+        );
+        let p = parse_probe_output("mpegts\nh264,video,progressive\n");
+        assert_eq!(p.interlaced(), Some(false));
+        assert_eq!(parse_probe_output("h264,video\n").interlaced(), None);
+        assert_eq!(
+            parse_probe_output("h264,video,unknown\n").interlaced(),
+            None
+        );
+        assert_eq!(
+            effective_mode(LiveMode::Remux, Some("h264"), true),
+            LiveMode::Transcode
+        );
+        assert_eq!(
+            effective_mode(LiveMode::Remux, Some("h264"), false),
+            LiveMode::Remux
+        );
+    }
 
     #[test]
     fn failover_walks_round_robin_and_ends() {

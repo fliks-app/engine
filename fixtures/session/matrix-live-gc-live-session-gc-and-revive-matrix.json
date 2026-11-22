@@ -20,7 +20,7 @@
 {"expected":{"states":["gone"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996400000,"pinned":false}]},"name":"idle 3600000ms plain"},
 {"expected":{"states":["live"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996400000,"pinned":true}]},"name":"idle 3600000ms pinned"},
 {"expected":{"states":["gone"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996399999,"pinned":false}]},"name":"idle 3600001ms plain"},
-{"expected":{"states":["gone"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996399999,"pinned":true}]},"name":"idle 3600001ms pinned"},
+{"expected":{"states":["revived"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996399999,"pinned":true}]},"name":"idle 3600001ms pinned"},
 {"expected":{"states":["gone"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996000000,"pinned":false}]},"name":"idle 4000000ms plain"},
-{"expected":{"states":["gone"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996000000,"pinned":true}]},"name":"idle 4000000ms pinned"}
+{"expected":{"states":["revived"]},"input":{"nowMs":1700000000000,"sessions":[{"lastBeatMs":1699996000000,"pinned":true}]},"name":"idle 4000000ms pinned"}
 ]}

@@ -40,7 +40,7 @@ pub fn crop_filter(c: &CropInfo) -> String {
 }
 
 /// One output frame per frame (the frame rate is kept); progressive frames pass untouched.
-const DEINTERLACE: &str = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
+pub(crate) const DEINTERLACE: &str = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
 
 pub struct FilterContext<'a> {
     pub deinterlace: bool,

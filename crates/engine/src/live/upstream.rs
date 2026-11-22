@@ -120,15 +120,20 @@ async fn spawn_packaged(
         return false;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, video, audio, fresh) = {
+    let (mode, video, audio, interlaced, fresh) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
+        let interlaced = p.interlaced();
         let fresh = m.mode == LiveMode::Remux
-            && core_live::forces_transcode(p.video_codec.as_deref(), m.active_codec.as_deref());
+            && core_live::forces_transcode(
+                p.video_codec.as_deref(),
+                m.active_codec.as_deref(),
+                interlaced == Some(true),
+            );
         if fresh {
             m.mode = LiveMode::Transcode;
         }
-        (m.mode, p.video_codec, p.audio_codec, fresh)
+        (m.mode, p.video_codec, p.audio_codec, interlaced, fresh)
     };
     let append = !fresh
         && attempted_once
@@ -152,7 +157,7 @@ async fn spawn_packaged(
             .into_iter()
             .next()
         {
-            (caps, dev) = (d.detected.host_caps(), d.device(crate::hw::opencl_device()));
+            (caps, dev) = (d.detected.host_caps(), d.device(rt.opencl_device()));
             slot = Some(rt.slots.playback_on(Some(&d.id)));
             pipe.m.locked().device = Some(d.id.clone());
             device = Some(d.id);
@@ -186,6 +191,7 @@ async fn spawn_packaged(
             audio_codec: audio,
             append,
             probe_seconds: Some(pipe.probe_seconds),
+            interlaced,
             encode_threads: rt.slots.encode_threads(),
         },
         &caps,

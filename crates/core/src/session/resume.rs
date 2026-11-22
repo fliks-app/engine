@@ -55,6 +55,9 @@ pub struct ExistingRun {
     pub exit_code: Option<i32>,
     /// Killed by a signal (exit code stays unset).
     pub signal: bool,
+    /// Stopped on purpose by the engine (a seek or a switch), not a failure.
+    #[serde(default)]
+    pub killed: bool,
     /// Output still being packaged after the process exited.
     pub output_pending: bool,
     pub start_segment: u32,
@@ -81,7 +84,7 @@ pub struct ResolveInput {
 }
 
 /// The caller spawns again; `kill` stops a live run first, `start_segment` is the run's new
-/// start (`None`: unchanged), `purge_cache` removes the crashed run's dir (never a remux one).
+/// start (`None`: the caller's), `purge_cache` removes the crashed run's dir (never a remux one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Respawn {
@@ -141,12 +144,19 @@ pub fn resolve_existing(i: &ResolveInput) -> ResumeAction {
     }
 
     if !run.is_producing() {
-        // A clean exit here is another quality, not a crash: its cache stays a valid rung.
-        let crashed = run.signal || run.exit_code.is_some_and(|c| c != 0);
+        // A clean exit here is another quality and a kill is ours: both leave a valid cache.
+        let crashed = !run.killed && (run.signal || run.exit_code.is_some_and(|c| c != 0));
+        let purge_cache = crashed && !run.remux;
+        // The new run starts where the viewer is, or at the first gap of the cache it keeps.
+        let at = if purge_cache {
+            seg
+        } else {
+            i.present.first_missing(seg).unwrap_or(seg)
+        };
         return ResumeAction::Respawn(Respawn {
             kill: false,
-            start_segment: None,
-            purge_cache: crashed && !run.remux,
+            start_segment: i.quality_match.then_some(at),
+            purge_cache,
         });
     }
 
@@ -199,6 +209,7 @@ mod tests {
         ExistingRun {
             exit_code: None,
             signal: false,
+            killed: false,
             output_pending: false,
             start_segment: start,
             remux: false,
@@ -255,23 +266,34 @@ mod tests {
         let mut r = run(0);
         r.signal = true;
         assert_eq!(
-            go(r, 5, true, &[]),
+            go(r, 5, true, &[2, 3]),
             ResumeAction::Respawn(Respawn {
                 kill: false,
-                start_segment: None,
+                start_segment: Some(5),
                 purge_cache: true
             })
         );
         let mut r = run(0);
         r.exit_code = Some(1);
         r.remux = true;
-        assert_eq!(go(r, 5, true, &[]), restart(None, false));
+        assert_eq!(go(r, 5, true, &[]), restart(Some(5), false));
         // clean exit for another quality keeps its cache
         let mut r = run(0);
         r.exit_code = Some(0);
         assert_eq!(go(r.clone(), 0, false, &[0]), restart(None, false));
         assert_eq!(go(r.clone(), 0, true, &[0]), ResumeAction::Serve);
         assert_eq!(go(r, 9, true, &[0]), restart(Some(9), false));
+    }
+
+    #[test]
+    fn a_killed_run_keeps_its_cache_and_restarts_at_the_request() {
+        let mut r = run(0);
+        r.signal = true;
+        r.killed = true;
+        assert_eq!(go(r.clone(), 5, true, &[0, 1, 2]), restart(Some(5), false));
+        assert_eq!(go(r.clone(), 1, true, &[0, 1, 2]), restart(Some(3), false));
+        r.start_segment = 40;
+        assert_eq!(go(r, 5, true, &[]), restart(Some(5), false));
     }
 
     #[test]

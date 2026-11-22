@@ -60,6 +60,9 @@ pub struct LiveUpstream {
     pub probed_container: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_video_codec: Option<String>,
+    /// ffprobe's `field_order` of the video (`progressive`, `tt`, `bb`, `tb`, `bt`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probed_field_order: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_audio_codec: Option<String>,
     /// The host's capacity policy refuses a hold on this upstream's source: a new session never
@@ -116,6 +119,20 @@ pub struct LiveProbe {
     /// ffprobe's `format_name` (comma list).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
+    /// ffprobe's `field_order` of the video: `progressive`, or an interlaced order (`tt`, `bb`, `tb`, `bt`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_order: Option<String>,
+}
+
+impl LiveProbe {
+    /// `Some(true)` when the video is interlaced, `Some(false)` when progressive, `None` when unknown.
+    pub fn interlaced(&self) -> Option<bool> {
+        match self.field_order.as_deref()? {
+            "tt" | "bb" | "tb" | "bt" => Some(true),
+            "progressive" => Some(false),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

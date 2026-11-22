@@ -1,6 +1,6 @@
 //! Starting, watching and replacing the runs behind a session.
 
-use super::job::NO_MEDIA;
+use super::job::{NO_MEDIA, OVERRAN};
 use super::{Job, JobKind, JobMut, Runtime, Session, WATCH_EVERY, can_encode, kill_all, now_ms};
 use crate::cache::remove_dir;
 use crate::lock::Locked;
@@ -104,7 +104,7 @@ impl Runtime {
                 match build(
                     d.detected.hw_accel,
                     &d.detected.host_caps(),
-                    &d.device(crate::hw::opencl_device()),
+                    &d.device(self.opencl_device()),
                 ) {
                     Ok(a) => {
                         placed = Some((d, a));
@@ -324,6 +324,10 @@ impl Runtime {
         argv: &[String],
     ) -> Option<Arc<Job>> {
         let key = r.key;
+        if self.peek(&s.sid).is_none() {
+            tracing::debug!(key, "session gone, no run");
+            return None;
+        }
         // Between GC ticks a few rungs can fill the disk: free what is idle once, then refuse.
         if self.check_disk(&r.dir).await.is_err() {
             self.cache_gc().await;
@@ -334,8 +338,12 @@ impl Runtime {
         }
         tracing::info!(key, quality = r.quality, start = r.start, hw = ?r.hw.0, "ffmpeg start");
         tracing::debug!(key, "ffmpeg {}", argv.join(" "));
-        let slot = r.slot.unwrap_or_else(|| self.slots.playback_on(None));
-        let device = slot.device().map(String::from);
+        // A stream copy takes no CPU worth a share of the encode threads.
+        let slot = match r.slot {
+            None if r.kind != JobKind::Remux => Some(self.slots.playback_on(None)),
+            slot => slot,
+        };
+        let device = slot.as_ref().and_then(|s| s.device()).map(String::from);
         // A key change needs an ffmpeg with the `rubberband` filter, not always the main one.
         let pitched = r.item.is_some()
             && s.plan
@@ -365,6 +373,7 @@ impl Runtime {
         let job = Arc::new(Job {
             key: key.clone(),
             kind: r.kind,
+            variant: s.variant(r.kind),
             hash: s.hash.clone(),
             media_file_id: s.media_file_id,
             owner: s.owner.clone(),
@@ -401,7 +410,7 @@ impl Runtime {
                 reason: None,
             }),
             remux: r.remux,
-            slot: Mutex::new(Some(slot)),
+            slot: Mutex::new(slot),
             changed: watch::channel(0).0,
         });
         job.scan().await;
@@ -488,7 +497,7 @@ impl Runtime {
         let reason = match verdict {
             JobWatch::Ok => return,
             JobWatch::Stalled => "stalled",
-            JobWatch::Overran => "overran",
+            JobWatch::Overran => OVERRAN,
         };
         tracing::warn!(key = job.key, reason, "ffmpeg hung, killing it");
         job.m.locked().reason = Some(reason);
@@ -509,8 +518,7 @@ impl Runtime {
         .unwrap_or(true)
     }
 
-    /// Follows the run's output until it exits, then falls back to the CPU when the hardware
-    /// failed before the first segment. [ts:modules/streaming/transcoding/transcoding.service.ts:870-940]
+    /// Follows the run's output until it exits, then falls back when its hardware failed. [ts:modules/streaming/transcoding/transcoding.service.ts:870-940]
     // A boxed `dyn Future`: the watcher respawns through `spawn_job`, which spawns a watcher.
     pub(super) fn watch(
         self: Arc<Self>,
@@ -563,9 +571,10 @@ impl Runtime {
                     .await;
             }
             let state = job.state();
-            if state != JobState::Failed
-                && let Some(d) = &job.device
-            {
+            // A device is forgiven on a run that worked, not on one killed before its first segment.
+            let worked = state == JobState::Done
+                || (state == JobState::Killed && job.has(0, job.start_segment));
+            if worked && let Some(d) = &job.device {
                 self.slots.device_ok(d);
                 s.m.locked().hw_retried = false;
             }
@@ -585,8 +594,7 @@ impl Runtime {
             });
             // The replacement is registered before the waiters wake, so they move on to it.
             if state == JobState::Failed
-                && job.m.locked().reason != Some(NO_MEDIA)
-                && !job.has(0, job.start_segment)
+                && !matches!(job.m.locked().reason, Some(NO_MEDIA | OVERRAN))
                 && job.hw != HwAccel::None
             {
                 self.clone().fall_back(&job, &s).await;
@@ -621,14 +629,20 @@ impl Runtime {
             to,
             stderr_tail: job.proc.stderr_tail(),
         });
-        let dir = job.dir.clone();
-        let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
+        // Segments the failed run finished stay: the new run starts at the first gap.
+        let start = job.m.locked().sets[0]
+            .first_missing(job.start_segment)
+            .unwrap_or(job.start_segment);
+        if !job.has(0, job.start_segment) {
+            let dir = job.dir.clone();
+            let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
+        }
         let hw = (to, job.requested_hw);
         let avoid = job.device.as_deref().filter(|_| retry);
         self.spawn_job(
             s,
             &job.quality,
-            job.start_segment,
+            start,
             hw,
             job.restarts + 1,
             job.kind,

@@ -1,6 +1,7 @@
 use clap::Parser;
 use fliks_engine::gateway::{self, RouteTable, Upstream};
 use std::net::SocketAddr;
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 // glibc keeps the peaks of a many-threaded server resident; musl malloc is slow under contention.
 #[cfg(target_os = "linux")]
@@ -47,8 +48,19 @@ fn load_table(cli: &Cli) -> RouteTable {
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
+    let (tap, log_lines) = fliks_engine::logtap::channel();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
+                .with_filter(
+                    tracing_subscriber::EnvFilter::builder()
+                        .with_default_directive(tracing::Level::INFO.into())
+                        .from_env_lossy(),
+                ),
+        )
+        .with(tap.with_filter(tracing_subscriber::filter::LevelFilter::WARN))
         .init();
     let cli = Cli::parse();
     if cli.engine_upstream.is_some() {
@@ -91,6 +103,7 @@ async fn main() -> std::process::ExitCode {
     ));
     hw.start();
     let rt = fliks_engine::runtime::Runtime::new(hw, cache, fliks_engine::hw::ffmpeg_path());
+    fliks_engine::logtap::forward(&rt, log_lines);
     rt.start();
     let server = axum::serve(listener, fliks_engine::router(token.clone(), rt.clone()));
     let mut host_env = vec![];

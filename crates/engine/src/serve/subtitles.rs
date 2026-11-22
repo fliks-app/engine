@@ -60,21 +60,26 @@ fn vtt_response(body: String, download: Option<String>) -> Response {
 
 /// Embedded text track as WebVTT: the first request extracts every text track of the file in one
 /// pass, as the job does, so each later track is a cache read.
-async fn embedded_text(rt: &Runtime, id: u32, idx: u32, media: &str) -> Option<String> {
+async fn embedded_text(rt: &Arc<Runtime>, id: u32, idx: u32, media: &str) -> Option<String> {
     use crate::jobs::subtitles::vtt_path;
     let dir = rt.cache.subtitles_dir(id);
-    let cached = || tokio::fs::read_to_string(vtt_path(&dir, idx));
-    if let Ok(t) = cached().await {
+    if let Ok(t) = tokio::fs::read_to_string(vtt_path(&dir, idx)).await {
         return Some(t);
     }
-    // Concurrent requests for a file wait for the first extraction, then read its files.
-    let lock = rt.lock_for(&format!("subtitle:{id}"));
-    let _held = lock.lock().await;
-    if let Ok(t) = cached().await {
-        return Some(t);
-    }
-    extract_all(rt, &dir, media, idx).await?;
-    cached().await.ok()
+    // Detached: a request that gives up leaves the pass running, so its retry finds the files.
+    let (rt, media, d) = (rt.clone(), media.to_string(), dir.clone());
+    tokio::spawn(async move {
+        // Concurrent requests for a file wait for the first extraction, then read its files.
+        let lock = rt.lock_for(&format!("subtitle:{id}"));
+        let _held = lock.lock().await;
+        if vtt_path(&d, idx).exists() {
+            return Some(());
+        }
+        extract_all(&rt, &d, &media, idx).await
+    })
+    .await
+    .ok()??;
+    tokio::fs::read_to_string(vtt_path(&dir, idx)).await.ok()
 }
 
 /// Extracts every uncached text track in one run, as the job does; when that run fails, the
