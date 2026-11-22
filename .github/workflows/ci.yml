@@ -25,6 +25,7 @@ env:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,6 +56,7 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -62,10 +64,12 @@ jobs:
           # PR caches would evict main's from the repository's 10 GB.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      # The pure `core` goldens run on Linux; only the platform code differs here.
+      - run: cargo test -p fliks-engine
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -73,7 +77,8 @@ jobs:
           # PR caches would evict main's from the repository's 10 GB.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      # The pure `core` goldens run on Linux; only the platform code differs here.
+      - run: cargo test -p fliks-engine
 
   e2e:
     # The engine image's jellyfin-ffmpeg build (noble); the subtitle timestamps depend on the ffmpeg version.
