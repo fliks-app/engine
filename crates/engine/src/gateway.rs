@@ -315,6 +315,7 @@ mod tests {
             assert_eq!(at(Method::HEAD, p), e, "{p}");
         }
         assert_eq!(at(Method::GET, "/api/stream/7/edl"), f);
+        assert_eq!(at(Method::GET, "/api/stream/7/keyframes"), f);
         assert_eq!(at(Method::POST, "/cred/tok/api/stream/7"), f);
         assert_eq!(at(Method::GET, "/cred/tok/opds/catalog"), f);
         assert_eq!(at(Method::GET, "/api/stream/info/qualities"), f);
