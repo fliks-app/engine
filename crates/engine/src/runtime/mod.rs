@@ -91,9 +91,11 @@ pub struct Runtime {
     pub events: Events,
     pub resolver: Resolver,
     pub ffmpeg: String,
-    /// Background jobs' own tools: `FFPROBE_PATH` and `FPCALC_PATH`.
+    /// Background jobs' own tools: `FFPROBE_PATH`, `FPCALC_PATH`, `MKVMERGE_PATH`, `MKVPROPEDIT_PATH`.
     pub ffprobe: String,
     pub fpcalc: String,
+    pub mkvmerge: String,
+    pub mkvpropedit: String,
     /// The one ffmpeg budget: session runs, extracts, background jobs and probe samples.
     pub slots: Arc<Slots>,
     /// Bounds the on-demand ffmpeg runs of the data plane (trick play, subtitle extraction).
@@ -110,19 +112,36 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(hw: Arc<Hw>, cache: Cache, ffmpeg: String) -> Arc<Self> {
         let tool = crate::tool_path;
-        let (ffprobe, fpcalc) = (
-            tool("FFPROBE_PATH", "ffprobe"),
-            tool("FPCALC_PATH", "fpcalc"),
-        );
-        Self::with_tools(hw, cache, ffmpeg, ffprobe, fpcalc)
+        Self::build(
+            hw,
+            cache,
+            ffmpeg,
+            [
+                tool("FFPROBE_PATH", "ffprobe"),
+                tool("FPCALC_PATH", "fpcalc"),
+                tool("MKVMERGE_PATH", "mkvmerge"),
+                tool("MKVPROPEDIT_PATH", "mkvpropedit"),
+            ],
+        )
     }
 
+    /// Explicit tool paths, the mkv tools by name on PATH: no env read.
     pub fn with_tools(
         hw: Arc<Hw>,
         cache: Cache,
         ffmpeg: String,
         ffprobe: String,
         fpcalc: String,
+    ) -> Arc<Self> {
+        let (mkvmerge, mkvpropedit) = ("mkvmerge".into(), "mkvpropedit".into());
+        Self::build(hw, cache, ffmpeg, [ffprobe, fpcalc, mkvmerge, mkvpropedit])
+    }
+
+    fn build(
+        hw: Arc<Hw>,
+        cache: Cache,
+        ffmpeg: String,
+        [ffprobe, fpcalc, mkvmerge, mkvpropedit]: [String; 4],
     ) -> Arc<Self> {
         let events = Events::default();
         let karaoke =
@@ -137,6 +156,8 @@ impl Runtime {
             ffmpeg,
             ffprobe,
             fpcalc,
+            mkvmerge,
+            mkvpropedit,
             slots: Slots::new(crate::slots::auto_size()),
             capture: tokio::sync::Semaphore::new(MAX_CAPTURES),
             jobs: Default::default(),

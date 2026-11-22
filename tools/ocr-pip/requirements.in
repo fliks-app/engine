@@ -1,0 +1,14 @@
+opencv-python-headless
+appdirs
+babelfish
+cleanit
+click
+numpy
+pysrt
+pytesseract
+pyyaml
+setuptools
+trakit
+ffsubsync==0.5.1
+# Installed with the closure below, `--no-deps`: its own dependencies would add the GUI opencv.
+pgsrip==0.3.0

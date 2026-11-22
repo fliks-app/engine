@@ -9,6 +9,7 @@ on:
     tags: ['v*']
     paths: &paths
       - 'Dockerfile'
+      - 'tools/ocr-pip/**'
       - '.dockerignore'
       - 'crates/**'
       - 'Cargo.*'
@@ -88,6 +89,32 @@ jobs:
           cache-from: type=gha,scope=${{ steps.sanitize.outputs.tag }}
           # PR and tag caches would evict main's from the repository's 10 GB.
           cache-to: ${{ github.ref == 'refs/heads/main' && format('type=gha,mode=max,scope={0}', steps.sanitize.outputs.tag) || '' }}
+
+      - name: Build the image for the smoke test
+        if: matrix.target.platform == 'linux/amd64'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: engine:smoke
+          cache-from: type=gha,scope=${{ steps.sanitize.outputs.tag }}
+
+      - name: Smoke test the image
+        if: matrix.target.platform == 'linux/amd64'
+        run: |
+          docker run --rm --entrypoint sh engine:smoke -ec '
+            fliks-engine --version
+            ffmpeg -hide_banner -hwaccels
+            ffprobe -version | head -1
+            ffmpeg-pitch -hide_banner -filters | grep -q " rubberband "
+            fpcalc -version
+            mkvmerge --version
+            mkvpropedit --version
+            whisper-cli --help 2>&1 | grep -qi usage
+            subtile-ocr --help >/dev/null
+            pgsrip --help >/dev/null
+            ffsubsync --help >/dev/null'
 
       - name: Export digest
         if: env.PUSH == 'true'

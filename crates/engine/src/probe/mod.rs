@@ -73,7 +73,7 @@ pub async fn probe(
             })
             .flatten(),
     };
-    let out = probe_stamped(&path, s.rt.slots.clone(), &opts).await;
+    let out = probe_stamped(&path, &s.rt, &opts).await;
     if let Some(used) = &out.crop_decode {
         let asked = opts.crop_decode.as_ref().and_then(|a| a.get(1));
         if asked.is_some_and(|a| a != used) {

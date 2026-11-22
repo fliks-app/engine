@@ -339,7 +339,12 @@ impl Work<'_> {
     }
 
     async fn mkvpropedit(&self, argv: Vec<String>) -> Result<(), String> {
-        let cmd = Cmd::new("mkvpropedit", &mkvpropedit(), &argv, Pipes::default());
+        let cmd = Cmd::new(
+            "mkvpropedit",
+            &self.ctx.rt.mkvpropedit,
+            &argv,
+            Pipes::default(),
+        );
         self.ctx
             .pipeline(self.ctx.run_timeout_ms(), vec![cmd], |p| async move {
                 let p = &p[0];
@@ -773,10 +778,6 @@ enum Sampled {
     /// Hours a software encode of the file would take.
     Hours(f64),
     None,
-}
-
-fn mkvpropedit() -> String {
-    crate::tool_path("MKVPROPEDIT_PATH", "mkvpropedit")
 }
 
 /// Video packets of the first video stream of `path`.
