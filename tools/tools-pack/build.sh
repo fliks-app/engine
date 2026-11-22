@@ -36,6 +36,8 @@ case "$name" in
     mnt="$work/mnt"; mkdir "$mnt"
     hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$work/mkv.dmg" >/dev/null
     for t in mkvmerge mkvpropedit; do cp "$(find "$mnt" -path '*Contents/MacOS/*' -name "$t" -type f | head -1)" "$dest/"; done
+    # The macOS build links Qt from @executable_path/libs.
+    cp -R "$(dirname "$(find "$mnt" -path '*Contents/MacOS/*' -name mkvmerge -type f | head -1)")/libs" "$dest/"
     hdiutil detach "$mnt" >/dev/null
     ;;
   windows-x64)
