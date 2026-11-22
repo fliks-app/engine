@@ -1,13 +1,12 @@
 //! Session expiry, throttling and cache GC.
 
-use super::{Job, JobKind, Runtime, kill_all, now_ms, take_orphans};
-use crate::cache::{Cache, remove_dir};
+use super::{Job, JobKind, Runtime, now_ms, take_orphans};
+use crate::cache::remove_dir;
 use crate::lock::Locked;
 use fliks_engine_core::api::EngineEvent;
 use fliks_engine_core::session::{
-    self as core_session, CacheEntryInfo, CachePolicy, RunProgress, SessionVariant,
-    ThrottleDecision, ThrottleInput, TranscodeRun, Viewer, live_session_expired, plan_gc,
-    tombstone_revivable,
+    self as core_session, CacheEntryInfo, CachePolicy, RunProgress, ThrottleDecision,
+    ThrottleInput, TranscodeRun, Viewer, live_session_expired, plan_gc, tombstone_revivable,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,7 +20,7 @@ impl Runtime {
     /// `gc_tick` at `now`, for tests that age the renditions' grace.
     pub async fn gc_at(&self, now: i64) {
         let lifetime = &self.current_config().lifetime;
-        let (expired, orphans) = {
+        let (expired, gone, orphans) = {
             let mut reg = self.reg.locked();
             let expired: Vec<String> = reg
                 .sessions
@@ -36,9 +35,16 @@ impl Runtime {
                     reg.tombstones.insert(sid.clone(), s);
                 }
             }
-            reg.tombstones
-                .retain(|_, s| tombstone_revivable(s.m.locked().last_beat_ms, now, lifetime));
-            (expired, take_orphans(&mut reg, now))
+            let mut gone = vec![];
+            reg.tombstones.retain(|_, s| {
+                let keep =
+                    tombstone_revivable(s.m.locked().last_beat_ms, now, s.pinned(), lifetime);
+                if !keep {
+                    gone.push(s.clone());
+                }
+                keep
+            });
+            (expired, gone, take_orphans(&mut reg, now))
         };
         for sid in expired {
             self.events.emit(EngineEvent::SessionEnded {
@@ -46,7 +52,7 @@ impl Runtime {
                 reason: "expired".into(),
             });
         }
-        kill_all(orphans).await;
+        self.release(orphans, gone).await;
     }
 
     /// One throttle pass over the running jobs. [ts:modules/streaming/transcoding/ffmpeg-throttle.service.ts:94-150]
@@ -73,14 +79,6 @@ impl Runtime {
                 .collect()
         };
         for (job, viewers) in work {
-            let variant = match job.kind {
-                JobKind::Main => SessionVariant::Main,
-                JobKind::Early => SessionVariant::Early,
-                JobKind::Remux => SessionVariant::Remux {
-                    audio_index: None,
-                    keyframe_grid: true,
-                },
-            };
             let remux = job.remux.as_ref().map(|r| {
                 let a = &r.view;
                 let (start_seconds, frontier_seconds) = a.span();
@@ -105,7 +103,7 @@ impl Runtime {
                     threshold_seconds: streaming.throttle_threshold_seconds,
                     paused: m.paused,
                     process_exited: job.proc.exited().is_some(),
-                    variant: Some(variant),
+                    variant: Some(job.variant),
                     viewers,
                     run: remux.unwrap_or_else(|| {
                         RunProgress::Transcode(TranscodeRun {
@@ -135,8 +133,8 @@ impl Runtime {
     }
 
     pub(super) async fn scan_cache(&self) -> Vec<crate::cache::Scanned> {
-        let root = self.cache.root.clone();
-        tokio::task::spawn_blocking(move || Cache { root }.scan())
+        let cache = self.cache.clone();
+        tokio::task::spawn_blocking(move || cache.scan())
             .await
             .unwrap_or_default()
     }

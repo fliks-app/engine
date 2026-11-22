@@ -3,7 +3,7 @@
     "kill": false,
     "purgeCache": true,
     "result": "respawn",
-    "startSegment": 0
+    "startSegment": 5
   },
   "input": {
     "present": [],

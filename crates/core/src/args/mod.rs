@@ -255,6 +255,9 @@ pub struct LiveArgs {
     pub append: bool,
     #[serde(default)]
     pub probe_seconds: Option<f64>,
+    /// The source's `field_order`: interlaced, progressive, or `None` when unknown.
+    #[serde(default)]
+    pub interlaced: Option<bool>,
     /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
     #[serde(default = "default_encode_threads")]
     pub encode_threads: u32,

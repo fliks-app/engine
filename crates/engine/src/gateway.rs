@@ -15,7 +15,11 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
 };
 use serde::Deserialize;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use tower::ServiceExt;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -83,7 +87,7 @@ impl RouteTable {
             .map(Self)
     }
 
-    /// The Fliks table (plan §16).
+    /// The Fliks table.
     pub fn fliks() -> Self {
         Self::from_json(include_str!("fliks-routes.json")).expect("builtin table")
     }
@@ -238,6 +242,11 @@ fn set_forwarded(h: &mut HeaderMap, peer: Option<SocketAddr>) {
             .join(", ");
         h.insert("x-forwarded-for", HeaderValue::from_str(&chain).unwrap());
     }
+    // Only a proxy on the LAN or loopback speaks for the client's scheme and host.
+    if !peer.is_some_and(|p| lan(p.ip())) {
+        h.remove("x-forwarded-proto");
+        h.remove("x-forwarded-host");
+    }
     if !h.contains_key("x-forwarded-proto") {
         h.insert("x-forwarded-proto", HeaderValue::from_static("http"));
     }
@@ -245,6 +254,13 @@ fn set_forwarded(h: &mut HeaderMap, peer: Option<SocketAddr>) {
         && let Some(host) = h.get(HOST).cloned()
     {
         h.insert("x-forwarded-host", host);
+    }
+}
+
+fn lan(ip: IpAddr) -> bool {
+    match ip.to_canonical() {
+        IpAddr::V4(a) => a.is_loopback() || a.is_private() || a.is_link_local(),
+        IpAddr::V6(a) => a.is_loopback() || a.is_unique_local() || a.is_unicast_link_local(),
     }
 }
 
@@ -315,6 +331,10 @@ mod tests {
             assert_eq!(at(Method::HEAD, p), e, "{p}");
         }
         assert_eq!(at(Method::GET, "/api/stream/7/edl"), f);
+        assert_eq!(
+            at(Method::GET, "/cred/tok/api/livetv/sessions/ab12/index.m3u8"),
+            f
+        );
         assert_eq!(at(Method::GET, "/api/stream/7/keyframes"), f);
         assert_eq!(at(Method::POST, "/cred/tok/api/stream/7"), f);
         assert_eq!(at(Method::GET, "/cred/tok/opds/catalog"), f);
@@ -330,6 +350,74 @@ mod tests {
         assert_eq!(at(Method::POST, "/api/livetv/channels/3/play"), f);
         assert_eq!(at(Method::GET, "/api/livetv/channels"), f);
         assert_eq!(at(Method::GET, "/v1/hello"), f);
+    }
+
+    /// Samples a pattern's placeholders (`:x` or `{x}`) with a plain value.
+    fn sample(segments: impl Iterator<Item = impl AsRef<str>>) -> String {
+        let s: Vec<String> = segments
+            .map(|s| match s.as_ref() {
+                p if p.starts_with(':') || p.starts_with('{') => "7x".into(),
+                p => p.into(),
+            })
+            .collect();
+        format!("/{}", s.join("/"))
+    }
+
+    #[test]
+    fn engine_rows_and_served_routes_match_both_ways() {
+        let t = RouteTable::fliks();
+        let served = crate::serve::served_paths();
+        for p in &served {
+            let path = sample(p[1..].split('/'));
+            for m in [Method::GET, Method::HEAD] {
+                assert_eq!(t.target(&m, &path), Target::Engine, "{p}");
+            }
+            if p.starts_with("/api/stream/") {
+                let cred = format!("/cred/tok{path}");
+                assert_eq!(t.target(&Method::GET, &cred), Target::Engine, "{cred}");
+            }
+        }
+        let matches = |served: &str, path: &str| {
+            let (s, p): (Vec<_>, Vec<_>) = (
+                served[1..].split('/').collect(),
+                path[1..].split('/').collect(),
+            );
+            s.len() == p.len() && s.iter().zip(&p).all(|(s, p)| s.starts_with('{') || s == p)
+        };
+        // The `/cred` row is a prefix: the credential must never reach the host, so the engine
+        // answers any tail itself.
+        for r in
+            t.0.iter()
+                .filter(|r| r.target == Target::Engine && r.segments[0] != "cred")
+        {
+            let path = sample(r.segments.iter());
+            let path = path.as_str();
+            assert!(
+                served.iter().any(|s| matches(s, path)),
+                "no served route for {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_lan_peer_speaks_for_the_clients_scheme_and_host() {
+        let sent = || {
+            let mut h = HeaderMap::new();
+            h.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+            h.insert("x-forwarded-host", HeaderValue::from_static("evil.example"));
+            h.insert(HOST, HeaderValue::from_static("fliks.local"));
+            h
+        };
+        let mut h = sent();
+        set_forwarded(&mut h, Some("10.0.0.2:5000".parse().unwrap()));
+        assert_eq!(h["x-forwarded-proto"], "https");
+        assert_eq!(h["x-forwarded-host"], "evil.example");
+        for peer in [Some("203.0.113.9:5000".parse().unwrap()), None] {
+            let mut h = sent();
+            set_forwarded(&mut h, peer);
+            assert_eq!(h["x-forwarded-proto"], "http");
+            assert_eq!(h["x-forwarded-host"], "fliks.local");
+        }
     }
 
     #[test]

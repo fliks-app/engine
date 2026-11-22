@@ -43,7 +43,10 @@ use tokio::task::JoinHandle;
 
 /// Jobs running at once. [ts:modules/streaming/thumbnail.service.ts:56]
 const MAX_RUNNING: usize = 2;
-const KEEP_ENDED: usize = 200;
+/// Ended jobs stay this long, so a host that reconnects after an event lag still finds its job.
+const KEEP_ENDED_FOR: Duration = Duration::from_secs(600);
+/// The most ended jobs kept, whatever their age.
+const KEEP_ENDED_MAX: usize = 2000;
 const TICK: Duration = Duration::from_millis(200);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 pub const CANCELLED: &str = "cancelled";
@@ -69,6 +72,8 @@ struct JobMut {
 pub struct BgJob {
     pub id: String,
     pub req: JobRequest,
+    /// `req.priority`, raised while queued when a more urgent identical request arrives.
+    priority: Mutex<JobPriority>,
     seq: u64,
     dedupe: String,
     created_ms: i64,
@@ -93,7 +98,7 @@ pub struct BgJob {
 
 impl BgJob {
     fn priority(&self) -> JobPriority {
-        self.req.priority.unwrap_or_default()
+        *self.priority.locked()
     }
 
     /// CPU-only work of a job leased on a GPU lane runs on the CPU lane: weighed and paused there.
@@ -134,7 +139,7 @@ impl BgJob {
     }
 }
 
-/// Every job of the engine, in creation order (ended ones trimmed to the last `KEEP_ENDED`).
+/// Every job of the engine, in creation order (ended ones trimmed by age, then by count).
 #[derive(Default)]
 pub struct Jobs {
     q: Mutex<Queue>,
@@ -150,7 +155,8 @@ struct Queue {
     open: HashMap<String, u64>,
     /// Queued jobs, next to start first: by priority, then age.
     waiting: BTreeMap<(JobPriority, u64), Arc<BgJob>>,
-    running: usize,
+    /// Started jobs that count against `MAX_RUNNING`, with the priority they started at.
+    running: Vec<(u64, JobPriority)>,
     ended: VecDeque<u64>,
 }
 
@@ -273,13 +279,16 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
         return Err("media.path must be absolute".into());
     }
     validate(&req.kind)?;
-    let dedupe = serde_json::to_string(&(&req.kind, &req.media)).unwrap_or_default();
+    let dedupe = serde_json::to_string(&(&req.kind, &req.media, req.force)).unwrap_or_default();
     let (id, now) = {
         let mut q = rt.jobs.q.locked();
         if let Some(j) = q.open.get(&dedupe).and_then(|s| q.all.get(s)).cloned()
             && !j.base_state().ended()
         {
             if !urgent {
+                raise_queued(&mut q, &j, req.priority.unwrap_or_default());
+                drop(q);
+                pump(rt);
                 return Ok(j.id.clone());
             }
             j.urgent.send_replace(true);
@@ -301,6 +310,16 @@ fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String,
     }
     pump(rt);
     Ok(id)
+}
+
+/// A queued job takes the priority of an identical, more urgent request.
+fn raise_queued(q: &mut Queue, j: &Arc<BgJob>, to: JobPriority) {
+    if to < j.priority()
+        && let Some(w) = q.waiting.remove(&(j.priority(), j.seq))
+    {
+        *j.priority.locked() = to;
+        q.waiting.insert((to, j.seq), w);
+    }
 }
 
 /// Starts the optimization, verification or separation a worker leased, at once on `lane`: no wait for
@@ -334,6 +353,7 @@ fn queue(
     q.next_seq += 1;
     let j = Arc::new(BgJob {
         id: crate::random_hex(8),
+        priority: Mutex::new(req.priority.unwrap_or_default()),
         req,
         seq,
         dedupe: dedupe.clone(),
@@ -373,7 +393,9 @@ fn begin(q: &mut Queue, j: &BgJob) -> bool {
     }
     m.state = BgJobState::Running;
     m.started_ms = Some(now_ms());
-    q.running += usize::from(j.lane.locked().is_none());
+    if j.lane.locked().is_none() {
+        q.running.push((j.seq, j.priority()));
+    }
     true
 }
 
@@ -382,12 +404,16 @@ fn launch(rt: &Arc<Runtime>, j: Arc<BgJob>) {
     *j.task.locked() = Some(task);
 }
 
-/// Starts queued jobs by priority, then age, while fewer than `MAX_RUNNING` run.
+/// Starts queued jobs by priority, then age, while fewer than `MAX_RUNNING` run. A job more urgent
+/// than every running one starts anyway: the slots then pause the lower ones for it.
 fn pump(rt: &Arc<Runtime>) {
     let start: Vec<Arc<BgJob>> = {
         let mut q = rt.jobs.q.locked();
         let mut picked = vec![];
-        while q.running < MAX_RUNNING {
+        while let Some(&(next, _)) = q.waiting.first_key_value().map(|(k, _)| k) {
+            if q.running.len() >= MAX_RUNNING && q.running.iter().any(|(_, p)| *p <= next) {
+                break;
+            }
             let Some((_, j)) = q.waiting.pop_first() else {
                 break;
             };
@@ -526,12 +552,21 @@ fn finish(
         BgJobState::Queued => {
             q.waiting.remove(&(job.priority(), job.seq));
         }
-        BgJobState::Running => q.running -= usize::from(job.lane.locked().is_none()),
+        BgJobState::Running => q.running.retain(|(s, _)| *s != job.seq),
         _ => {}
     }
     q.ended.push_back(job.seq);
-    while q.ended.len() > KEEP_ENDED {
-        if let Some(old) = q.ended.pop_front().and_then(|s| q.all.remove(&s)) {
+    let stale = now_ms() - KEEP_ENDED_FOR.as_millis() as i64;
+    while let Some(&oldest) = q.ended.front() {
+        let aged = q
+            .all
+            .get(&oldest)
+            .is_none_or(|j| j.m.locked().ended_ms.is_some_and(|t| t < stale));
+        if q.ended.len() <= KEEP_ENDED_MAX && !aged {
+            break;
+        }
+        q.ended.pop_front();
+        if let Some(old) = q.all.remove(&oldest) {
             q.by_id.remove(&old.id);
         }
     }
@@ -578,9 +613,9 @@ pub async fn shutdown(rt: &Arc<Runtime>) {
 
 impl Runtime {
     /// How an optimization yields to playback: suspended, or killed and requeued where the OS
-    /// cannot suspend it (`FLIKS_OPTIMIZE_PAUSE=restart` forces it, for a GPU short of memory).
+    /// cannot suspend it (`optimizePauseRestart` forces it, for a GPU short of memory).
     pub fn optimize_pause(&self) -> PauseMode {
-        let forced = std::env::var("FLIKS_OPTIMIZE_PAUSE").is_ok_and(|v| v == "restart");
+        let forced = self.current_config().streaming.optimize_pause_restart;
         let none = self.pause_capability() == fliks_engine_core::session::PauseCapability::None;
         if forced || none {
             PauseMode::Restart

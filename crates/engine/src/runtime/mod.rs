@@ -72,7 +72,8 @@ pub enum Fetch {
         waited_ms: f64,
         cache_hit: bool,
     },
-    Retry,
+    /// 503 with `Retry-After: n` seconds.
+    Retry(u32),
     NotFound,
     Failed,
 }
@@ -208,11 +209,15 @@ impl Runtime {
         (detected, detected)
     }
 
+    pub(crate) fn opencl_device(&self) -> Option<String> {
+        self.current_config().streaming.opencl_device.clone()
+    }
+
     pub(crate) fn device(&self, caps: &HostCaps) -> fliks_engine_core::hw::Device {
         fliks_engine_core::hw::Device {
             platform: caps.platform,
             render_node: self.hw.snapshot().map(|h| h.render_node),
-            opencl_device: crate::hw::opencl_device(),
+            opencl_device: self.opencl_device(),
             cuda_index: None,
         }
     }
@@ -233,7 +238,7 @@ impl Runtime {
             .snapshot()
             .and_then(|s| s.device(id).cloned())
             .ok_or_else(|| format!("device {id} is gone"))?;
-        Ok((d.detected.host_caps(), d.device(crate::hw::opencl_device())))
+        Ok((d.detected.host_caps(), d.device(self.opencl_device())))
     }
 
     /// The devices a hardware run may take, best first: its session's own (`sticky`) while it
@@ -275,8 +280,12 @@ impl Runtime {
         crate::worker::start(self);
         let rt = self.clone();
         tokio::spawn(async move {
-            let root = rt.cache.root.clone();
-            let _ = tokio::task::spawn_blocking(move || Cache { root }.purge_old_layout()).await;
+            let cache = rt.cache.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                cache.purge_old_layout();
+                cache.move_sprites();
+            })
+            .await;
             loop {
                 let ms = rt.current_config().lifetime.resolved().cache_gc_interval_ms;
                 tokio::time::sleep(Duration::from_millis(ms.into())).await;

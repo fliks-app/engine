@@ -94,7 +94,7 @@ impl Runtime {
                             let dir = e.dir.clone();
                             let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
                         }
-                        requested = r.start_segment.unwrap_or(e.start_segment);
+                        requested = r.start_segment.unwrap_or(requested);
                     }
                 }
             }
@@ -140,7 +140,7 @@ impl Runtime {
                     if r.kill {
                         e.kill().await;
                     }
-                    requested = r.start_segment.unwrap_or(e.start_segment);
+                    requested = r.start_segment.unwrap_or(requested);
                 }
             }
         }
@@ -169,6 +169,27 @@ impl Runtime {
         }
         self.spawn_job(s, quality, 0, self.start_hw(), 0, JobKind::Early, None)
             .await
+    }
+
+    /// A file of `quality`'s early companion, started when none runs; `None` to fall through to the main.
+    async fn companion_file(
+        self: &Arc<Self>,
+        s: &Arc<Session>,
+        quality: &str,
+        track: usize,
+        name: SegmentName,
+    ) -> Option<Fetch> {
+        let running = self
+            .job(&s.key(JobKind::Early))
+            .filter(|e| e.quality == quality);
+        let early = match running {
+            Some(e) => e,
+            None => self.early_job(s, quality).await?,
+        };
+        if early.quality != quality {
+            return None;
+        }
+        self.early_file(early, track, name).await
     }
 
     /// A file of the early companion within its short wait, `None` to fall through to the main.
@@ -233,16 +254,8 @@ impl Runtime {
                 SegmentName::Init(_) => same.is_none(),
                 SegmentName::Segment(n) => n < EARLY_PROBE_SEGMENTS,
             };
-        if probe {
-            let early = match early {
-                Some(e) => Some(e),
-                None => self.early_job(s, quality).await,
-            };
-            if let Some(e) = early.filter(|e| e.quality == quality)
-                && let Some(f) = self.early_file(e, 0, name).await
-            {
-                return f;
-            }
+        if probe && let Some(f) = self.companion_file(s, quality, 0, name).await {
+            return f;
         }
         let t0 = Instant::now();
         let job = match (name, same) {
@@ -262,7 +275,7 @@ impl Runtime {
     }
 
     /// Audio rendition `track` (1-based var_stream_map index) of the session's job, whatever rung
-    /// it runs; spawns the top rung when none runs. [ts:modules/streaming/streaming.controller.ts:1909-2120]
+    /// it runs; spawns the rung the client plays (the top one before any) when none runs. [ts:modules/streaming/streaming.controller.ts:1909-2120]
     pub async fn audio_file(
         self: &Arc<Self>,
         s: &Arc<Session>,
@@ -276,14 +289,16 @@ impl Runtime {
         {
             Some(j) => j,
             None => {
-                let v = s.req.decide.info.video.first();
-                let (w, h) = core_session::rung_source_size(v);
-                let quality = core_session::top_rung(w, h, s.decision.use_hdr_ladder);
+                let rung = s.m.locked().rung.clone();
+                let quality = rung.unwrap_or_else(|| {
+                    let (w, h) = core_session::rung_source_size(s.req.decide.info.video.first());
+                    core_session::top_rung(w, h, s.decision.use_hdr_ladder).into()
+                });
                 let start = match name {
                     SegmentName::Init(_) => s.resume_floor(None),
                     SegmentName::Segment(n) => n,
                 };
-                match self.ensure_job(s, quality, start).await {
+                match self.ensure_job(s, &quality, start).await {
                     Some(j) => j,
                     None => return Fetch::Failed,
                 }
@@ -299,19 +314,8 @@ impl Runtime {
                 SegmentName::Init(_) => true,
                 SegmentName::Segment(n) => n < EARLY_PROBE_SEGMENTS,
             };
-        if want_early {
-            let early = match self
-                .job(&s.key(JobKind::Early))
-                .filter(|e| e.quality == job.quality)
-            {
-                Some(e) => Some(e),
-                None => self.early_job(s, &job.quality).await,
-            };
-            if let Some(e) = early.filter(|e| e.quality == job.quality)
-                && let Some(f) = self.early_file(e, track, name).await
-            {
-                return f;
-            }
+        if want_early && let Some(f) = self.companion_file(s, &job.quality, track, name).await {
+            return f;
         }
         let t0 = Instant::now();
         let (job, landed) = self.wait_file(job, track, name, SEGMENT_WAIT).await;
@@ -404,7 +408,7 @@ pub(super) async fn finish(path: PathBuf, job: Arc<Job>, landed: bool, t0: Insta
         core_session::SegmentResponse::Serve => {
             ready(path, Some(job), t0.elapsed().as_secs_f64() * 1000.0, false)
         }
-        core_session::SegmentResponse::Unavailable { .. } => Fetch::Retry,
+        core_session::SegmentResponse::Unavailable { retry_after_s } => Fetch::Retry(retry_after_s),
         core_session::SegmentResponse::NotFound => Fetch::NotFound,
     }
 }

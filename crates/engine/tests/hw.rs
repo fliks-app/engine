@@ -35,7 +35,8 @@ fn snap(hw: HwAccel, node: &str) -> Snapshot {
 
 /// A detector that records the node it ran for and waits for `gate` before answering.
 fn gated(gate: Arc<Notify>, ran: Arc<Mutex<Vec<Option<String>>>>) -> Arc<Hw> {
-    Hw::new(Arc::new(move |node| {
+    Hw::new(Arc::new(move |pin| {
+        let node = pin.node;
         let (gate, ran) = (gate.clone(), ran.clone());
         Box::pin(async move {
             ran.lock().unwrap().push(node.clone());

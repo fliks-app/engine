@@ -2271,6 +2271,7 @@
               "liveSessionGcIntervalMs": 5000,
               "liveSessionTtlMs": 30000,
               "maxSessionsPerOwner": 10,
+              "pinnedReviveTtlMs": 86400000,
               "pinnedSessionTtlMs": 3600000,
               "sessionReviveTtlMs": 900000
             }
@@ -2283,6 +2284,11 @@
               "segmentSeconds": 2,
               "timeshiftMinutes": 15
             }
+          },
+          "logEvents": {
+            "type": "boolean",
+            "description": "The host reads `Log` events: the engine sends its `warn` and `error` log lines on `/v1/events`.",
+            "default": false
           },
           "pathMappings": {
             "type": "array",
@@ -2304,6 +2310,7 @@
               "autoCropEnabled": true,
               "autoQualityMode": "directplay",
               "gpuRenderNode": "auto",
+              "optimizePauseRestart": false,
               "qsvPreset": "faster",
               "segmentDuration": 3.0,
               "spriteDecode": "auto",
@@ -2740,6 +2747,34 @@
                 "type": "string",
                 "enum": [
                   "LiveReleased"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One engine log line at `warn` or above, sent only while `EngineConfig.logEvents` is set.",
+            "required": [
+              "level",
+              "target",
+              "message",
+              "type"
+            ],
+            "properties": {
+              "level": {
+                "type": "string",
+                "description": "`warn` or `error`."
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Log"
                 ]
               }
             }
@@ -4716,6 +4751,13 @@
             "default": 10,
             "minimum": 0
           },
+          "pinnedReviveTtlMs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How long after it was dropped a pinned session's id can still revive: a download paused or\nqueued past the TTL resumes on its own session instead of answering 410.",
+            "default": 86400000,
+            "minimum": 0
+          },
           "pinnedSessionTtlMs": {
             "type": "integer",
             "format": "int32",
@@ -4793,6 +4835,14 @@
               "null"
             ],
             "description": "ffprobe's `format_name` (comma list).",
+            "default": null
+          },
+          "fieldOrder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ffprobe's `field_order` of the video: `progressive`, or an interlaced order (`tt`, `bb`, `tb`, `bt`).",
             "default": null
           },
           "videoCodec": {
@@ -4979,6 +5029,13 @@
               "null"
             ],
             "description": "From an earlier probe (`LiveAttempt.probe`): the engine skips its own."
+          },
+          "probedFieldOrder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ffprobe's `field_order` of the video (`progressive`, `tt`, `bb`, `tb`, `bt`)."
           },
           "probedVideoCodec": {
             "type": [
@@ -7905,6 +7962,29 @@
             "format": "double",
             "description": "A job that writes files fails below this much free disk under the cache root; absent: 1 GiB, 0\ndisables.",
             "default": null
+          },
+          "openclDevice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The OpenCL device (`platform.device`) ffmpeg's tone mapping and probes use; absent: its default.",
+            "default": null
+          },
+          "optimizePauseRestart": {
+            "type": "boolean",
+            "description": "An optimization yields to playback by being killed and requeued, never suspended (a GPU\nshort of memory).",
+            "default": false
+          },
+          "ortThreads": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Threads of an ONNX model run; absent: half the cores within 2 and 8.",
+            "default": null,
+            "minimum": 0
           },
           "qsvPreset": {
             "$ref": "#/components/schemas/QsvPreset",

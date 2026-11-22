@@ -35,6 +35,8 @@
       "0:a:0?",
       "-sn",
       "-dn",
+      "-vf",
+      "bwdif=mode=send_frame:parity=auto:deint=interlaced",
       "-c:v",
       "h264_videotoolbox",
       "-b:v",

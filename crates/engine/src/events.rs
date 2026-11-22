@@ -29,6 +29,7 @@ fn name(e: &EngineEvent) -> &'static str {
         EngineEvent::ModelChanged { .. } => "ModelChanged",
         EngineEvent::LiveAttempt { .. } => "LiveAttempt",
         EngineEvent::LiveReleased { .. } => "LiveReleased",
+        EngineEvent::Log { .. } => "Log",
     }
 }
 

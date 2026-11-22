@@ -112,7 +112,7 @@ async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
     let mut rx = e.rt.events.subscribe();
     let t0 = Instant::now();
     let id = submit(&e, 7, &file, false).await;
-    assert_eq!(submit(&e, 7, &file, true).await, id, "in-flight dedupe");
+    assert_eq!(submit(&e, 7, &file, false).await, id, "in-flight dedupe");
     let (progress, ev) = done(&mut rx, &id).await;
     let meta =
         json!({ "interval": 2, "columns": 10, "thumbWidth": 240, "thumbHeight": 135, "count": 60 });
@@ -173,6 +173,58 @@ async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
         .await;
     assert_eq!(gone.status, 404);
     assert!(e.ffmpeg_pids().is_empty());
+}
+
+async fn submit_at(e: &Engine, id: u32, file: &std::path::Path, priority: &str) -> String {
+    let r = e
+        .control(
+            "POST",
+            "/v1/jobs",
+            Some(json!({
+                "kind": { "type": "Sprite", "info": info() },
+                "media": { "mediaFileId": id, "path": file }, "priority": priority,
+            })),
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.text());
+    r.json()["jobId"].as_str().unwrap().into()
+}
+
+#[tokio::test]
+async fn a_more_urgent_job_starts_past_the_running_ones_and_a_queued_hit_is_raised() {
+    let (e, file) = engine_of("hangsprite", json!({ "ffmpegSlots": 2 })).await;
+    let (a, b) = (
+        submit_at(&e, 7, &file, "low").await,
+        submit_at(&e, 8, &file, "low").await,
+    );
+    until("frame runs", 30, || !e.ffmpeg_pids().is_empty()).await;
+    let queued = submit_at(&e, 9, &file, "low").await;
+    assert_eq!(job(&e, &queued).await["state"], "queued");
+    let same = submit_at(&e, 9, &file, "normal").await;
+    assert_eq!(same, queued, "an identical request is the same job");
+    until_async("raised past the two low jobs", 30, || async {
+        job(&e, &queued).await["state"] == "running"
+    })
+    .await;
+    assert_eq!(job(&e, &queued).await["priority"], "normal");
+    let high = submit_at(&e, 10, &file, "high").await;
+    until_async("high past the three running", 30, || async {
+        job(&e, &high).await["state"] == "running"
+    })
+    .await;
+    for id in [a, b, queued, high] {
+        e.control("DELETE", &format!("/v1/jobs/{id}"), None).await;
+    }
+}
+
+#[tokio::test]
+async fn a_forced_request_never_lands_on_a_plain_job() {
+    let (e, file) = engine_of("hangsprite", json!({ "ffmpegSlots": 2 })).await;
+    let plain = submit(&e, 7, &file, false).await;
+    let forced = submit(&e, 7, &file, true).await;
+    assert_ne!(plain, forced);
+    assert_eq!(submit(&e, 7, &file, true).await, forced);
+    e.rt.shutdown().await;
 }
 
 #[tokio::test]

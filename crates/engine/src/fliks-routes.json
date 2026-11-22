@@ -1,8 +1,14 @@
 [
   { "target": "forward", "path": "/api/stream/info/**" },
-  { "target": "forward", "path": "/api/stream/:id/edl" },
-  { "target": "forward", "path": "/api/stream/:id/keyframes" },
-  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/**" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/master.m3u8" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/:a/:b" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/audio/:idx/:seg" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/subtitles/embedded/:idx" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/subtitles/:sub/download" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/subtitles/:sub/index.m3u8" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/subtitles/embedded/:idx/download" },
+  { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/stream/:id/subtitles/embedded/:idx/index.m3u8" },
   { "target": "engine", "methods": ["GET", "HEAD"], "path": "/cred/:credential/api/stream/:id/**" },
   { "target": "engine", "methods": ["GET", "HEAD"], "path": "/api/livetv/sessions/:sid/:file" }
 ]

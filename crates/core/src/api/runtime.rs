@@ -477,6 +477,14 @@ pub enum EngineEvent {
         capacity_token: String,
         reason: String,
     },
+    /// One engine log line at `warn` or above, sent only while `EngineConfig.logEvents` is set.
+    #[serde(rename_all = "camelCase")]
+    Log {
+        /// `warn` or `error`.
+        level: String,
+        target: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]

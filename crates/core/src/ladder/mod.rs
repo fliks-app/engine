@@ -58,6 +58,15 @@ pub fn ladder(hdr: bool) -> &'static [Rung] {
     if hdr { HDR_LADDER } else { SDR_LADDER }
 }
 
+/// The tallest full SDR rung a bitrate pays for; the lowest rung below that.
+pub fn height_for_bitrate(bps: f64) -> u32 {
+    let mut full = SDR_LADDER.iter().filter(|r| !is_eco(r.name));
+    full.clone()
+        .find(|r| r.video_bps <= bps)
+        .or_else(|| full.next_back())
+        .map_or(0, |r| r.max_height)
+}
+
 pub fn is_eco(name: &str) -> bool {
     name.starts_with("eco-")
 }
@@ -101,4 +110,17 @@ pub fn top_non_eco(ladder: &[Rung]) -> &Rung {
         .iter()
         .find(|r| !is_eco(r.name))
         .unwrap_or(&ladder[0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_bitrate_buys_the_tallest_rung_it_covers() {
+        assert_eq!(height_for_bitrate(20e6), 2160);
+        assert_eq!(height_for_bitrate(1.5e6), 360);
+        assert_eq!(height_for_bitrate(3e6), 480);
+        assert_eq!(height_for_bitrate(1.0), 144);
+    }
 }

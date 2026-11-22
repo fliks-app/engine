@@ -16,5 +16,5 @@
 {"input":{"stdout":",video\n,audio\nmpegts\n"},"expected":{"video":"","audio":"","container":"mpegts"}},
 {"input":{"stdout":"h264,Video\naac,AUDIO\nmpegts\n"},"expected":{"video":null,"audio":null,"container":"h264,Video"}},
 {"input":{"stdout":"mpegts\nh264,video\n"},"expected":{"video":"h264","audio":null,"container":"mpegts"}},
-{"input":{"stdout":"h264,video,extra\nmpegts\n"},"expected":{"video":null,"audio":null,"container":"h264,video,extra"}}
+{"expected":{"audio":null,"container":"mpegts","video":"h264"},"input":{"stdout":"h264,video,extra\nmpegts\n"}}
 ]}

@@ -315,14 +315,19 @@ impl Runtime {
         let file = req.decide.media.media_file_id;
         let mut evicted = None;
         let mut replaced = None;
+        let mut ended: Vec<Arc<Session>> = vec![];
         let (session, orphans) = {
             let mut reg = self.reg.locked();
-            if let (Some(old), Some(_)) = (req.replaces.as_deref(), owner.as_ref())
-                && reg.sessions.get(old).is_some_and(|s| s.owner == owner)
-            {
-                reg.sessions.remove(old);
-                reg.tombstones.remove(old);
-                replaced = Some(old.to_string());
+            if let (Some(old), Some(_)) = (req.replaces.as_deref(), owner.as_ref()) {
+                let mine = |s: &Arc<Session>| s.owner == owner;
+                if reg.sessions.get(old).is_some_and(mine) {
+                    ended.extend(reg.sessions.remove(old));
+                    replaced = Some(old.to_string());
+                }
+                // The host already heard an expired sid end: it only must not come back.
+                if reg.tombstones.get(old).is_some_and(mine) {
+                    ended.extend(reg.tombstones.remove(old));
+                }
             }
             // [ts:modules/streaming/live-session.service.ts:409-432]
             let sibling = reg.sessions.values().any(|s| {
@@ -350,7 +355,7 @@ impl Runtime {
                     .collect();
                 let beats: Vec<i64> = own.iter().map(|o| o.1).collect();
                 if let Some(i) = session_to_evict(&beats, &lifetime) {
-                    reg.sessions.remove(&own[i].0);
+                    ended.extend(reg.sessions.remove(&own[i].0));
                     evicted = Some(own[i].0.clone());
                 }
             }
@@ -384,8 +389,9 @@ impl Runtime {
             reg.sessions.insert(sid.clone(), s.clone());
             (s, take_orphans(&mut reg, now_ms()))
         };
-        if !orphans.is_empty() {
-            tokio::spawn(kill_all(orphans));
+        if !orphans.is_empty() || !ended.is_empty() {
+            let rt = self.clone();
+            tokio::spawn(async move { rt.release(orphans, ended).await });
         }
         if let Some(r) = replaced {
             self.events.emit(EngineEvent::SessionEnded {
@@ -405,8 +411,12 @@ impl Runtime {
         if session.plan.item.is_some() {
             self.prewarm_item(&session, session.req.start_at_s.unwrap_or(0.0));
         } else if decision.response.play_method == PlayMethod::Transcode {
-            let q = session.req.decide.selection.requested_quality.clone();
-            self.prewarm(&session, q.as_deref(), session.req.start_at_s);
+            // An `auto` session warms the rung the decision starts on.
+            let asked = session.req.decide.selection.requested_quality.as_deref();
+            let q = asked
+                .filter(|q| *q != "auto")
+                .unwrap_or(&decision.response.quality);
+            self.prewarm(&session, Some(q), session.req.start_at_s);
         }
         let info = &session.req.decide.info;
         let report = core_session::open_report(
@@ -492,18 +502,43 @@ impl Runtime {
 
     /// A live session, or a tombstone revived within the revive window.
     pub fn session(&self, sid: &str) -> Option<Arc<Session>> {
-        let mut reg = self.reg.locked();
+        let (s, buried) = self.lookup(sid)?;
+        if buried {
+            self.revive(&s);
+        }
+        Some(s)
+    }
+
+    /// A session, and whether it is a tombstone still within the revive window (left buried).
+    pub fn lookup(&self, sid: &str) -> Option<(Arc<Session>, bool)> {
+        let reg = self.reg.locked();
         if let Some(s) = reg.sessions.get(sid) {
-            return Some(s.clone());
+            return Some((s.clone(), false));
         }
-        let buried = reg.tombstones.remove(sid)?;
+        let buried = reg.tombstones.get(sid)?;
         let lifetime = &self.current_config().lifetime;
-        if !tombstone_revivable(buried.m.locked().last_beat_ms, now_ms(), lifetime) {
-            return None;
+        tombstone_revivable(
+            buried.m.locked().last_beat_ms,
+            now_ms(),
+            buried.pinned(),
+            lifetime,
+        )
+        .then(|| (buried.clone(), true))
+    }
+
+    /// Brings a tombstone back to life and tells the host, which saw it end.
+    pub fn revive(&self, s: &Arc<Session>) {
+        let revived = {
+            let mut reg = self.reg.locked();
+            let buried = reg.tombstones.remove(&s.sid);
+            buried.is_some_and(|b| reg.sessions.insert(s.sid.clone(), b).is_none())
+        };
+        if revived {
+            tracing::info!(sid = s.sid, "revived a session");
+            self.events.emit(EngineEvent::SessionOpened {
+                session: Box::new(self.snapshot(s)),
+            });
         }
-        tracing::info!(sid, "revived a session");
-        reg.sessions.insert(sid.into(), buried.clone());
-        Some(buried)
     }
 
     /// The owner's most recently active session of a file (requests without a sid).
@@ -614,11 +649,11 @@ impl Runtime {
 
     /// Idempotent; jobs no other session owns stop before it returns. [ts:modules/streaming/live-session.service.ts:553-558]
     pub async fn stop(&self, sid: &str, reason: &str) -> bool {
-        let (known, orphans) = {
+        let (known, gone, orphans) = {
             let mut reg = self.reg.locked();
-            let a = reg.sessions.remove(sid).is_some();
-            let known = reg.tombstones.remove(sid).is_some() || a;
-            (known, take_orphans(&mut reg, now_ms()))
+            let mut gone: Vec<Arc<Session>> = reg.sessions.remove(sid).into_iter().collect();
+            gone.extend(reg.tombstones.remove(sid));
+            (!gone.is_empty(), gone, take_orphans(&mut reg, now_ms()))
         };
         if known {
             self.events.emit(EngineEvent::SessionEnded {
@@ -626,7 +661,7 @@ impl Runtime {
                 reason: reason.into(),
             });
         }
-        kill_all(orphans).await;
+        self.release(orphans, gone).await;
         known
     }
 
@@ -649,7 +684,7 @@ impl Runtime {
             (gone, take_orphans(&mut reg, now_ms()))
         };
         self.resolver.purge(owner, files);
-        kill_all(orphans).await;
+        self.release(orphans, gone.clone()).await;
         for s in &gone {
             self.events.emit(EngineEvent::SessionEnded {
                 session_id: s.sid.clone(),
@@ -693,6 +728,28 @@ impl Runtime {
         ];
         let _ = tokio::task::spawn_blocking(move || dirs.iter().for_each(|d| remove_dir(d))).await;
         (jobs.len() as u32 + background, removed)
+    }
+
+    /// Stops the runs no session serves, then clears the cache a sibling-instance session kept
+    /// to itself (`~i` hash): nothing else can reach it.
+    pub(super) async fn release(&self, orphans: Vec<Arc<Job>>, ended: Vec<Arc<Session>>) {
+        kill_all(orphans).await;
+        let mut dirs: Vec<_> = ended
+            .iter()
+            .filter(|s| s.hash.contains("~i"))
+            .flat_map(|s| {
+                [JobKind::Main, JobKind::Early, JobKind::Remux].map(|k| {
+                    self.cache
+                        .entry_dir(s.owner.as_deref(), s.media_file_id, &s.cache_hash(k))
+                })
+            })
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        if !dirs.is_empty() {
+            let _ =
+                tokio::task::spawn_blocking(move || dirs.iter().for_each(|d| remove_dir(d))).await;
+        }
     }
 
     pub async fn pause_job(&self, s: &Session, pause: bool) -> bool {

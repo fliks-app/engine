@@ -264,9 +264,7 @@ pub async fn engine_with_tools(
     let root = temp_dir("cache");
     let rt = Runtime::with_tools(
         hw,
-        fliks_engine::cache::Cache {
-            root: root.to_path_buf(),
-        },
+        fliks_engine::cache::Cache::new(root.to_path_buf(), None),
         ffmpeg.into(),
         ffprobe.into(),
         fpcalc.into(),

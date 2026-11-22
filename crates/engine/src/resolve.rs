@@ -12,7 +12,7 @@ use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const DEFAULT_TTL_S: f64 = 60.0;
@@ -20,6 +20,8 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 /// An expired grant still answers while the host is down, for this long.
 const STALE_GRACE: Duration = Duration::from_secs(3600);
 const MAX_ENTRIES: usize = 10_000;
+/// An item names every part with its path: a large audiobook answers with hundreds of KiB.
+const MAX_ANSWER: usize = 8 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Key {
@@ -86,6 +88,8 @@ pub struct Resolver {
     client: Client<HttpConnector, Full<Bytes>>,
     hasher: RandomState,
     cache: Mutex<HashMap<Key, Entry>>,
+    /// One host call per key at a time: later requests for it wait, or take the stale grant.
+    flights: Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Default for Resolver {
@@ -94,6 +98,7 @@ impl Default for Resolver {
             client: Client::builder(TokioExecutor::new()).build_http(),
             hasher: RandomState::new(),
             cache: Mutex::new(HashMap::new()),
+            flights: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -118,6 +123,12 @@ fn granted(res: &ResolveResponse, purpose: ResolvePurpose) -> Result<Resolved, R
         format: res.format.clone(),
         parts: res.parts.clone(),
     })
+}
+
+enum Cached {
+    Fresh(ResolveResponse),
+    Stale(ResolveResponse),
+    None,
 }
 
 /// Frees room in a full `cache`: drops what is dead (denials once expired, grants past the stale
@@ -162,14 +173,52 @@ impl Resolver {
             subtitle_id: ask.subtitle_id,
             stream_index: ask.stream_index,
         };
-        let stale = {
-            let cache = self.cache.locked();
-            match cache.get(&key) {
-                Some(e) if e.until > Instant::now() => return granted(&e.res, ask.purpose),
-                Some(e) => Some(e.res.clone()),
-                None => None,
-            }
+        let stale = match self.cached(&key) {
+            Cached::Fresh(res) => return granted(&res, ask.purpose),
+            Cached::Stale(res) => Some(res),
+            Cached::None => None,
         };
+        let gate = self
+            .flights
+            .locked()
+            .entry(key.clone())
+            .or_default()
+            .clone();
+        let _flight = match gate.clone().try_lock_owned() {
+            Ok(g) => g,
+            // A refresh is on its way: an expired grant keeps serving meanwhile.
+            Err(_) => match &stale {
+                Some(res) if res.allow => return granted(res, ask.purpose),
+                _ => {
+                    let g = gate.lock_owned().await;
+                    if let Cached::Fresh(res) = self.cached(&key) {
+                        return granted(&res, ask.purpose);
+                    }
+                    g
+                }
+            },
+        };
+        let out = self.refresh(host, ask, key.clone(), stale).await;
+        self.flights.locked().remove(&key);
+        out
+    }
+
+    fn cached(&self, key: &Key) -> Cached {
+        match self.cache.locked().get(key) {
+            Some(e) if e.until > Instant::now() => Cached::Fresh(e.res.clone()),
+            Some(e) => Cached::Stale(e.res.clone()),
+            None => Cached::None,
+        }
+    }
+
+    /// The host's answer, cached; when it cannot answer, an expired grant.
+    async fn refresh(
+        &self,
+        host: Option<&Host>,
+        ask: Ask<'_>,
+        key: Key,
+        stale: Option<ResolveResponse>,
+    ) -> Result<Resolved, ResolveError> {
         match self.call(host, &ask).await {
             Some(res) => {
                 let ttl = res
@@ -230,11 +279,17 @@ impl Resolver {
             tracing::warn!(status = %res.status(), "resolver failed");
             return None;
         }
-        let bytes = Limited::new(res.into_body(), 64 * 1024)
-            .collect()
-            .await
-            .ok()?
-            .to_bytes();
+        let bytes = match Limited::new(res.into_body(), MAX_ANSWER).collect().await {
+            Ok(b) => b.to_bytes(),
+            Err(e) if e.is::<http_body_util::LengthLimitError>() => {
+                tracing::warn!(limit = MAX_ANSWER, "resolver answer over the size limit");
+                return None;
+            }
+            Err(e) => {
+                tracing::warn!("resolver answer unreadable: {e}");
+                return None;
+            }
+        };
         serde_json::from_slice(&bytes).ok()
     }
 

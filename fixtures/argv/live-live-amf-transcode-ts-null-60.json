@@ -33,6 +33,8 @@
       "0:a:0?",
       "-sn",
       "-dn",
+      "-vf",
+      "bwdif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:min(ih\\,480)",
       "-c:v",
       "h264_amf",
       "-b:v",

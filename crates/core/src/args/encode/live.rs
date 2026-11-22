@@ -1,9 +1,11 @@
 //! Live TV argv and bitrate parsing.
 
 use super::super::{LiveArgs, LiveMode};
-use crate::api::HwAccel;
-use crate::hw::Device;
+use crate::api::{HostCaps, HwAccel};
+use crate::args::filters::DEINTERLACE;
+use crate::hw::{Device, GpuDeint};
 use crate::jsnum::{js_string as js, round};
+use crate::ladder::height_for_bitrate;
 use crate::strs;
 
 /// Live input decode flags: the shared device init, `-hwaccel` of the backend.
@@ -46,6 +48,67 @@ pub fn live_h264_encoder(hw: HwAccel) -> String {
         HwAccel::None => "libx264".into(),
         hw => format!("h264_{}", hw.as_str()),
     }
+}
+
+/// `-vf` of a transcode: an interlaced source is deinterlaced like VOD's (per frame when its field
+/// order is unknown) and the picture is cut to the rung the bitrate pays for, never enlarged.
+pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
+    if o.mode == LiveMode::Remux {
+        return None;
+    }
+    let height = o
+        .video_bitrate_bps
+        .filter(|b| *b > 0.0)
+        .map(height_for_bitrate);
+    let known = o.interlaced == Some(true);
+    let deint = o.interlaced != Some(false);
+    let h = |w: &str| height.map(|h| format!("{w}w=-2:h=min(ih\\,{h})"));
+    // A hardware chain without a GPU deinterlacer round-trips the frames through the CPU.
+    let bounce = |fmt: &str, up: &str| format!("hwdownload,format={fmt},{DEINTERLACE},{up}");
+    let gpu = |g: GpuDeint| caps.probe(g.probe_name());
+    let chain: Vec<Option<String>> = match o.hw_accel {
+        HwAccel::Vaapi => [
+            (deint && gpu(GpuDeint::Vaapi))
+                .then(|| GpuDeint::Vaapi.filter().unwrap_or_default().to_string())
+                .or_else(|| known.then(|| bounce("nv12", "hwupload=derive_device=vaapi"))),
+            h("scale_vaapi="),
+        ]
+        .into(),
+        HwAccel::Nvenc => [
+            (deint && gpu(GpuDeint::Cuda))
+                .then(|| GpuDeint::Cuda.filter().unwrap_or_default().to_string())
+                .or_else(|| known.then(|| bounce("nv12", "hwupload_cuda"))),
+            h("scale_cuda="),
+        ]
+        .into(),
+        HwAccel::Qsv => {
+            let vpp = |deint: &str, size: Option<String>| {
+                let opts = format!("{deint}{}", size.unwrap_or_default());
+                (!opts.is_empty()).then(|| format!("vpp_qsv={}", opts.trim_end_matches(':')))
+            };
+            if known && !gpu(GpuDeint::Qsv) {
+                [
+                    Some(bounce("nv12", "hwupload=extra_hw_frames=16")),
+                    vpp("", h("")),
+                ]
+                .into()
+            } else {
+                [vpp(
+                    if known { GpuDeint::Qsv.vpp_opts() } else { "" },
+                    h(""),
+                )]
+                .into()
+            }
+        }
+        // CPU frames: the software encoder's, and VideoToolbox's downloaded ones.
+        _ => [
+            deint.then(|| DEINTERLACE.to_string()),
+            height.map(|h| format!("scale=-2:min(ih\\,{h})")),
+        ]
+        .into(),
+    };
+    let chain: Vec<String> = chain.into_iter().flatten().collect();
+    (!chain.is_empty()).then(|| chain.join(","))
 }
 
 /// Live video: copy, or H.264 on the backend's encoder cut on a time grid.

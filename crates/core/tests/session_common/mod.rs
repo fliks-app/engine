@@ -105,15 +105,6 @@ pub fn run(kind: &str, i: &Value) -> Value {
             evicted.sort();
             json!({ "evicted": evicted })
         }
-        "job-idle" => {
-            let input: JobIdleInput = de(i);
-            let (state, action) = job_idle(&input, &cfg);
-            json!({
-                "state": state,
-                "action": if action == JobIdleAction::Keep { "keep" } else { "reap" },
-                "kill": action == (JobIdleAction::Reap { kill: true }),
-            })
-        }
         "live-gc" => {
             let now = i["nowMs"].as_i64().unwrap();
             let states: Vec<&str> = i["sessions"]
@@ -124,7 +115,7 @@ pub fn run(kind: &str, i: &Value) -> Value {
                     let beat = s["lastBeatMs"].as_i64().unwrap();
                     if !live_session_expired(beat, s["pinned"].as_bool().unwrap(), now, &cfg) {
                         "live"
-                    } else if tombstone_revivable(beat, now, &cfg) {
+                    } else if tombstone_revivable(beat, now, s["pinned"].as_bool().unwrap(), &cfg) {
                         "revived"
                     } else {
                         "gone"

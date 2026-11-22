@@ -12,15 +12,16 @@ use fliks_engine_core::hw::{
 };
 use std::future::Future;
 use std::path::Path;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 /// One hardware device (`gpu0`, `gpu1`, ...) probed on its own render node.
 pub use fliks_engine_core::hw::DeviceEntry as HwDevice;
 
-/// The admin's `FLIKS_OPENCL_DEVICE`, if set.
-pub fn opencl_device() -> Option<String> {
-    std::env::var("FLIKS_OPENCL_DEVICE").ok()
+/// What the host pins for a detection: the render node (`None` = auto) and the OpenCL device.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Pin {
+    pub node: Option<String>,
+    pub opencl_device: Option<String>,
 }
 
 /// One finished detection run. `detected` and `render_node` are `devices[0]`'s: what the playback
@@ -62,15 +63,15 @@ impl Snapshot {
     }
 }
 
-/// Runs the whole detection for a pinned render node (`None` = auto).
+/// Runs the whole detection for what the host pinned.
 pub type Detector =
-    Arc<dyn Fn(Option<String>) -> Pin<Box<dyn Future<Output = Snapshot> + Send>> + Send + Sync>;
+    Arc<dyn Fn(Pin) -> std::pin::Pin<Box<dyn Future<Output = Snapshot> + Send>> + Send + Sync>;
 
 #[derive(Default)]
 struct State {
     current: Option<Snapshot>,
-    /// Latest node the host asked for.
-    node: Option<String>,
+    /// Latest pin the host asked for.
+    pin: Pin,
     running: bool,
     rerun: bool,
 }
@@ -89,8 +90,12 @@ pub fn ffmpeg_path() -> String {
 /// The real detection: ffmpeg runs, `/dev/dri` + sysfs, and the pause probe (node-independent, run once).
 pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
     let pause: Arc<tokio::sync::OnceCell<bool>> = Arc::new(tokio::sync::OnceCell::new());
-    Arc::new(move |node| {
+    Arc::new(move |pin| {
         let (ffmpeg, pause) = (ffmpeg.clone(), pause.clone());
+        let Pin {
+            node,
+            opencl_device,
+        } = pin;
         Box::pin(async move {
             let platform = platform_from_os(std::env::consts::OS);
             let runner = ProcRunner {
@@ -100,12 +105,12 @@ pub fn ffmpeg_detector(ffmpeg: String) -> Detector {
             let gpus = enumerate_gpus(Path::new("/dev/dri"), Path::new("/sys/class/drm"));
             // Probes of different nodes run at once: each takes its own sample file names.
             let probe = |n: u32, node: Option<String>, only: Option<HwAccel>, cuda: Option<u32>| {
-                let (tmp, runner) = (&tmp, &runner);
+                let (tmp, runner, opencl) = (&tmp, &runner, &opencl_device);
                 async move {
                     let dev = Device {
                         platform,
                         render_node: node.clone(),
-                        opencl_device: opencl_device(),
+                        opencl_device: opencl.clone(),
                         cuda_index: cuda,
                     };
                     let detected =
@@ -209,14 +214,14 @@ impl Hw {
         self.schedule();
     }
 
-    /// The host changed `gpuRenderNode`: detect again on the new node unless it is the one in use.
-    pub fn set_render_node(self: &Arc<Self>, node: Option<String>) {
+    /// The host changed `gpuRenderNode` or `openclDevice`: detect again unless that is the pin in use.
+    pub fn set_pin(self: &Arc<Self>, pin: Pin) {
         {
             let mut s = self.state.locked();
-            if s.node == node {
+            if s.pin == pin {
                 return;
             }
-            s.node = node;
+            s.pin = pin;
         }
         self.schedule();
     }
@@ -234,12 +239,12 @@ impl Hw {
         let hw = self.clone();
         tokio::spawn(async move {
             loop {
-                let node = {
+                let pin = {
                     let mut s = hw.state.locked();
                     s.rerun = false;
-                    s.node.clone()
+                    s.pin.clone()
                 };
-                let snap = (hw.detector)(node).await;
+                let snap = (hw.detector)(pin).await;
                 tracing::info!(
                     hw_accel = ?snap.detected.hw_accel,
                     devices = snap.devices.len(),

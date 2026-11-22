@@ -1,7 +1,7 @@
 //! Layer 2: what a run writes (HLS VOD, remux GOP files, live window, trick-play frame, plain file).
 use super::encode::{
     AudioEnc, DEFAULT_AUDIO_PLAN, audio_copy_args, audio_encode_args, audio_map, audio_stream_args,
-    encode, live_input, live_video, probe_args, video_map,
+    encode, live_filters, live_input, live_video, probe_args, video_map,
 };
 use super::filters::crop_filter;
 use super::{AudioStream, FileArgs, FileFormat, IframeArgs, LiveArgs, RemuxArgs, VodArgs};
@@ -407,6 +407,9 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     }
     a.extend(["-i".into(), o.input_url.clone()]);
     a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
+    if let Some(vf) = live_filters(o, caps) {
+        a.extend(["-vf".into(), vf]);
+    }
     a.extend(live_video(o));
     // A broadcast switches AAC layouts at programme boundaries: ADTS in TS says so, fMP4 cannot.
     if o.audio_codec.as_deref() == Some("aac") && o.use_ts {
@@ -663,6 +666,55 @@ mod tests {
             "encodeThreads": threads
         }))
         .unwrap()
+    }
+
+    fn vf(hw: &str, interlaced: Option<bool>, bps: Option<f64>, probes: &[&str]) -> Option<String> {
+        let mut r = live_request("transcode", hw, 2);
+        (r.interlaced, r.video_bitrate_bps) = (interlaced, bps);
+        let caps = HostCaps {
+            probes: probes.iter().map(|p| p.to_string()).collect(),
+            ..HostCaps::default()
+        };
+        live_filters(&r, &caps)
+    }
+
+    #[test]
+    fn a_live_transcode_deinterlaces_and_never_enlarges() {
+        let bwdif = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
+        assert_eq!(vf("none", Some(false), None, &[]), None);
+        assert_eq!(vf("none", None, None, &[]).as_deref(), Some(bwdif));
+        assert_eq!(
+            vf("none", Some(true), Some(3e6), &[]),
+            Some(format!("{bwdif},scale=-2:min(ih\\,480)"))
+        );
+        assert_eq!(
+            vf("none", Some(false), Some(1.5e6), &[]).as_deref(),
+            Some("scale=-2:min(ih\\,360)")
+        );
+        assert_eq!(
+            vf("vaapi", Some(true), Some(6e6), &["deinterlaceVaapi"]).as_deref(),
+            Some(
+                "deinterlace_vaapi=mode=default:rate=frame:auto=1,scale_vaapi=w=-2:h=min(ih\\,720)"
+            )
+        );
+        assert_eq!(
+            vf("nvenc", Some(true), None, &["bwdifCuda"]).as_deref(),
+            Some("bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced")
+        );
+        // No GPU deinterlacer: a known interlaced source goes through the CPU, an unknown one is left.
+        assert_eq!(
+            vf("vaapi", Some(true), None, &[]),
+            Some(format!(
+                "hwdownload,format=nv12,{bwdif},hwupload=derive_device=vaapi"
+            ))
+        );
+        assert_eq!(vf("vaapi", None, None, &[]), None);
+        assert_eq!(
+            vf("qsv", Some(true), Some(10e6), &["deinterlaceQsv"]).as_deref(),
+            Some("vpp_qsv=deinterlace=advanced:rate=frame:w=-2:h=min(ih\\,1080)")
+        );
+        let remux = live_request("remux", "none", 2);
+        assert_eq!(live_filters(&remux, &HostCaps::default()), None);
     }
 
     #[test]

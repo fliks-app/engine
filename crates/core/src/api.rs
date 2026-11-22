@@ -192,6 +192,15 @@ pub struct StreamingConfig {
     pub throttle_threshold_seconds: f64,
     /// Absent: `auto`.
     pub sprite_decode: SpriteDecode,
+    /// The OpenCL device (`platform.device`) ffmpeg's tone mapping and probes use; absent: its default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opencl_device: Option<String>,
+    /// Threads of an ONNX model run; absent: half the cores within 2 and 8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ort_threads: Option<u32>,
+    /// An optimization yields to playback by being killed and requeued, never suspended (a GPU
+    /// short of memory).
+    pub optimize_pause_restart: bool,
 }
 
 impl Default for StreamingConfig {
@@ -212,6 +221,9 @@ impl Default for StreamingConfig {
             throttle_enabled: true,
             throttle_threshold_seconds: 90.0,
             sprite_decode: SpriteDecode::Auto,
+            opencl_device: None,
+            ort_threads: None,
+            optimize_pause_restart: false,
         }
     }
 }
@@ -245,6 +257,9 @@ pub struct EngineConfig {
     /// jobs from it. Absent or false: it never calls `/engine/workers/*`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub worker: bool,
+    /// The host reads `Log` events: the engine sends its `warn` and `error` log lines on `/v1/events`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub log_events: bool,
 }
 
 /// Longest `from` that ends on a path boundary. `/mnt/a` does not rewrite `/mnt/ab`.

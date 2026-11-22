@@ -23,12 +23,11 @@ Ordered rules, first match wins, no match = forward. A rule is data, `{ "target"
 
 - Path pattern: `/`-separated segments; `:name` or `*` = exactly one non-empty segment; `**`, last only, = zero or more segments; anything else is literal. Matched on the raw request path (no decoding, no normalisation, query ignored).
 - `engine` rules go to the engine router handed to `gateway::router` (the M3 data plane plugs in there). With no engine router they are forwarded, so the gateway is usable before the data plane exists.
-- Default table (Fliks, `src/fliks-routes.json`, plan §16):
+- Default table (Fliks, `src/fliks-routes.json`), the engine rows being the shapes of `serve::routes` (a test asserts every row matches a served route and every served route a row, so a host `GET` the engine does not serve is forwarded):
   1. forward `/api/stream/info/**`
-  2. forward `/api/stream/:id/edl`
-  3. engine `GET`/`HEAD` `/api/stream/:id/**`
-  4. engine `GET`/`HEAD` `/cred/:credential/api/stream/:id/**` (the data plane with a path credential, `runtime.md` section 6; the tail is checked by the engine, not by the table)
-  5. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
+  2. engine `GET`/`HEAD` `/api/stream/:id`, `:id/master.m3u8`, `:id/:a/:b` (variant, segment, parts, item, iframe, thumbnails, subtitles), `:id/audio/:idx/:seg`, `:id/subtitles/embedded/:idx[/download|/index.m3u8]`, `:id/subtitles/:sub/{download,index.m3u8}`
+  3. engine `GET`/`HEAD` `/cred/:credential/api/stream/:id/**` (the data plane with a path credential, `runtime.md` section 6; the credential must never reach the host, so the tail is the engine's to refuse)
+  4. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
   Non-GET verbs (`playback-info`, `DELETE sessions/:sid`, live `PUT .../state`) and every other path fall through to the forward.
 
 ## Forwarding
@@ -36,7 +35,7 @@ Ordered rules, first match wins, no match = forward. A rule is data, `{ "target"
 - Method, path and query verbatim, to `http://<upstream authority>`; `Host` kept as received. HTTP/1.1 to the upstream.
 - `Authorization` (any scheme) and path segments are never touched, so HTTP Basic and path tokens reach the upstream as received; the engine never logs request paths, headers or bodies.
 - Hop-by-hop headers (`Connection` and the headers it names, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`) are stripped in both directions, except on an upgrade (below).
-- Added: `X-Forwarded-For` (peer IP appended to the existing value), `X-Forwarded-Proto` (`http`, kept if already set), `X-Forwarded-Host` (`Host`, kept if already set).
+- Added: `X-Forwarded-For` (peer IP appended to the existing value), `X-Forwarded-Proto` (`http`) and `X-Forwarded-Host` (`Host`), a client's own kept only when the peer is loopback or on a private network.
 - Request and response bodies are streamed frame by frame with backpressure (never collected): large downloads/uploads use bounded memory, SSE events are flushed as they arrive.
 - Upgrade (`Connection: upgrade` + `Upgrade`): both headers are forwarded; on `101` the response goes back and the two connections are spliced byte for byte until either side closes (WebSocket, any protocol).
 - Upstream refused, reset or unreachable before a response: `502 Bad Gateway`, empty body. Engine routes are unaffected. No retry, no timeout beyond a 5 s connect timeout.

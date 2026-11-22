@@ -47,6 +47,7 @@ fn known_probe(u: &fliks_engine_core::api::LiveUpstream) -> Option<LiveProbe> {
         video_codec: u.probed_video_codec.clone(),
         audio_codec: u.probed_audio_codec.clone(),
         container: u.probed_container.clone(),
+        field_order: u.probed_field_order.clone(),
     })
 }
 
@@ -209,7 +210,8 @@ pub(super) async fn start(
     let video0 = probes[first]
         .as_ref()
         .and_then(|p| p.video_codec.as_deref());
-    let effective = core_live::effective_mode(mode, video0);
+    let interlaced = probes[first].as_ref().and_then(LiveProbe::interlaced);
+    let effective = core_live::effective_mode(mode, video0, interlaced == Some(true));
     let dir = (effective != LiveMode::Direct).then(|| {
         let safe: String = key
             .chars()

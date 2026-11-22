@@ -88,6 +88,7 @@ fn run(func: &str, i: &Value) -> Value {
                 video_codec: s(&i["probe"]["probedVideoCodec"]).map(String::from),
                 audio_codec: None,
                 container: s(&i["probe"]["probedContainer"]).map(String::from),
+                field_order: None,
             };
             let (m, c) = plan(
                 &caps(&i["caps"]),
@@ -98,13 +99,14 @@ fn run(func: &str, i: &Value) -> Value {
             json!({
                 "mode": mode(m),
                 "key": session_key(s(&i["channelId"]).unwrap(), m, &c),
-                "effectiveMode": mode(effective_mode(m, probe.video_codec.as_deref())),
+                "effectiveMode": mode(effective_mode(m, probe.video_codec.as_deref(), false)),
                 "maxBitrateBps": c.max_bitrate_bps,
             })
         }
         "forcesTranscode" => json!(forces_transcode(
             s(&i["probedVideoCodec"]),
-            s(&i["activeVideoCodec"])
+            s(&i["activeVideoCodec"]),
+            false
         )),
         "failover" => failover(
             i["upstreams"].as_u64().unwrap() as usize,
