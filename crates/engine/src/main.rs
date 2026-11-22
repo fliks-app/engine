@@ -113,10 +113,9 @@ async fn main() -> std::process::ExitCode {
         let public = tokio::net::TcpListener::bind(public)
             .await
             .expect("bind public");
-        println!(
-            "FLIKS_ENGINE_PUBLIC_LISTENING {}",
-            public.local_addr().unwrap()
-        );
+        let public_addr = public.local_addr().unwrap();
+        println!("FLIKS_ENGINE_PUBLIC_LISTENING {public_addr}");
+        host_env.push(("FLIKS_PUBLIC_PORT", public_addr.port().to_string()));
         let app = gateway::router(
             table,
             up.clone(),
@@ -162,16 +161,17 @@ async fn run_remote_gateway(cli: Cli) -> std::process::ExitCode {
     let public = tokio::net::TcpListener::bind(public)
         .await
         .expect("bind public");
-    println!(
-        "FLIKS_ENGINE_PUBLIC_LISTENING {}",
-        public.local_addr().unwrap()
-    );
+    let public_addr = public.local_addr().unwrap();
+    println!("FLIKS_ENGINE_PUBLIC_LISTENING {public_addr}");
     let app = gateway::router_remote(table, host.clone(), engine.clone());
     let gateway = axum::serve(
         public,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     );
-    let host_env = [("PORT", host.port().to_string())];
+    let host_env = [
+        ("PORT", host.port().to_string()),
+        ("FLIKS_PUBLIC_PORT", public_addr.port().to_string()),
+    ];
     if cli.supervise {
         tokio::spawn(async move {
             gateway.await.ok();

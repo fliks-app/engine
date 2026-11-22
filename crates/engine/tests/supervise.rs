@@ -53,7 +53,10 @@ fn upstream_sets_the_host_port_and_serves_the_public_listener() {
         .env("FLIKS_TRANSCODE_DIR", cache_dir())
         .args(["--supervise", "--upstream", "http://10.1.2.3:4321"])
         .args(["--public-listen", "127.0.0.1:0", "--", "sh", "-c"])
-        .arg(format!("echo \"$PORT\" > {}; sleep 30", out.display()))
+        .arg(format!(
+            "echo \"$PORT $FLIKS_PUBLIC_PORT\" > {}; sleep 30",
+            out.display()
+        ))
         .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap();
@@ -75,8 +78,10 @@ fn upstream_sets_the_host_port_and_serves_the_public_listener() {
     engine.kill().unwrap();
     engine.wait().unwrap();
     let _ = std::fs::remove_file(&out);
-    assert_eq!(port.trim(), "4321");
-    assert!(public.is_some_and(|a| a.starts_with("127.0.0.1:")));
+    let public = public.unwrap();
+    assert!(public.starts_with("127.0.0.1:"));
+    let public_port = public.rsplit(':').next().unwrap();
+    assert_eq!(port.trim(), format!("4321 {public_port}"));
 }
 
 /// A SIGKILLed engine runs no shutdown path: its ffmpeg children must die with it.
