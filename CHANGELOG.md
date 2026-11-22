@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.30.0](https://github.com/fliks-app/engine/compare/v1.29.1...v1.30.0) (2026-11-22)
+
+
+### Features
+
+* **gateway:** export the public port to the supervised host ([#267](https://github.com/fliks-app/engine/issues/267)) ([1ae733d](https://github.com/fliks-app/engine/commit/1ae733da81c1dcd3cdc426ee0973c53aea247b07))
+
+
+### Bug Fixes
+
+* **runtime:** close the review findings of the run supervision ([#266](https://github.com/fliks-app/engine/issues/266)) ([a9ae560](https://github.com/fliks-app/engine/commit/a9ae5605ede2e1eaea10dff38bacaf1700976e88))
+* **runtime:** finish the hardware fallback and give the host time to drain ([#268](https://github.com/fliks-app/engine/issues/268)) ([f4c1691](https://github.com/fliks-app/engine/commit/f4c169186e1c2fdd314528f0d49ef15b84f34862))
+* **runtime:** supervise runs, admit jobs and narrow the gateway ([#259](https://github.com/fliks-app/engine/issues/259)) ([1b2e98f](https://github.com/fliks-app/engine/commit/1b2e98fa66ae0b3864056d8facf204ae177301f3))
+
 ## [1.29.1](https://github.com/fliks-app/engine/compare/v1.29.0...v1.29.1) (2026-11-22)
 
 
