@@ -737,7 +737,11 @@ async fn a_playback_run_below_the_free_space_floor_answers_503_and_spawns_nothin
         )
         .await;
     assert_eq!(r.status, 503, "{}", r.text());
-    assert!(r.text().contains("not enough disk space"), "{}", r.text());
+    assert_eq!(r.header("retry-after").as_deref(), Some("2"));
+    assert!(
+        !r.text().contains(&e.root.to_string_lossy().to_string()),
+        "no path in the body"
+    );
     assert!(e.ffmpeg_pids().is_empty());
 }
 

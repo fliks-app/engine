@@ -26,7 +26,7 @@ Ordered rules, first match wins, no match = forward. A rule is data, `{ "target"
 - Default table (Fliks, `src/fliks-routes.json`), the engine rows being the shapes of `serve::routes` (a test asserts every row matches a served route and every served route a row, so a host `GET` the engine does not serve is forwarded):
   1. forward `/api/stream/info/**`
   2. engine `GET`/`HEAD` `/api/stream/:id`, `:id/master.m3u8`, `:id/:a/:b` (variant, segment, parts, item, iframe, thumbnails, subtitles), `:id/audio/:idx/:seg`, `:id/subtitles/embedded/:idx[/download|/index.m3u8]`, `:id/subtitles/:sub/{download,index.m3u8}`
-  3. the same shapes under `/cred/:credential` (the data plane with a path credential, `runtime.md` section 6)
+  3. engine `GET`/`HEAD` `/cred/:credential/api/stream/:id/**` (the data plane with a path credential, `runtime.md` section 6; the credential must never reach the host, so the tail is the engine's to refuse)
   4. engine `GET`/`HEAD` `/api/livetv/sessions/:sid/:file` (live playlist, segments, `direct.ts`)
   Non-GET verbs (`playback-info`, `DELETE sessions/:sid`, live `PUT .../state`) and every other path fall through to the forward.
 

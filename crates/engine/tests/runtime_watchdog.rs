@@ -163,19 +163,14 @@ async fn every_job_kind_stops_on_engine_shutdown() {
 }
 
 #[tokio::test]
-async fn a_job_whose_session_is_gone_is_reaped_on_the_next_gc_tick() {
+async fn a_request_racing_the_end_of_its_session_starts_no_run() {
     let (e, file) = engine_of(&fake("hang"), json!({})).await;
     let sid = open(&e, &file, json!({})).await;
     let s = e.rt.peek(&sid).unwrap();
     e.rt.stop(&sid, "stopped").await;
-    // A request racing the end of its session registers a run nobody owns.
     e.rt.prewarm_remux(&s, 0.0);
-    until("the orphan run", 30, || {
-        e.ffmpeg_pids().len() == 1 && e.rt.job(&s.key(JobKind::Remux)).is_some()
-    })
-    .await;
-    e.rt.gc_tick().await;
-    gone(&e, "the reaped orphan").await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert!(e.ffmpeg_pids().is_empty());
     assert!(e.rt.job(&s.key(JobKind::Remux)).is_none());
 }
 

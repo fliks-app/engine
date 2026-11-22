@@ -384,9 +384,14 @@ mod tests {
             );
             s.len() == p.len() && s.iter().zip(&p).all(|(s, p)| s.starts_with('{') || s == p)
         };
-        for r in t.0.iter().filter(|r| r.target == Target::Engine) {
+        // The `/cred` row is a prefix: the credential must never reach the host, so the engine
+        // answers any tail itself.
+        for r in
+            t.0.iter()
+                .filter(|r| r.target == Target::Engine && r.segments[0] != "cred")
+        {
             let path = sample(r.segments.iter());
-            let path = path.strip_prefix("/cred/7x").unwrap_or(&path);
+            let path = path.as_str();
             assert!(
                 served.iter().any(|s| matches(s, path)),
                 "no served route for {path}"

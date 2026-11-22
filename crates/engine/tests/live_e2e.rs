@@ -196,7 +196,7 @@ async fn remux_fails_over_to_the_next_upstream_and_releases() {
     assert_eq!(a["mode"], "remux");
     assert_eq!(
         a["probe"],
-        json!({ "videoCodec": "h264", "audioCodec": "aac", "container": "mpegts" })
+        json!({ "videoCodec": "h264", "audioCodec": "aac", "container": "mpegts", "fieldOrder": "progressive" })
     );
     assert_eq!(attempt(&mut rx, 1).await, (0, None));
 
