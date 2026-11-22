@@ -160,6 +160,26 @@ fn make_room(cache: &mut HashMap<Key, Entry>, cap: usize, now: Instant) {
     }
 }
 
+/// A key's host call in progress: its entry goes when the call ends or its request is dropped.
+struct Flight<'a> {
+    flights: &'a Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
+    key: Key,
+    gate: Arc<tokio::sync::Mutex<()>>,
+    _held: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Drop for Flight<'_> {
+    fn drop(&mut self) {
+        let mut flights = self.flights.locked();
+        if flights
+            .get(&self.key)
+            .is_some_and(|g| Arc::ptr_eq(g, &self.gate))
+        {
+            flights.remove(&self.key);
+        }
+    }
+}
+
 impl Resolver {
     pub async fn resolve(
         &self,
@@ -185,22 +205,33 @@ impl Resolver {
             .or_default()
             .clone();
         let _flight = match gate.clone().try_lock_owned() {
-            Ok(g) => g,
-            // A refresh is on its way: an expired grant keeps serving meanwhile.
+            Ok(g) => Flight {
+                flights: &self.flights,
+                key: key.clone(),
+                gate: gate.clone(),
+                _held: g,
+            },
+            // A refresh is on its way: an expired grant keeps serving meanwhile, but a `ttlS: 0`
+            // answer is re-checked on every request.
             Err(_) => match &stale {
-                Some(res) if res.allow => return granted(res, ask.purpose),
+                Some(res) if res.allow && res.ttl_s != Some(0.0) => {
+                    return granted(res, ask.purpose);
+                }
                 _ => {
-                    let g = gate.lock_owned().await;
+                    let flight = Flight {
+                        flights: &self.flights,
+                        key: key.clone(),
+                        gate: gate.clone(),
+                        _held: gate.clone().lock_owned().await,
+                    };
                     if let Cached::Fresh(res) = self.cached(&key) {
                         return granted(&res, ask.purpose);
                     }
-                    g
+                    flight
                 }
             },
         };
-        let out = self.refresh(host, ask, key.clone(), stale).await;
-        self.flights.locked().remove(&key);
-        out
+        self.refresh(host, ask, key, stale).await
     }
 
     fn cached(&self, key: &Key) -> Cached {
@@ -404,6 +435,91 @@ mod tests {
         cache.insert(key(2), denied);
         make_room(&mut cache, 2, now);
         assert!(cache.contains_key(&key(1)) && !cache.contains_key(&key(2)));
+    }
+
+    /// A host that counts its calls and answers after `delay`: `(url, calls)`.
+    async fn host(
+        delay: Duration,
+        ttl_s: f64,
+        path_len: usize,
+    ) -> (Host, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let app = axum::Router::new().route(
+            "/engine/resolve",
+            axum::routing::post(move || {
+                let seen = seen.clone();
+                async move {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(delay).await;
+                    axum::Json(serde_json::json!({
+                        "allow": true, "path": "p".repeat(path_len), "ttlS": ttl_s
+                    }))
+                }
+            }),
+        );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await });
+        (Host { url, token: None }, calls)
+    }
+
+    fn ask() -> Ask<'static> {
+        Ask {
+            media: ResolveMediaId::File(1),
+            credential: "c",
+            source: None,
+            purpose: ResolvePurpose::Stream,
+            subtitle_id: None,
+            stream_index: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_requests_for_a_key_make_one_host_call() {
+        let (h, calls) = host(Duration::from_millis(200), 60.0, 1).await;
+        let r = Resolver::default();
+        let all = futures_util::future::join_all((0..5).map(|_| r.resolve(Some(&h), ask()))).await;
+        assert!(all.iter().all(|a| a.is_ok()));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(r.flights.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_ttl_zero_grant_is_never_served_stale_during_a_refresh() {
+        let (h, calls) = host(Duration::from_millis(150), 0.0, 1).await;
+        let r = Resolver::default();
+        r.resolve(Some(&h), ask()).await.unwrap();
+        let (a, b) = tokio::join!(r.resolve(Some(&h), ask()), r.resolve(Some(&h), ask()));
+        assert!(a.is_ok() && b.is_ok());
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "each one asked"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_aborted_request_leaves_no_flight_behind() {
+        let (h, _) = host(Duration::from_secs(5), 60.0, 1).await;
+        let r = Resolver::default();
+        let gone =
+            tokio::time::timeout(Duration::from_millis(100), r.resolve(Some(&h), ask())).await;
+        assert!(gone.is_err());
+        assert!(r.flights.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_answer_over_eight_mib_is_refused_and_one_below_is_read() {
+        let r = Resolver::default();
+        let (big, _) = host(Duration::ZERO, 60.0, MAX_ANSWER).await;
+        assert_eq!(
+            r.resolve(Some(&big), ask()).await,
+            Err(ResolveError::Unavailable)
+        );
+        let (ok, _) = host(Duration::ZERO, 60.0, MAX_ANSWER - 1024).await;
+        assert!(r.resolve(Some(&ok), ask()).await.is_ok());
     }
 
     #[test]

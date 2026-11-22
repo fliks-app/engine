@@ -22,7 +22,7 @@ The engine can own the public port and forward what it does not serve to a host 
 Ordered rules, first match wins, no match = forward. A rule is data, `{ "target": "engine"|"forward", "methods": ["GET"], "path": "/api/stream/:id/**" }`; empty or absent `methods` = any.
 
 - Path pattern: `/`-separated segments; `:name` or `*` = exactly one non-empty segment; `**`, last only, = zero or more segments; anything else is literal. Matched on the raw request path (no decoding, no normalisation, query ignored).
-- `engine` rules go to the engine router handed to `gateway::router` (the M3 data plane plugs in there). With no engine router they are forwarded, so the gateway is usable before the data plane exists.
+- `engine` rules go to the in-process engine router handed to `gateway::router` (`serve::routes`), or, with `router_remote`, to the engine's own address. With no engine router they are forwarded to the host.
 - Default table (Fliks, `src/fliks-routes.json`), the engine rows being the shapes of `serve::routes` (a test asserts every row matches a served route and every served route a row, so a host `GET` the engine does not serve is forwarded):
   1. forward `/api/stream/info/**`
   2. engine `GET`/`HEAD` `/api/stream/:id`, `:id/master.m3u8`, `:id/:a/:b` (variant, segment, parts, item, iframe, thumbnails, subtitles), `:id/audio/:idx/:seg`, `:id/subtitles/embedded/:idx[/download|/index.m3u8]`, `:id/subtitles/:sub/{download,index.m3u8}`

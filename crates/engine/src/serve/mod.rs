@@ -347,30 +347,34 @@ async fn access(
     if let Some(None) = session {
         return Err(expired(sid.map(String::as_str)));
     }
+    let mut granted = true;
     let resolved = match rt.resolver.resolve(host.as_ref(), ask).await {
         Ok(r) => r,
         Err(ResolveError::Denied { .. }) => return Err(text(StatusCode::FORBIDDEN, "Forbidden")),
         // Host down: a live session of this file keeps playing (callers map the host path).
         Err(ResolveError::Unavailable) => match &session {
-            Some(Some((s, _))) if s.media_file_id == id => Resolved {
-                path: s.req.decide.media.path.clone(),
-                owner: s.owner.clone(),
-                format: None,
-                parts: s
-                    .req
-                    .decide
-                    .media
-                    .parts
-                    .iter()
-                    .map(|p| ResolvedPart {
-                        path: p.path.clone(),
-                        duration_s: Some(p.duration_s()),
-                        start_s: p.start_s,
-                        end_s: p.end_s,
-                        format: None,
-                    })
-                    .collect(),
-            },
+            Some(Some((s, _))) if s.media_file_id == id => {
+                granted = false;
+                Resolved {
+                    path: s.req.decide.media.path.clone(),
+                    owner: s.owner.clone(),
+                    format: None,
+                    parts: s
+                        .req
+                        .decide
+                        .media
+                        .parts
+                        .iter()
+                        .map(|p| ResolvedPart {
+                            path: p.path.clone(),
+                            duration_s: Some(p.duration_s()),
+                            start_s: p.start_s,
+                            end_s: p.end_s,
+                            format: None,
+                        })
+                        .collect(),
+                }
+            }
             _ => return Err(retry(RETRY_AFTER_SECONDS)),
         },
     };
@@ -381,7 +385,7 @@ async fn access(
         }
         // Only a granted request brings an expired session back.
         Some(Some((s, buried))) => {
-            if buried {
+            if buried && granted {
                 rt.revive(&s);
             }
             Some(s)

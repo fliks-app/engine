@@ -253,7 +253,15 @@ impl Runtime {
                         return result;
                     }
                     Err(RecvError::Closed) => return None,
-                    _ => {}
+                    // Events were dropped: the job's own state says whether it ended meanwhile.
+                    Err(RecvError::Lagged(_)) => {
+                        if let Some(j) = self.jobs.get(&id).map(|j| j.snapshot())
+                            && j.state.ended()
+                        {
+                            return j.result;
+                        }
+                    }
+                    Ok(_) => {}
                 }
             }
         };
@@ -498,15 +506,6 @@ impl Runtime {
     /// A live session, never a tombstone.
     pub fn peek(&self, sid: &str) -> Option<Arc<Session>> {
         self.reg.locked().sessions.get(sid).cloned()
-    }
-
-    /// A live session, or a tombstone revived within the revive window.
-    pub fn session(&self, sid: &str) -> Option<Arc<Session>> {
-        let (s, buried) = self.lookup(sid)?;
-        if buried {
-            self.revive(&s);
-        }
-        Some(s)
     }
 
     /// A session, and whether it is a tombstone still within the revive window (left buried).

@@ -44,7 +44,7 @@ use tokio::task::JoinHandle;
 /// Jobs running at once. [ts:modules/streaming/thumbnail.service.ts:56]
 const MAX_RUNNING: usize = 2;
 /// Ended jobs stay this long, so a host that reconnects after an event lag still finds its job.
-const KEEP_ENDED_FOR: Duration = Duration::from_secs(600);
+pub const KEEP_ENDED_FOR: Duration = Duration::from_secs(600);
 /// The most ended jobs kept, whatever their age.
 const KEEP_ENDED_MAX: usize = 2000;
 const TICK: Duration = Duration::from_millis(200);
@@ -160,7 +160,32 @@ struct Queue {
     ended: VecDeque<u64>,
 }
 
+impl Queue {
+    /// Drops the oldest ended jobs past `KEEP_ENDED_FOR` at `now`, then any beyond `KEEP_ENDED_MAX`.
+    fn trim_ended(&mut self, now: i64) {
+        let stale = now - KEEP_ENDED_FOR.as_millis() as i64;
+        while let Some(&oldest) = self.ended.front() {
+            let aged = self
+                .all
+                .get(&oldest)
+                .is_none_or(|j| j.m.locked().ended_ms.is_some_and(|t| t < stale));
+            if self.ended.len() <= KEEP_ENDED_MAX && !aged {
+                break;
+            }
+            self.ended.pop_front();
+            if let Some(old) = self.all.remove(&oldest) {
+                self.by_id.remove(&old.id);
+            }
+        }
+    }
+}
+
 impl Jobs {
+    /// The retention trim as of `now`: ended jobs are otherwise only trimmed as another one ends.
+    pub fn trim_ended_at(&self, now: i64) {
+        self.q.locked().trim_ended(now);
+    }
+
     pub fn get(&self, id: &str) -> Option<Arc<BgJob>> {
         let q = self.q.locked();
         q.all.get(q.by_id.get(id)?).cloned()
@@ -556,20 +581,7 @@ fn finish(
         _ => {}
     }
     q.ended.push_back(job.seq);
-    let stale = now_ms() - KEEP_ENDED_FOR.as_millis() as i64;
-    while let Some(&oldest) = q.ended.front() {
-        let aged = q
-            .all
-            .get(&oldest)
-            .is_none_or(|j| j.m.locked().ended_ms.is_some_and(|t| t < stale));
-        if q.ended.len() <= KEEP_ENDED_MAX && !aged {
-            break;
-        }
-        q.ended.pop_front();
-        if let Some(old) = q.all.remove(&oldest) {
-            q.by_id.remove(&old.id);
-        }
-    }
+    q.trim_ended(now_ms());
 }
 
 /// Cancels `jobs` and waits until their runs are gone.

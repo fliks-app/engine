@@ -629,14 +629,13 @@ impl Runtime {
             to,
             stderr_tail: job.proc.stderr_tail(),
         });
-        // Segments the failed run finished stay: the new run starts at the first gap.
+        // The new encoder writes its own init: the failed run's segments cannot join it, so the
+        // rung restarts at the first gap.
         let start = job.m.locked().sets[0]
             .first_missing(job.start_segment)
             .unwrap_or(job.start_segment);
-        if !job.has(0, job.start_segment) {
-            let dir = job.dir.clone();
-            let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
-        }
+        let dir = job.dir.clone();
+        let _ = tokio::task::spawn_blocking(move || remove_dir(&dir)).await;
         let hw = (to, job.requested_hw);
         let avoid = job.device.as_deref().filter(|_| retry);
         self.spawn_job(

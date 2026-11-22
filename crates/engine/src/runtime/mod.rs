@@ -144,8 +144,7 @@ impl Runtime {
         [ffprobe, fpcalc, mkvmerge, mkvpropedit]: [String; 4],
     ) -> Arc<Self> {
         let events = Events::default();
-        let karaoke =
-            crate::karaoke::Karaoke::new(crate::karaoke::models_dir(&cache.root), events.clone());
+        let karaoke = crate::karaoke::Karaoke::new(cache.models_dir(), events.clone());
         Arc::new(Self {
             config: Mutex::new(None),
             hw,
@@ -191,6 +190,25 @@ impl Runtime {
             locks.retain(|_, l| Arc::strong_count(l) > 1);
         }
         locks.entry(key.into()).or_default().clone()
+    }
+
+    /// `key`'s lock. A run that exited and whose watcher has not settled is waited on first with
+    /// the lock free: the watcher's fall-back needs it, and a wedged one must not stall the key.
+    pub(crate) async fn lock_settled<'a>(
+        &self,
+        lock: &'a tokio::sync::Mutex<()>,
+        key: &str,
+    ) -> tokio::sync::MutexGuard<'a, ()> {
+        let g = lock.lock().await;
+        let Some(e) = self
+            .job(key)
+            .filter(|e| e.proc.exited().is_some() && !e.m.locked().settled)
+        else {
+            return g;
+        };
+        drop(g);
+        e.settled().await;
+        lock.lock().await
     }
 
     pub(crate) fn pause_capability(&self) -> PauseCapability {

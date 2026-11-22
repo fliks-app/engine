@@ -36,7 +36,9 @@ pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
             ]));
             a
         }
-        HwAccel::Nvenc => dev.cuda_hwaccel(true),
+        // Software frames, uploaded by the filter graph: NVDEC may not take the codec, and
+        // `scale_cuda` takes only CUDA frames.
+        HwAccel::Nvenc => dev.cuda_hwaccel(false),
         HwAccel::Videotoolbox => strs(&["-hwaccel", "videotoolbox"]),
         _ => vec![],
     }
@@ -51,7 +53,8 @@ pub fn live_h264_encoder(hw: HwAccel) -> String {
 }
 
 /// `-vf` of a transcode: an interlaced source is deinterlaced like VOD's (per frame when its field
-/// order is unknown) and the picture is cut to the rung the bitrate pays for, never enlarged.
+/// order is unknown, except QSV: `vpp_qsv` cannot tell frames apart) and the picture is cut to the
+/// rung the bitrate pays for, never enlarged.
 pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
     if o.mode == LiveMode::Remux {
         return None;
@@ -74,13 +77,19 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
             h("scale_vaapi="),
         ]
         .into(),
-        HwAccel::Nvenc => [
-            (deint && gpu(GpuDeint::Cuda))
-                .then(|| GpuDeint::Cuda.filter().unwrap_or_default().to_string())
-                .or_else(|| known.then(|| bounce("nv12", "hwupload_cuda"))),
-            h("scale_cuda="),
-        ]
-        .into(),
+        HwAccel::Nvenc => {
+            let size = h("scale_cuda=");
+            let up = size.is_some().then_some("hwupload_cuda");
+            let pre = if deint && gpu(GpuDeint::Cuda) {
+                let f = GpuDeint::Cuda.filter().unwrap_or_default();
+                Some(format!("hwupload_cuda,{f}"))
+            } else if known {
+                Some(strs_join([Some(DEINTERLACE), up]))
+            } else {
+                up.map(String::from)
+            };
+            [pre, size].into()
+        }
         HwAccel::Qsv => {
             let vpp = |deint: &str, size: Option<String>| {
                 let opts = format!("{deint}{}", size.unwrap_or_default());
@@ -109,6 +118,10 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
     };
     let chain: Vec<String> = chain.into_iter().flatten().collect();
     (!chain.is_empty()).then(|| chain.join(","))
+}
+
+fn strs_join<const N: usize>(parts: [Option<&str>; N]) -> String {
+    parts.into_iter().flatten().collect::<Vec<_>>().join(",")
 }
 
 /// Live video: copy, or H.264 on the backend's encoder cut on a time grid.

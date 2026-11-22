@@ -220,19 +220,6 @@ pub fn threads() -> usize {
     }
 }
 
-/// `<FLIKS_DATA_DIR>/models` when the host names its data directory, else `<cache root>/models`.
-pub fn models_dir(cache_root: &Path) -> PathBuf {
-    models_dir_in(std::env::var("FLIKS_DATA_DIR").ok().as_deref(), cache_root)
-}
-
-fn models_dir_in(data_dir: Option<&str>, cache_root: &Path) -> PathBuf {
-    data_dir
-        .map(str::trim)
-        .filter(|d| !d.is_empty())
-        .map_or_else(|| cache_root.to_owned(), PathBuf::from)
-        .join("models")
-}
-
 impl Karaoke {
     pub fn new(dir: PathBuf, events: Events) -> Self {
         let backend = onnx::default_backend(&dir);
@@ -535,21 +522,6 @@ mod tests {
         let at = |n: &str| PROVIDERS.iter().position(|p| *p == n).unwrap();
         assert!(at("cuda") < at("nvtensorrtrtx") && at("amdgpu") < at("migraphx"));
         assert_eq!(at("directml"), PROVIDERS.len() - 1);
-    }
-
-    #[test]
-    fn the_models_live_under_the_data_directory_else_the_cache_root() {
-        let cache = Path::new("/cache");
-        assert_eq!(
-            models_dir_in(Some("/data"), cache),
-            Path::new("/data/models")
-        );
-        assert_eq!(
-            models_dir_in(Some(" /data "), cache),
-            Path::new("/data/models")
-        );
-        assert_eq!(models_dir_in(Some("  "), cache), Path::new("/cache/models"));
-        assert_eq!(models_dir_in(None, cache), Path::new("/cache/models"));
     }
 
     #[test]

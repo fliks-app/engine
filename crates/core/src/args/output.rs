@@ -699,8 +699,20 @@ mod tests {
         );
         assert_eq!(
             vf("nvenc", Some(true), None, &["bwdifCuda"]).as_deref(),
-            Some("bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced")
+            Some("hwupload_cuda,bwdif_cuda=mode=send_frame:parity=auto:deint=interlaced")
         );
+        // CUDA filters only ever see uploaded frames: NVDEC may have fallen back to software.
+        assert_eq!(
+            vf("nvenc", Some(false), Some(3e6), &[]).as_deref(),
+            Some("hwupload_cuda,scale_cuda=w=-2:h=min(ih\\,480)")
+        );
+        assert_eq!(
+            vf("nvenc", Some(true), Some(3e6), &[]),
+            Some(format!(
+                "{bwdif},hwupload_cuda,scale_cuda=w=-2:h=min(ih\\,480)"
+            ))
+        );
+        assert_eq!(vf("nvenc", Some(false), None, &[]), None);
         // No GPU deinterlacer: a known interlaced source goes through the CPU, an unknown one is left.
         assert_eq!(
             vf("vaapi", Some(true), None, &[]),

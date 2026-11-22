@@ -107,6 +107,25 @@ fn done_json(ev: &EngineEvent) -> Value {
 }
 
 #[tokio::test]
+async fn an_ended_job_is_kept_for_ten_minutes_then_trimmed() {
+    let (e, file) = engine_of("sprite", json!({ "ffmpegSlots": 3 })).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit(&e, 7, &file, false).await;
+    done(&mut rx, &id).await;
+    let now = fliks_engine::runtime::now_ms();
+    let kept = fliks_engine::jobs::KEEP_ENDED_FOR.as_millis() as i64;
+    e.rt.jobs.trim_ended_at(now + kept - 5_000);
+    assert_eq!(job(&e, &id).await["state"], "done");
+    e.rt.jobs.trim_ended_at(now + kept + 5_000);
+    assert_eq!(
+        e.control("GET", &format!("/v1/jobs/{id}"), None)
+            .await
+            .status,
+        404
+    );
+}
+
+#[tokio::test]
 async fn sprite_job_runs_dedupes_reports_progress_and_is_served() {
     let (e, file) = engine_of("sprite", json!({ "ffmpegSlots": 3 })).await;
     let mut rx = e.rt.events.subscribe();

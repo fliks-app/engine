@@ -455,6 +455,23 @@ fn nomedia(args: &[String]) {
     );
 }
 
+/// A VOD run: on VAAPI an init and two segments from `-start_number`, then it dies; on the CPU
+/// an init of its own and one segment, then it hangs.
+fn hwlate(args: &[String]) -> ! {
+    let after = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
+    let dir = Path::new(after("-hls_segment_filename")).parent().unwrap();
+    let start: u32 = after("-start_number").parse().unwrap();
+    let vaapi = args.iter().any(|a| a.contains("vaapi"));
+    put(&dir.join("init.mp4"), if vaapi { "vaapi" } else { "cpu" });
+    for n in start..start + if vaapi { 2 } else { 1 } {
+        put(&dir.join(format!("seg-{n:04}.m4s")), "segment");
+    }
+    if vaapi {
+        std::process::exit(1)
+    }
+    hang()
+}
+
 /// Logs a run's argv to `argv.log` in its directory and returns the directory.
 fn log_argv(args: &[String]) -> &Path {
     let at = |flag: &str| &args[args.iter().position(|a| a == flag).unwrap() + 1];
@@ -596,6 +613,10 @@ fn main() {
     let exe = std::env::current_exe().unwrap();
     let stem = exe.file_stem().unwrap().to_string_lossy().into_owned();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // The filter listing is a query: no mode may take its last argument for an output file.
+    if args.last().is_some_and(|a| a == "-filters") {
+        return;
+    }
     if stem == "ffsubsync" {
         ffsubsync(&args);
         return;
@@ -629,6 +650,7 @@ fn main() {
         #[cfg(unix)]
         "itemstop" => itemstop(&args),
         "nomedia" => nomedia(&args),
+        "hwlate" => hwlate(&args),
         // Only the early run (`-to`) keeps talking, so only its natural end can stop it.
         "early" if args.iter().any(|a| a == "-to") => talk(),
         // 100 bytes at the output (last argument), or a partial file and exit 1.

@@ -27,6 +27,10 @@
 ## Deviations
 
 - runtime: a run the engine killed (a seek or a switch) is not a crash: its rung cache is kept and the next request restarts at the requested segment (or the first gap). A crashed or killed-by-watchdog run still purges the rung and restarts at the requested segment, not at the dead run's start. A hardware run that fails after its first segment falls back like one that fails before it, and a device is forgiven only by a run that worked.
+- runtime: a hardware failure restarts the rung on the new encoder's own init: the failed run's segments are purged, not kept (one `init.mp4` cannot describe two encoders). A segment cache written by another encoder in an earlier session is still reused: `profileHash` does not name the encoder (open).
+- runtime: ENGINE-9 (hardware detection retry, a redetect endpoint) is not implemented: it needs a new `/v1` route and the transient failure only costs software decode of that codec until the next detection. STREAM-16 E21 (the stereo downmix recipes merged) is not done: the recipes give different audio (owner's choice).
+- runtime: the live NVENC chain uploads software frames itself (`hwupload_cuda`) instead of asking NVDEC for CUDA frames: NVDEC may not take the codec and `scale_cuda` takes CUDA frames only. Live QSV deinterlaces only on a known field order (`vpp_qsv` has no per-frame detection).
+- runtime: a `ttlS: 0` resolver answer is never served stale while a refresh runs; other expired grants still are.
 - runtime: a stream copy (remux) and a capture (trick play, subtitles) take no playback slot, so they no longer split the encode threads or pause background work.
 - runtime: a pinned session's id revives for `pinnedReviveTtlMs` (24 h) after it was dropped, so a download paused past its hour continues instead of answering 410.
 - jobs: the dedupe key includes `force`; a more urgent identical request raises a queued job; a job more urgent than every running one starts past `MAX_RUNNING`; ended jobs are kept 10 min (at most 2000).

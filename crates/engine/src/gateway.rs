@@ -257,10 +257,21 @@ fn set_forwarded(h: &mut HeaderMap, peer: Option<SocketAddr>) {
     }
 }
 
+/// The host's private ranges (`domain/net.rs`: CGNAT, site-local included) plus link-local.
 fn lan(ip: IpAddr) -> bool {
     match ip.to_canonical() {
-        IpAddr::V4(a) => a.is_loopback() || a.is_private() || a.is_link_local(),
-        IpAddr::V6(a) => a.is_loopback() || a.is_unique_local() || a.is_unicast_link_local(),
+        IpAddr::V4(a) => {
+            a.is_loopback()
+                || a.is_private()
+                || a.is_link_local()
+                || (a.octets()[0] == 100 && a.octets()[1] & 0xc0 == 64)
+        }
+        IpAddr::V6(a) => {
+            a.is_loopback()
+                || a.is_unique_local()
+                || a.is_unicast_link_local()
+                || a.segments()[0] & 0xffc0 == 0xfec0
+        }
     }
 }
 
@@ -412,7 +423,17 @@ mod tests {
         set_forwarded(&mut h, Some("10.0.0.2:5000".parse().unwrap()));
         assert_eq!(h["x-forwarded-proto"], "https");
         assert_eq!(h["x-forwarded-host"], "evil.example");
-        for peer in [Some("203.0.113.9:5000".parse().unwrap()), None] {
+        // CGNAT (Tailscale) speaks like the host's `classify` says; just past the block does not.
+        for peer in ["100.64.0.1:1", "100.127.255.255:1", "[fec0::1]:1"] {
+            let mut h = sent();
+            set_forwarded(&mut h, Some(peer.parse().unwrap()));
+            assert_eq!(h["x-forwarded-proto"], "https", "{peer}");
+        }
+        for peer in [
+            Some("203.0.113.9:5000".parse().unwrap()),
+            Some("100.128.0.1:1".parse().unwrap()),
+            None,
+        ] {
             let mut h = sent();
             set_forwarded(&mut h, peer);
             assert_eq!(h["x-forwarded-proto"], "http");
