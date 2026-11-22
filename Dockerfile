@@ -1,4 +1,4 @@
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS vobsub-ocr-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS vobsub-ocr-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl build-essential pkg-config clang libclang-dev \
     libtesseract-dev libleptonica-dev \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Speech recogniser of the `Align` job (MIT), with the Vulkan backend (a GPU when the host passes one,
 # else the CPU). A generic build for the architecture: the image runs on whatever CPU the host has,
 # so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS whisper-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS whisper-build
 ARG TARGETARCH
 ARG WHISPER_CPP_VERSION=v1.9.5
 ARG WHISPER_CPP_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # An ffmpeg with the `rubberband` filter (key changes): jellyfin-ffmpeg is built without it. Same
 # release as the main one; only the audio side matters, so nothing but opus is linked in.
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS pitch-ffmpeg-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS pitch-ffmpeg-build
 ARG FFMPEG_VERSION=8.1.2
 ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576eb7
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -68,7 +68,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked -p fliks-engine --bin fliks-engine --features karaoke
 
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # Per-arch deb; Intel OpenCL (tonemap_opencl) is amd64-only, arm64 is CPU-only.
 ARG TARGETARCH
