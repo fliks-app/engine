@@ -52,7 +52,7 @@ pub(super) async fn master(
         Err(r) => return r,
     };
     let caps = rt.session_caps(s.device().as_deref());
-    let token = token_param(&q);
+    let token = hls_token(&q, &s);
     let only = q
         .get("startQuality")
         .filter(|v| !v.is_empty())
@@ -73,6 +73,17 @@ pub(super) async fn master(
     let start_at = q.get("startAt").and_then(|v| v.parse().ok());
     rt.prewarm(&s, only, start_at);
     playlist(body)
+}
+
+/// The request's token plus the session's init generation: a playlist fetched after a hardware
+/// fallback names URIs the player and its caches have not seen.
+fn hls_token(q: &HashMap<String, String>, s: &Session) -> String {
+    let (token, gen_) = (token_param(q), s.init_generation());
+    match (gen_, token.is_empty()) {
+        (0, _) => token,
+        (g, true) => format!("?g={g}"),
+        (g, false) => format!("{token}&g={g}"),
+    }
 }
 
 /// `remux`: the remux variant or a rendition of it, on the frozen keyframe grid.
@@ -115,7 +126,7 @@ pub(super) async fn variant(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let token = token_param(&q);
+    let token = hls_token(&q, &s);
     let r = rendition(&s, &q, &token, quality == "remux");
     if r.duration <= 0.0 {
         return text(
@@ -153,7 +164,7 @@ pub(super) async fn audio_list(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let token = token_param(&q);
+    let token = hls_token(&q, &s);
     let remux = s.served_kind() == SessionKind::Remux;
     let r = rendition(&s, &q, &token, remux);
     if r.duration <= 0.0 {
@@ -186,7 +197,7 @@ pub(super) async fn iframe_list(
     }
     playlist(iframe_index(
         &prefix(id),
-        &token_param(&q),
+        &hls_token(&q, &s),
         d,
         s.plan.source_fps,
         s.plan.segment_duration,

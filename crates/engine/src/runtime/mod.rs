@@ -248,6 +248,17 @@ impl Runtime {
         (detected, detected)
     }
 
+    /// `start_hw`, except that a key whose last run fell back to the CPU stays on it.
+    pub(crate) fn run_hw(&self, prev: Option<&Job>) -> (HwAccel, HwAccel) {
+        let mut hw = self.start_hw();
+        if let Some(e) = prev
+            && hw.0 != HwAccel::None
+        {
+            hw.0 = e.hw;
+        }
+        hw
+    }
+
     pub(crate) fn opencl_device(&self) -> Option<String> {
         self.current_config().streaming.opencl_device.clone()
     }
@@ -439,6 +450,24 @@ mod tests {
         std::fs::write(d.join("seg-0021.m4s.tmp"), b"x").unwrap();
         super::spawn::purge_tmp(&d, false, 1);
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        remove_dir(&d);
+    }
+
+    #[test]
+    fn a_rung_of_another_encoder_is_emptied_before_its_run() {
+        let d = std::env::temp_dir().join(format!("fliks-claim-{}", std::process::id()));
+        super::spawn::claim_rung(&d, "Vaapi");
+        for n in ["init.mp4", "seg-0000.m4s"] {
+            std::fs::write(d.join(n), b"x").unwrap();
+        }
+        super::spawn::claim_rung(&d, "Vaapi");
+        assert!(
+            d.join("init.mp4").is_file(),
+            "same encoder keeps its segments"
+        );
+        super::spawn::claim_rung(&d, "None");
+        assert!(!d.join("init.mp4").exists() && !d.join("seg-0000.m4s").exists());
+        assert_eq!(std::fs::read_to_string(d.join("encoder")).unwrap(), "None");
         remove_dir(&d);
     }
 

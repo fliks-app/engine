@@ -31,6 +31,8 @@ pub(super) struct SessionMut {
     pub(super) device: Option<String>,
     /// A hardware failure already retried on another device; cleared by a run that works.
     pub(super) hw_retried: bool,
+    /// Bumped when a fallback rewrites the rung's init: playlists name it, so a reload refetches.
+    pub(super) init_gen: u32,
     /// What the client plays now: an ABR switch moves a DirectStream session to a rung.
     pub(super) kind: SessionKind,
     /// The rung the client last requested; `None` until its first video request.
@@ -110,6 +112,11 @@ impl Session {
         } else {
             JobKind::Main
         })
+    }
+
+    /// How many times a hardware fallback replaced the init this session's playlists point to.
+    pub fn init_generation(&self) -> u32 {
+        self.m.locked().init_gen
     }
 
     pub fn pinned(&self) -> bool {
@@ -387,6 +394,7 @@ impl Runtime {
                     served: None,
                     device,
                     hw_retried: false,
+                    init_gen: 0,
                     kind: plan.kind,
                     rung: None,
                     asked: HashMap::new(),
@@ -491,9 +499,14 @@ impl Runtime {
                 rt.early_job(&s, &quality).await;
             }
             let lock = rt.lock_for(&key);
-            let _g = lock.lock().await;
-            if rt.job(&key).is_none_or(|j| !j.producing()) {
-                rt.spawn_job(&s, &quality, start, rt.start_hw(), 0, JobKind::Main, None)
+            let _g = rt.lock_settled(&lock, &key).await;
+            let prev = rt.job(&key);
+            if prev.as_ref().is_none_or(|j| !j.producing()) {
+                let (hw, restarts) = (
+                    rt.run_hw(prev.as_deref()),
+                    prev.map_or(0, |j| j.restarts + 1),
+                );
+                rt.spawn_job(&s, &quality, start, hw, restarts, JobKind::Main, None)
                     .await;
             }
         });

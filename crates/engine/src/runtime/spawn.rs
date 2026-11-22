@@ -18,6 +18,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
+const ENCODER_FILE: &str = "encoder";
+
 /// What a new job runs, before its process exists.
 struct Run {
     pub(super) key: String,
@@ -72,13 +74,6 @@ impl Runtime {
             1
         };
         let ext = if s.plan.use_ts { "ts" } else { "m4s" };
-        {
-            let (dir, ext) = (dir.clone(), ext);
-            let _ = tokio::task::spawn_blocking(move || {
-                purge_from(&dir, var_stream_map, tracks, start, ext)
-            })
-            .await;
-        }
         let dir_s = dir.to_string_lossy().into_owned();
         let build = |hw, caps: &HostCaps, dev: &fliks_engine_core::hw::Device| {
             let args = core_session::vod_args(&core_session::RunInput {
@@ -138,6 +133,14 @@ impl Runtime {
                 }
             }
         };
+        {
+            let (dir, ext, encoder) = (dir.clone(), ext, format!("{hw:?}"));
+            let _ = tokio::task::spawn_blocking(move || {
+                claim_rung(&dir, &encoder);
+                purge_from(&dir, var_stream_map, tracks, start, ext)
+            })
+            .await;
+        }
         let run = Run {
             key,
             kind,
@@ -609,11 +612,23 @@ impl Runtime {
     async fn fall_back(self: Arc<Self>, job: &Arc<Job>, s: &Arc<Session>) {
         let lock = self.lock_for(&job.key);
         let _g = lock.lock().await;
-        if !self.job(&job.key).is_some_and(|j| Arc::ptr_eq(&j, job)) {
-            return;
-        }
         if let Some(d) = &job.device {
             self.slots.device_failed(d);
+        }
+        let emit = |to| {
+            self.events.emit(EngineEvent::HwFallback {
+                job_key: job.key.clone(),
+                session_id: Some(s.sid.clone()),
+                from: job.hw,
+                to,
+                stderr_tail: job.proc.stderr_tail(),
+            })
+        };
+        let current = self.job(&job.key);
+        if !current.as_ref().is_some_and(|j| Arc::ptr_eq(j, job)) {
+            // Another run took the key: the hardware still failed, the replacement stands.
+            emit(current.map_or(HwAccel::None, |j| j.hw));
+            return;
         }
         let variant = &s.decision.video_variant;
         let other = job.device.is_some()
@@ -623,12 +638,8 @@ impl Runtime {
         let retry = other && !std::mem::replace(&mut s.m.locked().hw_retried, true);
         let to = if retry { job.hw } else { HwAccel::None };
         tracing::warn!(key = job.key, from = ?job.hw, ?to, "hardware run failed");
-        self.events.emit(EngineEvent::HwFallback {
-            job_key: job.key.clone(),
-            from: job.hw,
-            to,
-            stderr_tail: job.proc.stderr_tail(),
-        });
+        emit(to);
+        s.m.locked().init_gen += 1;
         // The new encoder writes its own init: the failed run's segments cannot join it, so the
         // rung restarts at the first gap.
         let start = job.m.locked().sets[0]
@@ -649,6 +660,16 @@ impl Runtime {
         )
         .await;
     }
+}
+
+/// A rung holds one encoder's init and segments: another encoder empties it first.
+pub(super) fn claim_rung(dir: &Path, encoder: &str) {
+    let marker = dir.join(ENCODER_FILE);
+    if std::fs::read_to_string(&marker).ok().as_deref() != Some(encoder) {
+        remove_dir(dir);
+    }
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(marker, encoder);
 }
 
 fn track_dirs(dir: &Path, var_stream_map: bool, tracks: usize) -> Vec<PathBuf> {

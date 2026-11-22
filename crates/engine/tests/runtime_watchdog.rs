@@ -573,7 +573,10 @@ async fn a_hardware_failure_after_segments_restarts_the_rung_on_a_fresh_init() {
         json!({ "selection": { "requestedQuality": "720p" } }),
     )
     .await;
-    event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
+    let fell = event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
+    assert!(
+        matches!(&fell, EngineEvent::HwFallback { session_id, .. } if session_id.as_deref() == Some(&sid))
+    );
     let s = e.rt.peek(&sid).unwrap();
     let key = s.key(JobKind::Main);
     until("the CPU run", 30, || {
@@ -586,6 +589,51 @@ async fn a_hardware_failure_after_segments_restarts_the_rung_on_a_fresh_init() {
     assert_eq!(job.start_segment, 2);
     assert!(!job.has(0, 0) && !job.has(0, 1));
     assert_eq!(std::fs::read(job.dir.join("init.mp4")).unwrap(), b"cpu");
+    assert_eq!(std::fs::read(job.dir.join("encoder")).unwrap(), b"None");
+    // A playlist fetched after the fallback names URIs no cache holds the hardware init under.
+    let url = format!("/api/stream/7/720p/index.m3u8?sid={sid}");
+    let list = e.get(&url, "alice-jwt", &[]).await.text();
+    assert!(
+        list.contains(&format!("init.mp4?token=alice-jwt&sid={sid}&g=1\"")),
+        "{list}"
+    );
+    e.rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_prewarm_after_a_fallback_stays_on_the_cpu() {
+    let hw = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = engine_with(hw, &fake("hwfail"), json!({})).await;
+    let file = e.root.join("movie.mkv");
+    std::fs::write(&file, b"x").unwrap();
+    e.stub.file(7, &file);
+    e.stub.grant("alice-jwt", "alice");
+    let mut ev = e.rt.events.subscribe();
+    let sid = open(
+        &e,
+        &file,
+        json!({ "selection": { "requestedQuality": "720p" } }),
+    )
+    .await;
+    event(&mut ev, 60, |e| matches!(e, EngineEvent::HwFallback { .. })).await;
+    let s = e.rt.peek(&sid).unwrap();
+    let key = s.key(JobKind::Main);
+    until("the CPU run", 30, || {
+        e.rt.job(&key)
+            .is_some_and(|j| j.hw == HwAccel::None && j.producing())
+    })
+    .await;
+    e.rt.job(&key).unwrap().kill().await;
+    while ev.try_recv().is_ok() {}
+    e.rt.prewarm(&s, Some("720p"), None);
+    let started = event(&mut ev, 60, |e| matches!(e, EngineEvent::JobStarted { .. })).await;
+    assert!(matches!(
+        started,
+        EngineEvent::JobStarted {
+            hw_accel: HwAccel::None,
+            ..
+        }
+    ));
     e.rt.shutdown().await;
 }
 
