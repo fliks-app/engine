@@ -81,12 +81,13 @@ jobs:
       - run: cargo test -p fliks-engine
 
   e2e:
-    # The engine image's jellyfin-ffmpeg build (noble); the subtitle timestamps depend on the ffmpeg version.
+    # The noble build of the image's jellyfin-ffmpeg release (the image itself uses resolute, 26.04); the
+    # subtitle timestamps depend on the ffmpeg version.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       JELLYFIN_FFMPEG_VERSION: 8.1.2-1
-      # The Dockerfile's JELLYFIN_FFMPEG_SHA256_AMD64.
+      # The noble amd64 deb of that release.
       JELLYFIN_FFMPEG_SHA256: 0683c730f0cfa7d2edd321d5c4921ef17d4e6a33a9626c04bef9092c29f94e1e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
