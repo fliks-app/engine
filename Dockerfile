@@ -1,4 +1,4 @@
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS vobsub-ocr-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS vobsub-ocr-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl build-essential pkg-config clang libclang-dev \
     libtesseract-dev libleptonica-dev \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Speech recogniser of the `Align` job (MIT), with the Vulkan backend (a GPU when the host passes one,
 # else the CPU). A generic build for the architecture: the image runs on whatever CPU the host has,
 # so no `-march=native`; amd64 takes x86-64-v3 (AVX2, FMA, F16C).
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS whisper-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS whisper-build
 ARG TARGETARCH
 ARG WHISPER_CPP_VERSION=v1.9.5
 ARG WHISPER_CPP_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # An ffmpeg with the `rubberband` filter (key changes): jellyfin-ffmpeg is built without it. Same
 # release as the main one; only the audio side matters, so nothing but opus is linked in.
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS pitch-ffmpeg-build
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS pitch-ffmpeg-build
 ARG FFMPEG_VERSION=8.1.2
 ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576eb7
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
      "ffmpeg-pitch is FFmpeg ${FFMPEG_VERSION} built with --enable-gpl --enable-librubberband --enable-libopus, under the GNU GPL v3 (COPYING.GPLv3)." \
      "FFmpeg source: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz (sha256 ${FFMPEG_SHA256})." \
      "Build options: see the configure line of the pitch-ffmpeg-build stage of https://github.com/fliks-app/engine/blob/main/Dockerfile." \
-     "librubberband (GPL-2.0-or-later) ${RB}, Ubuntu 24.04: source with 'apt source librubberband' or https://packages.ubuntu.com/source/noble/rubberband." \
+     "librubberband (GPL-2.0-or-later) ${RB}, Ubuntu 26.04: source with 'apt source librubberband' or https://packages.ubuntu.com/source/resolute/rubberband." \
      > /licenses/ffmpeg-pitch/SOURCE
 
 FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS chef
@@ -68,13 +68,13 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked -p fliks-engine --bin fliks-engine --features karaoke
 
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # Per-arch deb; Intel OpenCL (tonemap_opencl) is amd64-only, arm64 is CPU-only.
 ARG TARGETARCH
 ARG JELLYFIN_FFMPEG_VERSION=8.1.2-1
-ARG JELLYFIN_FFMPEG_SHA256_AMD64=0683c730f0cfa7d2edd321d5c4921ef17d4e6a33a9626c04bef9092c29f94e1e
-ARG JELLYFIN_FFMPEG_SHA256_ARM64=e8fc2af5e4b9644aab5d41bbeb7b4443ada4236993031ce0010de936685f55c4
+ARG JELLYFIN_FFMPEG_SHA256_AMD64=bf70fd24a97998ef748cd5917db5d17a666ca6b269a0d2fea0fd42c109750518
+ARG JELLYFIN_FFMPEG_SHA256_ARM64=aa68816350a2c6f2c38e5bc13c198a4a28322ed68746801f6554c0b59c729eeb
 # ONNX Runtime (CPU) for the model jobs, loaded at run time by the engine. A CUDA or OpenVINO build
 # of the same library can be mounted over it (`ORT_DYLIB_PATH`).
 ARG ONNXRUNTIME_VERSION=1.31.1
@@ -83,7 +83,7 @@ ARG ONNXRUNTIME_SHA256=6871ccbc97f3d5bdb4095a1dcec33aa78d56f6ed8de5980ef5fa1d9f2
 
 COPY tools/ocr-pip/requirements.txt /tmp/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget libchromaprint-tools mkvtoolnix librubberband2 libvulkan1 mesa-vulkan-drivers \
+    ca-certificates wget libchromaprint-tools mkvtoolnix librubberband3 libvulkan1 mesa-vulkan-drivers \
     python3 python3-pip tesseract-ocr \
     tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-spa tesseract-ocr-deu tesseract-ocr-ita \
     tesseract-ocr-por tesseract-ocr-nld tesseract-ocr-swe tesseract-ocr-dan tesseract-ocr-nor \
@@ -92,10 +92,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-srp tesseract-ocr-hrv tesseract-ocr-tur tesseract-ocr-ara tesseract-ocr-heb \
     tesseract-ocr-fas tesseract-ocr-hin tesseract-ocr-tha tesseract-ocr-vie tesseract-ocr-ind \
     tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-chi-sim \
-  && python3 -m pip install --no-cache-dir --break-system-packages --no-deps --require-hashes -r /tmp/requirements.txt \
+  && python3 -m pip install --no-cache-dir --break-system-packages --ignore-installed --no-deps --require-hashes -r /tmp/requirements.txt \
   && rm /tmp/requirements.txt \
   && if [ "$TARGETARCH" = "amd64" ]; then apt-get install -y --no-install-recommends intel-opencl-icd; fi \
-  && wget -q -O /tmp/jellyfin-ffmpeg.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_${TARGETARCH}.deb" \
+  && wget -q -O /tmp/jellyfin-ffmpeg.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-resolute_${TARGETARCH}.deb" \
   && if [ "$TARGETARCH" = "amd64" ]; then FF_SHA256="$JELLYFIN_FFMPEG_SHA256_AMD64"; else FF_SHA256="$JELLYFIN_FFMPEG_SHA256_ARM64"; fi \
   && echo "${FF_SHA256}  /tmp/jellyfin-ffmpeg.deb" | sha256sum -c - \
   && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \
