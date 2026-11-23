@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.1](https://github.com/fliks-app/engine/compare/v1.30.0...v1.30.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **engine:** bound control-plane bodies and apply the secret file rules to the token ([#270](https://github.com/fliks-app/engine/issues/270)) ([ca060c7](https://github.com/fliks-app/engine/commit/ca060c79f04ac233ecf21765676089cf750af7b5))
+
 ## [1.30.0](https://github.com/fliks-app/engine/compare/v1.29.1...v1.30.0) (2026-11-22)
 
 
