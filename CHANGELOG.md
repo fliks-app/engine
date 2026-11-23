@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.2](https://github.com/fliks-app/engine/compare/v1.30.1...v1.30.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **docker:** move the engine image to Ubuntu 26.04 ([#272](https://github.com/fliks-app/engine/issues/272)) ([832c343](https://github.com/fliks-app/engine/commit/832c34334faa851a3a24e190f863a45046d9b7fe))
+
 ## [1.30.1](https://github.com/fliks-app/engine/compare/v1.30.0...v1.30.1) (2026-11-23)
 
 
