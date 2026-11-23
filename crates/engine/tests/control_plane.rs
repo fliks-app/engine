@@ -182,3 +182,40 @@ async fn estimate_sizes_lists_the_ladder() {
     assert_eq!(v[0]["key"], "1080p");
     assert_eq!(v[0]["estimatedSize"].as_f64(), Some(100_000_000.0));
 }
+
+fn season_body(hashes: usize) -> String {
+    let fp = vec!["1"; hashes].join(",");
+    format!(
+        r#"{{"kind":"intro","lookupSeconds":600,"episodes":[{{"mediaFileId":1,"durationSeconds":1200,"introFingerprint":[{fp}]}}]}}"#
+    )
+}
+
+#[tokio::test]
+async fn control_bodies_stop_at_the_default_and_intro_detect_takes_a_season() {
+    let season = season_body(1_500_000);
+    assert!(season.len() > 2 << 20 && season.len() < 64 << 20);
+    let (s, _) = call("POST", "/v1/intro-detect", Some("secret"), &season).await;
+    assert_ne!(
+        s,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "a season is under the intro limit"
+    );
+    let (s, _) = call("POST", "/v1/decide", Some("secret"), &season).await;
+    assert_eq!(
+        s,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "other routes keep the 2 MiB bound"
+    );
+    let (s, _) = call(
+        "POST",
+        "/v1/intro-detect",
+        Some("secret"),
+        &season_body(34_000_000),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "past 64 MiB it is refused"
+    );
+}

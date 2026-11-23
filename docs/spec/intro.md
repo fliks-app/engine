@@ -18,6 +18,7 @@ POST /v1/intro-detect
 - `lookupSeconds` is the host's `introMaxLookupMinutes` × 60 (the fingerprints were taken with the same window; it clamps the intro's end). `minSegmentSeconds` defaults to 15. [ts:intro:144-150,67]
 - `kind: "intro"` matches head fingerprints (`introFingerprint` required on every episode the host wants matched); `kind: "outro"` matches tail fingerprints (`outroFingerprint`). Episodes with a `manual` marker are simply not sent (the host never overwrites them). [ts:intro:155-163,568-576]
 - 400 when: an episode's required fingerprint is missing, `lookupSeconds` ≤ 0, or `kind: "outro"` is sent with a `durationSeconds` ≤ 0 episode (the outro window is positioned from it).
+- Body limit: 64 MiB on this route (a fingerprint is about 8 hashes per second of lookup, 11 bytes each as JSON, so about 55 KB per episode at a 10 minute lookup); the pairwise match needs the whole season in one call, so the host does not chunk. Every other control-plane route keeps an explicit 2 MiB. [new: ENGINE-4]
 - Route on the control plane (`/v1`), bearer auth like the others; computation runs on `spawn_blocking` with the pair loop parallelised over std threads (a 30-episode season is ~10^10 popcounts; the TS ran the same work on the Node event loop). [new: threading]
 
 ## 2. Algorithm (`core::intro`, one port, two kinds)

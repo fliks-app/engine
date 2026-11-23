@@ -25,7 +25,7 @@ pub mod worker;
 use crate::lock::Locked;
 use axum::{
     Json, Router,
-    extract::{Request, State},
+    extract::{DefaultBodyLimit, Request, State},
     http::{
         HeaderValue, StatusCode,
         header::{AUTHORIZATION, RETRY_AFTER},
@@ -100,6 +100,14 @@ pub fn app(token: String, hw: Arc<hw::Hw>) -> Router {
     router(token, rt)
 }
 
+/// Request bodies of the control plane: axum's default, stated so it stays when axum changes it.
+const CONTROL_BODY_MAX: usize = 2 << 20;
+
+/// A season's fingerprints in one request: about 8 hashes per second of lookup, 11 bytes each as JSON,
+/// so 64 MiB holds hundreds of episodes of a 20 minute lookup. Detection is pairwise and needs every
+/// episode in one call.
+const INTRO_BODY_MAX: usize = 64 << 20;
+
 /// `/v1/*` behind the bearer, and the data plane (`serve::router`) beside it, resolver-gated.
 pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
     let state = Arc::new(AppState {
@@ -140,9 +148,13 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         )
         .route("/v1/models/{id}/download", post(karaoke::download))
         .route("/v1/models/{id}/verify", post(karaoke::verify))
-        .route("/v1/intro-detect", post(intro::detect))
+        .route(
+            "/v1/intro-detect",
+            post(intro::detect).layer(DefaultBodyLimit::max(INTRO_BODY_MAX)),
+        )
         .route("/v1/live", get(live::list_handler).post(live::open_handler))
         .route("/v1/live/{sid}", get(live::get_handler))
+        .layer(DefaultBodyLimit::max(CONTROL_BODY_MAX))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state);
     control.merge(serve::router(rt))
