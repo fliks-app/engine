@@ -130,6 +130,7 @@ pub fn plan(
                 b.path.as_deref().unwrap_or_default()
             )
         }),
+        crop: d.response.source.crop.clone(),
     };
     let ms = (streaming.segment_duration * 1000.0).round() as u32;
     SessionPlan {
@@ -349,11 +350,7 @@ pub fn vod_args(r: &RunInput) -> VodArgs {
             },
         }),
         audio_stream_index: picked,
-        crop: r
-            .streaming
-            .auto_crop_enabled
-            .then(|| v.and_then(|v| v.crop.clone()))
-            .flatten(),
+        crop: d.response.source.crop.clone(),
         video_only: plan.multi_audio,
         audio_streams: Some(audio_streams(info)),
         video_variant: Some(d.video_variant),

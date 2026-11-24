@@ -55,7 +55,7 @@ pub fn open_report(
     } else {
         8
     };
-    let crop = streaming.auto_crop_enabled && v.and_then(|v| v.crop.as_ref()).is_some();
+    let crop = r.source.crop.is_some();
     let interlaced = v.is_some_and(|v| v.field_order.is_some());
     let ctx = |tonemap| EncodeContext {
         crop,
