@@ -2,6 +2,7 @@
 use super::alass::{SAMPLE_RATE, Voice, sync_text};
 use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
+use crate::runtime::Runtime;
 use fliks_engine_core::api::{JobResult, MediaInfo, SubtitleFormat, SubtitleText, SyncReference};
 use fliks_engine_core::decide::timeline::parse_source_fps;
 use fliks_engine_core::jobs::cues::cue_spans;
@@ -11,12 +12,26 @@ use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 
 pub fn validate(
+    rt: &Runtime,
     info: &MediaInfo,
     subtitle: &SubtitleText,
     reference: &SyncReference,
     max_offset_seconds: Option<f64>,
 ) -> Result<(), String> {
-    pure::validate_sync(info, subtitle, reference, max_offset_seconds)
+    pure::validate_sync(info, subtitle, reference, max_offset_seconds)?;
+    mapped_reference(rt, reference).map(drop)
+}
+
+/// The reference with a file path on this host.
+fn mapped_reference(rt: &Runtime, reference: &SyncReference) -> Result<SyncReference, String> {
+    match reference {
+        SyncReference::File { path } => Ok(SyncReference::File {
+            path: rt
+                .map_absolute(path)
+                .ok_or("SubtitleSync reference file path must be absolute")?,
+        }),
+        other => Ok(other.clone()),
+    }
 }
 
 fn alass_err(msg: impl AsRef<str>) -> String {
@@ -46,15 +61,7 @@ pub async fn run(
 ) -> Result<JobResult, String> {
     pure::validate_sync(info, subtitle, reference, None)?;
     let media = ctx.media_path();
-    let reference = &match reference {
-        SyncReference::File { path } => SyncReference::File {
-            path: ctx
-                .rt
-                .map_absolute(path)
-                .ok_or("SubtitleSync reference file path must be absolute")?,
-        },
-        other => other.clone(),
-    };
+    let reference = &mapped_reference(&ctx.rt, reference)?;
     let resolved = pure::resolve_reference(info, reference, &media)?;
     let ext = pure::format_ext(subtitle.format);
     let dir = ctx.rt.cache.root.join("tmp").join("sync").join(&ctx.job.id);
@@ -361,4 +368,32 @@ async fn feed_pcm(
     }
     drop(tx);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::FOREIGN;
+
+    #[test]
+    fn a_reference_file_is_read_at_its_mapped_path() {
+        let (from, to, path) = FOREIGN;
+        let rt = Runtime::with_mapping(from, to);
+        let sep = std::path::MAIN_SEPARATOR;
+        let file = SyncReference::File { path: path.into() };
+        assert_eq!(
+            mapped_reference(&rt, &file).unwrap(),
+            SyncReference::File {
+                path: format!("{to}{sep}x.mkv")
+            }
+        );
+        let rel = SyncReference::File {
+            path: "x.srt".into(),
+        };
+        assert!(mapped_reference(&rt, &rel).is_err());
+        assert_eq!(
+            mapped_reference(&rt, &SyncReference::Auto).unwrap(),
+            SyncReference::Auto
+        );
+    }
 }

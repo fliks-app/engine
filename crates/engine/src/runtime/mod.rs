@@ -187,6 +187,30 @@ impl Runtime {
             .then_some(mapped)
     }
 
+    /// A runtime whose only mapping is `from` -> `to`.
+    #[cfg(test)]
+    pub(crate) fn with_mapping(from: &str, to: &str) -> Arc<Self> {
+        use crate::{cache::Cache, hw::Hw};
+        let hw = Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
+        let rt = Self::with_tools(
+            hw,
+            Cache::from_env(),
+            "ffmpeg".into(),
+            "ffprobe".into(),
+            "fpcalc".into(),
+        );
+        rt.config
+            .locked()
+            .replace(Arc::new(fliks_engine_core::api::EngineConfig {
+                path_mappings: vec![fliks_engine_core::api::PathMapping {
+                    from: from.into(),
+                    to: to.into(),
+                }],
+                ..Default::default()
+            }));
+        rt
+    }
+
     fn lifetime(&self) -> LifetimeConfig {
         self.config
             .locked()
@@ -420,6 +444,14 @@ pub(crate) fn can_encode(d: &HwDevice, variant: &CodecVariant) -> bool {
     fliks_engine_core::decide::codec::resolve_encoder(variant, hw, &d.detected.host_caps())
         == Some(hw)
 }
+
+/// A server path of the other platform, its mapping and the host target: `(from, to, path)`.
+#[cfg(test)]
+pub(crate) const FOREIGN: (&str, &str, &str) = if cfg!(windows) {
+    ("/mnt/media", r"D:\media", "/mnt/media/x.mkv")
+} else {
+    (r"C:\Media", "/data/media", r"C:\Media\x.mkv")
+};
 
 #[cfg(test)]
 mod tests {

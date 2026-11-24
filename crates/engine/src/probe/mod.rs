@@ -95,31 +95,7 @@ pub async fn probe(
 #[cfg(test)]
 mod tests {
     use super::resolve_probe_path;
-    use crate::cache::Cache;
-    use crate::hw::Hw;
-    use crate::lock::Locked;
-    use crate::runtime::Runtime;
-    use fliks_engine_core::api::{EngineConfig, PathMapping};
-    use std::sync::Arc;
-
-    fn rt(from: &str, to: &str) -> Arc<Runtime> {
-        let hw = Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
-        let rt = Runtime::with_tools(
-            hw,
-            Cache::from_env(),
-            "ffmpeg".into(),
-            "ffprobe".into(),
-            "fpcalc".into(),
-        );
-        rt.config.locked().replace(Arc::new(EngineConfig {
-            path_mappings: vec![PathMapping {
-                from: from.into(),
-                to: to.into(),
-            }],
-            ..EngineConfig::default()
-        }));
-        rt
-    }
+    use crate::runtime::{FOREIGN, Runtime};
 
     #[test]
     fn probe_opens_the_mapped_path() {
@@ -133,24 +109,23 @@ mod tests {
                 "/data/server/a.mkv",
             )
         };
-        let opened = rt(from, to);
+        let opened = Runtime::with_mapping(from, to);
         assert_eq!(resolve_probe_path(&opened, host).unwrap(), mapped);
         assert!(resolve_probe_path(&opened, "rel.mkv").is_err());
-        let relative = rt(from, "relative");
+        let relative = Runtime::with_mapping(from, "relative");
         assert!(resolve_probe_path(&relative, host).is_err());
     }
 
     #[test]
     fn a_foreign_platform_path_is_mapped_before_the_absolute_check() {
-        let (win_to_here, here) = if cfg!(windows) {
-            (r"/mnt/media", r"D:\media")
-        } else {
-            (r"C:\Media", "/data/media")
-        };
-        let r = rt(win_to_here, here);
-        let host = format!(r"{win_to_here}\x.mkv");
-        assert!(resolve_probe_path(&r, &host).unwrap().starts_with(here));
-        assert!(r.map_absolute("media/x.mkv").is_none());
-        assert!(rt(win_to_here, "relative").map_absolute(&host).is_none());
+        let (from, to, path) = FOREIGN;
+        let r = Runtime::with_mapping(from, to);
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            resolve_probe_path(&r, path).unwrap(),
+            format!("{to}{sep}x.mkv")
+        );
+        assert!(resolve_probe_path(&r, "media/x.mkv").is_err());
+        assert!(resolve_probe_path(&Runtime::with_mapping(from, "relative"), path).is_err());
     }
 }

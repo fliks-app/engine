@@ -1,26 +1,31 @@
 //! The `SubtitleToSrt` job: one ffmpeg run, SRT text on stdout.
 use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
+use crate::runtime::Runtime;
 use fliks_engine_core::api::{JobResult, MediaInfo, SrtSource};
 use fliks_engine_core::jobs::srt as pure;
 use tokio::io::AsyncReadExt;
 
-pub fn validate(info: &MediaInfo, source: &SrtSource) -> Result<(), String> {
-    pure::validate_srt(info, source)
+pub fn validate(rt: &Runtime, info: &MediaInfo, source: &SrtSource) -> Result<(), String> {
+    pure::validate_srt(info, source)?;
+    input(rt, String::new(), source).map(drop)
+}
+
+/// The ffmpeg input and stream map of a source, a sidecar on this host.
+fn input(rt: &Runtime, media: String, source: &SrtSource) -> Result<(String, Option<u32>), String> {
+    match source {
+        SrtSource::File { path } => rt
+            .map_absolute(path)
+            .map(|p| (p, None))
+            .ok_or_else(|| "SubtitleToSrt file path must be absolute".into()),
+        SrtSource::Stream { index } => Ok((media, Some(*index))),
+    }
 }
 
 pub async fn run(ctx: &Ctx, info: &MediaInfo, source: &SrtSource) -> Result<JobResult, String> {
     pure::validate_srt(info, source)?;
     let media = ctx.media_path();
-    let (input, map) = match source {
-        SrtSource::File { path } => (
-            ctx.rt
-                .map_absolute(path)
-                .ok_or("SubtitleToSrt file path must be absolute")?,
-            None,
-        ),
-        SrtSource::Stream { index } => (media, Some(*index)),
-    };
+    let (input, map) = input(&ctx.rt, media, source)?;
     let argv = pure::to_srt_argv(&input, map);
     let cmd = Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout());
     let srt = ctx
@@ -36,4 +41,30 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo, source: &SrtSource) -> Result<JobR
         })
         .await??;
     Ok(JobResult::SubtitleToSrt { srt })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::FOREIGN;
+
+    #[test]
+    fn a_sidecar_is_opened_at_its_mapped_path() {
+        let (from, to, path) = FOREIGN;
+        let rt = Runtime::with_mapping(from, to);
+        let sep = std::path::MAIN_SEPARATOR;
+        let file = SrtSource::File { path: path.into() };
+        assert_eq!(
+            input(&rt, "m".into(), &file).unwrap(),
+            (format!("{to}{sep}x.mkv"), None)
+        );
+        let rel = SrtSource::File {
+            path: "x.srt".into(),
+        };
+        assert!(input(&rt, "m".into(), &rel).is_err());
+        assert_eq!(
+            input(&rt, "m".into(), &SrtSource::Stream { index: 2 }).unwrap(),
+            ("m".into(), Some(2))
+        );
+    }
 }

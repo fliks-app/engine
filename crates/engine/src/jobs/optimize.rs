@@ -5,6 +5,7 @@ use super::run::{Ran, io_err, is_busy, pipeline_err, probe_file, run_ffmpeg};
 use super::scan::{ffprobe, lines, scan_file};
 use super::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
+use crate::runtime::Runtime;
 use crate::safe_write;
 use crate::slots::Lane;
 use crate::worker::optimize_encoders;
@@ -20,7 +21,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-pub fn validate(p: &OptimizePayload) -> Result<(), String> {
+pub fn validate(rt: &Runtime, p: &OptimizePayload) -> Result<(), String> {
     opt::main_video(&p.info)?;
     let plan = &p.plan;
     match plan.level {
@@ -46,7 +47,7 @@ pub fn validate(p: &OptimizePayload) -> Result<(), String> {
     if let Some(x) = plan
         .extra_subtitles
         .iter()
-        .find(|x| !Path::new(&x.path).is_absolute())
+        .find(|x| rt.map_absolute(&x.path).is_none())
     {
         return Err(format!("extra subtitle path is not absolute: {}", x.path));
     }

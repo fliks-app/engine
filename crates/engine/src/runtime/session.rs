@@ -277,17 +277,8 @@ impl Runtime {
         }
     }
 
-    fn open_now(
-        self: &Arc<Self>,
-        mut req: OpenSessionRequest,
-    ) -> Result<OpenSessionResponse, OpenError> {
-        let config = self.config.locked().clone().ok_or(OpenError::NoConfig)?;
-        let first = self.caps().ok_or(OpenError::Detecting)?;
-        if req.owner_id.as_deref().is_some_and(|o| !valid_owner(o)) {
-            return Err(OpenError::BadRequest(
-                "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
-            ));
-        }
+    /// Every host path of the request is absolute once mapped on this host; `burnIn.path` is rewritten.
+    fn check_paths(&self, req: &mut OpenSessionRequest) -> Result<(), OpenError> {
         if self.map_absolute(&req.decide.media.path).is_none()
             || req
                 .decide
@@ -307,6 +298,21 @@ impl Runtime {
                 .map_absolute(p)
                 .ok_or_else(|| OpenError::BadRequest("burnIn.path must be absolute".into()))?;
         }
+        Ok(())
+    }
+
+    fn open_now(
+        self: &Arc<Self>,
+        mut req: OpenSessionRequest,
+    ) -> Result<OpenSessionResponse, OpenError> {
+        let config = self.config.locked().clone().ok_or(OpenError::NoConfig)?;
+        let first = self.caps().ok_or(OpenError::Detecting)?;
+        if req.owner_id.as_deref().is_some_and(|o| !valid_owner(o)) {
+            return Err(OpenError::BadRequest(
+                "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
+            ));
+        }
+        self.check_paths(&mut req)?;
         let (decision, caps, device) = self.decide_placed(&req.decide, &first, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);
         if plan.item.is_some()
@@ -839,5 +845,27 @@ mod tests {
         assert_eq!(caps.hw_accel, HwAccel::Nvenc);
         assert_eq!(d.response.output_video_codec, "av1");
         assert_eq!(d.response.hw_accel, HwAccel::Nvenc);
+    }
+
+    #[test]
+    fn open_checks_every_path_once_mapped() {
+        let (from, to, path) = crate::runtime::FOREIGN;
+        let rt = Runtime::with_mapping(from, to);
+        let f: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let req = |media: &str, burn: &str| -> OpenSessionRequest {
+            let mut decide = f["input"].clone();
+            decide["media"]["path"] = media.into();
+            serde_json::from_value(serde_json::json!({
+                "decide": decide,
+                "burnIn": { "type": "image", "path": burn }
+            }))
+            .unwrap()
+        };
+        let sep = std::path::MAIN_SEPARATOR;
+        let mut ok = req(path, path);
+        rt.check_paths(&mut ok).unwrap();
+        assert_eq!(ok.burn_in.unwrap().path.unwrap(), format!("{to}{sep}x.mkv"));
+        assert!(rt.check_paths(&mut req("x.mkv", path)).is_err());
+        assert!(rt.check_paths(&mut req(path, "x.sup")).is_err());
     }
 }

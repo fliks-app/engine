@@ -263,7 +263,10 @@ pub struct EngineConfig {
 }
 
 /// Longest `from` that ends on a path boundary. `/mnt/a` does not rewrite `/mnt/ab`.
+/// `/` and `\` are the same separator on both sides; the rewritten tail uses this host's.
 pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
+    let fold = |s: &str| s.replace('\\', "/");
+    let folded = fold(path);
     let best = mappings
         .iter()
         .filter_map(|m| {
@@ -272,15 +275,15 @@ pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
             if from.is_empty() || to.is_empty() {
                 return None;
             }
-            let rest = path.strip_prefix(from)?;
-            if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\')) {
+            let rest = folded.strip_prefix(&fold(from))?;
+            if !(rest.is_empty() || rest.starts_with('/')) {
                 return None;
             }
             Some((from.len(), to, rest))
         })
         .max_by_key(|(n, _, _)| *n);
     match best {
-        Some((_, to, rest)) => format!("{to}{rest}"),
+        Some((_, to, rest)) => format!("{to}{}", rest.replace('/', std::path::MAIN_SEPARATOR_STR)),
         None => path.to_string(),
     }
 }
@@ -928,6 +931,23 @@ mod tests {
             "/mnt/nas2/a.mkv"
         );
         assert_eq!(apply_path_mappings(&maps, "/mnt/nas"), "/data");
+        let win = [PathMapping {
+            from: r"C:\Media".into(),
+            to: "/data/media".into(),
+        }];
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            apply_path_mappings(&win, r"C:\Media\Films\x.mkv"),
+            format!("/data/media{sep}Films{sep}x.mkv")
+        );
+        assert_eq!(
+            apply_path_mappings(&win, "C:/media/x.mkv"),
+            "C:/media/x.mkv"
+        );
+        assert_eq!(
+            apply_path_mappings(&win, r"C:\Media2\x.mkv"),
+            r"C:\Media2\x.mkv"
+        );
         assert_eq!(apply_path_mappings(&[], "/mnt/nas/a.mkv"), "/mnt/nas/a.mkv");
     }
 }
