@@ -878,4 +878,21 @@ mod tests {
         let m = with_mapped_paths(&p, |s| s.replace("/lib", "/mnt/lib"));
         assert_eq!(m.plan.extra_subtitles[0].path, "/mnt/lib/a.srt");
     }
+
+    #[test]
+    fn validate_maps_extra_subtitle_paths_before_the_absolute_check() {
+        let (from, to, _) = crate::runtime::FOREIGN;
+        let rt = crate::runtime::Runtime::with_mapping(from, to);
+        let payload = |path: String| {
+            let mut p: OptimizePayload = serde_json::from_value(serde_json::json!({
+                "info": { "video": [], "audio": [], "subtitles": [] },
+                "plan": { "level": "remux", "extraSubtitles": [{ "path": path }] }
+            }))
+            .unwrap();
+            p.info.video.push(Default::default());
+            p
+        };
+        assert_eq!(validate(&rt, &payload(format!("{from}/a.srt"))), Ok(()));
+        assert!(validate(&rt, &payload("a.srt".into())).is_err());
+    }
 }

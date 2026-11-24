@@ -286,7 +286,7 @@ pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
                 let rest = path.strip_prefix(from)?;
                 (rest, rest.to_string())
             };
-            if !(rest.is_empty() || rest.starts_with('/') || (windows && rest.starts_with('\\'))) {
+            if !(rest.is_empty() || rest.starts_with('/')) {
                 return None;
             }
             Some((from.len(), to, host))
@@ -941,6 +941,14 @@ mod tests {
             "/mnt/nas2/a.mkv"
         );
         assert_eq!(apply_path_mappings(&maps, "/mnt/nas"), "/data");
+        assert_eq!(
+            apply_path_mappings(&maps, r"/mnt/nas/tv/Face\Off.mkv"),
+            r"/data/tv/Face\Off.mkv"
+        );
+        assert_eq!(
+            apply_path_mappings(&maps, r"/mnt/nas\x.mkv"),
+            r"/mnt/nas\x.mkv"
+        );
         let win = [PathMapping {
             from: r"C:\Media".into(),
             to: "/data/media".into(),
