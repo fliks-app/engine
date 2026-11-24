@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.4](https://github.com/fliks-app/engine/compare/v1.30.3...v1.30.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **paths:** map host paths before the absolute check and map sidecar paths ([#276](https://github.com/fliks-app/engine/issues/276)) ([00aa73b](https://github.com/fliks-app/engine/commit/00aa73bf6526299b9577945712cc14f8768ffe11))
+
 ## [1.30.3](https://github.com/fliks-app/engine/compare/v1.30.2...v1.30.3) (2026-11-24)
 
 
