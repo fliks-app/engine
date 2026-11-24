@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.3](https://github.com/fliks-app/engine/compare/v1.30.2...v1.30.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **session:** fork the cache key on the applied crop ([#274](https://github.com/fliks-app/engine/issues/274)) ([b4bbb90](https://github.com/fliks-app/engine/commit/b4bbb90f543ef60eb5c27e3097bcd095b9359bcf))
+
 ## [1.30.2](https://github.com/fliks-app/engine/compare/v1.30.1...v1.30.2) (2026-11-23)
 
 
