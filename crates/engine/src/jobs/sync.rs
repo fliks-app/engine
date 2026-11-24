@@ -46,6 +46,15 @@ pub async fn run(
 ) -> Result<JobResult, String> {
     pure::validate_sync(info, subtitle, reference, None)?;
     let media = ctx.media_path();
+    let reference = &match reference {
+        SyncReference::File { path } => SyncReference::File {
+            path: ctx
+                .rt
+                .map_absolute(path)
+                .ok_or("SubtitleSync reference file path must be absolute")?,
+        },
+        other => other.clone(),
+    };
     let resolved = pure::resolve_reference(info, reference, &media)?;
     let ext = pure::format_ext(subtitle.format);
     let dir = ctx.rt.cache.root.join("tmp").join("sync").join(&ctx.job.id);

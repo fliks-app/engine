@@ -15,14 +15,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 /// Host path rewritten by `pathMappings`. Both sides stay absolute: a relative one is an argv option.
 fn resolve_probe_path(rt: &crate::runtime::Runtime, host: &str) -> Result<String, StatusCode> {
-    if !Path::new(host).is_absolute() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    let path = rt.map_media_path(host);
-    if !Path::new(&path).is_absolute() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    Ok(path)
+    rt.map_absolute(host).ok_or(StatusCode::BAD_REQUEST)
 }
 
 /// First and last 64 KiB of the file for the moviehash; `None` when unreadable or under 128 KiB.
@@ -145,5 +138,19 @@ mod tests {
         assert!(resolve_probe_path(&opened, "rel.mkv").is_err());
         let relative = rt(from, "relative");
         assert!(resolve_probe_path(&relative, host).is_err());
+    }
+
+    #[test]
+    fn a_foreign_platform_path_is_mapped_before_the_absolute_check() {
+        let (win_to_here, here) = if cfg!(windows) {
+            (r"/mnt/media", r"D:\media")
+        } else {
+            (r"C:\Media", "/data/media")
+        };
+        let r = rt(win_to_here, here);
+        let host = format!(r"{win_to_here}\x.mkv");
+        assert!(resolve_probe_path(&r, &host).unwrap().starts_with(here));
+        assert!(r.map_absolute("media/x.mkv").is_none());
+        assert!(rt(win_to_here, "relative").map_absolute(&host).is_none());
     }
 }

@@ -13,7 +13,12 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo, source: &SrtSource) -> Result<JobR
     pure::validate_srt(info, source)?;
     let media = ctx.media_path();
     let (input, map) = match source {
-        SrtSource::File { path } => (path.clone(), None),
+        SrtSource::File { path } => (
+            ctx.rt
+                .map_absolute(path)
+                .ok_or("SubtitleToSrt file path must be absolute")?,
+            None,
+        ),
         SrtSource::Stream { index } => (media, Some(*index)),
     };
     let argv = pure::to_srt_argv(&input, map);

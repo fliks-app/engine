@@ -8,7 +8,7 @@ pub const MAX_STREAM_INDEX: u32 = 999;
 pub fn validate_srt(info: &MediaInfo, source: &SrtSource) -> Result<(), String> {
     match source {
         SrtSource::File { path } => {
-            if !std::path::Path::new(path).is_absolute() {
+            if !super::merge::absolute(path) {
                 return Err("SubtitleToSrt file path must be absolute".into());
             }
         }
@@ -97,6 +97,23 @@ mod tests {
         assert_eq!(
             image.unwrap_err(),
             "SubtitleToSrt stream must be a text track"
+        );
+    }
+
+    #[test]
+    fn a_file_path_of_any_platform_is_accepted_and_a_relative_one_is_not() {
+        let info = MediaInfo::default();
+        for p in ["/mnt/a.srt", r"C:\m\a.srt", r"\\nas\a.srt"] {
+            assert!(validate_srt(&info, &SrtSource::File { path: p.into() }).is_ok());
+        }
+        assert!(
+            validate_srt(
+                &info,
+                &SrtSource::File {
+                    path: "a.srt".into()
+                }
+            )
+            .is_err()
         );
     }
 }

@@ -14,7 +14,6 @@ use fliks_engine_core::session::{
     seconds_to_segment, session_key, session_to_evict, tombstone_revivable, variant_hash,
 };
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
@@ -289,13 +288,13 @@ impl Runtime {
                 "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
             ));
         }
-        if !Path::new(&req.decide.media.path).is_absolute()
+        if self.map_absolute(&req.decide.media.path).is_none()
             || req
                 .decide
                 .media
                 .parts
                 .iter()
-                .any(|p| !Path::new(&p.path).is_absolute())
+                .any(|p| self.map_absolute(&p.path).is_none())
         {
             return Err(OpenError::BadRequest(
                 "media.path and parts[].path must be absolute".into(),
@@ -304,10 +303,9 @@ impl Runtime {
         if let Some(b) = req.burn_in.as_mut()
             && let Some(p) = b.path.as_mut()
         {
-            if !Path::new(p.as_str()).is_absolute() {
-                return Err(OpenError::BadRequest("burnIn.path must be absolute".into()));
-            }
-            *p = self.map_media_path(p);
+            *p = self
+                .map_absolute(p)
+                .ok_or_else(|| OpenError::BadRequest("burnIn.path must be absolute".into()))?;
         }
         let (decision, caps, device) = self.decide_placed(&req.decide, &first, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);

@@ -34,7 +34,6 @@ use fliks_engine_core::api::{
     JobResult, JobSnapshot, MediaInfo, PauseMode,
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -300,7 +299,7 @@ pub fn submit_urgent(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, Strin
 }
 
 fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String, String> {
-    if !Path::new(&req.media.path).is_absolute() {
+    if rt.map_absolute(&req.media.path).is_none() {
         return Err("media.path must be absolute".into());
     }
     validate(&req.kind)?;

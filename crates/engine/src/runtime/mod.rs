@@ -176,6 +176,17 @@ impl Runtime {
         fliks_engine_core::api::apply_path_mappings(&self.current_config().path_mappings, path)
     }
 
+    /// `map_media_path` for a host path of any platform; `None` unless the result is absolute here.
+    pub fn map_absolute(&self, path: &str) -> Option<String> {
+        if !fliks_engine_core::jobs::merge::absolute(path) {
+            return None;
+        }
+        let mapped = self.map_media_path(path);
+        std::path::Path::new(&mapped)
+            .is_absolute()
+            .then_some(mapped)
+    }
+
     fn lifetime(&self) -> LifetimeConfig {
         self.config
             .locked()
