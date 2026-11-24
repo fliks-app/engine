@@ -120,11 +120,7 @@ mod tests {
     fn a_foreign_platform_path_is_mapped_before_the_absolute_check() {
         let (from, to, path) = FOREIGN;
         let r = Runtime::with_mapping(from, to);
-        let sep = std::path::MAIN_SEPARATOR;
-        assert_eq!(
-            resolve_probe_path(&r, path).unwrap(),
-            format!("{to}{sep}x.mkv")
-        );
+        assert_eq!(resolve_probe_path(&r, path).unwrap(), format!("{to}/x.mkv"));
         assert!(resolve_probe_path(&r, "media/x.mkv").is_err());
         assert!(resolve_probe_path(&Runtime::with_mapping(from, "relative"), path).is_err());
     }

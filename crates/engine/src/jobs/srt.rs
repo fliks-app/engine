@@ -52,11 +52,10 @@ mod tests {
     fn a_sidecar_is_opened_at_its_mapped_path() {
         let (from, to, path) = FOREIGN;
         let rt = Runtime::with_mapping(from, to);
-        let sep = std::path::MAIN_SEPARATOR;
         let file = SrtSource::File { path: path.into() };
         assert_eq!(
             input(&rt, "m".into(), &file).unwrap(),
-            (format!("{to}{sep}x.mkv"), None)
+            (format!("{to}/x.mkv"), None)
         );
         let rel = SrtSource::File {
             path: "x.srt".into(),

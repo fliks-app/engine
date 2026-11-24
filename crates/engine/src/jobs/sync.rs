@@ -379,12 +379,11 @@ mod tests {
     fn a_reference_file_is_read_at_its_mapped_path() {
         let (from, to, path) = FOREIGN;
         let rt = Runtime::with_mapping(from, to);
-        let sep = std::path::MAIN_SEPARATOR;
         let file = SyncReference::File { path: path.into() };
         assert_eq!(
             mapped_reference(&rt, &file).unwrap(),
             SyncReference::File {
-                path: format!("{to}{sep}x.mkv")
+                path: format!("{to}/x.mkv")
             }
         );
         let rel = SyncReference::File {

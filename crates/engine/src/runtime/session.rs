@@ -861,10 +861,9 @@ mod tests {
             }))
             .unwrap()
         };
-        let sep = std::path::MAIN_SEPARATOR;
         let mut ok = req(path, path);
         rt.check_paths(&mut ok).unwrap();
-        assert_eq!(ok.burn_in.unwrap().path.unwrap(), format!("{to}{sep}x.mkv"));
+        assert_eq!(ok.burn_in.unwrap().path.unwrap(), format!("{to}/x.mkv"));
         assert!(rt.check_paths(&mut req("x.mkv", path)).is_err());
         assert!(rt.check_paths(&mut req(path, "x.sup")).is_err());
     }

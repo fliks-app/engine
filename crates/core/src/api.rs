@@ -263,7 +263,8 @@ pub struct EngineConfig {
 }
 
 /// Longest `from` that ends on a path boundary. `/mnt/a` does not rewrite `/mnt/ab`.
-/// `/` and `\` are the same separator on both sides; the rewritten tail uses this host's.
+/// A Windows `from` (`X:` or leading `\`) reads `/` and `\` alike and the tail takes this host's
+/// separator; a Unix `from` matches byte for byte and keeps the tail verbatim.
 pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
     let fold = |s: &str| s.replace('\\', "/");
     let folded = fold(path);
@@ -275,15 +276,24 @@ pub fn apply_path_mappings(mappings: &[PathMapping], path: &str) -> String {
             if from.is_empty() || to.is_empty() {
                 return None;
             }
-            let rest = folded.strip_prefix(&fold(from))?;
-            if !(rest.is_empty() || rest.starts_with('/')) {
+            let b = from.as_bytes();
+            let windows =
+                b[0] == b'\\' || (b.len() > 1 && b[0].is_ascii_alphabetic() && b[1] == b':');
+            let (rest, host) = if windows {
+                let rest = folded.strip_prefix(&fold(from))?;
+                (rest, rest.replace('/', std::path::MAIN_SEPARATOR_STR))
+            } else {
+                let rest = path.strip_prefix(from)?;
+                (rest, rest.to_string())
+            };
+            if !(rest.is_empty() || rest.starts_with('/') || (windows && rest.starts_with('\\'))) {
                 return None;
             }
-            Some((from.len(), to, rest))
+            Some((from.len(), to, host))
         })
         .max_by_key(|(n, _, _)| *n);
     match best {
-        Some((_, to, rest)) => format!("{to}{}", rest.replace('/', std::path::MAIN_SEPARATOR_STR)),
+        Some((_, to, rest)) => format!("{to}{rest}"),
         None => path.to_string(),
     }
 }
