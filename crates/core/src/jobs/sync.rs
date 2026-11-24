@@ -140,7 +140,7 @@ pub fn resolve_reference(
             })
         }
         SyncReference::File { path } => {
-            if !std::path::Path::new(path).is_absolute() {
+            if !super::merge::absolute(path) {
                 return Err("SubtitleSync reference file path must be absolute".into());
             }
             if is_subtitle_path(path) {
@@ -363,5 +363,18 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.contains("999"));
+    }
+
+    #[test]
+    fn a_reference_file_of_any_platform_is_accepted_and_a_relative_one_is_not() {
+        let info = MediaInfo::default();
+        for p in ["/mnt/a.srt", r"C:\m\a.srt"] {
+            let r = SyncReference::File { path: p.into() };
+            assert!(resolve_reference(&info, &r, "/m.mkv").is_ok());
+        }
+        let r = SyncReference::File {
+            path: "a.srt".into(),
+        };
+        assert!(resolve_reference(&info, &r, "/m.mkv").is_err());
     }
 }

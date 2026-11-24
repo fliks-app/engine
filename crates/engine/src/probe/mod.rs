@@ -15,14 +15,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 /// Host path rewritten by `pathMappings`. Both sides stay absolute: a relative one is an argv option.
 fn resolve_probe_path(rt: &crate::runtime::Runtime, host: &str) -> Result<String, StatusCode> {
-    if !Path::new(host).is_absolute() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    let path = rt.map_media_path(host);
-    if !Path::new(&path).is_absolute() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    Ok(path)
+    rt.map_absolute(host).ok_or(StatusCode::BAD_REQUEST)
 }
 
 /// First and last 64 KiB of the file for the moviehash; `None` when unreadable or under 128 KiB.
@@ -102,31 +95,7 @@ pub async fn probe(
 #[cfg(test)]
 mod tests {
     use super::resolve_probe_path;
-    use crate::cache::Cache;
-    use crate::hw::Hw;
-    use crate::lock::Locked;
-    use crate::runtime::Runtime;
-    use fliks_engine_core::api::{EngineConfig, PathMapping};
-    use std::sync::Arc;
-
-    fn rt(from: &str, to: &str) -> Arc<Runtime> {
-        let hw = Hw::new(Arc::new(|_| Box::pin(async { unreachable!() })));
-        let rt = Runtime::with_tools(
-            hw,
-            Cache::from_env(),
-            "ffmpeg".into(),
-            "ffprobe".into(),
-            "fpcalc".into(),
-        );
-        rt.config.locked().replace(Arc::new(EngineConfig {
-            path_mappings: vec![PathMapping {
-                from: from.into(),
-                to: to.into(),
-            }],
-            ..EngineConfig::default()
-        }));
-        rt
-    }
+    use crate::runtime::{FOREIGN, Runtime};
 
     #[test]
     fn probe_opens_the_mapped_path() {
@@ -140,10 +109,19 @@ mod tests {
                 "/data/server/a.mkv",
             )
         };
-        let opened = rt(from, to);
+        let opened = Runtime::with_mapping(from, to);
         assert_eq!(resolve_probe_path(&opened, host).unwrap(), mapped);
         assert!(resolve_probe_path(&opened, "rel.mkv").is_err());
-        let relative = rt(from, "relative");
+        let relative = Runtime::with_mapping(from, "relative");
         assert!(resolve_probe_path(&relative, host).is_err());
+    }
+
+    #[test]
+    fn a_foreign_platform_path_is_mapped_before_the_absolute_check() {
+        let (from, to, path) = FOREIGN;
+        let r = Runtime::with_mapping(from, to);
+        assert_eq!(resolve_probe_path(&r, path).unwrap(), format!("{to}/x.mkv"));
+        assert!(resolve_probe_path(&r, "media/x.mkv").is_err());
+        assert!(resolve_probe_path(&Runtime::with_mapping(from, "relative"), path).is_err());
     }
 }

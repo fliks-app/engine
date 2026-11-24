@@ -14,7 +14,6 @@ use fliks_engine_core::session::{
     seconds_to_segment, session_key, session_to_evict, tombstone_revivable, variant_hash,
 };
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
@@ -278,6 +277,30 @@ impl Runtime {
         }
     }
 
+    /// Every host path of the request is absolute once mapped on this host; `burnIn.path` is rewritten.
+    fn check_paths(&self, req: &mut OpenSessionRequest) -> Result<(), OpenError> {
+        if self.map_absolute(&req.decide.media.path).is_none()
+            || req
+                .decide
+                .media
+                .parts
+                .iter()
+                .any(|p| self.map_absolute(&p.path).is_none())
+        {
+            return Err(OpenError::BadRequest(
+                "media.path and parts[].path must be absolute".into(),
+            ));
+        }
+        if let Some(b) = req.burn_in.as_mut()
+            && let Some(p) = b.path.as_mut()
+        {
+            *p = self
+                .map_absolute(p)
+                .ok_or_else(|| OpenError::BadRequest("burnIn.path must be absolute".into()))?;
+        }
+        Ok(())
+    }
+
     fn open_now(
         self: &Arc<Self>,
         mut req: OpenSessionRequest,
@@ -289,26 +312,7 @@ impl Runtime {
                 "ownerId: [A-Za-z0-9_.-]{1,64}".into(),
             ));
         }
-        if !Path::new(&req.decide.media.path).is_absolute()
-            || req
-                .decide
-                .media
-                .parts
-                .iter()
-                .any(|p| !Path::new(&p.path).is_absolute())
-        {
-            return Err(OpenError::BadRequest(
-                "media.path and parts[].path must be absolute".into(),
-            ));
-        }
-        if let Some(b) = req.burn_in.as_mut()
-            && let Some(p) = b.path.as_mut()
-        {
-            if !Path::new(p.as_str()).is_absolute() {
-                return Err(OpenError::BadRequest("burnIn.path must be absolute".into()));
-            }
-            *p = self.map_media_path(p);
-        }
+        self.check_paths(&mut req)?;
         let (decision, caps, device) = self.decide_placed(&req.decide, &first, &config.streaming);
         let plan = core_session::plan(&req, &decision, &config.streaming, &caps);
         if plan.item.is_some()
@@ -841,5 +845,26 @@ mod tests {
         assert_eq!(caps.hw_accel, HwAccel::Nvenc);
         assert_eq!(d.response.output_video_codec, "av1");
         assert_eq!(d.response.hw_accel, HwAccel::Nvenc);
+    }
+
+    #[test]
+    fn open_checks_every_path_once_mapped() {
+        let (from, to, path) = crate::runtime::FOREIGN;
+        let rt = Runtime::with_mapping(from, to);
+        let f: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let req = |media: &str, burn: &str| -> OpenSessionRequest {
+            let mut decide = f["input"].clone();
+            decide["media"]["path"] = media.into();
+            serde_json::from_value(serde_json::json!({
+                "decide": decide,
+                "burnIn": { "type": "image", "path": burn }
+            }))
+            .unwrap()
+        };
+        let mut ok = req(path, path);
+        rt.check_paths(&mut ok).unwrap();
+        assert_eq!(ok.burn_in.unwrap().path.unwrap(), format!("{to}/x.mkv"));
+        assert!(rt.check_paths(&mut req("x.mkv", path)).is_err());
+        assert!(rt.check_paths(&mut req(path, "x.sup")).is_err());
     }
 }

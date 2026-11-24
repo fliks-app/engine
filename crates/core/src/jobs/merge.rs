@@ -22,7 +22,7 @@ pub fn argv_chars(argv: &[String]) -> usize {
 }
 
 /// `/x`, `\\x` or `C:\x` on every platform: the same verdict wherever the core runs.
-pub(crate) fn absolute(path: &str) -> bool {
+pub fn absolute(path: &str) -> bool {
     let b = path.as_bytes();
     matches!(b.first(), Some(b'/' | b'\\'))
         || (b.len() > 2

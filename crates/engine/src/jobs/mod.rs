@@ -34,7 +34,6 @@ use fliks_engine_core::api::{
     JobResult, JobSnapshot, MediaInfo, PauseMode,
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -211,7 +210,7 @@ impl Jobs {
     }
 }
 
-fn validate(kind: &JobKind) -> Result<(), String> {
+fn validate(rt: &Runtime, kind: &JobKind) -> Result<(), String> {
     if let Some(family) = kind.info().and_then(MediaInfo::family)
         && !kind.families().contains(&family)
     {
@@ -254,8 +253,8 @@ fn validate(kind: &JobKind) -> Result<(), String> {
             reference,
             max_offset_seconds,
             ..
-        } => sync::validate(info, subtitle, reference, *max_offset_seconds)?,
-        JobKind::SubtitleToSrt { info, source } => srt::validate(info, source)?,
+        } => sync::validate(rt, info, subtitle, reference, *max_offset_seconds)?,
+        JobKind::SubtitleToSrt { info, source } => srt::validate(rt, info, source)?,
         JobKind::Cover { info } => {
             fliks_engine_core::jobs::cover::validate(info)?;
         }
@@ -270,7 +269,7 @@ fn validate(kind: &JobKind) -> Result<(), String> {
         JobKind::Separate { .. } => fliks_engine_core::jobs::separate::validate(kind)?,
         JobKind::Align { .. } => fliks_engine_core::jobs::align::validate(kind)?,
         JobKind::Melody { .. } => fliks_engine_core::jobs::melody::validate(kind)?,
-        JobKind::Optimize { payload } => optimize::validate(payload)?,
+        JobKind::Optimize { payload } => optimize::validate(rt, payload)?,
         JobKind::Verify { payload } => verify::validate(payload)?,
     }
     Ok(())
@@ -299,11 +298,15 @@ pub fn submit_urgent(rt: &Arc<Runtime>, req: JobRequest) -> Result<String, Strin
     submit_as(rt, req, true)
 }
 
+fn check_media_path(rt: &Runtime, req: &JobRequest) -> Result<(), String> {
+    rt.map_absolute(&req.media.path)
+        .map(drop)
+        .ok_or_else(|| "media.path must be absolute".into())
+}
+
 fn submit_as(rt: &Arc<Runtime>, req: JobRequest, urgent: bool) -> Result<String, String> {
-    if !Path::new(&req.media.path).is_absolute() {
-        return Err("media.path must be absolute".into());
-    }
-    validate(&req.kind)?;
+    check_media_path(rt, &req)?;
+    validate(rt, &req.kind)?;
     let dedupe = serde_json::to_string(&(&req.kind, &req.media, req.force)).unwrap_or_default();
     let (id, now) = {
         let mut q = rt.jobs.q.locked();
@@ -355,7 +358,7 @@ pub fn submit_leased(
     lane: Lane,
     lease: &str,
 ) -> Result<Arc<BgJob>, String> {
-    validate(&req.kind)?;
+    validate(rt, &req.kind)?;
     let j = {
         let mut q = rt.jobs.q.locked();
         let j = queue(&mut q, req, lease.into(), false, Some(lane));
@@ -695,5 +698,19 @@ mod tests {
         let unleased = job(None);
         unleased.enter_cpu_lane();
         assert_eq!(*unleased.lane.locked(), None);
+    }
+
+    #[test]
+    fn submit_checks_the_media_path_once_mapped() {
+        let (from, to, path) = crate::runtime::FOREIGN;
+        let rt = Runtime::with_mapping(from, to);
+        let req = |p: &str| {
+            let mut r = job(None).req.clone();
+            r.media.path = p.into();
+            r
+        };
+        assert!(check_media_path(&rt, &req(path)).is_ok());
+        assert!(check_media_path(&rt, &req("x.mkv")).is_err());
+        assert!(check_media_path(&Runtime::with_mapping(from, "rel"), &req(path)).is_err());
     }
 }

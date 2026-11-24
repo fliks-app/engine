@@ -10,7 +10,7 @@ Two optional job kinds on the M5 job system (`engine::jobs`, `core::jobs`): `Sub
 - `SyncReference`, tagged by `type`: `{ type: "auto" }` (the media file itself), `{ type: "audioStream", index: u32 }`, `{ type: "subtitleStream", index: u32 }` (ffmpeg stream index in the media file), `{ type: "file", path: String }` (absolute, under the media root: the host resolves it before submitting). [ts:sync:225-252]
 - Validation in `engine::jobs::submit`, 400 otherwise [ts:ocr:129-143] [ts:sync:95-97,219-222]:
   - OCR: `streamIndex` ≤ 999 and present in `info.subtitles`; the track is image-based; its codec is `hdmv_pgs_subtitle` or `dvd_subtitle` (DVB, XSUB and text tracks rejected before any work); `language` if present is a 2-letter IETF code.
-  - Sync: `subtitle.text` non-empty, `subtitle.format` one of `srt|sub|ass|ssa|vtt`; `reference.file` is absolute.
+  - Sync: `subtitle.text` non-empty, `subtitle.format` one of `srt|sub|ass|ssa|vtt`; `reference.file` is absolute in any platform's form and goes through `pathMappings`; it must be absolute on the engine's host once mapped (400 at submit).
 - Results: `JobResult::SubtitleOcr { srt: String }` (the tools always produce SRT), `JobResult::SubtitleSync { subtitle: SubtitleText }` (ffsubsync and alass keep the input format), `JobResult::SubtitleToSrt { srt: String }`. [ts:ocr:303] [ts:sync:254-269]
 - `hello.features` gains `subtitle-ocr` when the PGS path (`pgsrip`) or the VobSub path (`subtile-ocr` and `mkvextract`) is complete, and `subtitle-sync` when `ffsubsync` is on PATH (the alass fallback is compiled in, it needs no feature).
 
@@ -59,6 +59,6 @@ The job system's own budget replaces the TS's dedicated gates: at most 2 backgro
 
 Input: `media.path`, `info`, `source`. Output: SRT text. The host still reads an SRT sidecar itself. [ts:modules/subtitles/subtitle-translation.service.ts:409-437]
 
-- `source` is `{ type: "file", path }` (absolute non-SRT sidecar) or `{ type: "stream", index }` (embedded text track of the job's media). A stream index above 999, missing from `info.subtitles`, or image-based is a 400. A relative file path is a 400.
+- `source` is `{ type: "file", path }` (absolute non-SRT sidecar, mapped by `pathMappings` like `media.path`) or `{ type: "stream", index }` (embedded text track of the job's media). A stream index above 999, missing from `info.subtitles`, or image-based is a 400. A relative file path is a 400.
 - One ffmpeg run, timeout 120 s: `-y -i <path> -f srt pipe:1`, plus `-map 0:<index>` for a stream. The SRT is ffmpeg's stdout. No feature flag: ffmpeg is already required.
 - Providers, batching, API keys, the placeholder row and the progress events stay host-side. [ts:modules/subtitles/subtitle-translation.service.ts:266-307]
