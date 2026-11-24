@@ -1,6 +1,6 @@
 //! Cache profile hash of a session (`cache/v2`) and the session fields it derives from.
 //! New in the engine: stable, not the host's sha1. [ts:transcoding/profile-hash.ts] [ts:transcoding/session-profile.ts]
-use crate::api::{CodecVariant, HdrFormat, MuxFlavour, TonemapCurve, VideoCodec};
+use crate::api::{CodecVariant, CropInfo, HdrFormat, MuxFlavour, TonemapCurve, VideoCodec};
 use crate::decide::dolby_vision::has_no_base;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,9 @@ pub struct PlaybackProfile {
     pub tonemap_curve: Option<TonemapCurve>,
     /// The burned-in subtitle (`kind|filter|stream|path`): its frames are in the video bytes.
     pub burn_in: Option<String>,
+    /// The crop filter the run applies.
+    #[serde(default)]
+    pub crop: Option<CropInfo>,
 }
 
 fn name<T: Serialize>(v: &T) -> String {
@@ -117,6 +120,9 @@ impl PlaybackProfile {
         if let Some(b) = &self.burn_in {
             keys.push(format!("bi={b}"));
         }
+        if let Some(c) = &self.crop {
+            keys.push(format!("cr={}:{}:{}:{}", c.width, c.height, c.x, c.y));
+        }
         keys.join("|")
     }
 }
@@ -164,6 +170,8 @@ pub struct SessionLayout {
     pub source_dv_bl_signal_compat_id: Option<u32>,
     pub source_hdr10_plus: bool,
     pub burn_in: Option<String>,
+    #[serde(default)]
+    pub crop: Option<CropInfo>,
 }
 
 /// [ts:transcoding/profile-hash.ts:140-186]; a source with several audio tracks is a
@@ -213,6 +221,7 @@ pub fn profile_from_layout(l: &SessionLayout, segment_duration_ms: u32) -> Playb
         tonemap_curve: (l.tonemapping && v.is_none_or(|v| v.hdr.is_none()))
             .then_some(l.tonemap_curve),
         burn_in: l.burn_in.clone(),
+        crop: l.crop.clone(),
     }
 }
 
@@ -246,6 +255,7 @@ mod tests {
             source_dv_bl_signal_compat_id: None,
             source_hdr10_plus: false,
             burn_in: None,
+            crop: None,
         }
     }
 
@@ -280,6 +290,15 @@ mod tests {
         );
     }
 
+    fn crop(height: u32) -> CropInfo {
+        CropInfo {
+            width: 1920,
+            height,
+            x: 0,
+            y: (1080 - height) / 2,
+        }
+    }
+
     #[test]
     fn every_input_forks_the_hash() {
         let base = profile_from_layout(&layout(), 3000);
@@ -307,6 +326,8 @@ mod tests {
             |p| p.tonemap_curve = Some(TonemapCurve::Hable),
             |p| p.burn_in = Some("text|f||".into()),
             |p| p.burn_in = Some("text|g||".into()),
+            |p| p.crop = Some(crop(800)),
+            |p| p.crop = Some(crop(804)),
         ];
         for e in edits {
             let mut p = base.clone();
