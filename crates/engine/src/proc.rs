@@ -200,6 +200,33 @@ pub struct Exit {
     pub signal: bool,
 }
 
+type Ring = (Arc<Mutex<VecDeque<String>>>, Arc<AtomicU64>, Arc<AtomicU64>);
+
+/// Reads `r` line by line into the tail `ring`, counting lines (and decode errors if asked).
+fn drain_into(
+    r: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    (ring, count, errors): Ring,
+    count_errors: bool,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let (mut r, mut buf) = (BufReader::new(r), Vec::new());
+        // A line past MAX_LINE bytes counts as several; invalid UTF-8 must not stop the drain.
+        while let Ok(1..) = (&mut r).take(MAX_LINE).read_until(b'\n', &mut buf).await {
+            count.fetch_add(1, Ordering::Relaxed);
+            let l = String::from_utf8_lossy(&buf);
+            if count_errors && is_decode_error(&l) {
+                errors.fetch_add(1, Ordering::Relaxed);
+            }
+            let mut q = ring.locked();
+            if q.len() == RING_LINES {
+                q.pop_front();
+            }
+            q.push_back(clip(l.trim_end_matches(['\r', '\n']).to_string()));
+            buf.clear();
+        }
+    })
+}
+
 /// What a run exposes besides stderr.
 #[derive(Clone, Copy, Default)]
 pub struct Pipes {
@@ -281,11 +308,7 @@ impl Ffmpeg {
         }
         cmd.args(args)
             .stdin(Stdio::piped())
-            .stdout(if pipes.stdout {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(unix)]
@@ -296,28 +319,16 @@ impl Ffmpeg {
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
         let stderr_lines = Arc::new(AtomicU64::new(0));
         let decode_errors = Arc::new(AtomicU64::new(0));
-        let drain = child.stderr.take().map(|err| {
-            let (ring, count, errors) =
-                (stderr.clone(), stderr_lines.clone(), decode_errors.clone());
-            let count_errors = pipes.decode_errors;
-            tokio::spawn(async move {
-                let (mut err, mut buf) = (BufReader::new(err), Vec::new());
-                // A line past MAX_LINE bytes counts as several; invalid UTF-8 must not stop the drain.
-                while let Ok(1..) = (&mut err).take(MAX_LINE).read_until(b'\n', &mut buf).await {
-                    count.fetch_add(1, Ordering::Relaxed);
-                    let l = String::from_utf8_lossy(&buf);
-                    if count_errors && is_decode_error(&l) {
-                        errors.fetch_add(1, Ordering::Relaxed);
-                    }
-                    let mut r = ring.locked();
-                    if r.len() == RING_LINES {
-                        r.pop_front();
-                    }
-                    r.push_back(clip(l.trim_end_matches(['\r', '\n']).to_string()));
-                    buf.clear();
-                }
-            })
-        });
+        let ring = (stderr.clone(), stderr_lines.clone(), decode_errors.clone());
+        let drain = child
+            .stderr
+            .take()
+            .map(|err| drain_into(err, ring.clone(), pipes.decode_errors));
+        // A stdout nobody reads lands in the tail too: mkvtoolnix reports its errors there.
+        let drain_out = match pipes.stdout {
+            true => None,
+            false => child.stdout.take().map(|out| drain_into(out, ring, false)),
+        };
         let pid = child.id();
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
@@ -335,7 +346,7 @@ impl Ffmpeg {
                 }
             };
             // The exit is published once stderr is fully read: its tail is part of the verdict.
-            if let Some(d) = drain {
+            for d in [drain, drain_out].into_iter().flatten() {
                 let _ = d.await;
             }
             let _ = exit_tx.send(Some(to_exit(status)));
@@ -597,6 +608,16 @@ mod tests {
         let tail = p.stderr_tail();
         assert_eq!(tail.len(), RING_LINES);
         assert_eq!(tail.last().unwrap(), "line60");
+    }
+
+    #[tokio::test]
+    async fn an_unread_stdout_joins_the_tail() {
+        let p = Ffmpeg::spawn("sh", &sh("echo 'Error: not a Matroska file'; exit 2"))
+            .await
+            .unwrap();
+        assert_eq!(p.wait().await.code, Some(2));
+        assert_eq!(p.stderr_tail(), ["Error: not a Matroska file"]);
+        assert!(p.take_stdout().is_none());
     }
 
     #[tokio::test]
