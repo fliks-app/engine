@@ -121,6 +121,8 @@ COPY --from=whisper-build /licenses/whisper.cpp /usr/share/doc/whisper.cpp
 COPY --from=pitch-ffmpeg-build /src/ffmpeg /usr/local/bin/ffmpeg-pitch
 COPY --from=pitch-ffmpeg-build /licenses/ffmpeg-pitch /usr/share/doc/ffmpeg-pitch
 ENV ORT_DYLIB_PATH=/usr/local/lib/libonnxruntime.so
+# Without a locale mkvtoolnix reads its arguments as ASCII and cuts a path at the first non-ASCII byte.
+ENV LANG=C.UTF-8
 
 # The container toolkit mounts libnvidia-opencl.so on NVENC hosts but not its ICD entry (harmless elsewhere).
 RUN mkdir -p /etc/OpenCL/vendors && echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd
