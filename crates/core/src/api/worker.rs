@@ -341,6 +341,8 @@ pub enum JobErrorClass {
     /// The worker cannot run the model at the version the job names (not in its manifest, licence
     /// not clear, download failed); another worker may.
     Model,
+    /// The source holds a stream the tools cannot read, so no output can keep it; final.
+    Unsupported,
 }
 
 impl JobErrorClass {
@@ -357,6 +359,7 @@ impl JobErrorClass {
             Self::Busy => "busy",
             Self::Stale => "stale",
             Self::Model => "model",
+            Self::Unsupported => "unsupported",
         }
     }
 
@@ -367,7 +370,7 @@ impl JobErrorClass {
 
     /// The class and text of a failure made by `message`; any other text is an `engine` failure.
     pub fn from_message(s: &str) -> (Self, &str) {
-        const ALL: [JobErrorClass; 11] = [
+        const ALL: [JobErrorClass; 12] = [
             JobErrorClass::Access,
             JobErrorClass::Io,
             JobErrorClass::Corrupt,
@@ -379,6 +382,7 @@ impl JobErrorClass {
             JobErrorClass::Busy,
             JobErrorClass::Stale,
             JobErrorClass::Model,
+            JobErrorClass::Unsupported,
         ];
         ALL.iter()
             .find_map(|c| {

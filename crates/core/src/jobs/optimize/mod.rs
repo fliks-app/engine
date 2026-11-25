@@ -217,6 +217,37 @@ fn subtitles_out<'a>(info: &'a MediaInfo, plan: &OptimizePlan) -> Vec<&'a Subtit
         .collect()
 }
 
+/// Why ffmpeg cannot write this plan: a kept audio or subtitle stream it cannot read (the probe's
+/// `unknown` codec), which no output can carry. The metadata level edits in place and keeps it.
+pub fn unreadable_stream(info: &MediaInfo, plan: &OptimizePlan) -> Option<String> {
+    if plan.level == crate::api::OptimizeLevel::Metadata {
+        return None;
+    }
+    let audio = audio_out(info, plan).into_iter().map(|o| {
+        (
+            "audio",
+            o.src.stream_index,
+            &o.src.codec,
+            &o.src.language,
+            &o.src.title,
+        )
+    });
+    let subs = subtitles_out(info, plan)
+        .into_iter()
+        .map(|s| ("subtitle", s.stream_index, &s.codec, &s.language, &s.title));
+    let (kind, index, _, language, title) = audio
+        .chain(subs)
+        .find(|(_, _, codec, _, _)| codec.as_str() == "unknown")?;
+    let name = match title {
+        Some(t) => format!(" ({language}, \"{t}\")"),
+        None => format!(" ({language})"),
+    };
+    Some(format!(
+        "{kind} stream {index}{name} is in a format ffmpeg cannot read, so the optimized file \
+         could not keep it: the file is left as it is"
+    ))
+}
+
 /// The explicit mapping of the output for `args::file`.
 fn archive_file(
     info: &MediaInfo,
@@ -667,6 +698,32 @@ mod tests {
             cuda_index: None,
         };
         crate::args::file(&f, &Default::default(), &dev).unwrap()
+    }
+
+    #[test]
+    fn a_kept_stream_ffmpeg_cannot_read_refuses_every_level_but_metadata() {
+        let mut i = info();
+        i.subtitles.push(
+            serde_json::from_value(
+                json!({ "streamIndex": 4, "codec": "unknown", "language": "fre",
+                "title": "SDH", "forced": false, "hearingImpaired": true, "isImageBased": false }),
+            )
+            .unwrap(),
+        );
+        assert_eq!(unreadable_stream(&info(), &plan()), None);
+        let why = unreadable_stream(&i, &plan()).unwrap();
+        assert!(
+            why.starts_with("subtitle stream 4 (fre, \"SDH\") is in a format"),
+            "{why}"
+        );
+        let mut meta = plan();
+        meta.level = crate::api::OptimizeLevel::Metadata;
+        assert_eq!(unreadable_stream(&i, &meta), None);
+        let dropped: OptimizePlan = serde_json::from_value(
+            json!({ "level": "reencode", "streams": [{ "streamIndex": 4, "keep": false }] }),
+        )
+        .unwrap();
+        assert_eq!(unreadable_stream(&i, &dropped), None);
     }
 
     #[test]

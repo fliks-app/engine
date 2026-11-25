@@ -353,10 +353,9 @@ impl Cmd {
     }
 }
 
-/// The last `n` stderr lines of a run, on one line.
+/// The last `n` lines of a run that explain its failure, on one line.
 pub fn tail(p: &Ffmpeg, n: usize) -> String {
-    let t = p.stderr_tail();
-    t[t.len().saturating_sub(n)..].join(" ")
+    fliks_engine_core::jobs::optimize::failure_excerpt(&p.stderr_tail(), n)
 }
 
 #[cfg(test)]
