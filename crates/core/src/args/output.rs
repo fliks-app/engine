@@ -401,7 +401,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         js(round(5_000_000.0 * probe / 3.0)),
     ]);
     if o.mode == super::LiveMode::Transcode {
-        a.extend(live_input(o.hw_accel, dev));
+        a.extend(live_input(o, caps, dev));
         let threads = o.encode_threads.max(1).to_string();
         a.extend(["-threads".into(), threads]);
     }
@@ -727,6 +727,76 @@ mod tests {
         );
         let remux = live_request("remux", "none", 2);
         assert_eq!(live_filters(&remux, &HostCaps::default()), None);
+    }
+
+    #[test]
+    fn a_codec_the_gpu_cannot_decode_is_decoded_on_the_cpu_and_uploaded() {
+        let bwdif = "bwdif=mode=send_frame:parity=auto:deint=interlaced";
+        // An iGPU without AV1, as the boot probe found it.
+        let caps = |probes: &[&str]| HostCaps {
+            disabled_decoders: vec!["av1_qsv_decode".into(), "av1_vaapi_decode".into()],
+            probes: probes.iter().map(|p| p.to_string()).collect(),
+            ..HostCaps::default()
+        };
+        let run = |hw: &str, codec: &str, interlaced, bps, probes: &[&str]| {
+            let mut r = live_request("transcode", hw, 2);
+            (r.video_codec, r.interlaced, r.video_bitrate_bps) =
+                (Some(codec.into()), interlaced, bps);
+            let c = caps(probes);
+            (live_input(&r, &c, &dev()), live_filters(&r, &c))
+        };
+        // The device is still initialised for the encoder's filters, no `-hwaccel`.
+        let (input, vf) = run("vaapi", "av1", Some(false), Some(3e6), &[]);
+        assert_eq!(
+            input,
+            [
+                "-init_hw_device",
+                "vaapi=va:/dev/dri/renderD128",
+                "-filter_hw_device",
+                "va"
+            ]
+        );
+        assert_eq!(
+            vf.as_deref(),
+            Some("format=nv12,hwupload=derive_device=vaapi,scale_vaapi=w=-2:h=min(ih\\,480)")
+        );
+        // The encoder takes only VAAPI frames: uploaded even with nothing else to do.
+        let (_, vf) = run("vaapi", "av1", Some(false), None, &[]);
+        assert_eq!(
+            vf.as_deref(),
+            Some("format=nv12,hwupload=derive_device=vaapi")
+        );
+        let (_, vf) = run("vaapi", "av1", None, None, &["deinterlaceVaapi"]);
+        assert_eq!(
+            vf.as_deref(),
+            Some(
+                "format=nv12,hwupload=derive_device=vaapi,deinterlace_vaapi=mode=default:rate=frame:auto=1"
+            )
+        );
+        // No GPU deinterlacer: the CPU frames are deinterlaced before the upload, not bounced.
+        let (_, vf) = run("vaapi", "av1", Some(true), None, &[]);
+        assert_eq!(
+            vf,
+            Some(format!("{bwdif},format=nv12,hwupload=derive_device=vaapi"))
+        );
+        let (input, vf) = run("qsv", "av1", Some(false), Some(3e6), &[]);
+        assert!(!input.iter().any(|a| a == "-hwaccel"), "{input:?}");
+        assert_eq!(input[input.len() - 2..], ["-filter_hw_device", "qs"]);
+        assert_eq!(
+            vf.as_deref(),
+            Some("format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-2:h=min(ih\\,480)")
+        );
+        let (_, vf) = run("qsv", "av1", Some(true), None, &[]);
+        assert_eq!(
+            vf,
+            Some(format!("{bwdif},format=nv12,hwupload=extra_hw_frames=16"))
+        );
+        // A codec it decodes keeps the GPU frames.
+        let (input, vf) = run("qsv", "hevc", Some(false), Some(3e6), &[]);
+        assert!(input.windows(2).any(|w| w == ["-hwaccel", "qsv"]));
+        assert_eq!(vf.as_deref(), Some("vpp_qsv=w=-2:h=min(ih\\,480)"));
+        let (input, _) = run("vaapi", "h264", Some(false), None, &[]);
+        assert!(input.windows(2).any(|w| w == ["-hwaccel", "vaapi"]));
     }
 
     #[test]

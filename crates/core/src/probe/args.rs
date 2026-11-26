@@ -1,5 +1,6 @@
 //! Command lines of the probe tools: the same arguments, order and timeouts as the host.
-use crate::api::Platform;
+use crate::api::{HostCaps, HwAccel, Platform, VideoStreamInfo};
+use crate::hw::decoders::decode_on;
 use crate::strs;
 
 pub const MAIN_TIMEOUT_MS: u64 = 30_000;
@@ -105,30 +106,36 @@ pub fn mkvmerge(path: &str) -> Vec<String> {
     strs(&["-J", path])
 }
 
-/// Hardware decode args of a crop sample, `None` when the host has nothing usable. Only VAAPI keeps
-/// frames on the device; the others let ffmpeg download, since `hwdownload` fails on 10-bit.
-/// [ts:backend/src/modules/media-probe/ffprobe.service.ts:37-60]
+/// Hardware decode args of a crop sample of `video`, `None` for software. The backend follows the
+/// host: VAAPI on the render node of a `vaapi` or `qsv` Linux host, CUDA on an `nvenc` one, D3D11VA
+/// on Windows, VideoToolbox on darwin; software when the boot probe left it no decoder for the
+/// video (`decode_on`). Only VAAPI keeps frames on the device; the others let ffmpeg download,
+/// since `hwdownload` fails on 10-bit. [ts:backend/src/modules/media-probe/ffprobe.service.ts:37-60]
 pub fn crop_hw_decode(
-    platform: Platform,
+    caps: &HostCaps,
     render_node: &str,
-    node_exists: bool,
-    nvidia_exists: bool,
+    video: &VideoStreamInfo,
 ) -> Option<Vec<String>> {
-    match platform {
-        Platform::Linux if node_exists => Some(strs(&[
-            "-hwaccel",
-            "vaapi",
-            "-hwaccel_device",
-            render_node,
-            "-hwaccel_output_format",
-            "vaapi",
-        ])),
-        // The nvidia runtime injects /dev/nvidiactl but no /dev/dri node.
-        Platform::Linux if nvidia_exists => Some(strs(&["-hwaccel", "cuda"])),
-        Platform::Linux => None,
-        Platform::Win32 => Some(strs(&["-hwaccel", "d3d11va"])),
-        Platform::Darwin => Some(strs(&["-hwaccel", "videotoolbox"])),
-    }
+    let (backend, args) = match (caps.platform, caps.hw_accel) {
+        (Platform::Linux, HwAccel::Vaapi | HwAccel::Qsv) => (
+            HwAccel::Vaapi,
+            strs(&[
+                "-hwaccel",
+                "vaapi",
+                "-hwaccel_device",
+                render_node,
+                "-hwaccel_output_format",
+                "vaapi",
+            ]),
+        ),
+        (Platform::Linux, HwAccel::Nvenc) => (HwAccel::Nvenc, strs(&["-hwaccel", "cuda"])),
+        (Platform::Linux, _) => return None,
+        // The registry pairs the D3D11VA decoders with AMF; any Windows GPU runs them.
+        (Platform::Win32, _) => (HwAccel::Amf, strs(&["-hwaccel", "d3d11va"])),
+        (Platform::Darwin, _) => (HwAccel::Videotoolbox, strs(&["-hwaccel", "videotoolbox"])),
+    };
+    let on = decode_on(backend, Some(&video.codec), video.bit_depth, caps);
+    (on == backend).then_some(args)
 }
 
 /// One cropdetect sample, decoded with `hw` or in software (2 threads: a 4K sample can outrun the
@@ -161,41 +168,84 @@ pub fn crop_sample(path: &str, ss: u32, hw: Option<&[String]>) -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn host(platform: Platform, hw: HwAccel, disabled: &[&str]) -> HostCaps {
+        HostCaps {
+            platform,
+            hw_accel: hw,
+            disabled_decoders: disabled.iter().map(|d| d.to_string()).collect(),
+            ..HostCaps::default()
+        }
+    }
+
+    fn video(codec: &str, depth: u32) -> VideoStreamInfo {
+        serde_json::from_value(serde_json::json!({
+            "streamIndex": 0, "codec": codec, "bitDepth": depth,
+        }))
+        .unwrap()
+    }
+
     #[test]
-    fn hw_decode_follows_the_platform() {
+    fn hw_decode_follows_the_detected_backend() {
+        use Platform::*;
         let n = "/dev/dri/renderD129";
-        let vaapi = crop_hw_decode(Platform::Linux, n, true, true).unwrap();
+        let h264 = video("h264", 8);
+        let pick = |p, hw| crop_hw_decode(&host(p, hw, &[]), n, &h264);
+        let vaapi = [
+            "-hwaccel",
+            "vaapi",
+            "-hwaccel_device",
+            n,
+            "-hwaccel_output_format",
+            "vaapi",
+        ];
+        assert_eq!(pick(Linux, HwAccel::Vaapi).unwrap(), vaapi);
+        assert_eq!(pick(Linux, HwAccel::Qsv).unwrap(), vaapi);
+        assert_eq!(pick(Linux, HwAccel::Nvenc).unwrap(), ["-hwaccel", "cuda"]);
+        // No backend detected: a render node alone is no reason to try VAAPI.
+        assert_eq!(pick(Linux, HwAccel::None), None);
         assert_eq!(
-            vaapi,
-            [
-                "-hwaccel",
-                "vaapi",
-                "-hwaccel_device",
-                n,
-                "-hwaccel_output_format",
-                "vaapi"
-            ]
+            pick(Win32, HwAccel::Nvenc).unwrap(),
+            ["-hwaccel", "d3d11va"]
         );
-        let cuda = crop_hw_decode(Platform::Linux, n, false, true);
-        assert_eq!(cuda.unwrap(), ["-hwaccel", "cuda"]);
-        assert_eq!(crop_hw_decode(Platform::Linux, n, false, false), None);
-        let win = crop_hw_decode(Platform::Win32, n, false, false);
-        assert_eq!(win.unwrap(), ["-hwaccel", "d3d11va"]);
-        let mac = crop_hw_decode(Platform::Darwin, n, false, false);
+        let mac = pick(Darwin, HwAccel::Videotoolbox);
         assert_eq!(mac.unwrap(), ["-hwaccel", "videotoolbox"]);
     }
 
     #[test]
+    fn a_codec_the_backend_cannot_decode_is_sampled_in_software() {
+        use Platform::*;
+        let n = "/dev/dri/renderD129";
+        // An iGPU without AV1, as the boot probe found it.
+        let igpu = host(Linux, HwAccel::Qsv, &["av1_qsv_decode", "av1_vaapi_decode"]);
+        assert_eq!(crop_hw_decode(&igpu, n, &video("av1", 8)), None);
+        assert!(crop_hw_decode(&igpu, n, &video("hevc", 10)).is_some());
+        // The samples run VAAPI: its descriptor decides, not QSV's.
+        let no_vaapi = host(Linux, HwAccel::Qsv, &["av1_vaapi_decode"]);
+        assert_eq!(crop_hw_decode(&no_vaapi, n, &video("av1", 8)), None);
+        let nvidia = host(Linux, HwAccel::Nvenc, &[]);
+        assert_eq!(crop_hw_decode(&nvidia, n, &video("h264", 10)), None);
+        let win = host(
+            Win32,
+            HwAccel::Qsv,
+            &["vp9_d3d11va_decode", "vp9_d3d11va_native_decode"],
+        );
+        assert_eq!(crop_hw_decode(&win, n, &video("vp9", 8)), None);
+        let mac = host(Darwin, HwAccel::Videotoolbox, &[]);
+        assert_eq!(crop_hw_decode(&mac, n, &video("vc1", 8)), None);
+    }
+
+    #[test]
     fn only_device_frames_are_downloaded() {
-        let vaapi = crop_hw_decode(Platform::Linux, "/n", true, false).unwrap();
-        let a = crop_sample("/f", 7, Some(&vaapi));
+        let h264 = video("h264", 8);
+        let vaapi = crop_hw_decode(&host(Platform::Linux, HwAccel::Vaapi, &[]), "/n", &h264);
+        let a = crop_sample("/f", 7, vaapi.as_deref());
         assert_eq!(a[..2], ["-hwaccel", "vaapi"]);
         assert!(
             a.iter()
                 .any(|x| x.starts_with("hwdownload,format=nv12,cropdetect"))
         );
-        let cuda = crop_hw_decode(Platform::Linux, "/n", false, true).unwrap();
-        let a = crop_sample("/f", 7, Some(&cuda));
+        let cuda = crop_hw_decode(&host(Platform::Linux, HwAccel::Nvenc, &[]), "/n", &h264);
+        let a = crop_sample("/f", 7, cuda.as_deref());
         assert!(
             a.contains(&CROP_FILTER.to_string()) && !a.iter().any(|x| x.contains("hwdownload"))
         );

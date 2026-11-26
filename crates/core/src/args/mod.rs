@@ -258,6 +258,9 @@ pub struct LiveArgs {
     /// The source's `field_order`: interlaced, progressive, or `None` when unknown.
     #[serde(default)]
     pub interlaced: Option<bool>,
+    /// The source's probed video codec (ffprobe name); `None` when the probe could not tell.
+    #[serde(default)]
+    pub video_codec: Option<String>,
     /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
     #[serde(default = "default_encode_threads")]
     pub encode_threads: u32,

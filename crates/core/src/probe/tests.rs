@@ -91,15 +91,26 @@ fn moviehash_follows_the_specification() {
     }
 }
 
-/// Only `ffmpeg_samples` works: hardware runs (`-hwaccel` first) fail when `hw_fails`.
+/// `ffmpeg_samples`, and ffprobe's main run for one video stream of `codec`; the other runs fail.
+/// Hardware samples (`-hwaccel` first) fail when `hw_fails`.
+#[derive(Default)]
 struct Ffmpeg {
     hw_fails: bool,
+    codec: &'static str,
     runs: std::sync::Mutex<Vec<bool>>,
 }
 
 impl super::Tools for Ffmpeg {
-    async fn ffprobe(&self, _: Vec<String>, _: u64) -> Result<String, super::ToolError> {
-        unimplemented!()
+    async fn ffprobe(&self, a: Vec<String>, _: u64) -> Result<String, super::ToolError> {
+        if !a.iter().any(|a| a == "-show_streams") {
+            return Err(super::ToolError::default());
+        }
+        Ok(serde_json::json!({
+            "streams": [{ "index": 0, "codec_name": self.codec, "codec_type": "video",
+                "width": 480, "height": 270, "pix_fmt": "yuv420p" }],
+            "format": { "format_name": "mov,mp4", "duration": "100.0" },
+        })
+        .to_string())
     }
     async fn ffprobe_lines(
         &self,
@@ -107,7 +118,7 @@ impl super::Tools for Ffmpeg {
         _: u64,
         _: &mut (dyn FnMut(&str) -> bool + Send),
     ) -> Result<(), super::ToolError> {
-        unimplemented!()
+        Err(super::ToolError::default())
     }
     async fn mkvmerge(&self, _: Vec<String>) -> Result<String, super::ToolError> {
         unimplemented!()
@@ -136,7 +147,7 @@ fn crop_falls_back_to_software_when_the_first_sample_fails() {
     for (fails, name, hw_runs) in [(false, "cuda", 6), (true, "sw", 1)] {
         let t = Ffmpeg {
             hw_fails: fails,
-            runs: Default::default(),
+            ..Ffmpeg::default()
         };
         let (crop, stable, decode) = futures_lite_block(super::detect_crop(
             &t,
@@ -152,6 +163,40 @@ fn crop_falls_back_to_software_when_the_first_sample_fails() {
         let runs = t.runs.lock().unwrap();
         assert_eq!(runs.iter().filter(|h| **h).count(), hw_runs);
         assert_eq!(runs.len(), if fails { 7 } else { 6 });
+    }
+}
+
+#[test]
+fn crop_samples_a_codec_the_gpu_cannot_decode_in_software() {
+    use crate::api::{HostCaps, HwAccel};
+    // An iGPU without AV1, as the boot probe found it.
+    let host = HostCaps {
+        hw_accel: HwAccel::Qsv,
+        disabled_decoders: vec!["av1_qsv_decode".into(), "av1_vaapi_decode".into()],
+        ..HostCaps::default()
+    };
+    let opts = super::ProbeOpts {
+        crop: true,
+        host,
+        render_node: "/dev/dri/renderD128".into(),
+        ..Default::default()
+    };
+    for (codec, fails, decode, refused, hw_runs) in [
+        ("av1", false, "sw", false, 0),
+        ("hevc", false, "vaapi", false, 6),
+        ("hevc", true, "sw", true, 1),
+    ] {
+        let t = Ffmpeg {
+            hw_fails: fails,
+            codec,
+            ..Ffmpeg::default()
+        };
+        let out = futures_lite_block(super::probe(&t, "/f", &opts));
+        assert!(out.ok, "{codec}: {:?}", out.error);
+        assert_eq!(out.crop_decode.as_deref(), Some(decode), "{codec}");
+        assert_eq!(out.crop_hw_refused, refused, "{codec}");
+        let runs = t.runs.lock().unwrap();
+        assert_eq!(runs.iter().filter(|h| **h).count(), hw_runs, "{codec}");
     }
 }
 

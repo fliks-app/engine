@@ -3,15 +3,26 @@
 use super::super::{LiveArgs, LiveMode};
 use crate::api::{HostCaps, HwAccel};
 use crate::args::filters::DEINTERLACE;
+use crate::hw::decoders::decode_on;
 use crate::hw::{Device, GpuDeint};
 use crate::jsnum::{js_string as js, round};
 use crate::ladder::height_for_bitrate;
 use crate::strs;
 
+/// Whether a transcode's frames leave the decoder on the GPU. QSV and VAAPI force them there, so
+/// only for a codec the boot probe left the backend a decoder for (`decode_on`; an unprobed one is
+/// taken for H.264): another decodes on the CPU and the filter graph uploads. NVENC and
+/// VideoToolbox hand their frames to the CPU and fall back on their own.
+fn gpu_frames(o: &LiveArgs, caps: &HostCaps) -> bool {
+    matches!(o.hw_accel, HwAccel::Qsv | HwAccel::Vaapi)
+        && decode_on(o.hw_accel, o.video_codec.as_deref(), None, caps) == o.hw_accel
+}
+
 /// Live input decode flags: the shared device init, `-hwaccel` of the backend.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:60-89]
-pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
-    match hw {
+pub fn live_input(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
+    match o.hw_accel {
+        hw @ (HwAccel::Qsv | HwAccel::Vaapi) if !gpu_frames(o, caps) => dev.filter_device(hw),
         HwAccel::Qsv => {
             let mut a = dev.qsv_init();
             a.extend(strs(&[
@@ -66,17 +77,31 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
     let known = o.interlaced == Some(true);
     let deint = o.interlaced != Some(false);
     let h = |w: &str| height.map(|h| format!("{w}w=-2:h=min(ih\\,{h})"));
-    // A hardware chain without a GPU deinterlacer round-trips the frames through the CPU.
-    let bounce = |fmt: &str, up: &str| format!("hwdownload,format={fmt},{DEINTERLACE},{up}");
+    // CPU frames enter a QSV or VAAPI chain through `up`; GPU ones without a GPU deinterlacer
+    // round-trip through the CPU to be deinterlaced there.
+    let cpu_frames = !gpu_frames(o, caps);
+    let upload = |up: &str| cpu_frames.then(|| format!("format=nv12,{up}"));
+    let bounce = |up: &str| {
+        if cpu_frames {
+            format!("{DEINTERLACE},format=nv12,{up}")
+        } else {
+            format!("hwdownload,format=nv12,{DEINTERLACE},{up}")
+        }
+    };
     let gpu = |g: GpuDeint| caps.probe(g.probe_name());
     let chain: Vec<Option<String>> = match o.hw_accel {
-        HwAccel::Vaapi => [
-            (deint && gpu(GpuDeint::Vaapi))
-                .then(|| GpuDeint::Vaapi.filter().unwrap_or_default().to_string())
-                .or_else(|| known.then(|| bounce("nv12", "hwupload=derive_device=vaapi"))),
-            h("scale_vaapi="),
-        ]
-        .into(),
+        HwAccel::Vaapi => {
+            let up = "hwupload=derive_device=vaapi";
+            let pre = if deint && gpu(GpuDeint::Vaapi) {
+                let f = GpuDeint::Vaapi.filter().unwrap_or_default();
+                Some(strs_join([upload(up).as_deref(), Some(f)]))
+            } else if known {
+                Some(bounce(up))
+            } else {
+                upload(up)
+            };
+            [pre, h("scale_vaapi=")].into()
+        }
         HwAccel::Nvenc => {
             let size = h("scale_cuda=");
             let up = size.is_some().then_some("hwupload_cuda");
@@ -95,18 +120,12 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
                 let opts = format!("{deint}{}", size.unwrap_or_default());
                 (!opts.is_empty()).then(|| format!("vpp_qsv={}", opts.trim_end_matches(':')))
             };
+            let up = "hwupload=extra_hw_frames=16";
             if known && !gpu(GpuDeint::Qsv) {
-                [
-                    Some(bounce("nv12", "hwupload=extra_hw_frames=16")),
-                    vpp("", h("")),
-                ]
-                .into()
+                [Some(bounce(up)), vpp("", h(""))].into()
             } else {
-                [vpp(
-                    if known { GpuDeint::Qsv.vpp_opts() } else { "" },
-                    h(""),
-                )]
-                .into()
+                let opts = if known { GpuDeint::Qsv.vpp_opts() } else { "" };
+                [upload(up), vpp(opts, h(""))].into()
             }
         }
         // CPU frames: the software encoder's, and VideoToolbox's downloaded ones.

@@ -8,7 +8,6 @@ use crate::proc::{Ffmpeg, Pipes};
 use fliks_engine_core::api::{
     HostCaps, JobResult, MediaInfo, SpriteDecode, SpriteMeta, VideoStreamInfo,
 };
-use fliks_engine_core::hw::platform_from_os;
 use fliks_engine_core::jobs::merge::progress_seconds;
 use fliks_engine_core::jobs::sprite::*;
 use std::path::Path;
@@ -299,16 +298,7 @@ struct Decode {
 
 impl Decode {
     fn new(ctx: &Ctx, info: &MediaInfo) -> Self {
-        let (caps, render_node) = ctx.rt.hw.snapshot().map_or_else(
-            || {
-                let caps = HostCaps {
-                    platform: platform_from_os(std::env::consts::OS),
-                    ..HostCaps::default()
-                };
-                (caps, String::new())
-            },
-            |s| (s.host_caps(), s.render_node),
-        );
+        let (caps, render_node) = ctx.rt.hw.host();
         Self {
             caps,
             render_node,

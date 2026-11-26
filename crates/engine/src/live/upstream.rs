@@ -192,6 +192,7 @@ async fn spawn_packaged(
             append,
             probe_seconds: Some(pipe.probe_seconds),
             interlaced,
+            video_codec: video.clone(),
             encode_threads: rt.slots.encode_threads(),
         },
         &caps,

@@ -1,6 +1,6 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
 //! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
-//! `dies`, `stall`, `hevc`, `noprobe`). Spec: `docs/spec/live.md`.
+//! `dies`, `stall`, `hevc`, `av1`, `noprobe`). Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
@@ -13,15 +13,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 async fn live_engine(lifetime: Value, livetv: Value) -> Engine {
+    let cpu = host(HwAccel::None, "/dev/dri/renderD128", "signal");
+    live_engine_on(cpu, lifetime, livetv).await
+}
+
+/// `live_engine` on `hw`.
+async fn live_engine_on(hw: Arc<fliks_engine::hw::Hw>, lifetime: Value, livetv: Value) -> Engine {
     let fake = fake("live");
-    let e = engine_with_tools(
-        host(HwAccel::None, "/dev/dri/renderD128", "signal"),
-        &fake,
-        &fake,
-        &fake,
-        lifetime,
-    )
-    .await;
+    let e = engine_with_tools(hw, &fake, &fake, &fake, lifetime).await;
     let mut config = e.control("GET", "/v1/config", None).await.json();
     config["revision"] = json!(2);
     config["livetv"] = livetv;
@@ -733,6 +732,49 @@ async fn probe_picks_a_transcode_and_ts_segments() {
         (snap[0]["container"].clone(), snap[0]["videoCodec"].clone()),
         (json!("mpegts"), json!("hevc"))
     );
+}
+
+#[tokio::test]
+async fn a_codec_the_gpu_cannot_decode_is_transcoded_from_cpu_frames() {
+    // The boot probe found no VAAPI AV1 decoder: the GPU still encodes, from uploaded CPU frames.
+    for (url, gpu_decode) in [("http://up/av1", false), ("http://up/hevc", true)] {
+        let gpu = host_without(
+            HwAccel::Vaapi,
+            "/dev/dri/renderD128",
+            "signal",
+            &["av1_vaapi_decode"],
+        );
+        let e = live_engine_on(gpu, json!({}), json!({})).await;
+        let mut rx = e.rt.events.subscribe();
+        let caps = json!({ "maxBitrateBps": 2500000 });
+        let a = open(
+            &e,
+            open_req("4", vec![json!({ "url": url })], caps, "alice", "t"),
+        )
+        .await;
+        assert_eq!(a["mode"], "transcode", "{url}");
+        let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+        assert_eq!(attempt(&ok), Some((0, None)), "{url}");
+        let argv = &runs(&e)[0];
+        let after = |f: &str| {
+            argv.iter()
+                .position(|a| a == f)
+                .map(|i| argv[i + 1].clone())
+        };
+        assert_eq!(after("-c:v").as_deref(), Some("h264_vaapi"), "{url}");
+        let vf = after("-vf").unwrap();
+        if gpu_decode {
+            assert_eq!(after("-hwaccel").as_deref(), Some("vaapi"), "{argv:?}");
+            assert_eq!(vf, "scale_vaapi=w=-2:h=min(ih\\,480)");
+        } else {
+            assert_eq!(after("-hwaccel"), None, "{argv:?}");
+            assert_eq!(after("-filter_hw_device").as_deref(), Some("va"));
+            assert_eq!(
+                vf,
+                "format=nv12,hwupload=derive_device=vaapi,scale_vaapi=w=-2:h=min(ih\\,480)"
+            );
+        }
+    }
 }
 
 #[tokio::test]

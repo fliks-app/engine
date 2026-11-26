@@ -420,6 +420,33 @@ fn ffsubsync(args: &[String]) {
     put(Path::new(output), body.replace("LATE", "SYNCED"));
 }
 
+/// A probe with crop samples: ffprobe's main run reports one 100 s video stream of the codec the
+/// file holds (`av1`, else `h264`), its other runs fail; a crop sample logs its `-hwaccel` to
+/// `<input>.hw` and finds a letterbox.
+fn crop(args: &[String]) {
+    if args.iter().any(|a| a == "-show_streams") {
+        let body = std::fs::read_to_string(args.last().unwrap()).unwrap_or_default();
+        let codec = if body.contains("av1") { "av1" } else { "h264" };
+        let stream = format!(
+            r#"{{"index":0,"codec_name":"{codec}","codec_type":"video","width":480,"height":270,"pix_fmt":"yuv420p"}}"#
+        );
+        print!(
+            r#"{{"streams":[{stream}],"format":{{"format_name":"mov,mp4","duration":"100.0"}}}}"#
+        );
+        return;
+    }
+    let (Some(i), true) = (
+        args.iter().position(|a| a == "-i"),
+        args.iter().any(|a| a.contains("cropdetect")),
+    ) else {
+        std::process::exit(1)
+    };
+    if let Some(h) = args.iter().position(|a| a == "-hwaccel") {
+        append_line(&format!("{}.hw", args[i + 1]), &args[h + 1]);
+    }
+    eprintln!("[Parsed_cropdetect_1 @ 0x0] w:480 h:190 x:0 y:40 pts:0 t:0.0 crop=480:190:0:40");
+}
+
 fn job(mode: &str, args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
     if has("-show_entries") {
@@ -530,6 +557,7 @@ fn live(args: &[String]) {
         match () {
             _ if url.contains("noprobe") => std::process::exit(1),
             _ if url.contains("hevc") => print!("hevc,video\naac,audio\nmpegts\n"),
+            _ if url.contains("av1") => print!("av1,video\naac,audio\nmpegts\n"),
             _ if url.contains("manifest") => print!("h264,video\naac,audio\nhls\n"),
             _ => print!("h264,video\naac,audio\nmpegts\n"),
         }
@@ -646,6 +674,7 @@ fn main() {
         // Dies on a VAAPI command line, hangs on the CPU one.
         "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
+        "crop" => crop(&args),
         "item" => item(&args),
         #[cfg(unix)]
         "itemstop" => itemstop(&args),

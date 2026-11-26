@@ -1,6 +1,6 @@
 //! `-init_hw_device` argv and the render node, one place for the Linux/Windows difference.
 //! [ts:backend/src/modules/streaming/transcoding/hw-device.ts:1-110]
-use crate::api::Platform;
+use crate::api::{HwAccel, Platform};
 use crate::strs;
 
 pub const DEFAULT_RENDER_NODE: &str = "/dev/dri/renderD128";
@@ -52,6 +52,18 @@ impl Device {
         }
         let mut a = self.vaapi_init();
         a.extend(strs(&["-init_hw_device", "qsv=qs@va"]));
+        a
+    }
+
+    /// A CPU decode inits no device, yet a QSV or VAAPI encoder's filters need one: its init and
+    /// `-filter_hw_device`. Nothing for the other backends.
+    pub fn filter_device(&self, hw: HwAccel) -> Vec<String> {
+        let (mut a, name) = match hw {
+            HwAccel::Qsv => (self.qsv_init(), "qs"),
+            HwAccel::Vaapi => (self.vaapi_init(), "va"),
+            _ => return vec![],
+        };
+        a.extend(strs(&["-filter_hw_device", name]));
         a
     }
 

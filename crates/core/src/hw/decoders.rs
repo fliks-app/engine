@@ -134,6 +134,14 @@ impl Decoder {
         self.codec.map_or(10, DecodeCodec::max_bit_depth)
     }
 
+    /// Runs here, reads `codec` at `depth`, and passed the boot probe.
+    fn usable(&self, codec: DecodeCodec, depth: u32, caps: &HostCaps) -> bool {
+        self.supported(caps.platform)
+            && self.codec.is_none_or(|c| c == codec)
+            && depth <= self.max_bit_depth()
+            && !caps.disabled_decoders.iter().any(|x| x == self.id)
+    }
+
     /// Where decoded frames land; VideoToolbox reports CPU, the argv opts into its surface.
     pub fn surface(&self) -> Surface {
         match self.kind {
@@ -296,12 +304,7 @@ pub(crate) fn resolve_decoder(
     caps: &HostCaps,
 ) -> &'static Decoder {
     let registry = DECODERS.iter().take_while(|d| d.id != "cpu");
-    let usable = |d: &&Decoder| {
-        d.supported(caps.platform)
-            && d.codec.is_none_or(|c| c == codec)
-            && depth <= d.max_bit_depth()
-            && !caps.disabled_decoders.iter().any(|x| x == d.id)
-    };
+    let usable = |d: &&Decoder| d.usable(codec, depth, caps);
     registry
         .clone()
         .filter(|d| d.hw() == preferred)
@@ -318,22 +321,46 @@ pub(crate) fn resolve_decoder(
         .unwrap_or_else(|| find("cpu"))
 }
 
-/// The decoder for a source codec as ffprobe names it; a reported codec without a HW decoder
-/// here decodes on the CPU, an unreported one is taken for H.264.
+/// A source codec as ffprobe names it: `None` for a reported codec no hardware decoder reads, an
+/// unreported one is taken for H.264.
+fn hw_codec(source: Option<&str>) -> Option<DecodeCodec> {
+    match source.filter(|c| !c.is_empty()) {
+        Some(c) => DecodeCodec::from_source(c),
+        None => Some(DecodeCodec::H264),
+    }
+}
+
+/// The decoder for a source codec as ffprobe names it (`hw_codec`; `None` decodes on the CPU).
 pub(crate) fn source_decoder(
     source: Option<&str>,
     depth: u32,
     preferred: HwAccel,
     caps: &HostCaps,
 ) -> &'static Decoder {
-    let codec = source.and_then(DecodeCodec::from_source);
-    let reported = source.is_some_and(|c| !c.is_empty());
-    let preferred = if reported && codec.is_none() {
-        HwAccel::None
-    } else {
-        preferred
-    };
-    resolve_decoder(codec.unwrap_or(DecodeCodec::H264), depth, preferred, caps)
+    hw_codec(source).map_or_else(
+        || find("cpu"),
+        |c| resolve_decoder(c, depth, preferred, caps),
+    )
+}
+
+/// Where a run whose argv is `backend`'s decodes a video of `source` (`hw_codec`) at `bit_depth`
+/// (8 when unknown): on `backend` when the boot probe left one of its decoders for both, else on
+/// the CPU (`HwAccel::None`). Playback's registry may move to another backend instead; these runs
+/// cannot, their argv forces `backend`'s frames. Every descriptor counts, not only the registry's:
+/// Windows QSV decodes through its D3D11 variants.
+pub(crate) fn decode_on(
+    backend: HwAccel,
+    source: Option<&str>,
+    bit_depth: Option<u32>,
+    caps: &HostCaps,
+) -> HwAccel {
+    let depth = bit_depth.unwrap_or(8);
+    let decodes = hw_codec(source).is_some_and(|c| {
+        DECODERS
+            .iter()
+            .any(|d| d.hw() == backend && d.usable(c, depth, caps))
+    });
+    if decodes { backend } else { HwAccel::None }
 }
 
 pub(crate) fn find(id: &str) -> &'static Decoder {
@@ -359,5 +386,44 @@ mod tests {
         assert_eq!(DecodeCodec::from_source("vp09"), Some(Vp9));
         assert_eq!(DecodeCodec::from_source("vc1"), Some(Vc1));
         assert_eq!(DecodeCodec::from_source("wmv3"), None);
+    }
+
+    #[test]
+    fn a_backend_decodes_only_what_its_probe_passed() {
+        use HwAccel::{Nvenc, Qsv, Vaapi};
+        let caps = |hw, disabled: &[&str]| HostCaps {
+            hw_accel: hw,
+            disabled_decoders: disabled.iter().map(|d| d.to_string()).collect(),
+            ..HostCaps::default()
+        };
+        // An iGPU without AV1: its QSV and VAAPI descriptors failed the boot probe.
+        let igpu = caps(Qsv, &["av1_qsv_decode", "av1_vaapi_decode"]);
+        // Another backend that could decode it is not this run's: its argv is `backend`'s.
+        let no_qsv = caps(Qsv, &["av1_qsv_decode"]);
+        // Windows QSV decodes through its D3D11 variants, which the registry leaves out.
+        let win = HostCaps {
+            platform: Platform::Win32,
+            ..caps(Qsv, &["av1_qsv_d3d11_decode"])
+        };
+        let all = caps(Nvenc, &[]);
+        let none = HwAccel::None;
+        for (backend, codec, depth, c, want) in [
+            (Qsv, Some("av1"), None, &igpu, none),
+            (Vaapi, Some("av1"), None, &igpu, none),
+            (Qsv, Some("hevc"), Some(10), &igpu, Qsv),
+            (Qsv, Some("av1"), None, &no_qsv, none),
+            (Vaapi, Some("av1"), None, &no_qsv, Vaapi),
+            (Qsv, Some("hevc"), None, &win, Qsv),
+            (Qsv, Some("av1"), None, &win, none),
+            // Past a codec's bit depth, or a codec no hardware decoder reads: the CPU.
+            (Nvenc, Some("h264"), Some(10), &all, none),
+            (Nvenc, Some("mpeg4"), None, &all, none),
+            // Unreported: taken for H.264.
+            (Nvenc, None, None, &all, Nvenc),
+            (none, Some("h264"), None, &all, none),
+        ] {
+            let got = decode_on(backend, codec, depth, c);
+            assert_eq!(got, want, "{codec:?} at {depth:?} on {backend:?}");
+        }
     }
 }

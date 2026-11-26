@@ -675,6 +675,29 @@ async fn a_file_nothing_decodes_stops_after_a_few_frame_runs() {
     assert!((16..=18).contains(&tried), "{tried} frame runs");
 }
 
+#[tokio::test]
+async fn crop_samples_decode_on_the_gpu_only_for_a_codec_it_decodes() {
+    // An iGPU without AV1 decode: AV1 is sampled in software, H.264 on the detected VAAPI.
+    let igpu = ["av1_qsv_decode", "av1_vaapi_decode"];
+    for (codec, gpu) in [("av1", false), ("h264", true)] {
+        let (e, file) = engine_on_host(&fake("crop"), json!({}), HwAccel::Qsv, &igpu).await;
+        std::fs::write(&file, codec).unwrap();
+        let body = json!({ "media": { "mediaFileId": 7, "path": file }, "crop": true });
+        let v = e.control("POST", "/v1/probe", Some(body)).await.json();
+        assert_eq!(v["ok"], true, "{v}");
+        assert_eq!(v["info"]["video"][0]["crop"]["height"], 190, "{v}");
+        let runs = hw_log(&file);
+        if gpu {
+            assert!(
+                !runs.is_empty() && runs.lines().all(|l| l == "vaapi"),
+                "{runs}"
+            );
+        } else {
+            assert_eq!(runs, "", "{codec}");
+        }
+    }
+}
+
 fn tool_info(extra: Value) -> Value {
     let mut i = info();
     for (k, v) in extra.as_object().unwrap() {

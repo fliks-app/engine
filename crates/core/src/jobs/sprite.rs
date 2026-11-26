@@ -1,7 +1,7 @@
 //! Seek-bar sprite: layout, frame extractor choice and argv, tiling, missing-frame backfill and the
 //! JPEG header read for `thumbHeight`. Spec: `docs/spec/jobs.md` section 5.
 use crate::api::{CropInfo, HostCaps, HwAccel, MediaInfo, Platform, SpriteMeta, VideoStreamInfo};
-use crate::hw::decoders::source_decoder;
+use crate::hw::decoders::decode_on;
 use crate::jsnum::{js_string, round};
 use crate::mp4::{input_seek_seconds, source_timeline};
 use crate::strs;
@@ -81,8 +81,8 @@ impl Extractor {
 
 /// The TS backend order over the detected host: VAAPI (no crop) then QSV (crop) on the render
 /// node, CUDA, software; VideoToolbox on darwin. [ts:modules/streaming/thumbnail-extractors/index.ts:20-75]
-/// Software too when the boot probe left that backend no decoder for `video` (its codec at its
-/// bit depth): the run forces GPU frames, so it would fail instead of decoding on the CPU.
+/// Software too when the boot probe left that backend no decoder for `video` (`decode_on`): the
+/// run forces GPU frames, so it would fail instead of decoding on the CPU.
 pub fn pick_extractor(
     caps: &HostCaps,
     render_node: &str,
@@ -101,13 +101,13 @@ pub fn pick_extractor(
         (Platform::Linux, HwAccel::Nvenc) => Extractor::Cuda,
         _ => Extractor::Software,
     };
-    let hw = e.decode_hw();
-    let codec = video.map(|v| v.codec.as_str());
-    let depth = video.and_then(|v| v.bit_depth).unwrap_or(8);
-    if source_decoder(codec, depth, hw, caps).hw() == hw {
-        e
-    } else {
-        Extractor::Software
+    let (codec, depth) = (
+        video.map(|v| v.codec.as_str()),
+        video.and_then(|v| v.bit_depth),
+    );
+    match decode_on(e.decode_hw(), codec, depth, caps) {
+        HwAccel::None => Extractor::Software,
+        _ => e,
     }
 }
 
