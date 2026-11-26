@@ -568,12 +568,8 @@ impl Work<'_> {
         let rt = &self.ctx.rt;
         rt.slots.device_failed(&l.device);
         let codec = self.codec();
-        let other = rt.hw.snapshot().is_some_and(|s| {
-            s.devices.iter().any(|d| {
-                d.id != l.device && rt.slots.device_usable(&d.id) && encodes(&d.detected, codec)
-            })
-        });
-        if other {
+        let others = rt.gpu_candidates(None, Some(&l.device), |d| encodes(&d.detected, codec));
+        if !others.is_empty() {
             return Err(
                 Class::Busy.message(format!("{} failed, another device can take it", l.device))
             );
