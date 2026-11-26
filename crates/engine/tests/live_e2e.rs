@@ -327,8 +327,7 @@ async fn a_gpu_encodes_frames_the_cpu_decoded() {
                 cmd.contains("format=nv12,hwupload") && !cmd.contains("-hwaccel"),
                 "{cmd}"
             );
-            // 60 s: without `-forced_idr`, h264_qsv cuts on its own GOP, not the forced keyframes.
-            until_async(&e, &sid, 60, |s| s.len() >= 2).await;
+            until_async(&e, &sid, 20, |s| s.len() >= 2).await;
             let list = segments(&e, &sid).await;
             let seg = fetch(&e, &sid, &list[1]).await;
             assert_eq!(codecs(&seg), ["h264", "aac"], "{hw:?} {field}");

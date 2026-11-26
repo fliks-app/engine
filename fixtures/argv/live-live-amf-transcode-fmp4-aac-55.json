@@ -35,6 +35,8 @@
       "bwdif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:min(ih\\,480)",
       "-c:v",
       "h264_amf",
+      "-forced_idr",
+      "1",
       "-b:v",
       "2500000",
       "-maxrate",

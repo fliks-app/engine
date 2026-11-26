@@ -164,6 +164,12 @@ pub fn live_video(o: &LiveArgs) -> Vec<String> {
         return strs(&["-c:v", "copy"]);
     }
     let mut a = vec!["-c:v".to_string(), live_h264_encoder(o.hw_accel)];
+    // The muxer cuts on IDR frames, and these encoders force plain I-frames without the flag.
+    match o.hw_accel {
+        HwAccel::Qsv | HwAccel::Amf => a.extend(strs(&["-forced_idr", "1"])),
+        HwAccel::Nvenc => a.extend(strs(&["-forced-idr", "1"])),
+        _ => {}
+    }
     if o.hw_accel == HwAccel::None {
         let threads = o.encode_threads.max(1).to_string();
         a.extend(["-threads:v".into(), threads]);
