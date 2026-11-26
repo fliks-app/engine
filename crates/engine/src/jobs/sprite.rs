@@ -328,7 +328,7 @@ impl Decode {
                 if !self.hw_failed.swap(true, Relaxed) {
                     tracing::warn!(
                         job = ctx.job.id,
-                        "sprite hardware decode failed, software from here: {e}"
+                        "sprite hardware run failed, software from here: {e}"
                     );
                 }
                 run(Extractor::Software).await
