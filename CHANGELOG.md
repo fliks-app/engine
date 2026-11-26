@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.30.5](https://github.com/fliks-app/engine/compare/v1.30.4...v1.30.5) (2026-11-26)
+
+
+### Bug Fixes
+
+* **jobs:** give mkvtoolnix a UTF-8 locale and keep its stdout errors ([#278](https://github.com/fliks-app/engine/issues/278)) ([62cedb6](https://github.com/fliks-app/engine/commit/62cedb6acf54357fc3f84620b4c88d81ce9c3351))
+* **optimize:** refuse unreadable streams and keep the cause in errors ([#280](https://github.com/fliks-app/engine/issues/280)) ([b1fd59b](https://github.com/fliks-app/engine/commit/b1fd59ba070ffec4b1a97258692d3bb5bdb6509e))
+
 ## [1.30.4](https://github.com/fliks-app/engine/compare/v1.30.3...v1.30.4) (2026-11-24)
 
 
