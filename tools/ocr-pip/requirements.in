@@ -11,4 +11,5 @@ setuptools
 trakit
 ffsubsync==0.5.1
 # Installed with the closure below, `--no-deps`: its own dependencies would add the GUI opencv.
-pgsrip==0.3.0
+# Fork commit of ratoaq2/pgsrip#188 (subtitles replaced with no gap were lost): back to PyPI at 0.3.1.
+pgsrip @ https://github.com/clementdelestre/pgsrip/archive/3effd6d6a87e1ce598d9ef2e3b3c0c8944d5596f.tar.gz
