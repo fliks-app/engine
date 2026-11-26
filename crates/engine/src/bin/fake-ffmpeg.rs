@@ -664,6 +664,16 @@ fn main() {
         | "sparsesprite" | "probefailsprite" | "promoprobesprite" | "promopasssprite") => {
             sprite(m, &args)
         }
+        // A sprite mode on a GPU that rejects the file: a hardware run is logged to
+        // `<input>.hw` and fails, the others are the mode's.
+        m @ ("hwsprite" | "hwfailsprite" | "hwsparsesprite") => {
+            if let Some(i) = args.iter().position(|a| a == "-hwaccel") {
+                let input = &args[args.iter().position(|a| a == "-i").unwrap() + 1];
+                append_line(&format!("{input}.hw"), &args[i + 1]);
+                std::process::exit(1)
+            }
+            sprite(&m[2..], &args)
+        }
         m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
         | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),
         "sync" => {

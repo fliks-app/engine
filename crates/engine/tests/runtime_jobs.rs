@@ -28,9 +28,19 @@ async fn engine_of(mode: &str, streaming: Value) -> (Engine, PathBuf) {
 
 /// `engine_of` over any tool binary, used for all three tools.
 async fn engine_on(f: &str, streaming: Value) -> (Engine, PathBuf) {
+    engine_on_host(f, streaming, HwAccel::None, &[]).await
+}
+
+/// `engine_on` on a host detected as `hw`, whose boot probe disabled the decoders `disabled`.
+async fn engine_on_host(
+    f: &str,
+    streaming: Value,
+    hw: HwAccel,
+    disabled: &[&str],
+) -> (Engine, PathBuf) {
     let pause = if cfg!(unix) { "signal" } else { "stdin" };
     let e = engine_with_tools(
-        host(HwAccel::None, "/dev/dri/renderD128", pause),
+        host_without(hw, "/dev/dri/renderD128", pause, disabled),
         f,
         f,
         f,
@@ -321,8 +331,12 @@ async fn failing_frames_and_a_full_disk_fail_the_job() {
     let (_, ev) = done(&mut rx, &id).await;
     let v = done_json(&ev);
     assert_eq!(v["state"], "failed");
+    // The pass, then frame runs until 16 failed with none done: not the 60 of the sheet.
+    let tried = seek_log(&file).len();
+    assert!((16..=17).contains(&tried), "{tried} frame runs");
     assert_eq!(
-        v["error"], "Sprite failed: no frame could be extracted (60 attempts)",
+        v["error"],
+        format!("Sprite failed: no frame could be extracted ({tried} attempts)"),
         "{v}"
     );
     let (e, file) = engine_of("sprite", json!({ "jobMinFreeBytes": 1e18 })).await;
@@ -592,6 +606,73 @@ async fn a_failed_pass_falls_back_to_frame_runs() {
     // their neighbours instead of reaching the tiler broken.
     assert_eq!(seek_log(&file).len(), 60);
     assert!(e.ffmpeg_pids().is_empty());
+}
+
+/// The hardware runs the fake refused (`hw*sprite` modes), one `-hwaccel` value each.
+fn hw_log(file: &std::path::Path) -> String {
+    read(&PathBuf::from(format!("{}.hw", file.display())))
+}
+
+/// A sprite job of `mode`'s fake over `info` on a VAAPI host, run to its end.
+async fn sprite_on_vaapi(
+    mode: &str,
+    streaming: Value,
+    disabled: &[&str],
+    info: Value,
+) -> (Value, PathBuf, Engine) {
+    let (e, file) = engine_on_host(&fake(mode), streaming, HwAccel::Vaapi, disabled).await;
+    let mut rx = e.rt.events.subscribe();
+    let id = submit_info(&e, 7, &file, false, info).await;
+    let (_, ev) = done(&mut rx, &id).await;
+    assert!(e.ffmpeg_pids().is_empty());
+    (done_json(&ev), file, e)
+}
+
+#[tokio::test]
+async fn a_codec_the_gpu_cannot_decode_never_runs_on_it() {
+    // The boot probe found no VAAPI H.264 decoder: the fake fails any hardware run, none is made.
+    let (v, file, _e) =
+        sprite_on_vaapi("hwsprite", json!({}), &["h264_vaapi_decode"], info()).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["sprite"]["count"], 60);
+    assert_eq!(hw_log(&file), "");
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+    assert_eq!(seek_log(&file).len(), 0);
+}
+
+#[tokio::test]
+async fn a_run_the_gpu_fails_is_redone_in_software() {
+    // The probe passed the codec, the GPU refuses this file: the pass again, in software.
+    let (v, file, _e) = sprite_on_vaapi("hwsprite", json!({}), &[], info()).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(hw_log(&file), "vaapi\n");
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+    assert_eq!(seek_log(&file).len(), 0);
+    // Frame runs (a long-GOP film): the first ones fail on the GPU, each redone in software,
+    // and the job stays there: a failed hardware run per worker at most, not one per frame.
+    let mut film = info();
+    film["video"][0]["codec"] = json!("hevc");
+    film["durationSeconds"] = json!(7201.0);
+    let (v, file, _e) =
+        sprite_on_vaapi("hwsparsesprite", json!({ "ffmpegSlots": 4 }), &[], film).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(v["result"]["sprite"]["count"], 241);
+    let refused = hw_log(&file).lines().count();
+    assert!((1..=4).contains(&refused), "{refused} hardware runs");
+    assert_eq!(seek_log(&file).len(), 241);
+}
+
+#[tokio::test]
+async fn a_file_nothing_decodes_stops_after_a_few_frame_runs() {
+    // The GPU fails the pass, software fails it too, then every frame run: all in software, and
+    // the job gives up long before the 60 frames of the sheet.
+    let (v, file, _e) =
+        sprite_on_vaapi("hwfailsprite", json!({ "ffmpegSlots": 3 }), &[], info()).await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(hw_log(&file), "vaapi\n");
+    assert_eq!(read(&pass_log(&file)), "keyframes\n");
+    let tried = seek_log(&file).len();
+    assert!((16..=18).contains(&tried), "{tried} frame runs");
 }
 
 fn tool_info(extra: Value) -> Value {

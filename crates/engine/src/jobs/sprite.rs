@@ -1,16 +1,19 @@
 //! The `Sprite` job: every frame in one decoding pass (one frame per seek when it fails, for what
-//! it left out, or when seeks decode less), tiled into `sprite.jpg`. Spec: `docs/spec/jobs.md` section 5.
+//! it left out, or when seeks decode less), tiled into `sprite.jpg`. A run the hardware fails is
+//! redone in software. Spec: `docs/spec/jobs.md` section 5.
 use super::scan::{ffprobe, lines};
 use super::{CANCELLED, Cmd, Ctx, PROMOTED, tail};
 use crate::cache::remove_dir;
 use crate::proc::{Ffmpeg, Pipes};
-use fliks_engine_core::api::{HwAccel, JobResult, MediaInfo, Platform, SpriteDecode, SpriteMeta};
+use fliks_engine_core::api::{
+    HostCaps, JobResult, MediaInfo, SpriteDecode, SpriteMeta, VideoStreamInfo,
+};
 use fliks_engine_core::hw::platform_from_os;
 use fliks_engine_core::jobs::merge::progress_seconds;
 use fliks_engine_core::jobs::sprite::*;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed, Ordering::SeqCst};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::task::JoinSet;
 
@@ -43,10 +46,17 @@ async fn generate(
         return Err("Sprite failed: no duration, no frame to extract".into());
     }
     let all: Vec<u32> = (0..l.count).collect();
+    let decode = Arc::new(Decode::new(ctx, info));
     let (done, failed) = match plan(ctx, info, l).await? {
-        Plan::Seeks => extract(ctx, info, l, frames, all).await,
+        Plan::Seeks => extract(ctx, info, l, frames, all, &decode).await,
         Plan::Pass { keyframes_only } => {
-            let pass = single_pass(ctx, info, l, frames, keyframes_only).await;
+            let pass = decode
+                .run(ctx, |ext| async move {
+                    // A failed run may leave a half-written frame: each starts from an empty dir.
+                    clear_frames(frames).await?;
+                    single_pass(ctx, info, l, frames, keyframes_only, &ext).await
+                })
+                .await;
             if ctx.cancelled() {
                 return Err(CANCELLED.into());
             }
@@ -65,7 +75,7 @@ async fn generate(
                             l.count
                         );
                     }
-                    let (more, failed) = extract(ctx, info, l, frames, missing).await;
+                    let (more, failed) = extract(ctx, info, l, frames, missing, &decode).await;
                     (written + more, failed)
                 }
                 // Promoted: the job starts over on a playback slot, the pass with it.
@@ -75,9 +85,8 @@ async fn generate(
                         job = ctx.job.id,
                         "sprite single pass failed, extracting by seek: {e}"
                     );
-                    // A killed run may leave a half-written frame: start from an empty dir.
                     clear_frames(frames).await?;
-                    extract(ctx, info, l, frames, all).await
+                    extract(ctx, info, l, frames, all, &decode).await
                 }
             }
         }
@@ -184,30 +193,26 @@ async fn plan(ctx: &Ctx, info: &MediaInfo, l: Layout) -> Result<Plan, String> {
     Ok(plan)
 }
 
-/// Every frame in one ffmpeg run on one slot; returns the frames written.
+/// Every frame in one ffmpeg run of `ext` on one slot; returns the frames written.
 async fn single_pass(
     ctx: &Ctx,
     info: &MediaInfo,
     l: Layout,
     frames: &Path,
     keyframes_only: bool,
+    ext: &Extractor,
 ) -> Result<u32, String> {
     let input = ctx.media_path();
     let video = info.video.first();
     let codec = video.map_or("", |v| v.codec.as_str());
-    let (platform, hw, node) = host_hw(ctx);
-    let crop = info.video.first().and_then(|v| v.crop.clone());
-    // The GPU belongs to playback while it runs. [ts:modules/streaming/thumbnail.service.ts:103-113]
-    let busy = ctx.rt.slots.playback_in_use() > 0;
-    let ext = pick_extractor(platform, hw, &node, crop.is_some(), busy);
     let offset = seek_offset(info);
     let pattern = frames.join(FRAME_PATTERN);
     let argv = pass_args(
-        &ext,
+        ext,
         &PassArgs {
             input_path: &input,
             frames_pattern: &pattern.to_string_lossy(),
-            crop: crop.as_ref(),
+            crop: video.and_then(|v| v.crop.as_ref()),
             thumb_width: THUMB_WIDTH,
             hdr: is_hdr(info),
             layout: l,
@@ -282,21 +287,68 @@ async fn probe_keyframes(ctx: &Ctx, stream: u32, window: (f64, f64)) -> Vec<f64>
     }
 }
 
-/// The detected platform, acceleration and render node; software when detection has not run.
-fn host_hw(ctx: &Ctx) -> (Platform, HwAccel, String) {
-    ctx.rt.hw.snapshot().map_or_else(
-        || {
-            (
-                platform_from_os(std::env::consts::OS),
-                HwAccel::None,
-                String::new(),
-            )
-        },
-        |s| (s.detected.platform, s.detected.hw_accel, s.render_node),
-    )
+/// What a job's runs decode with: the host's extractor for the video, software once a hardware
+/// run has failed (the boot probe tests a codec, not this file's profile or pixel format).
+struct Decode {
+    /// The detected host; a CPU-only one while detection has not run.
+    caps: HostCaps,
+    render_node: String,
+    video: Option<VideoStreamInfo>,
+    hw_failed: AtomicBool,
 }
 
-/// A failed pass's output removed before the seeks redo every frame.
+impl Decode {
+    fn new(ctx: &Ctx, info: &MediaInfo) -> Self {
+        let (caps, render_node) = ctx.rt.hw.snapshot().map_or_else(
+            || {
+                let caps = HostCaps {
+                    platform: platform_from_os(std::env::consts::OS),
+                    ..HostCaps::default()
+                };
+                (caps, String::new())
+            },
+            |s| (s.host_caps(), s.render_node),
+        );
+        Self {
+            caps,
+            render_node,
+            video: info.video.first().cloned(),
+            hw_failed: AtomicBool::new(false),
+        }
+    }
+
+    fn extractor(&self, ctx: &Ctx) -> Extractor {
+        // The GPU belongs to playback while it runs. [ts:modules/streaming/thumbnail.service.ts:103-113]
+        let busy = ctx.rt.slots.playback_in_use() > 0;
+        let software = busy || self.hw_failed.load(Relaxed);
+        pick_extractor(&self.caps, &self.render_node, self.video.as_ref(), software)
+    }
+
+    /// `run` on the job's extractor. A hardware run that fails is redone in software, and so is
+    /// every later run of the job: one ffmpeg per frame must not fail on the GPU frame after frame.
+    async fn run<T, Fut>(&self, ctx: &Ctx, run: impl Fn(Extractor) -> Fut) -> Result<T, String>
+    where
+        Fut: Future<Output = Result<T, String>>,
+    {
+        let ext = self.extractor(ctx);
+        let hardware = ext != Extractor::Software;
+        match run(ext).await {
+            // A cancelled or promoted run was stopped, not refused by the GPU.
+            Err(e) if hardware && !ctx.cancelled() && !ctx.job.promoted.load(Relaxed) => {
+                if !self.hw_failed.swap(true, Relaxed) {
+                    tracing::warn!(
+                        job = ctx.job.id,
+                        "sprite hardware decode failed, software from here: {e}"
+                    );
+                }
+                run(Extractor::Software).await
+            }
+            out => out,
+        }
+    }
+}
+
+/// The frames a failed run left, removed before another redoes them.
 async fn clear_frames(frames: &Path) -> Result<(), String> {
     let io = |e: std::io::Error| format!("clear {}: {e}", frames.display());
     let mut dir = tokio::fs::read_dir(frames).await.map_err(io)?;
@@ -308,12 +360,14 @@ async fn clear_frames(frames: &Path) -> Result<(), String> {
 
 /// Frames `todo` by seek, `min(slots, todo)` workers; returns (done, failed). Long-GOP files,
 /// what a pass left out, and its fallback. [ts:modules/streaming/thumbnail.service.ts:495-570]
+/// Stops when its first `GIVE_UP_AFTER` runs all failed.
 async fn extract(
     ctx: &Ctx,
     info: &MediaInfo,
     l: Layout,
     frames: &Path,
     todo: Vec<u32>,
+    decode: &Arc<Decode>,
 ) -> (u32, u32) {
     if todo.is_empty() {
         return (0, 0);
@@ -324,29 +378,26 @@ async fn extract(
     let hdr = is_hdr(info);
     let crop = info.video.first().and_then(|v| v.crop.clone());
     let input = ctx.media_path();
-    let (platform, hw, node) = host_hw(ctx);
     let next = Arc::new(AtomicU32::new(0));
     let counts = Arc::new((AtomicU32::new(0), AtomicU32::new(0)));
     let workers = ctx.rt.slots.size().min(todo.len()).max(1);
     let mut set = JoinSet::new();
     for _ in 0..workers {
         let (ctx, next, counts, todo) = (ctx.clone(), next.clone(), counts.clone(), todo.clone());
-        let (crop, input, node, frames) = (
+        let (crop, input, decode, frames) = (
             crop.clone(),
             input.clone(),
-            node.clone(),
+            decode.clone(),
             frames.to_path_buf(),
         );
         set.spawn(async move {
             loop {
                 let k = next.fetch_add(1, SeqCst);
-                if k >= total || ctx.cancelled() {
+                let hopeless = counts.0.load(SeqCst) == 0 && counts.1.load(SeqCst) >= GIVE_UP_AFTER;
+                if k >= total || ctx.cancelled() || hopeless {
                     return;
                 }
                 let i = todo[k as usize];
-                // The GPU belongs to playback while it runs. [ts:modules/streaming/thumbnail.service.ts:103-113]
-                let busy = ctx.rt.slots.playback_in_use() > 0;
-                let ext = pick_extractor(platform, hw, &node, crop.is_some(), busy);
                 let out = frames.join(frame_name(i));
                 let args = FrameArgs {
                     input_path: &input,
@@ -356,10 +407,13 @@ async fn extract(
                     thumb_width: THUMB_WIDTH,
                     hdr,
                 };
-                let r = match frame_args(&ext, &args) {
-                    Ok(argv) => ctx.ffmpeg(&argv).await,
-                    Err(e) => Err(e),
-                };
+                let (c, args) = (&ctx, &args);
+                let r = decode
+                    .run(
+                        c,
+                        |ext| async move { c.ffmpeg(&frame_args(&ext, args)?).await },
+                    )
+                    .await;
                 match r {
                     Ok(()) => {
                         counts.0.fetch_add(1, SeqCst);
