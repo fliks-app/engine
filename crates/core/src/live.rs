@@ -5,6 +5,7 @@ use crate::api::{
 };
 use crate::args::{http_header_args, live_h264_encoder};
 use crate::jsnum::js_string;
+use crate::probe::pix_fmt_depth;
 use std::collections::BTreeMap;
 
 /// Tries per upstream before a session gives up on it. [ts:services/livetv-session.service.ts:143]
@@ -122,8 +123,9 @@ pub fn forces_transcode(
     codec != "h264" || interlaced || active_video.is_some_and(|a| a != codec)
 }
 
-/// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its field order; the
-/// format row holds no type and may hold commas. [ts:services/livetv-session.service.ts:170-193]
+/// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its pixel format and
+/// field order, in ffprobe's order whatever `probe_args` lists; the format row holds no type and
+/// may hold commas. [ts:services/livetv-session.service.ts:170-193]
 pub fn parse_probe_output(stdout: &str) -> LiveProbe {
     let mut p = LiveProbe::default();
     // JS `trim()`: \s, which includes \r.
@@ -139,7 +141,8 @@ pub fn parse_probe_output(stdout: &str) -> LiveProbe {
         let kind = parts[at];
         if kind == "video" && p.video_codec.is_none() {
             p.video_codec = Some(parts[0].to_string());
-            p.field_order = parts.get(at + 1).map(|f| f.to_string());
+            p.bit_depth = parts.get(at + 1).and_then(|f| pix_fmt_depth(f));
+            p.field_order = parts.get(at + 2).map(|f| f.to_string());
         }
         if kind == "audio" && p.audio_codec.is_none() {
             p.audio_codec = Some(parts[0].to_string());
@@ -212,7 +215,7 @@ pub fn probe_args(
         "-probesize",
         "5000000",
         "-show_entries",
-        "format=format_name:stream=codec_type,codec_name,field_order",
+        "format=format_name:stream=codec_type,codec_name,pix_fmt,field_order",
         "-of",
         "csv=p=0",
     ]
@@ -388,23 +391,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_probe_reads_the_field_order_of_the_video() {
-        let p = parse_probe_output("h264,video,tt\naac,audio\nmpegts\n");
+    fn a_probe_reads_the_field_order_and_bit_depth_of_the_video() {
+        // ffprobe 6.1 and 9 on an interlaced H.264 TS: the program lists its streams again.
+        let p = parse_probe_output(
+            "h264,video,yuv420p,tt\naac,audio\n\nh264,video,yuv420p,tt\naac,audio\nmpegts\n",
+        );
         assert_eq!(
             (
                 p.video_codec.as_deref(),
                 p.audio_codec.as_deref(),
-                p.interlaced()
+                p.interlaced(),
+                p.bit_depth
             ),
-            (Some("h264"), Some("aac"), Some(true))
+            (Some("h264"), Some("aac"), Some(true), None)
         );
-        let p = parse_probe_output("mpegts\nh264,video,progressive\n");
-        assert_eq!(p.interlaced(), Some(false));
-        assert_eq!(parse_probe_output("h264,video\n").interlaced(), None);
-        assert_eq!(
-            parse_probe_output("h264,video,unknown\n").interlaced(),
-            None
-        );
+        let p = parse_probe_output("mpegts\nhevc,video,yuv420p10le,progressive\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (Some(false), Some(10)));
+        // Never on the wire: events and the open answer stay as they were.
+        let wire = serde_json::to_value(&p).unwrap();
+        assert_eq!(wire["fieldOrder"], "progressive");
+        assert!(wire.get("bitDepth").is_none(), "{wire}");
+        let p = parse_probe_output("h264,video\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (None, None));
+        let p = parse_probe_output("h264,video,unknown,unknown\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (None, None));
         assert_eq!(
             effective_mode(LiveMode::Remux, Some("h264"), true),
             LiveMode::Transcode

@@ -163,6 +163,8 @@ struct PipeMut {
     slot: Option<PlaybackSlot>,
     /// The GPU its transcodes stay on while it qualifies.
     device: Option<String>,
+    /// A GPU decode failed: its transcodes decode on the CPU.
+    cpu_decode: bool,
     direct: Option<Direct>,
     content_type: Option<String>,
     tees: Vec<(String, mpsc::Sender<Bytes>)>,

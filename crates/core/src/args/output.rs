@@ -526,6 +526,7 @@ pub fn file(f: &FileArgs, caps: &HostCaps, dev: &Device) -> Result<Vec<String>, 
 mod tests {
     use super::*;
     use crate::api::{HwAccel, Platform};
+    use crate::args::live_gpu_decode;
     use serde_json::json;
 
     fn request(audio: serde_json::Value) -> VodArgs {
@@ -804,6 +805,51 @@ mod tests {
         assert_eq!(vf.as_deref(), Some("vpp_qsv=w=-1:h=min(ih\\,480)"));
         let (input, _) = run("vaapi", "h264", Some(false), None, &[]);
         assert!(input.windows(2).any(|w| w == ["-hwaccel", "vaapi"]));
+    }
+
+    #[test]
+    fn a_bit_depth_past_the_decoder_or_a_failed_gpu_decode_decodes_on_the_cpu() {
+        let caps = HostCaps::default();
+        let run = |hw: &str, codec: &str, depth, cpu_decode| {
+            let mut r = live_request("transcode", hw, 2);
+            (r.video_codec, r.video_bit_depth, r.cpu_decode) =
+                (Some(codec.into()), depth, cpu_decode);
+            let gpu = live_gpu_decode(&r, &caps);
+            let input = live_input(&r, &caps, &dev());
+            assert_eq!(input.iter().any(|a| a == "-hwaccel"), gpu, "{input:?}");
+            gpu
+        };
+        // The H.264 decoders stop at 8 bits, HEVC's read 10; unknown is taken for 8.
+        assert!(!run("vaapi", "h264", Some(10), false));
+        assert!(!run("qsv", "h264", Some(10), false));
+        assert!(run("vaapi", "hevc", Some(10), false));
+        assert!(run("qsv", "h264", None, false));
+        // A channel whose GPU decode failed.
+        assert!(!run("vaapi", "h264", None, true));
+        assert!(!run("qsv", "hevc", Some(10), true));
+        // GPU frames past 8 bits leave the scaler as nv12 for the H.264 encoder.
+        let vf = |hw: &str, depth, bps| {
+            let mut r = live_request("transcode", hw, 2);
+            (r.video_codec, r.video_bit_depth, r.video_bitrate_bps) =
+                (Some("hevc".into()), depth, bps);
+            live_filters(&r, &caps)
+        };
+        assert_eq!(
+            vf("vaapi", Some(10), Some(3e6)).as_deref(),
+            Some("scale_vaapi=w=-2:h=min(ih\\,480):format=nv12")
+        );
+        assert_eq!(
+            vf("vaapi", Some(10), None).as_deref(),
+            Some("scale_vaapi=format=nv12")
+        );
+        assert_eq!(
+            vf("qsv", Some(10), Some(3e6)).as_deref(),
+            Some("vpp_qsv=w=-1:h=min(ih\\,480):format=nv12")
+        );
+        assert_eq!(vf("qsv", None, None), None);
+        // NVENC's frames are never the GPU's: its decoder falls back by itself.
+        let nvenc = live_request("transcode", "nvenc", 2);
+        assert!(!live_gpu_decode(&nvenc, &caps));
     }
 
     #[test]

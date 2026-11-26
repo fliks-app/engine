@@ -122,6 +122,10 @@ pub struct LiveProbe {
     /// ffprobe's `field_order` of the video: `progressive`, or an interlaced order (`tt`, `bb`, `tb`, `bt`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_order: Option<String>,
+    /// The video's bit depth its `pix_fmt` names; `None` for 8-bit or unknown. The engine's own
+    /// probe only, never on the wire: the host's probed fields carry none.
+    #[serde(skip)]
+    pub bit_depth: Option<u32>,
 }
 
 impl LiveProbe {

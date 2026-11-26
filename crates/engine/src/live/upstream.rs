@@ -61,7 +61,7 @@ pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_o
         let ok = if pipe.dir.is_none() {
             connect_direct(rt, pipe, i).await
         } else {
-            spawn_packaged(rt, pipe, i, attempted_once).await
+            packaged(rt, pipe, i, attempted_once).await
         };
         attempted_once = true;
         if ok {
@@ -92,13 +92,43 @@ pub(super) fn attempt(rt: &Runtime, pipe: &Pipe, upstream: usize, error: Option<
     });
 }
 
+/// How a packaged run started.
+#[derive(PartialEq)]
+enum Start {
+    Ok,
+    Failed,
+    /// It decoded on the GPU and exited before a segment.
+    GpuDecodeFailed,
+}
+
+/// `spawn_packaged`, redone once with CPU decode (the GPU still encodes) when a run that decoded
+/// on the GPU exited before a segment; the pipe keeps CPU decode for its later runs when that run
+/// starts, else the upstream was at fault. Not after the 20 s window: a dead upstream would double
+/// the wait before failover.
+async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, attempted_once: bool) -> bool {
+    match spawn_packaged(rt, pipe, i, attempted_once).await {
+        Start::Ok => true,
+        Start::Failed => false,
+        Start::GpuDecodeFailed => {
+            stop_transport(pipe).await;
+            if pipe.m.locked().ended {
+                return false;
+            }
+            pipe.m.locked().cpu_decode = true;
+            let ok = spawn_packaged(rt, pipe, i, attempted_once).await == Start::Ok;
+            pipe.m.locked().cpu_decode = ok;
+            ok
+        }
+    }
+}
+
 /// One ffmpeg run into the pipe's directory, successful once a segment exists. [ts:svc:862-927]
 async fn spawn_packaged(
     rt: &Arc<Runtime>,
     pipe: &Arc<Pipe>,
     i: usize,
     attempted_once: bool,
-) -> bool {
+) -> Start {
     let u = &pipe.upstreams[i];
     let has = pipe.m.locked().probes[i].clone();
     if !has_video(&has)
@@ -112,28 +142,27 @@ async fn spawn_packaged(
             Ok(p) => vet_proxy = Some(p),
             Err(e) => {
                 pipe.m.locked().last_error = Some(e);
-                return false;
+                return Start::Failed;
             }
         }
     }
     let Some(mut caps) = rt.caps() else {
-        return false;
+        return Start::Failed;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, video, audio, interlaced, fresh) = {
+    let (mode, p, fresh, cpu_decode) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
-        let interlaced = p.interlaced();
         let fresh = m.mode == LiveMode::Remux
             && core_live::forces_transcode(
                 p.video_codec.as_deref(),
                 m.active_codec.as_deref(),
-                interlaced == Some(true),
+                p.interlaced() == Some(true),
             );
         if fresh {
             m.mode = LiveMode::Transcode;
         }
-        (m.mode, p.video_codec, p.audio_codec, interlaced, fresh)
+        (m.mode, p, fresh, m.cpu_decode)
     };
     let append = !fresh
         && attempted_once
@@ -170,34 +199,34 @@ async fn spawn_packaged(
     } else {
         fliks_engine_core::api::HwAccel::None
     };
-    let argv = args::live(
-        &LiveArgs {
-            input_url: u.url.clone(),
-            vet_proxy: vet_proxy.clone(),
-            output_dir: dir.to_string_lossy().into_owned(),
-            segment_seconds: pipe.segment_seconds,
-            window_minutes: pipe.window_minutes,
-            mode: if transcode {
-                args::LiveMode::Transcode
-            } else {
-                args::LiveMode::Remux
-            },
-            use_ts: pipe.use_ts,
-            user_agent: ua,
-            referer,
-            extra_headers: extra,
-            hw_accel,
-            video_bitrate_bps: pipe.bitrate,
-            audio_codec: audio,
-            append,
-            probe_seconds: Some(pipe.probe_seconds),
-            interlaced,
-            video_codec: video.clone(),
-            encode_threads: rt.slots.encode_threads(),
+    let o = LiveArgs {
+        input_url: u.url.clone(),
+        vet_proxy: vet_proxy.clone(),
+        output_dir: dir.to_string_lossy().into_owned(),
+        segment_seconds: pipe.segment_seconds,
+        window_minutes: pipe.window_minutes,
+        mode: if transcode {
+            args::LiveMode::Transcode
+        } else {
+            args::LiveMode::Remux
         },
-        &caps,
-        &dev,
-    );
+        use_ts: pipe.use_ts,
+        user_agent: ua,
+        referer,
+        extra_headers: extra,
+        hw_accel,
+        video_bitrate_bps: pipe.bitrate,
+        audio_codec: p.audio_codec.clone(),
+        append,
+        probe_seconds: Some(pipe.probe_seconds),
+        interlaced: p.interlaced(),
+        video_codec: p.video_codec.clone(),
+        video_bit_depth: p.bit_depth,
+        cpu_decode,
+        encode_threads: rt.slots.encode_threads(),
+    };
+    let gpu_decode = args::live_gpu_decode(&o, &caps);
+    let argv = args::live(&o, &caps, &dev);
     let spawned = if vet_proxy.is_some() {
         Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
     } else {
@@ -207,7 +236,7 @@ async fn spawn_packaged(
         Ok(p) => Arc::new(p),
         Err(e) => {
             pipe.m.locked().last_error = Some(format!("spawn: {e}"));
-            return false;
+            return Start::Failed;
         }
     };
     {
@@ -221,21 +250,38 @@ async fn spawn_packaged(
     }
     if pipe.m.locked().ended {
         proc.stop().await;
-        return false;
+        return Start::Failed;
     }
     let ok = first_segment(&dir, &proc).await;
+    // An exit, not the window running out (nor a stop: the pipe ended).
+    let start = if ok {
+        Start::Ok
+    } else if gpu_decode && proc.exited().is_some() && !pipe.m.locked().ended {
+        tracing::warn!(
+            url = u.url,
+            "live gpu decode failed, cpu decode from here:\n{}",
+            proc.stderr_tail().join("\n")
+        );
+        Start::GpuDecodeFailed
+    } else {
+        Start::Failed
+    };
+    // A hardware run that ran forgives the device, as playback's. A failed GPU decode leaves the
+    // verdict to its CPU decode run, on the same device: one per attempt, as before.
     if let Some(d) = &device {
-        if ok {
-            rt.slots.device_ok(d);
-        } else {
-            rt.slots.device_failed(d);
-            pipe.m.locked().device = None;
+        match start {
+            Start::Ok => rt.slots.device_ok(d),
+            Start::Failed => {
+                rt.slots.device_failed(d);
+                pipe.m.locked().device = None;
+            }
+            Start::GpuDecodeFailed => {}
         }
     }
     if ok && mode == LiveMode::Remux {
-        pipe.m.locked().active_codec = video;
+        pipe.m.locked().active_codec = p.video_codec;
     }
-    ok
+    start
 }
 
 /// Any `seg-*` entry within 20 s; the run exiting first fails. [ts:svc:1001-1047]

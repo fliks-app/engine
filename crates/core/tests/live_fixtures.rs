@@ -88,7 +88,7 @@ fn run(func: &str, i: &Value) -> Value {
                 video_codec: s(&i["probe"]["probedVideoCodec"]).map(String::from),
                 audio_codec: None,
                 container: s(&i["probe"]["probedContainer"]).map(String::from),
-                field_order: None,
+                ..LiveProbe::default()
             };
             let (m, c) = plan(
                 &caps(&i["caps"]),

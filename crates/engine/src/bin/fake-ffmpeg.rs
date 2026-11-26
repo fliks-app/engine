@@ -550,12 +550,14 @@ fn itemstop(args: &[String]) {
 }
 
 /// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
-/// silent, `dies` writes three then exits once `die` exists in the run's directory.
+/// silent, `dies` writes three then exits once `die` exists in the run's directory; `gpudies`
+/// exits and `gpuhangs` never writes on a `-hwaccel` run. The probe reads `10bit` as 10-bit H.264.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
         match () {
             _ if url.contains("noprobe") => std::process::exit(1),
+            _ if url.contains("10bit") => print!("h264,video,yuv420p10le,progressive\nmpegts\n"),
             _ if url.contains("hevc") => print!("hevc,video\naac,audio\nmpegts\n"),
             _ if url.contains("av1") => print!("av1,video\naac,audio\nmpegts\n"),
             _ if url.contains("manifest") => print!("h264,video\naac,audio\nhls\n"),
@@ -582,6 +584,16 @@ fn live(args: &[String]) {
     }
     if input.contains("slowstart") {
         hang()
+    }
+    // A GPU that cannot decode this upstream: it dies or hangs on a `-hwaccel` run.
+    if args.iter().any(|a| a == "-hwaccel") {
+        if input.contains("gpudies") {
+            eprintln!("fake ffmpeg: Failed setup for format vaapi");
+            std::process::exit(1)
+        }
+        if input.contains("gpuhangs") {
+            hang()
+        }
     }
     let ext = if pattern.ends_with(".ts") {
         "ts"

@@ -10,19 +10,22 @@ use crate::ladder::height_for_bitrate;
 use crate::strs;
 
 /// Whether a transcode's frames leave the decoder on the GPU. QSV and VAAPI force them there, so
-/// only for a codec the boot probe left the backend a decoder for (`decode_on`; an unprobed one is
-/// taken for H.264): another decodes on the CPU and the filter graph uploads. NVENC and
-/// VideoToolbox hand their frames to the CPU and fall back on their own.
-fn gpu_frames(o: &LiveArgs, caps: &HostCaps) -> bool {
+/// only for a codec and bit depth the boot probe left the backend a decoder for (`decode_on`; an
+/// unprobed codec is taken for H.264, an unknown depth for 8), and not after a failed GPU decode
+/// (`cpu_decode`): otherwise the CPU decodes and the filter graph uploads. NVENC and VideoToolbox
+/// hand their frames to the CPU and fall back on their own.
+pub fn live_gpu_decode(o: &LiveArgs, caps: &HostCaps) -> bool {
+    let (codec, depth) = (o.video_codec.as_deref(), o.video_bit_depth);
     matches!(o.hw_accel, HwAccel::Qsv | HwAccel::Vaapi)
-        && decode_on(o.hw_accel, o.video_codec.as_deref(), None, caps) == o.hw_accel
+        && !o.cpu_decode
+        && decode_on(o.hw_accel, codec, depth, caps) == o.hw_accel
 }
 
 /// Live input decode flags: the shared device init, `-hwaccel` of the backend.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:60-89]
 pub fn live_input(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     match o.hw_accel {
-        hw @ (HwAccel::Qsv | HwAccel::Vaapi) if !gpu_frames(o, caps) => dev.filter_device(hw),
+        hw @ (HwAccel::Qsv | HwAccel::Vaapi) if !live_gpu_decode(o, caps) => dev.filter_device(hw),
         HwAccel::Qsv => {
             let mut a = dev.qsv_init();
             a.extend(strs(&[
@@ -76,13 +79,22 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
         .map(height_for_bitrate);
     let known = o.interlaced == Some(true);
     let deint = o.interlaced != Some(false);
-    // `vpp_qsv` refuses a width of -2 (ffmpeg 6.1 to 9.0); its -1 keeps the aspect, and its
-    // surfaces come out even anyway.
-    let size = |f: &str, w: &str| height.map(|h| format!("{f}w={w}:h=min(ih\\,{h})"));
     // CPU frames enter a QSV or VAAPI chain through `up`; GPU ones without a GPU deinterlacer
     // round-trip through the CPU to be deinterlaced there. `bwdif` hands out planar frames, which
     // a VAAPI encoder fails on once uploaded: back to nv12 first.
-    let cpu_frames = !gpu_frames(o, caps);
+    let cpu_frames = !live_gpu_decode(o, caps);
+    // GPU frames keep the source's depth and the H.264 encoders take 8 bits: past 8, the scaler
+    // converts to nv12, with nothing to scale too. `vpp_qsv` refuses a width of -2 (ffmpeg 6.1 to
+    // 9.0); its -1 keeps the aspect, and its surfaces come out even anyway.
+    let nv12 = !cpu_frames && o.video_bit_depth.is_some_and(|d| d > 8);
+    let size = |f: &str, w: &str| {
+        let wh = height.map(|h| format!("w={w}:h=min(ih\\,{h})"));
+        let opts: Vec<&str> = [wh.as_deref(), nv12.then_some("format=nv12")]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!opts.is_empty()).then(|| format!("{f}{}", opts.join(":")))
+    };
     let upload = |up: &str| cpu_frames.then(|| format!("format=nv12,{up}"));
     let bounce = |up: &str| {
         let down = if cpu_frames {

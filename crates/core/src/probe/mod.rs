@@ -11,6 +11,7 @@ mod statistics;
 mod tags;
 pub use tags::{leading_float, performer, r128_to_rg, split_multi};
 
+pub(crate) use build::pix_fmt_depth;
 pub use build::{apply_late_audio, build, first_frame_stream, measure_fps, parse_main};
 pub use ffjson::Frame;
 pub(crate) use lang::converts_to_ass;

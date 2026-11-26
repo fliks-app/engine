@@ -1,6 +1,7 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
 //! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
-//! `dies`, `stall`, `hevc`, `av1`, `noprobe`). Spec: `docs/spec/live.md`.
+//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `noprobe`). Spec:
+//! `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
@@ -775,6 +776,110 @@ async fn a_codec_the_gpu_cannot_decode_is_transcoded_from_cpu_frames() {
             );
         }
     }
+}
+
+/// The value after `flag` in `argv`.
+fn arg_after(argv: &[String], flag: &str) -> Option<String> {
+    argv.iter()
+        .position(|a| a == flag)
+        .map(|i| argv[i + 1].clone())
+}
+
+#[tokio::test]
+async fn a_bit_depth_the_gpu_cannot_decode_is_transcoded_from_cpu_frames() {
+    // The probe finds 10-bit H.264, which no VAAPI H.264 decoder reads: the codec alone passes.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let up = json!({ "url": "http://up/10bit" });
+    let a = open(&e, open_req("21", vec![up], caps, "alice", "t")).await;
+    assert_eq!(a["probe"]["videoCodec"], "h264", "{a}");
+    assert_eq!(a["probe"].get("bitDepth"), None, "{a}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let argv = &runs(&e)[0];
+    assert_eq!(arg_after(argv, "-hwaccel"), None, "{argv:?}");
+    assert_eq!(
+        arg_after(argv, "-vf").as_deref(),
+        Some("format=nv12,hwupload=derive_device=vaapi,scale_vaapi=w=-2:h=min(ih\\,480)")
+    );
+}
+
+#[tokio::test]
+async fn a_failed_gpu_decode_is_redone_with_cpu_decode_and_kept() {
+    // The boot probe passed H.264, yet the GPU refuses this upstream's stream.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    // Two failures already: a third would set the device aside, a run that works forgives them.
+    e.rt.slots.device_failed("gpu0");
+    e.rt.slots.device_failed("gpu0");
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let ups = vec![upstream("http://up/gpudies-dies", 0)];
+    let a = open(&e, open_req("22", ups, caps, "alice", "t")).await;
+    assert_eq!(a["mode"], "transcode");
+    // One attempt, a success: the failed GPU decode is no upstream failure.
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let hw = |argv: &Vec<String>| arg_after(argv, "-hwaccel");
+    let r = runs(&e);
+    assert_eq!(r.len(), 2, "{r:?}");
+    assert_eq!(hw(&r[0]).as_deref(), Some("vaapi"));
+    assert_eq!(hw(&r[1]), None);
+    assert_eq!(arg_after(&r[1], "-c:v").as_deref(), Some("h264_vaapi"));
+    e.rt.slots.device_failed("gpu0");
+    assert!(e.rt.slots.device_usable("gpu0"));
+    // The restart after a running exit decodes on the CPU at once.
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(attempt(&failed).unwrap().1.is_some());
+    until("the restart", 30, || runs(&e).len() == 3).await;
+    assert_eq!(hw(&runs(&e)[2]), None);
+}
+
+#[tokio::test]
+async fn a_gpu_decode_that_never_starts_fails_over_without_a_retry() {
+    // A hung run says nothing about the decoder: retrying would double the wait before failover.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let ups = vec![
+        upstream("http://up/gpuhangs", 0),
+        upstream("http://up/b", 1),
+    ];
+    let a = open(&e, open_req("23", ups, caps, "alice", "t")).await;
+    assert_eq!(a["upstream"], 1);
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(
+        attempt(&failed),
+        Some((0, Some("no segment produced within the startup window")))
+    );
+    let r = runs(&e);
+    assert_eq!(r.len(), 2, "{r:?}");
+    // And the next upstream still decodes on the GPU.
+    assert!(
+        r.iter()
+            .all(|a| arg_after(a, "-hwaccel").as_deref() == Some("vaapi"))
+    );
+}
+
+#[tokio::test]
+async fn a_gpu_decode_retry_that_fails_too_blames_the_upstream() {
+    // `fail` dies with CPU decode as well: the next upstream keeps GPU decode.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let ups = vec![upstream("http://up/fail", 0), upstream("http://up/b", 1)];
+    let a = open(&e, open_req("24", ups, caps, "alice", "t")).await;
+    assert_eq!(a["upstream"], 1);
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&failed).map(|a| a.0), Some(0));
+    let hw: Vec<Option<String>> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
+    let vaapi = Some("vaapi".to_string());
+    assert_eq!(hw, [vaapi.clone(), None, vaapi]);
 }
 
 #[tokio::test]
