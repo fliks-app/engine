@@ -3,7 +3,7 @@
 use super::vet::{self, Resolver};
 use super::{
     DIRECT_CONNECT_TIMEOUT, DIRECT_SNIFF, Direct, FIRST_SEGMENT_POLL, FIRST_SEGMENT_TIMEOUT,
-    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, probe, vetted_proxy,
+    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, playlist_mtime, probe, vetted_proxy,
 };
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
@@ -43,7 +43,7 @@ fn causes(e: &dyn std::error::Error) -> String {
 
 /// Upstreams in order until one feeds the pipe; false once all are spent (the caller ends it).
 /// [ts:svc:820-858]
-pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_once: bool) -> bool {
+pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>) -> bool {
     loop {
         let pos = {
             let mut m = pipe.m.locked();
@@ -61,9 +61,8 @@ pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_o
         let ok = if pipe.dir.is_none() {
             connect_direct(rt, pipe, i).await
         } else {
-            packaged(rt, pipe, i, attempted_once).await
+            packaged(rt, pipe, i).await
         };
-        attempted_once = true;
         if ok {
             attempt(rt, pipe, i, None);
             return true;
@@ -97,16 +96,20 @@ pub(super) fn attempt(rt: &Runtime, pipe: &Pipe, upstream: usize, error: Option<
 enum Start {
     Ok,
     Failed,
-    /// It decoded on the GPU and exited before a segment.
+    /// It decoded on the GPU, opened its input and exited before a segment.
     GpuDecodeFailed,
 }
 
-/// `spawn_packaged`, redone once with CPU decode (the GPU still encodes) when a run that decoded
-/// on the GPU exited before a segment; the pipe keeps CPU decode for its later runs when that run
-/// starts, else the upstream was at fault. Not after the 20 s window: a dead upstream would double
-/// the wait before failover.
-async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, attempted_once: bool) -> bool {
-    match spawn_packaged(rt, pipe, i, attempted_once).await {
+/// The upstream probed if need be, then `spawn_packaged`, redone once with CPU decode (the GPU
+/// still encodes) after `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
+async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
+    let has = pipe.m.locked().probes[i].clone();
+    if !has_video(&has)
+        && let Some(p) = probe(rt, &pipe.upstreams[i]).await
+    {
+        pipe.m.locked().probes[i] = Some(p);
+    }
+    match spawn_packaged(rt, pipe, i).await {
         Start::Ok => true,
         Start::Failed => false,
         Start::GpuDecodeFailed => {
@@ -115,7 +118,7 @@ async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, attempted_once:
                 return false;
             }
             pipe.m.locked().cpu_decode = true;
-            let ok = spawn_packaged(rt, pipe, i, attempted_once).await == Start::Ok;
+            let ok = spawn_packaged(rt, pipe, i).await == Start::Ok;
             pipe.m.locked().cpu_decode = ok;
             ok
         }
@@ -123,19 +126,8 @@ async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, attempted_once:
 }
 
 /// One ffmpeg run into the pipe's directory, successful once a segment exists. [ts:svc:862-927]
-async fn spawn_packaged(
-    rt: &Arc<Runtime>,
-    pipe: &Arc<Pipe>,
-    i: usize,
-    attempted_once: bool,
-) -> Start {
+async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start {
     let u = &pipe.upstreams[i];
-    let has = pipe.m.locked().probes[i].clone();
-    if !has_video(&has)
-        && let Some(p) = probe(rt, u).await
-    {
-        pipe.m.locked().probes[i] = Some(p);
-    }
     let mut vet_proxy = None;
     if u.vetted {
         match vetted_proxy(rt, &u.url).await {
@@ -150,25 +142,28 @@ async fn spawn_packaged(
         return Start::Failed;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, p, fresh, cpu_decode) = {
+    let (mode, p, switched, cpu_decode) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
-        let fresh = m.mode == LiveMode::Remux
+        let switched = m.mode == LiveMode::Remux
             && core_live::forces_transcode(
                 p.video_codec.as_deref(),
                 m.active_codec.as_deref(),
                 p.interlaced() == Some(true),
             );
-        if fresh {
+        if switched {
             m.mode = LiveMode::Transcode;
         }
-        (m.mode, p, fresh, m.cpu_decode)
+        (m.mode, p, switched, m.cpu_decode)
     };
-    let append = !fresh
-        && attempted_once
-        && tokio::fs::try_exists(dir.join("index.m3u8"))
-            .await
-            .unwrap_or(false);
+    let written = playlist_mtime(&dir);
+    let append = {
+        let mut m = pipe.m.locked();
+        if switched {
+            m.foreign_playlist = written;
+        }
+        written.is_some() && written != m.foreign_playlist
+    };
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
     let mut dev = rt.device(&caps);
@@ -253,21 +248,26 @@ async fn spawn_packaged(
         return Start::Failed;
     }
     let ok = first_segment(&dir, &proc).await;
-    // An exit, not the window running out (nor a stop: the pipe ended).
+    let tail = proc.stderr_tail();
+    // An exit past the input, not the window running out (nor a stop: the pipe ended).
     let start = if ok {
         Start::Ok
-    } else if gpu_decode && proc.exited().is_some() && !pipe.m.locked().ended {
+    } else if gpu_decode
+        && proc.exited().is_some()
+        && !pipe.m.locked().ended
+        && !core_live::input_failed(&tail)
+    {
         tracing::warn!(
             url = u.url,
-            "live gpu decode failed, cpu decode from here:\n{}",
-            proc.stderr_tail().join("\n")
+            "live run decoding on the gpu exited before a segment, again with cpu decode:\n{}",
+            tail.join("\n")
         );
         Start::GpuDecodeFailed
     } else {
         Start::Failed
     };
-    // A hardware run that ran forgives the device, as playback's. A failed GPU decode leaves the
-    // verdict to its CPU decode run, on the same device: one per attempt, as before.
+    // A hardware run that ran forgives the device; after a failed GPU decode, its CPU decode run
+    // gives the attempt's one verdict.
     if let Some(d) = &device {
         match start {
             Start::Ok => rt.slots.device_ok(d),

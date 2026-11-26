@@ -549,9 +549,8 @@ fn itemstop(args: &[String]) {
     std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
 }
 
-/// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
-/// silent, `dies` writes three then exits once `die` exists in the run's directory; `gpudies`
-/// exits and `gpuhangs` never writes on a `-hwaccel` run. The probe reads `10bit` as 10-bit H.264.
+/// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
+/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs` (`-hwaccel` runs), `10bit` probe.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -579,7 +578,14 @@ fn live(args: &[String]) {
         .unwrap();
     writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
     if input.contains("fail") {
-        eprintln!("fake ffmpeg: {input}: Connection refused");
+        eprintln!("[in#0 @ 0x0] Error opening input: Connection refused");
+        eprintln!("Error opening input file {input}.");
+        eprintln!("Error opening input files: Connection refused");
+        std::process::exit(1)
+    }
+    if input.contains("badchain") {
+        eprintln!("Input #0, mpegts, from '{input}':");
+        eprintln!("Conversion failed!");
         std::process::exit(1)
     }
     if input.contains("slowstart") {
@@ -588,7 +594,9 @@ fn live(args: &[String]) {
     // A GPU that cannot decode this upstream: it dies or hangs on a `-hwaccel` run.
     if args.iter().any(|a| a == "-hwaccel") {
         if input.contains("gpudies") {
-            eprintln!("fake ffmpeg: Failed setup for format vaapi");
+            eprintln!(
+                "[h264 @ 0x0] Failed setup for format vaapi: hwaccel initialisation returned error."
+            );
             std::process::exit(1)
         }
         if input.contains("gpuhangs") {

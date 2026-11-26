@@ -1,7 +1,7 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
 //! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
-//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `noprobe`). Spec:
-//! `docs/spec/live.md`.
+//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `badchain`, `noprobe`).
+//! Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
@@ -871,19 +871,53 @@ async fn a_gpu_decode_that_never_starts_fails_over_without_a_retry() {
 
 #[tokio::test]
 async fn a_gpu_decode_retry_that_fails_too_blames_the_upstream() {
-    // `fail` dies with CPU decode as well: the next upstream keeps GPU decode.
-    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
-    let e = live_engine_on(gpu, json!({}), json!({})).await;
-    let mut rx = e.rt.events.subscribe();
-    let caps = json!({ "maxBitrateBps": 2500000 });
-    let ups = vec![upstream("http://up/fail", 0), upstream("http://up/b", 1)];
-    let a = open(&e, open_req("24", ups, caps, "alice", "t")).await;
-    assert_eq!(a["upstream"], 1);
-    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
-    assert_eq!(attempt(&failed).map(|a| a.0), Some(0));
-    let hw: Vec<Option<String>> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
+    // `badchain` fails past its input with CPU decode too; `fail` never opens it: no retry.
     let vaapi = Some("vaapi".to_string());
-    assert_eq!(hw, [vaapi.clone(), None, vaapi]);
+    for (url, hw) in [
+        (
+            "http://up/badchain",
+            vec![vaapi.clone(), None, vaapi.clone()],
+        ),
+        ("http://up/fail", vec![vaapi.clone(), vaapi.clone()]),
+    ] {
+        let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+        let e = live_engine_on(gpu, json!({}), json!({})).await;
+        let mut rx = e.rt.events.subscribe();
+        let caps = json!({ "maxBitrateBps": 2500000 });
+        let ups = vec![upstream(url, 0), upstream("http://up/b", 1)];
+        let a = open(&e, open_req("24", ups, caps, "alice", "t")).await;
+        assert_eq!(a["upstream"], 1);
+        let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+        assert_eq!(attempt(&failed).map(|a| a.0), Some(0));
+        let got: Vec<Option<String>> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
+        assert_eq!(got, hw, "{url}");
+    }
+}
+
+#[tokio::test]
+async fn a_transcode_after_a_remux_never_appends_to_its_playlist() {
+    // The switched run fails before a segment: the next transcode starts its own playlist.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let hevc = json!({ "url": "http://up/hevc-fail", "priority": 1, "probedVideoCodec": "hevc" });
+    let ups = vec![
+        upstream("http://up/dies", 0),
+        hevc,
+        upstream("http://up/ok", 2),
+    ];
+    let a = open(&e, open_req("25", ups, json!({}), "alice", "t")).await;
+    assert_eq!(a["mode"], "remux");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    until("the third run", 30, || runs(&e).len() == 3).await;
+    let r = runs(&e);
+    let video: Vec<_> = r.iter().map(|a| arg_after(a, "-c:v").unwrap()).collect();
+    assert_eq!(video, ["copy", "libx264", "libx264"]);
+    let appends = r
+        .iter()
+        .any(|a| a.iter().any(|x| x.contains("append_list")));
+    assert!(!appends, "{r:?}");
 }
 
 #[tokio::test]

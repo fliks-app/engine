@@ -112,7 +112,7 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
         m.failover.failed(pos);
         m.last_seg = None;
     }
-    if recover(rt, pipe, true).await {
+    if recover(rt, pipe).await {
         return true;
     }
     teardown(rt, pipe, "failed", true).await;

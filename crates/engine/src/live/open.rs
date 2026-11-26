@@ -1,8 +1,8 @@
 //! Opening a live session: validation, joining a shared upstream and starting its first run.
 
 use super::{
-    Live, OpenError, Outcome, PROBE_TIMEOUT, Pipe, PipeMut, SCHEMES, Viewer, recover, root,
-    supervise, teardown, unregister,
+    Live, OpenError, Outcome, PROBE_TIMEOUT, Pipe, PipeMut, SCHEMES, Viewer, playlist_mtime,
+    recover, root, supervise, teardown, unregister,
 };
 use crate::cache::valid_owner;
 use crate::lock::Locked;
@@ -234,6 +234,8 @@ pub(super) async fn start(
         tracing::error!(dir = %d.display(), "live dir: {e}");
         return Err(OpenError::Unavailable);
     }
+    // A playlist a previous process left under the same name: the boot wipe may have failed.
+    let foreign_playlist = dir.as_deref().and_then(playlist_mtime);
     let pipe = Arc::new(Pipe {
         key: key.into(),
         channel_id: req.channel_id.clone(),
@@ -254,6 +256,7 @@ pub(super) async fn start(
             probes,
             device: None,
             cpu_decode: false,
+            foreign_playlist,
             failover: Failover::new(order.len()),
             current: 0,
             proc: None,
@@ -276,7 +279,7 @@ pub(super) async fn start(
         pipe: pipe.clone(),
         armed: true,
     };
-    let fed = recover(rt, &pipe, false).await;
+    let fed = recover(rt, &pipe).await;
     guard.armed = false;
     if !fed {
         // A manifest is re-opened packaged under the same hold: not a release.

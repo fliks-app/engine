@@ -151,6 +151,14 @@ pub fn parse_probe_output(stdout: &str) -> LiveProbe {
     p
 }
 
+/// A live run's stderr tail shows ffmpeg failing before any decode: the upstream could not be
+/// opened or read up to its streams, or holds no video stream.
+pub fn input_failed(stderr_tail: &[String]) -> bool {
+    stderr_tail
+        .iter()
+        .any(|l| l.contains("Error opening input") || l.contains("matches no streams"))
+}
+
 /// Unknown fails open: an unrecognised container is still worth a direct attempt.
 /// [ts:services/livetv-session.service.ts:197-200]
 pub fn is_manifest_container(container: Option<&str>) -> bool {
@@ -389,6 +397,31 @@ pub fn qoe_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_input_failure_is_told_apart_from_a_decode_failure() {
+        let tail = |t: &str| t.lines().map(String::from).collect::<Vec<_>>();
+        // ffmpeg 8.1.2 with the live input options: refused, 404, silent, not media.
+        for t in [
+            "[in#0 @ 0x5c8a50796c40] Error opening input: Connection refused\n\
+             Error opening input file http://127.0.0.1:18089/x.ts.\n\
+             Error opening input files: Connection refused",
+            "[http @ 0x6422b35d30c0] HTTP error 404 File not found\n\
+             [in#0 @ 0x6422b2eb0140] Error opening input: Server returned 404 Not Found",
+            "[in#0 @ 0x5c849fabdc40] Error opening input: Connection timed out",
+            "[in#0 @ 0x5a23aed0d040] Error opening input: Invalid data found when processing input",
+            // An upstream with no video stream.
+            "Stream map '' matches no streams.\nTo ignore this, add a trailing '?' to the map.",
+        ] {
+            assert!(input_failed(&tail(t)), "{t}");
+        }
+        // 10-bit H.264 through h264_qsv: the input opened, the decoder failed.
+        let decode = "[h264_qsv @ 0x63db92a13240] get_buffer() failed\n\
+            [vist#0:0/h264 @ 0x63db9256f8c0] [dec:h264_qsv @ 0x63db92a17140] Decoding error: \
+            Invalid argument\nConversion failed!";
+        assert!(!input_failed(&tail(decode)));
+        assert!(!input_failed(&[]));
+    }
 
     #[test]
     fn a_probe_reads_the_field_order_and_bit_depth_of_the_video() {
