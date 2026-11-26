@@ -714,20 +714,22 @@ mod tests {
             ))
         );
         assert_eq!(vf("nvenc", Some(false), None, &[]), None);
-        // No GPU deinterlacer: a known interlaced source goes through the CPU, an unknown one is left.
-        // Back to nv12 before the upload: `bwdif`'s planar frames fail h264_vaapi (Iris Xe, iHD).
+        // No GPU deinterlacer: a known interlaced source is decoded and deinterlaced on the CPU,
+        // then uploaded (a 10-bit GPU frame does not download to nv12 on QSV); unknown is left.
         assert_eq!(
             vf("vaapi", Some(true), None, &[]),
-            Some(format!(
-                "hwdownload,format=nv12,{bwdif},format=nv12,hwupload=derive_device=vaapi"
-            ))
+            Some(format!("{bwdif},format=nv12,hwupload=derive_device=vaapi"))
         );
         assert_eq!(
             vf("qsv", Some(true), Some(3e6), &[]),
             Some(format!(
-                "hwdownload,format=nv12,{bwdif},format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-1:h=min(ih\\,480)"
+                "{bwdif},format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-1:h=min(ih\\,480)"
             ))
         );
+        let mut r = live_request("transcode", "qsv", 2);
+        (r.interlaced, r.video_codec, r.video_bit_depth) =
+            (Some(true), Some("hevc".into()), Some(10));
+        assert!(!live_gpu_decode(&r, &HostCaps::default()));
         assert_eq!(vf("vaapi", None, None, &[]), None);
         assert_eq!(
             vf("qsv", Some(true), Some(10e6), &["deinterlaceQsv"]).as_deref(),
@@ -781,7 +783,7 @@ mod tests {
                 "format=nv12,hwupload=derive_device=vaapi,deinterlace_vaapi=mode=default:rate=frame:auto=1"
             )
         );
-        // No GPU deinterlacer: the CPU frames are deinterlaced before the upload, not bounced.
+        // No GPU deinterlacer: the CPU frames are deinterlaced before the upload.
         let (_, vf) = run("vaapi", "av1", Some(true), None, &[]);
         assert_eq!(
             vf,
