@@ -3410,7 +3410,8 @@
           "verify",
           "busy",
           "stale",
-          "model"
+          "model",
+          "unsupported"
         ]
       },
       "JobFamilies": {

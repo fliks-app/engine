@@ -37,6 +37,35 @@ pub fn is_decode_error(line: &str) -> bool {
     .any(|p| l.contains(p))
 }
 
+/// ffmpeg's teardown lines: they follow the cause of a failure and say nothing about it.
+const TEARDOWN: [&str; 6] = [
+    "terminating thread with return code",
+    "task finished with error code",
+    "nothing was written into output file",
+    "error sending frames to consumers",
+    "could not open encoder before eof",
+    "conversion failed",
+];
+
+/// The last `n` lines of a failed run that explain it, ffmpeg's teardown lines left out.
+pub fn failure_excerpt(lines: &[String], n: usize) -> String {
+    let all: Vec<&str> = lines
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let causes: Vec<&str> = all
+        .iter()
+        .copied()
+        .filter(|l| {
+            let l = l.to_ascii_lowercase();
+            !TEARDOWN.iter().any(|t| l.contains(t))
+        })
+        .collect();
+    let kept = if causes.is_empty() { all } else { causes };
+    kept[kept.len().saturating_sub(n)..].join(" ")
+}
+
 /// The class of a failed ffmpeg run from the end of its stderr.
 pub fn classify_stderr(lines: &[String]) -> JobErrorClass {
     let t = lines.join("\n").to_ascii_lowercase();
@@ -94,6 +123,27 @@ pub fn decode_failure(errors: u32, duration_seconds: f64, excerpt: &str) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_excerpt_keeps_the_cause_not_the_teardown() {
+        let lines: Vec<String> = [
+            "[matroska @ 0x1] Subtitle codec none (0) is not supported.",
+            "[out#0/matroska @ 0x2] Could not write header (incorrect codec parameters ?): Function not implemented",
+            "[vf#0:0 @ 0x3] Error sending frames to consumers: Function not implemented",
+            "[vf#0:0 @ 0x3] Task finished with error code: -38 (Function not implemented)",
+            "[vf#0:0 @ 0x3] Terminating thread with return code -38 (Function not implemented)",
+            "[out#0/matroska @ 0x2] Nothing was written into output file, because at least one of its streams received no packets.",
+            "",
+        ]
+        .map(String::from)
+        .into();
+        let e = failure_excerpt(&lines, 2);
+        assert!(e.starts_with("[matroska @ 0x1] Subtitle codec none"), "{e}");
+        assert!(e.contains("Could not write header"), "{e}");
+        let only_teardown = vec!["Conversion failed!".to_string()];
+        assert_eq!(failure_excerpt(&only_teardown, 2), "Conversion failed!");
+        assert_eq!(failure_excerpt(&[], 2), "");
+    }
 
     #[test]
     fn a_dropped_http_read_is_a_network_error() {

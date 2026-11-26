@@ -91,6 +91,9 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
     if remote && p.plan.level == OptimizeLevel::Metadata {
         return Err(Class::Access.message("the metadata level edits a local file"));
     }
+    if let Some(why) = opt::unreadable_stream(&p.info, &p.plan) {
+        return Err(Class::Unsupported.message(why));
+    }
     // A remote source has no size and time to hold still: the host's lease fences it instead.
     let before = if remote {
         (0, None)
