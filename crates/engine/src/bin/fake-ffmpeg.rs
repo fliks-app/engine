@@ -420,9 +420,8 @@ fn ffsubsync(args: &[String]) {
     put(Path::new(output), body.replace("LATE", "SYNCED"));
 }
 
-/// A probe with crop samples: ffprobe's main run reports one 100 s video stream of the codec the
-/// file holds (`av1`, else `h264`), its other runs fail; a crop sample logs its `-hwaccel` to
-/// `<input>.hw` and finds a letterbox.
+/// Crop probe: ffprobe's stream run reports 100 s of `av1` (if the file says so) else `h264`, its
+/// other runs fail; a crop sample logs its `-hwaccel` to `<input>.hw` and finds a letterbox.
 fn crop(args: &[String]) {
     if args.iter().any(|a| a == "-show_streams") {
         let body = std::fs::read_to_string(args.last().unwrap()).unwrap_or_default();

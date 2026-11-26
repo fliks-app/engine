@@ -343,11 +343,8 @@ pub(crate) fn source_decoder(
     )
 }
 
-/// Where a run whose argv is `backend`'s decodes a video of `source` (`hw_codec`) at `bit_depth`
-/// (8 when unknown): on `backend` when the boot probe left one of its decoders for both, else on
-/// the CPU (`HwAccel::None`). Playback's registry may move to another backend instead; these runs
-/// cannot, their argv forces `backend`'s frames. Every descriptor counts, not only the registry's:
-/// Windows QSV decodes through its D3D11 variants.
+/// Where a run whose argv forces `backend`'s frames decodes `source` at `bit_depth` (unknown: 8):
+/// `backend` if the boot probe left it any decoder for both (D3D11 variants too), else the CPU.
 pub(crate) fn decode_on(
     backend: HwAccel,
     source: Option<&str>,

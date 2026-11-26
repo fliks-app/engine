@@ -106,11 +106,9 @@ pub fn mkvmerge(path: &str) -> Vec<String> {
     strs(&["-J", path])
 }
 
-/// Hardware decode args of a crop sample of `video`, `None` for software. The backend follows the
-/// host: VAAPI on the render node of a `vaapi` or `qsv` Linux host, CUDA on an `nvenc` one, D3D11VA
-/// on Windows, VideoToolbox on darwin; software when the boot probe left it no decoder for the
-/// video (`decode_on`). Only VAAPI keeps frames on the device; the others let ffmpeg download,
-/// since `hwdownload` fails on 10-bit. [ts:backend/src/modules/media-probe/ffprobe.service.ts:37-60]
+/// Hardware decode args of a crop sample of `video`, `None` for software (`decode_on`). Only VAAPI
+/// keeps frames on the device: `hwdownload` fails on 10-bit.
+/// [ts:backend/src/modules/media-probe/ffprobe.service.ts:37-60]
 pub fn crop_hw_decode(
     caps: &HostCaps,
     render_node: &str,

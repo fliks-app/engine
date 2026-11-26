@@ -124,8 +124,8 @@ pub fn forces_transcode(
 }
 
 /// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its pixel format and
-/// field order, in ffprobe's order whatever `probe_args` lists; the format row holds no type and
-/// may hold commas. [ts:services/livetv-session.service.ts:170-193]
+/// field order (ffprobe's order, not `probe_args`'); the format row has no type, maybe commas.
+/// [ts:services/livetv-session.service.ts:170-193]
 pub fn parse_probe_output(stdout: &str) -> LiveProbe {
     let mut p = LiveProbe::default();
     // JS `trim()`: \s, which includes \r.
