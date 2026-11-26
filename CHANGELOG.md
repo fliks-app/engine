@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.6](https://github.com/fliks-app/engine/compare/v1.30.5...v1.30.6) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ocr:** read PGS subtitles that replace the one on screen with no gap ([#283](https://github.com/fliks-app/engine/issues/283)) ([470c243](https://github.com/fliks-app/engine/commit/470c24356d7cb60ec10b9077aba6584018e55be0))
+
 ## [1.30.5](https://github.com/fliks-app/engine/compare/v1.30.4...v1.30.5) (2026-11-26)
 
 
