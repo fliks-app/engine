@@ -42,7 +42,7 @@
       "-sn",
       "-dn",
       "-vf",
-      "vpp_qsv=w=-2:h=min(ih\\,480)",
+      "vpp_qsv=w=-1:h=min(ih\\,480)",
       "-c:v",
       "h264_qsv",
       "-b:v",

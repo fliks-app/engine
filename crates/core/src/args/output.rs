@@ -714,16 +714,23 @@ mod tests {
         );
         assert_eq!(vf("nvenc", Some(false), None, &[]), None);
         // No GPU deinterlacer: a known interlaced source goes through the CPU, an unknown one is left.
+        // Back to nv12 before the upload: `bwdif`'s planar frames fail h264_vaapi (Iris Xe, iHD).
         assert_eq!(
             vf("vaapi", Some(true), None, &[]),
             Some(format!(
-                "hwdownload,format=nv12,{bwdif},hwupload=derive_device=vaapi"
+                "hwdownload,format=nv12,{bwdif},format=nv12,hwupload=derive_device=vaapi"
+            ))
+        );
+        assert_eq!(
+            vf("qsv", Some(true), Some(3e6), &[]),
+            Some(format!(
+                "hwdownload,format=nv12,{bwdif},format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-1:h=min(ih\\,480)"
             ))
         );
         assert_eq!(vf("vaapi", None, None, &[]), None);
         assert_eq!(
             vf("qsv", Some(true), Some(10e6), &["deinterlaceQsv"]).as_deref(),
-            Some("vpp_qsv=deinterlace=advanced:rate=frame:w=-2:h=min(ih\\,1080)")
+            Some("vpp_qsv=deinterlace=advanced:rate=frame:w=-1:h=min(ih\\,1080)")
         );
         let remux = live_request("remux", "none", 2);
         assert_eq!(live_filters(&remux, &HostCaps::default()), None);
@@ -784,7 +791,7 @@ mod tests {
         assert_eq!(input[input.len() - 2..], ["-filter_hw_device", "qs"]);
         assert_eq!(
             vf.as_deref(),
-            Some("format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-2:h=min(ih\\,480)")
+            Some("format=nv12,hwupload=extra_hw_frames=16,vpp_qsv=w=-1:h=min(ih\\,480)")
         );
         let (_, vf) = run("qsv", "av1", Some(true), None, &[]);
         assert_eq!(
@@ -794,7 +801,7 @@ mod tests {
         // A codec it decodes keeps the GPU frames.
         let (input, vf) = run("qsv", "hevc", Some(false), Some(3e6), &[]);
         assert!(input.windows(2).any(|w| w == ["-hwaccel", "qsv"]));
-        assert_eq!(vf.as_deref(), Some("vpp_qsv=w=-2:h=min(ih\\,480)"));
+        assert_eq!(vf.as_deref(), Some("vpp_qsv=w=-1:h=min(ih\\,480)"));
         let (input, _) = run("vaapi", "h264", Some(false), None, &[]);
         assert!(input.windows(2).any(|w| w == ["-hwaccel", "vaapi"]));
     }

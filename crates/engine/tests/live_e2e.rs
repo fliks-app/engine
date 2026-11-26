@@ -1,9 +1,11 @@
 //! Live TV against real ffmpeg and two upstreams streaming an H.264/AAC MPEG-TS at real time.
-//! Ignored unless `ENGINE_E2E` is set when building (see `runtime_e2e.rs` for the tools).
+//! Ignored unless `ENGINE_E2E` is set when building (see `runtime_e2e.rs` for the tools); the GPU
+//! test needs `--ignored` too, on a host with an Intel GPU on the default render node.
 #![cfg(unix)]
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
 use fliks_engine_core::api::{EngineEvent, HwAccel};
+use fliks_engine_core::hw::DEFAULT_RENDER_NODE;
 use runtime_common::*;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -25,6 +27,19 @@ fn source() -> PathBuf {
     )
 }
 
+/// `source` with its fields interlaced (top first) and flagged so.
+fn interlaced_source() -> PathBuf {
+    clip(
+        "live-src-120s-tff.ts",
+        &format!(
+            "-f lavfi -i testsrc2=size=1280x720:rate=50:duration={SECONDS} \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration={SECONDS} \
+             -vf interlace=scan=tff,setfield=tff -c:v libx264 -preset veryfast -pix_fmt yuv420p \
+             -flags +ildct+ilme -x264opts tff=1 -g 50 -c:a aac -ac 2 -shortest"
+        ),
+    )
+}
+
 /// An upstream sending the clip at its own bitrate; `kill` resets its streams and closes it.
 struct Provider {
     url: String,
@@ -34,7 +49,11 @@ struct Provider {
 
 impl Provider {
     async fn start() -> Self {
-        let bytes = axum::body::Bytes::from(std::fs::read(source()).unwrap());
+        Self::serve(source()).await
+    }
+
+    async fn serve(clip: PathBuf) -> Self {
+        let bytes = axum::body::Bytes::from(std::fs::read(clip).unwrap());
         let killed = Arc::new(AtomicBool::new(false));
         let k = killed.clone();
         let app = Router::new().route(
@@ -79,12 +98,11 @@ impl Provider {
 }
 
 async fn live_engine() -> Engine {
-    let e = engine_with(
-        host(HwAccel::None, "/dev/dri/renderD128", "signal"),
-        &ffmpeg(),
-        json!({}),
-    )
-    .await;
+    live_engine_on(host(HwAccel::None, "/dev/dri/renderD128", "signal")).await
+}
+
+async fn live_engine_on(hw: Arc<fliks_engine::hw::Hw>) -> Engine {
+    let e = engine_with(hw, &ffmpeg(), json!({})).await;
     let mut config = e.control("GET", "/v1/config", None).await.json();
     config["revision"] = json!(2);
     config["livetv"] = json!({ "channelIdleSeconds": 0 });
@@ -280,6 +298,46 @@ async fn transcode_into_ts_segments_without_direct_play() {
     );
     until("ffmpeg gone", 10, || e.ffmpeg_pids().is_empty()).await;
     up.kill();
+}
+
+#[tokio::test]
+#[ignore = "an Intel GPU on the default render node and real ffmpeg: ENGINE_E2E=1 cargo test -p \
+    fliks-engine --test live_e2e -- --ignored"]
+async fn a_gpu_encodes_frames_the_cpu_decoded() {
+    // The boot probe left the backend no H.264 decoder: the CPU decodes (and deinterlaces a known
+    // interlaced source, as without a GPU deinterlacer), the frames are uploaded to the encoder.
+    let disabled = ["h264_vaapi_decode", "h264_qsv_decode"];
+    for hw in [HwAccel::Vaapi, HwAccel::Qsv] {
+        for (clip, field) in [(source(), "progressive"), (interlaced_source(), "tt")] {
+            let host = host_without(hw, DEFAULT_RENDER_NODE, "signal", &disabled);
+            let e = live_engine_on(host).await;
+            let up = Provider::serve(clip).await;
+            let a = open(
+                &e,
+                json!([{ "url": up.url, "probedVideoCodec": "h264", "probedAudioCodec": "aac",
+                    "probedFieldOrder": field }]),
+                json!({ "directPlay": false, "maxBitrateBps": 1000000, "useTs": true }),
+            )
+            .await;
+            let sid = a["sessionId"].as_str().unwrap().to_string();
+            assert_eq!(a["mode"], "transcode");
+            let procs = e.ffmpeg_procs();
+            let cmd = &procs.first().expect("the transcode").2;
+            assert!(
+                cmd.contains("format=nv12,hwupload") && !cmd.contains("-hwaccel"),
+                "{cmd}"
+            );
+            // 60 s: without `-forced_idr`, h264_qsv cuts on its own GOP, not the forced keyframes.
+            until_async(&e, &sid, 60, |s| s.len() >= 2).await;
+            let list = segments(&e, &sid).await;
+            let seg = fetch(&e, &sid, &list[1]).await;
+            assert_eq!(codecs(&seg), ["h264", "aac"], "{hw:?} {field}");
+            let path = format!("/v1/sessions/{sid}");
+            assert_eq!(e.control("DELETE", &path, None).await.status, 204);
+            until("ffmpeg gone", 10, || e.ffmpeg_pids().is_empty()).await;
+            up.kill();
+        }
+    }
 }
 
 /// Polls the playlist until `ok` holds on its segment list.

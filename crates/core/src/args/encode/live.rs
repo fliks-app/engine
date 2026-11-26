@@ -76,17 +76,21 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
         .map(height_for_bitrate);
     let known = o.interlaced == Some(true);
     let deint = o.interlaced != Some(false);
-    let h = |w: &str| height.map(|h| format!("{w}w=-2:h=min(ih\\,{h})"));
+    // `vpp_qsv` refuses a width of -2 (ffmpeg 6.1 to 9.0); its -1 keeps the aspect, and its
+    // surfaces come out even anyway.
+    let size = |f: &str, w: &str| height.map(|h| format!("{f}w={w}:h=min(ih\\,{h})"));
     // CPU frames enter a QSV or VAAPI chain through `up`; GPU ones without a GPU deinterlacer
-    // round-trip through the CPU to be deinterlaced there.
+    // round-trip through the CPU to be deinterlaced there. `bwdif` hands out planar frames, which
+    // a VAAPI encoder fails on once uploaded: back to nv12 first.
     let cpu_frames = !gpu_frames(o, caps);
     let upload = |up: &str| cpu_frames.then(|| format!("format=nv12,{up}"));
     let bounce = |up: &str| {
-        if cpu_frames {
-            format!("{DEINTERLACE},format=nv12,{up}")
+        let down = if cpu_frames {
+            ""
         } else {
-            format!("hwdownload,format=nv12,{DEINTERLACE},{up}")
-        }
+            "hwdownload,format=nv12,"
+        };
+        format!("{down}{DEINTERLACE},format=nv12,{up}")
     };
     let gpu = |g: GpuDeint| caps.probe(g.probe_name());
     let chain: Vec<Option<String>> = match o.hw_accel {
@@ -100,10 +104,10 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
             } else {
                 upload(up)
             };
-            [pre, h("scale_vaapi=")].into()
+            [pre, size("scale_vaapi=", "-2")].into()
         }
         HwAccel::Nvenc => {
-            let size = h("scale_cuda=");
+            let size = size("scale_cuda=", "-2");
             let up = size.is_some().then_some("hwupload_cuda");
             let pre = if deint && gpu(GpuDeint::Cuda) {
                 let f = GpuDeint::Cuda.filter().unwrap_or_default();
@@ -122,10 +126,10 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
             };
             let up = "hwupload=extra_hw_frames=16";
             if known && !gpu(GpuDeint::Qsv) {
-                [Some(bounce(up)), vpp("", h(""))].into()
+                [Some(bounce(up)), vpp("", size("", "-1"))].into()
             } else {
                 let opts = if known { GpuDeint::Qsv.vpp_opts() } else { "" };
-                [upload(up), vpp(opts, h(""))].into()
+                [upload(up), vpp(opts, size("", "-1"))].into()
             }
         }
         // CPU frames: the software encoder's, and VideoToolbox's downloaded ones.
