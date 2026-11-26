@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.30.7](https://github.com/fliks-app/engine/compare/v1.30.6...v1.30.7) (2026-11-26)
+
+
+### Bug Fixes
+
+* **hw:** decode in software when the gpu cannot, for sprites, crop detection and live tv ([#282](https://github.com/fliks-app/engine/issues/282)) ([9070e6a](https://github.com/fliks-app/engine/commit/9070e6a587ff678e5504472a3687c2016034f25b))
+* **live:** cut qsv, amf and nvenc segments on forced IDR keyframes ([#288](https://github.com/fliks-app/engine/issues/288)) ([2a9d4cb](https://github.com/fliks-app/engine/commit/2a9d4cbdc25c2bfd4685bb9a23c2cb6b9600894f)), closes [#286](https://github.com/fliks-app/engine/issues/286)
+
 ## [1.30.6](https://github.com/fliks-app/engine/compare/v1.30.5...v1.30.6) (2026-11-26)
 
 
