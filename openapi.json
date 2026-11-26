@@ -4837,6 +4837,16 @@
             ],
             "default": null
           },
+          "bitDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The video's bit depth its `pix_fmt` names; absent for 8-bit or unknown.",
+            "default": null,
+            "minimum": 0
+          },
           "container": {
             "type": [
               "string",
@@ -5030,6 +5040,15 @@
               "string",
               "null"
             ]
+          },
+          "probedBitDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`LiveProbe.bitDepth`; absent is taken for 8.",
+            "minimum": 0
           },
           "probedContainer": {
             "type": [

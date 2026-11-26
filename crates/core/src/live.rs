@@ -407,10 +407,9 @@ mod tests {
         );
         let p = parse_probe_output("mpegts\nhevc,video,yuv420p10le,progressive\n");
         assert_eq!((p.interlaced(), p.bit_depth), (Some(false), Some(10)));
-        // Never on the wire: events and the open answer stay as they were.
         let wire = serde_json::to_value(&p).unwrap();
         assert_eq!(wire["fieldOrder"], "progressive");
-        assert!(wire.get("bitDepth").is_none(), "{wire}");
+        assert_eq!(wire["bitDepth"], 10);
         let p = parse_probe_output("h264,video\n");
         assert_eq!((p.interlaced(), p.bit_depth), (None, None));
         let p = parse_probe_output("h264,video,unknown,unknown\n");

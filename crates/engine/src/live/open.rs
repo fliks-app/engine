@@ -48,8 +48,7 @@ fn known_probe(u: &fliks_engine_core::api::LiveUpstream) -> Option<LiveProbe> {
         audio_codec: u.probed_audio_codec.clone(),
         container: u.probed_container.clone(),
         field_order: u.probed_field_order.clone(),
-        // The host names no depth: 8 assumed.
-        bit_depth: None,
+        bit_depth: u.probed_bit_depth,
     })
 }
 

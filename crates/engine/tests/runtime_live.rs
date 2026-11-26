@@ -787,23 +787,27 @@ fn arg_after(argv: &[String], flag: &str) -> Option<String> {
 
 #[tokio::test]
 async fn a_bit_depth_the_gpu_cannot_decode_is_transcoded_from_cpu_frames() {
-    // The probe finds 10-bit H.264, which no VAAPI H.264 decoder reads: the codec alone passes.
-    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
-    let e = live_engine_on(gpu, json!({}), json!({})).await;
-    let mut rx = e.rt.events.subscribe();
-    let caps = json!({ "maxBitrateBps": 2500000 });
-    let up = json!({ "url": "http://up/10bit" });
-    let a = open(&e, open_req("21", vec![up], caps, "alice", "t")).await;
-    assert_eq!(a["probe"]["videoCodec"], "h264", "{a}");
-    assert_eq!(a["probe"].get("bitDepth"), None, "{a}");
-    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
-    assert_eq!(attempt(&ok), Some((0, None)));
-    let argv = &runs(&e)[0];
-    assert_eq!(arg_after(argv, "-hwaccel"), None, "{argv:?}");
-    assert_eq!(
-        arg_after(argv, "-vf").as_deref(),
-        Some("format=nv12,hwupload=derive_device=vaapi,scale_vaapi=w=-2:h=min(ih\\,480)")
-    );
+    // 10-bit H.264, which no VAAPI H.264 decoder reads, probed here or named by the host.
+    let named = json!({ "url": "http://up/x", "probedVideoCodec": "h264", "probedBitDepth": 10 });
+    for up in [json!({ "url": "http://up/10bit" }), named] {
+        let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+        let e = live_engine_on(gpu, json!({}), json!({})).await;
+        let mut rx = e.rt.events.subscribe();
+        let caps = json!({ "maxBitrateBps": 2500000 });
+        let a = open(&e, open_req("21", vec![up], caps, "alice", "t")).await;
+        assert_eq!(a["probe"]["videoCodec"], "h264", "{a}");
+        assert_eq!(a["probe"]["bitDepth"], 10, "{a}");
+        let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+        assert!(
+            matches!(&ok, EngineEvent::LiveAttempt { error: None, probe: Some(p), .. } if p.bit_depth == Some(10))
+        );
+        let argv = &runs(&e)[0];
+        assert_eq!(arg_after(argv, "-hwaccel"), None, "{argv:?}");
+        assert_eq!(
+            arg_after(argv, "-vf").as_deref(),
+            Some("format=nv12,hwupload=derive_device=vaapi,scale_vaapi=w=-2:h=min(ih\\,480)")
+        );
+    }
 }
 
 #[tokio::test]
