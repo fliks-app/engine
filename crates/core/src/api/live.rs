@@ -65,6 +65,9 @@ pub struct LiveUpstream {
     pub probed_field_order: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_audio_codec: Option<String>,
+    /// `LiveProbe.bitDepth`; absent is taken for 8.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probed_bit_depth: Option<u32>,
     /// The host's capacity policy refuses a hold on this upstream's source: a new session never
     /// uses it, failover skips it. The verdict is the host's, taken at open.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -122,6 +125,9 @@ pub struct LiveProbe {
     /// ffprobe's `field_order` of the video: `progressive`, or an interlaced order (`tt`, `bb`, `tb`, `bt`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_order: Option<String>,
+    /// The video's bit depth its `pix_fmt` names; absent for 8-bit or unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<u32>,
 }
 
 impl LiveProbe {

@@ -10,7 +10,9 @@ pub use self::audio::{
     video_map,
 };
 pub(crate) use self::decode::{ReportNeeds, stage_report};
-pub use self::live::{live_filters, live_h264_encoder, live_input, live_video, parse_bitrate};
+pub use self::live::{
+    live_filters, live_gpu_decode, live_h264_encoder, live_input, live_video, parse_bitrate,
+};
 
 use self::decode::{
     DecodeNeeds, color_args, decode_stage, gpu_deint, sdr_tags, tonemap_bounces, variant_json,

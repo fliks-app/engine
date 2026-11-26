@@ -232,14 +232,8 @@ pub(super) fn decode_stage(
     let decoder = pick_decoder(p, n.source_video_codec, n.source_bit_depth, caps);
     let surface = decoder.surface();
     let mut args = decoder.input_args(dev);
-    // A CPU decoder inits no device, yet the GPU encoder's filters need one.
-    if surface == Surface::Cpu && hw == HwAccel::Qsv {
-        args.extend(dev.qsv_init());
-        args.extend(strs(&["-filter_hw_device", "qs"]));
-    }
-    if surface == Surface::Cpu && hw == HwAccel::Vaapi {
-        args.extend(dev.vaapi_init());
-        args.extend(strs(&["-filter_hw_device", "va"]));
+    if surface == Surface::Cpu {
+        args.extend(dev.filter_device(hw));
     }
     let vulkan = p.path == TonemapPath::Vulkan && surface == Surface::Vaapi && hw == HwAccel::Vaapi;
     if let Some(k) = args.iter().position(|a| a == "-filter_hw_device")

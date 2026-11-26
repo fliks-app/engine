@@ -3,15 +3,37 @@
 use super::super::{LiveArgs, LiveMode};
 use crate::api::{HostCaps, HwAccel};
 use crate::args::filters::DEINTERLACE;
+use crate::hw::decoders::decode_on;
 use crate::hw::{Device, GpuDeint};
 use crate::jsnum::{js_string as js, round};
 use crate::ladder::height_for_bitrate;
 use crate::strs;
 
+/// GPU frames out of the decoder: QSV or VAAPI with a decoder the boot probe passed (`decode_on`),
+/// no failed GPU decode (`cpu_decode`), no CPU deinterlace. Else the CPU decodes, the graph uploads.
+pub fn live_gpu_decode(o: &LiveArgs, caps: &HostCaps) -> bool {
+    let (codec, depth) = (o.video_codec.as_deref(), o.video_bit_depth);
+    matches!(o.hw_accel, HwAccel::Qsv | HwAccel::Vaapi)
+        && !o.cpu_decode
+        && !cpu_deint(o, caps)
+        && decode_on(o.hw_accel, codec, depth, caps) == o.hw_accel
+}
+
+/// A known interlaced source on QSV or VAAPI without its GPU deinterlacer: `bwdif` on the CPU.
+fn cpu_deint(o: &LiveArgs, caps: &HostCaps) -> bool {
+    let g = match o.hw_accel {
+        HwAccel::Qsv => GpuDeint::Qsv,
+        HwAccel::Vaapi => GpuDeint::Vaapi,
+        _ => return false,
+    };
+    o.interlaced == Some(true) && !caps.probe(g.probe_name())
+}
+
 /// Live input decode flags: the shared device init, `-hwaccel` of the backend.
 /// [ts:backend/src/modules/livetv/services/live-ffmpeg-args.ts:60-89]
-pub fn live_input(hw: HwAccel, dev: &Device) -> Vec<String> {
-    match hw {
+pub fn live_input(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
+    match o.hw_accel {
+        hw @ (HwAccel::Qsv | HwAccel::Vaapi) if !live_gpu_decode(o, caps) => dev.filter_device(hw),
         HwAccel::Qsv => {
             let mut a = dev.qsv_init();
             a.extend(strs(&[
@@ -65,20 +87,37 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
         .map(height_for_bitrate);
     let known = o.interlaced == Some(true);
     let deint = o.interlaced != Some(false);
-    let h = |w: &str| height.map(|h| format!("{w}w=-2:h=min(ih\\,{h})"));
-    // A hardware chain without a GPU deinterlacer round-trips the frames through the CPU.
-    let bounce = |fmt: &str, up: &str| format!("hwdownload,format={fmt},{DEINTERLACE},{up}");
+    // `bwdif` hands out planar frames, which h264_vaapi fails on once uploaded: nv12 first.
+    let cpu_frames = !live_gpu_decode(o, caps);
+    // The H.264 encoders take 8 bits. `vpp_qsv` refuses w=-2; its -1 gives 853 at 480p, which
+    // h264_qsv encodes 852 wide (ffmpeg 8.1.2, Raptor Lake and Arc A370M).
+    let nv12 = !cpu_frames && o.video_bit_depth.is_some_and(|d| d > 8);
+    let size = |f: &str, w: &str| {
+        let wh = height.map(|h| format!("w={w}:h=min(ih\\,{h})"));
+        let opts: Vec<&str> = [wh.as_deref(), nv12.then_some("format=nv12")]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!opts.is_empty()).then(|| format!("{f}{}", opts.join(":")))
+    };
+    let upload = |up: &str| cpu_frames.then(|| format!("format=nv12,{up}"));
+    let deinterlaced = |up: &str| format!("{DEINTERLACE},format=nv12,{up}");
     let gpu = |g: GpuDeint| caps.probe(g.probe_name());
     let chain: Vec<Option<String>> = match o.hw_accel {
-        HwAccel::Vaapi => [
-            (deint && gpu(GpuDeint::Vaapi))
-                .then(|| GpuDeint::Vaapi.filter().unwrap_or_default().to_string())
-                .or_else(|| known.then(|| bounce("nv12", "hwupload=derive_device=vaapi"))),
-            h("scale_vaapi="),
-        ]
-        .into(),
+        HwAccel::Vaapi => {
+            let up = "hwupload=derive_device=vaapi";
+            let pre = if deint && gpu(GpuDeint::Vaapi) {
+                let f = GpuDeint::Vaapi.filter().unwrap_or_default();
+                Some(strs_join([upload(up).as_deref(), Some(f)]))
+            } else if cpu_deint(o, caps) {
+                Some(deinterlaced(up))
+            } else {
+                upload(up)
+            };
+            [pre, size("scale_vaapi=", "-2")].into()
+        }
         HwAccel::Nvenc => {
-            let size = h("scale_cuda=");
+            let size = size("scale_cuda=", "-2");
             let up = size.is_some().then_some("hwupload_cuda");
             let pre = if deint && gpu(GpuDeint::Cuda) {
                 let f = GpuDeint::Cuda.filter().unwrap_or_default();
@@ -95,18 +134,12 @@ pub fn live_filters(o: &LiveArgs, caps: &HostCaps) -> Option<String> {
                 let opts = format!("{deint}{}", size.unwrap_or_default());
                 (!opts.is_empty()).then(|| format!("vpp_qsv={}", opts.trim_end_matches(':')))
             };
-            if known && !gpu(GpuDeint::Qsv) {
-                [
-                    Some(bounce("nv12", "hwupload=extra_hw_frames=16")),
-                    vpp("", h("")),
-                ]
-                .into()
+            let up = "hwupload=extra_hw_frames=16";
+            if cpu_deint(o, caps) {
+                [Some(deinterlaced(up)), vpp("", size("", "-1"))].into()
             } else {
-                [vpp(
-                    if known { GpuDeint::Qsv.vpp_opts() } else { "" },
-                    h(""),
-                )]
-                .into()
+                let opts = if known { GpuDeint::Qsv.vpp_opts() } else { "" };
+                [upload(up), vpp(opts, size("", "-1"))].into()
             }
         }
         // CPU frames: the software encoder's, and VideoToolbox's downloaded ones.

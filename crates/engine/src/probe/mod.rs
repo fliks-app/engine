@@ -6,10 +6,8 @@ pub(crate) mod run;
 use crate::AppState;
 use axum::{Json, extract::State, http::StatusCode};
 use fliks_engine_core::api::{MovieHash, ProbeRequest, ProbeResult};
-use fliks_engine_core::hw::{DEFAULT_RENDER_NODE, platform_from_os};
-use fliks_engine_core::probe::{self, ProbeOpts, args};
+use fliks_engine_core::probe::{self, ProbeOpts};
 use run::probe_stamped;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -45,36 +43,21 @@ pub async fn probe(
     Json(req): Json<ProbeRequest>,
 ) -> Result<Json<ProbeResult>, StatusCode> {
     let path = resolve_probe_path(&s.rt, &req.media.path)?;
-    // Before the first detection ends the host's own platform and default node stand in.
-    let (platform, node) = s.hw.snapshot().map_or_else(
-        || {
-            (
-                platform_from_os(std::env::consts::OS),
-                DEFAULT_RENDER_NODE.into(),
-            )
-        },
-        |h| (h.detected.platform, h.render_node),
-    );
+    let (host, render_node) = s.hw.host();
     let opts = ProbeOpts {
         crop: req.crop,
         mkv_tags: req.mkv_tags,
-        crop_decode: req
-            .crop
-            .then(|| {
-                let (node_up, nvidia) = (Path::new(&node).exists(), Path::new("/dev/nvidiactl"));
-                args::crop_hw_decode(platform, &node, node_up, nvidia.exists())
-            })
-            .flatten(),
+        host,
+        render_node,
     };
     let out = probe_stamped(&path, &s.rt, &opts).await;
+    if out.crop_hw_refused {
+        tracing::info!(
+            path,
+            "cropdetect: hw decode rejected this file, software fallback"
+        );
+    }
     if let Some(used) = &out.crop_decode {
-        let asked = opts.crop_decode.as_ref().and_then(|a| a.get(1));
-        if asked.is_some_and(|a| a != used) {
-            tracing::info!(
-                path,
-                "cropdetect: hw decode rejected this file, software fallback"
-            );
-        }
         tracing::info!(path, decode = %used, "cropdetect");
     }
     if !out.ok {

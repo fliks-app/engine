@@ -11,6 +11,7 @@ mod statistics;
 mod tags;
 pub use tags::{leading_float, performer, r128_to_rg, split_multi};
 
+pub(crate) use build::pix_fmt_depth;
 pub use build::{apply_late_audio, build, first_frame_stream, measure_fps, parse_main};
 pub use ffjson::Frame;
 pub(crate) use lang::converts_to_ass;
@@ -20,7 +21,7 @@ pub use moviehash::moviehash;
 #[cfg(test)]
 mod tests;
 
-use crate::api::{CropInfo, MediaInfo};
+use crate::api::{CropInfo, HostCaps, MediaInfo};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
@@ -65,8 +66,9 @@ pub trait Tools: Sync {
 pub struct ProbeOpts {
     pub crop: bool,
     pub mkv_tags: bool,
-    /// Hardware decode args for the crop samples (`args::crop_hw_decode`); `None` = software.
-    pub crop_decode: Option<Vec<String>>,
+    /// The host the crop samples decode on (`args::crop_hw_decode`); the default is CPU-only.
+    pub host: HostCaps,
+    pub render_node: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,6 +79,8 @@ pub struct Outcome {
     pub error: Option<String>,
     /// Decoder of the crop samples: the `-hwaccel` name, or `sw`. `None` when no crop ran.
     pub crop_decode: Option<String>,
+    /// The crop samples were meant for the GPU, which refused the first one.
+    pub crop_hw_refused: bool,
 }
 
 fn failed(message: String) -> Outcome {
@@ -85,6 +89,7 @@ fn failed(message: String) -> Outcome {
         info: build::failure(&message),
         error: Some(message),
         crop_decode: None,
+        crop_hw_refused: false,
     }
 }
 
@@ -248,13 +253,14 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
             Err(_) => {}
         }
     }
-    let mut crop_decode = None;
+    let (mut crop_decode, mut crop_hw_refused) = (None, false);
     if opts.crop
         && let Some(v) = info.video.first()
     {
         let (duration, w, h) = (info.duration_seconds, v.width, v.height);
-        let (crop, stable, decode) =
-            detect_crop(t, path, duration, w, h, opts.crop_decode.as_deref()).await;
+        let hw = args::crop_hw_decode(&opts.host, &opts.render_node, v);
+        let (crop, stable, decode) = detect_crop(t, path, duration, w, h, hw.as_deref()).await;
+        crop_hw_refused = hw.is_some() && decode == "sw";
         crop_decode = Some(decode);
         if let Some(v) = info.video.first_mut() {
             v.crop = crop;
@@ -266,6 +272,7 @@ pub async fn probe<T: Tools>(t: &T, path: &str, opts: &ProbeOpts) -> Outcome {
         error: None,
         info,
         crop_decode,
+        crop_hw_refused,
     }
 }
 

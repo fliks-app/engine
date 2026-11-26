@@ -3,7 +3,7 @@
 use super::vet::{self, Resolver};
 use super::{
     DIRECT_CONNECT_TIMEOUT, DIRECT_SNIFF, Direct, FIRST_SEGMENT_POLL, FIRST_SEGMENT_TIMEOUT,
-    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, probe, vetted_proxy,
+    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, playlist_mtime, probe, vetted_proxy,
 };
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
@@ -43,7 +43,7 @@ fn causes(e: &dyn std::error::Error) -> String {
 
 /// Upstreams in order until one feeds the pipe; false once all are spent (the caller ends it).
 /// [ts:svc:820-858]
-pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_once: bool) -> bool {
+pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>) -> bool {
     loop {
         let pos = {
             let mut m = pipe.m.locked();
@@ -61,9 +61,8 @@ pub(super) async fn recover(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, mut attempted_o
         let ok = if pipe.dir.is_none() {
             connect_direct(rt, pipe, i).await
         } else {
-            spawn_packaged(rt, pipe, i, attempted_once).await
+            packaged(rt, pipe, i).await
         };
-        attempted_once = true;
         if ok {
             attempt(rt, pipe, i, None);
             return true;
@@ -92,54 +91,79 @@ pub(super) fn attempt(rt: &Runtime, pipe: &Pipe, upstream: usize, error: Option<
     });
 }
 
-/// One ffmpeg run into the pipe's directory, successful once a segment exists. [ts:svc:862-927]
-async fn spawn_packaged(
-    rt: &Arc<Runtime>,
-    pipe: &Arc<Pipe>,
-    i: usize,
-    attempted_once: bool,
-) -> bool {
-    let u = &pipe.upstreams[i];
+/// How a packaged run started.
+#[derive(PartialEq)]
+enum Start {
+    Ok,
+    Failed,
+    /// It decoded on the GPU, opened its input and exited before a segment.
+    GpuDecodeFailed,
+}
+
+/// The upstream probed if need be, then `spawn_packaged`, redone once with CPU decode (the GPU
+/// still encodes) after `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
+async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     let has = pipe.m.locked().probes[i].clone();
     if !has_video(&has)
-        && let Some(p) = probe(rt, u).await
+        && let Some(p) = probe(rt, &pipe.upstreams[i]).await
     {
         pipe.m.locked().probes[i] = Some(p);
     }
+    match spawn_packaged(rt, pipe, i).await {
+        Start::Ok => true,
+        Start::Failed => false,
+        Start::GpuDecodeFailed => {
+            stop_transport(pipe).await;
+            if pipe.m.locked().ended {
+                return false;
+            }
+            pipe.m.locked().cpu_decode = true;
+            let ok = spawn_packaged(rt, pipe, i).await == Start::Ok;
+            pipe.m.locked().cpu_decode = ok;
+            ok
+        }
+    }
+}
+
+/// One ffmpeg run into the pipe's directory, successful once a segment exists. [ts:svc:862-927]
+async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start {
+    let u = &pipe.upstreams[i];
     let mut vet_proxy = None;
     if u.vetted {
         match vetted_proxy(rt, &u.url).await {
             Ok(p) => vet_proxy = Some(p),
             Err(e) => {
                 pipe.m.locked().last_error = Some(e);
-                return false;
+                return Start::Failed;
             }
         }
     }
     let Some(mut caps) = rt.caps() else {
-        return false;
+        return Start::Failed;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, video, audio, interlaced, fresh) = {
+    let (mode, p, switched, cpu_decode) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
-        let interlaced = p.interlaced();
-        let fresh = m.mode == LiveMode::Remux
+        let switched = m.mode == LiveMode::Remux
             && core_live::forces_transcode(
                 p.video_codec.as_deref(),
                 m.active_codec.as_deref(),
-                interlaced == Some(true),
+                p.interlaced() == Some(true),
             );
-        if fresh {
+        if switched {
             m.mode = LiveMode::Transcode;
         }
-        (m.mode, p.video_codec, p.audio_codec, interlaced, fresh)
+        (m.mode, p, switched, m.cpu_decode)
     };
-    let append = !fresh
-        && attempted_once
-        && tokio::fs::try_exists(dir.join("index.m3u8"))
-            .await
-            .unwrap_or(false);
+    let written = playlist_mtime(&dir);
+    let append = {
+        let mut m = pipe.m.locked();
+        if switched {
+            m.foreign_playlist = written;
+        }
+        written.is_some() && written != m.foreign_playlist
+    };
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
     let mut dev = rt.device(&caps);
@@ -170,33 +194,34 @@ async fn spawn_packaged(
     } else {
         fliks_engine_core::api::HwAccel::None
     };
-    let argv = args::live(
-        &LiveArgs {
-            input_url: u.url.clone(),
-            vet_proxy: vet_proxy.clone(),
-            output_dir: dir.to_string_lossy().into_owned(),
-            segment_seconds: pipe.segment_seconds,
-            window_minutes: pipe.window_minutes,
-            mode: if transcode {
-                args::LiveMode::Transcode
-            } else {
-                args::LiveMode::Remux
-            },
-            use_ts: pipe.use_ts,
-            user_agent: ua,
-            referer,
-            extra_headers: extra,
-            hw_accel,
-            video_bitrate_bps: pipe.bitrate,
-            audio_codec: audio,
-            append,
-            probe_seconds: Some(pipe.probe_seconds),
-            interlaced,
-            encode_threads: rt.slots.encode_threads(),
+    let o = LiveArgs {
+        input_url: u.url.clone(),
+        vet_proxy: vet_proxy.clone(),
+        output_dir: dir.to_string_lossy().into_owned(),
+        segment_seconds: pipe.segment_seconds,
+        window_minutes: pipe.window_minutes,
+        mode: if transcode {
+            args::LiveMode::Transcode
+        } else {
+            args::LiveMode::Remux
         },
-        &caps,
-        &dev,
-    );
+        use_ts: pipe.use_ts,
+        user_agent: ua,
+        referer,
+        extra_headers: extra,
+        hw_accel,
+        video_bitrate_bps: pipe.bitrate,
+        audio_codec: p.audio_codec.clone(),
+        append,
+        probe_seconds: Some(pipe.probe_seconds),
+        interlaced: p.interlaced(),
+        video_codec: p.video_codec.clone(),
+        video_bit_depth: p.bit_depth,
+        cpu_decode,
+        encode_threads: rt.slots.encode_threads(),
+    };
+    let gpu_decode = args::live_gpu_decode(&o, &caps);
+    let argv = args::live(&o, &caps, &dev);
     let spawned = if vet_proxy.is_some() {
         Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
     } else {
@@ -206,7 +231,7 @@ async fn spawn_packaged(
         Ok(p) => Arc::new(p),
         Err(e) => {
             pipe.m.locked().last_error = Some(format!("spawn: {e}"));
-            return false;
+            return Start::Failed;
         }
     };
     {
@@ -220,21 +245,43 @@ async fn spawn_packaged(
     }
     if pipe.m.locked().ended {
         proc.stop().await;
-        return false;
+        return Start::Failed;
     }
     let ok = first_segment(&dir, &proc).await;
+    let tail = proc.stderr_tail();
+    // An exit past the input, not the window running out (nor a stop: the pipe ended).
+    let start = if ok {
+        Start::Ok
+    } else if gpu_decode
+        && proc.exited().is_some()
+        && !pipe.m.locked().ended
+        && !core_live::input_failed(&tail)
+    {
+        tracing::warn!(
+            url = u.url,
+            "live run decoding on the gpu exited before a segment, again with cpu decode:\n{}",
+            tail.join("\n")
+        );
+        Start::GpuDecodeFailed
+    } else {
+        Start::Failed
+    };
+    // A hardware run that ran forgives the device; after a failed GPU decode, its CPU decode run
+    // gives the attempt's one verdict.
     if let Some(d) = &device {
-        if ok {
-            rt.slots.device_ok(d);
-        } else {
-            rt.slots.device_failed(d);
-            pipe.m.locked().device = None;
+        match start {
+            Start::Ok => rt.slots.device_ok(d),
+            Start::Failed => {
+                rt.slots.device_failed(d);
+                pipe.m.locked().device = None;
+            }
+            Start::GpuDecodeFailed => {}
         }
     }
     if ok && mode == LiveMode::Remux {
-        pipe.m.locked().active_codec = video;
+        pipe.m.locked().active_codec = p.video_codec;
     }
-    ok
+    start
 }
 
 /// Any `seg-*` entry within 20 s; the run exiting first fails. [ts:svc:1001-1047]

@@ -7,7 +7,7 @@ mod output;
 
 pub use archive::{ArchiveAudio, ArchiveAudioEnc, ArchiveFile, ArchiveTrack};
 pub(crate) use encode::{AudioEnc, ReportNeeds, audio_stream_args, stage_report};
-pub use encode::{Encoded, encode, live_h264_encoder};
+pub use encode::{Encoded, encode, live_gpu_decode, live_h264_encoder};
 pub use encoders::encoder_args;
 pub use output::{LIVE_USER_AGENT, file, http_header_args, iframe, live, remux, vod};
 
@@ -258,6 +258,15 @@ pub struct LiveArgs {
     /// The source's `field_order`: interlaced, progressive, or `None` when unknown.
     #[serde(default)]
     pub interlaced: Option<bool>,
+    /// The source's probed video codec (ffprobe name); `None` when the probe could not tell.
+    #[serde(default)]
+    pub video_codec: Option<String>,
+    /// The source's probed video bit depth; `None` when unknown, taken for 8.
+    #[serde(default)]
+    pub video_bit_depth: Option<u32>,
+    /// Decode on the CPU even where the GPU could: a GPU decode of this channel failed.
+    #[serde(default)]
+    pub cpu_decode: bool,
     /// Absent: 4. The engine passes the CPU quota; ffmpeg otherwise counts host cores.
     #[serde(default = "default_encode_threads")]
     pub encode_threads: u32,

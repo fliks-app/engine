@@ -41,7 +41,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
@@ -163,11 +163,16 @@ struct PipeMut {
     slot: Option<PlaybackSlot>,
     /// The GPU its transcodes stay on while it qualifies.
     device: Option<String>,
+    /// A GPU decode failed: its transcodes decode on the CPU.
+    cpu_decode: bool,
     direct: Option<Direct>,
     content_type: Option<String>,
     tees: Vec<(String, mpsc::Sender<Bytes>)>,
     /// The codec of the running fMP4 init (remux).
     active_codec: Option<String>,
+    /// The mtime of an `index.m3u8` this mode did not write (the other mode's, or one a previous
+    /// process left): a playlist still at that mtime is never appended to.
+    foreign_playlist: Option<SystemTime>,
     last_segment_at: Instant,
     last_seg: Option<u32>,
     viewers: HashMap<String, Viewer>,
@@ -229,6 +234,13 @@ impl Pipe {
             .unwrap_or_else(|| "video/mp2t".into());
         (rx, ct)
     }
+}
+
+/// The mtime of `dir`'s `index.m3u8`, `None` without one.
+fn playlist_mtime(dir: &Path) -> Option<SystemTime> {
+    std::fs::metadata(dir.join("index.m3u8"))
+        .and_then(|f| f.modified())
+        .ok()
 }
 
 /// `<cache root>/live`, wiped at boot.

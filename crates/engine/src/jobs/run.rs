@@ -100,7 +100,7 @@ pub(super) async fn probe_file(ctx: &Ctx, path: &str) -> Result<MediaInfo, Strin
     let opts = ProbeOpts {
         crop: false,
         mkv_tags: true,
-        crop_decode: None,
+        ..ProbeOpts::default()
     };
     let out = probe_stamped(path, &ctx.rt, &opts).await;
     if !out.ok {

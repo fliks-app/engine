@@ -329,7 +329,7 @@ fn u32_of(v: Option<f64>) -> Option<u32> {
 }
 
 /// The bit depth a pixel format names (`yuv420p10le`, `p010le`); `None` when it names none.
-fn pix_fmt_depth(fmt: &str) -> Option<u32> {
+pub(crate) fn pix_fmt_depth(fmt: &str) -> Option<u32> {
     let f = fmt.trim_end_matches("le").trim_end_matches("be");
     if f.starts_with("nv") {
         return None;

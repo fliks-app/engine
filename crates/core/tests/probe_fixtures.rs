@@ -237,8 +237,8 @@ fn probe_reproduces_the_host() {
         let opts = ProbeOpts {
             crop: f["opts"]["crop"].as_bool().unwrap(),
             mkv_tags: f["opts"]["mkvTags"].as_bool().unwrap(),
-            // The fixtures were recorded with crop forced to software.
-            crop_decode: None,
+            // The fixtures were recorded with crop forced to software: a CPU-only host.
+            ..ProbeOpts::default()
         };
         let outcome = block_on(probe(&tools, "{path}", &opts));
         let mut expected = f["expected"].clone();

@@ -209,6 +209,21 @@ impl Hw {
         self.state.locked().current.clone()
     }
 
+    /// The first device's caps and render node; a CPU-only host of this OS while detection has
+    /// not run.
+    pub fn host(&self) -> (HostCaps, String) {
+        self.snapshot().map_or_else(
+            || {
+                let caps = HostCaps {
+                    platform: platform_from_os(std::env::consts::OS),
+                    ..HostCaps::default()
+                };
+                (caps, String::new())
+            },
+            |s| (s.host_caps(), s.render_node),
+        )
+    }
+
     /// Boot detection in the background.
     pub fn start(self: &Arc<Self>) {
         self.schedule();

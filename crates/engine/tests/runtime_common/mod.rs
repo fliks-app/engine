@@ -163,6 +163,11 @@ pub async fn listen(app: Router) -> String {
 }
 
 pub fn host(hw: HwAccel, render_node: &str, pause: &str) -> Arc<Hw> {
+    host_without(hw, render_node, pause, &[])
+}
+
+/// `host` whose boot probe disabled the decoders `disabled`.
+pub fn host_without(hw: HwAccel, render_node: &str, pause: &str, disabled: &[&str]) -> Arc<Hw> {
     let detected = Detected {
         hw_accel: hw,
         platform: Platform::Linux,
@@ -172,7 +177,7 @@ pub fn host(hw: HwAccel, render_node: &str, pause: &str) -> Arc<Hw> {
         encoders: vec![],
         decoders: vec![],
         disabled_encoders: vec![],
-        disabled_decoders: vec![],
+        disabled_decoders: disabled.iter().map(|d| d.to_string()).collect(),
         rejected: vec![],
     };
     let devices = (hw != HwAccel::None)

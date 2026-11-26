@@ -420,6 +420,32 @@ fn ffsubsync(args: &[String]) {
     put(Path::new(output), body.replace("LATE", "SYNCED"));
 }
 
+/// Crop probe: ffprobe's stream run reports 100 s of `av1` (if the file says so) else `h264`, its
+/// other runs fail; a crop sample logs its `-hwaccel` to `<input>.hw` and finds a letterbox.
+fn crop(args: &[String]) {
+    if args.iter().any(|a| a == "-show_streams") {
+        let body = std::fs::read_to_string(args.last().unwrap()).unwrap_or_default();
+        let codec = if body.contains("av1") { "av1" } else { "h264" };
+        let stream = format!(
+            r#"{{"index":0,"codec_name":"{codec}","codec_type":"video","width":480,"height":270,"pix_fmt":"yuv420p"}}"#
+        );
+        print!(
+            r#"{{"streams":[{stream}],"format":{{"format_name":"mov,mp4","duration":"100.0"}}}}"#
+        );
+        return;
+    }
+    let (Some(i), true) = (
+        args.iter().position(|a| a == "-i"),
+        args.iter().any(|a| a.contains("cropdetect")),
+    ) else {
+        std::process::exit(1)
+    };
+    if let Some(h) = args.iter().position(|a| a == "-hwaccel") {
+        append_line(&format!("{}.hw", args[i + 1]), &args[h + 1]);
+    }
+    eprintln!("[Parsed_cropdetect_1 @ 0x0] w:480 h:190 x:0 y:40 pts:0 t:0.0 crop=480:190:0:40");
+}
+
 fn job(mode: &str, args: &[String]) {
     let has = |a: &str| args.iter().any(|x| x == a);
     if has("-show_entries") {
@@ -522,14 +548,16 @@ fn itemstop(args: &[String]) {
     std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
 }
 
-/// Live TV by URL: `fail` exits, `slowstart` never writes, `stall` writes one segment then goes
-/// silent, `dies` writes three then exits once `die` exists in the run's directory.
+/// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
+/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs` (`-hwaccel` runs), `10bit` probe.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
         match () {
             _ if url.contains("noprobe") => std::process::exit(1),
+            _ if url.contains("10bit") => print!("h264,video,yuv420p10le,progressive\nmpegts\n"),
             _ if url.contains("hevc") => print!("hevc,video\naac,audio\nmpegts\n"),
+            _ if url.contains("av1") => print!("av1,video\naac,audio\nmpegts\n"),
             _ if url.contains("manifest") => print!("h264,video\naac,audio\nhls\n"),
             _ => print!("h264,video\naac,audio\nmpegts\n"),
         }
@@ -549,11 +577,30 @@ fn live(args: &[String]) {
         .unwrap();
     writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
     if input.contains("fail") {
-        eprintln!("fake ffmpeg: {input}: Connection refused");
+        eprintln!("[in#0 @ 0x0] Error opening input: Connection refused");
+        eprintln!("Error opening input file {input}.");
+        eprintln!("Error opening input files: Connection refused");
+        std::process::exit(1)
+    }
+    if input.contains("badchain") {
+        eprintln!("Input #0, mpegts, from '{input}':");
+        eprintln!("Conversion failed!");
         std::process::exit(1)
     }
     if input.contains("slowstart") {
         hang()
+    }
+    // A GPU that cannot decode this upstream: it dies or hangs on a `-hwaccel` run.
+    if args.iter().any(|a| a == "-hwaccel") {
+        if input.contains("gpudies") {
+            eprintln!(
+                "[h264 @ 0x0] Failed setup for format vaapi: hwaccel initialisation returned error."
+            );
+            std::process::exit(1)
+        }
+        if input.contains("gpuhangs") {
+            hang()
+        }
     }
     let ext = if pattern.ends_with(".ts") {
         "ts"
@@ -646,6 +693,7 @@ fn main() {
         // Dies on a VAAPI command line, hangs on the CPU one.
         "hwfail" if args.iter().any(|a| a.contains("vaapi")) => std::process::exit(1),
         "live" => live(&args),
+        "crop" => crop(&args),
         "item" => item(&args),
         #[cfg(unix)]
         "itemstop" => itemstop(&args),
@@ -663,6 +711,16 @@ fn main() {
         m @ ("sprite" | "hangsprite" | "failsprite" | "flakysprite" | "passfailsprite"
         | "sparsesprite" | "probefailsprite" | "promoprobesprite" | "promopasssprite") => {
             sprite(m, &args)
+        }
+        // A sprite mode on a GPU that rejects the file: a hardware run is logged to
+        // `<input>.hw` and fails, the others are the mode's.
+        m @ ("hwsprite" | "hwfailsprite" | "hwsparsesprite") => {
+            if let Some(i) = args.iter().position(|a| a == "-hwaccel") {
+                let input = &args[args.iter().position(|a| a == "-i").unwrap() + 1];
+                append_line(&format!("{input}.hw"), &args[i + 1]);
+                std::process::exit(1)
+            }
+            sprite(&m[2..], &args)
         }
         m @ ("scan" | "failscan" | "hangscan" | "idlescan" | "fp" | "failfp" | "hangfp" | "sub"
         | "emptysub" | "failsub" | "hangsub" | "slowsub") => job(m, &args),

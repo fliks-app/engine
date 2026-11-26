@@ -1,6 +1,7 @@
 //! Seek-bar sprite: layout, frame extractor choice and argv, tiling, missing-frame backfill and the
 //! JPEG header read for `thumbHeight`. Spec: `docs/spec/jobs.md` section 5.
-use crate::api::{CropInfo, HwAccel, MediaInfo, Platform, SpriteMeta, VideoStreamInfo};
+use crate::api::{CropInfo, HostCaps, HwAccel, MediaInfo, Platform, SpriteMeta, VideoStreamInfo};
+use crate::hw::decoders::decode_on;
 use crate::jsnum::{js_string, round};
 use crate::mp4::{input_seek_seconds, source_timeline};
 use crate::strs;
@@ -9,6 +10,9 @@ pub const COLUMNS: u32 = 10;
 pub const THUMB_WIDTH: u32 = 240;
 /// Unpaused wall time of one frame or tile run. [ts:modules/streaming/thumbnail.service.ts:682,744]
 pub const RUN_TIMEOUT_MS: u32 = 30_000;
+/// Frame runs that may fail in a row from the start: past it nothing decodes this file, and the
+/// job stops instead of trying every frame.
+pub const GIVE_UP_AFTER: u32 = 16;
 pub const FRAME_PATTERN: &str = "frame-%04d.jpg";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,25 +66,48 @@ pub enum Extractor {
     VideoToolbox,
 }
 
+impl Extractor {
+    /// The backend whose decoder descriptors its `-hwaccel` is; `None` decodes on the CPU.
+    fn decode_hw(&self) -> HwAccel {
+        match self {
+            Extractor::Software => HwAccel::None,
+            Extractor::Vaapi { .. } => HwAccel::Vaapi,
+            Extractor::Qsv { .. } => HwAccel::Qsv,
+            Extractor::Cuda => HwAccel::Nvenc,
+            Extractor::VideoToolbox => HwAccel::Videotoolbox,
+        }
+    }
+}
+
 /// The TS backend order over the detected host: VAAPI (no crop) then QSV (crop) on the render
 /// node, CUDA, software; VideoToolbox on darwin. [ts:modules/streaming/thumbnail-extractors/index.ts:20-75]
+/// Software too when the boot probe left that backend no decoder for `video` (`decode_on`): the
+/// run forces GPU frames, so it would fail instead of decoding on the CPU.
 pub fn pick_extractor(
-    platform: Platform,
-    hw: HwAccel,
+    caps: &HostCaps,
     render_node: &str,
-    crop: bool,
+    video: Option<&VideoStreamInfo>,
     force_software: bool,
 ) -> Extractor {
     if force_software {
         return Extractor::Software;
     }
+    let crop = video.is_some_and(|v| v.crop.is_some());
     let device = render_node.to_string();
-    match (platform, hw) {
+    let e = match (caps.platform, caps.hw_accel) {
         (Platform::Darwin, _) => Extractor::VideoToolbox,
         (Platform::Linux, HwAccel::Vaapi | HwAccel::Qsv) if !crop => Extractor::Vaapi { device },
         (Platform::Linux, HwAccel::Qsv) => Extractor::Qsv { device },
         (Platform::Linux, HwAccel::Nvenc) => Extractor::Cuda,
         _ => Extractor::Software,
+    };
+    let (codec, depth) = (
+        video.map(|v| v.codec.as_str()),
+        video.and_then(|v| v.bit_depth),
+    );
+    match decode_on(e.decode_hw(), codec, depth, caps) {
+        HwAccel::None => Extractor::Software,
+        _ => e,
     }
 }
 
@@ -528,26 +555,47 @@ pub fn meta(l: Layout, thumb_height: u32) -> SpriteMeta {
 mod tests {
     use super::*;
 
+    const NODE: &str = "/dev/dri/renderD129";
+
+    fn caps(platform: Platform, hw: HwAccel, disabled: &[&str]) -> HostCaps {
+        HostCaps {
+            platform,
+            hw_accel: hw,
+            disabled_decoders: disabled.iter().map(|d| d.to_string()).collect(),
+            ..HostCaps::default()
+        }
+    }
+
+    fn video(codec: &str, depth: u32, crop: bool) -> VideoStreamInfo {
+        serde_json::from_value(serde_json::json!({
+            "streamIndex": 0, "codec": codec, "bitDepth": depth,
+            "crop": crop.then(|| serde_json::json!({ "width": 1920, "height": 800, "x": 0, "y": 140 })),
+        }))
+        .unwrap()
+    }
+
     #[test]
     fn extractor_follows_the_detected_backend() {
         use Platform::*;
-        let pick = |p, hw, crop, sw| pick_extractor(p, hw, "/dev/dri/renderD129", crop, sw);
-        let node = "/dev/dri/renderD129".to_string();
+        let pick = |p, hw, crop, sw| {
+            pick_extractor(&caps(p, hw, &[]), NODE, Some(&video("h264", 8, crop)), sw)
+        };
+        let device = NODE.to_string();
         assert_eq!(
             pick(Linux, HwAccel::Qsv, false, false),
             Extractor::Vaapi {
-                device: node.clone()
+                device: device.clone()
             }
         );
         assert_eq!(
             pick(Linux, HwAccel::Qsv, true, false),
             Extractor::Qsv {
-                device: node.clone()
+                device: device.clone()
             }
         );
         assert_eq!(
             pick(Linux, HwAccel::Vaapi, false, false),
-            Extractor::Vaapi { device: node }
+            Extractor::Vaapi { device }
         );
         assert_eq!(
             pick(Linux, HwAccel::Vaapi, true, false),
@@ -563,6 +611,35 @@ mod tests {
             pick(Win32, HwAccel::Nvenc, false, false),
             Extractor::Software
         );
+        assert_eq!(
+            pick_extractor(&caps(Linux, HwAccel::Nvenc, &[]), NODE, None, false),
+            Extractor::Cuda,
+            "no video stream reported: the backend's"
+        );
+    }
+
+    #[test]
+    fn a_codec_the_backend_cannot_decode_is_extracted_in_software() {
+        use Platform::Linux;
+        // An iGPU without AV1: the boot probe disabled both of its AV1 decoders.
+        let igpu = caps(Linux, HwAccel::Qsv, &["av1_qsv_decode", "av1_vaapi_decode"]);
+        let pick = |c: &HostCaps, codec, depth, crop| {
+            pick_extractor(c, NODE, Some(&video(codec, depth, crop)), false)
+        };
+        assert_eq!(pick(&igpu, "av1", 8, false), Extractor::Software);
+        assert_eq!(pick(&igpu, "av1", 10, true), Extractor::Software);
+        assert_ne!(pick(&igpu, "hevc", 10, false), Extractor::Software);
+        assert_ne!(pick(&igpu, "hevc", 10, true), Extractor::Software);
+        // Each extractor reads its own backend's descriptor: VAAPI without a crop, QSV with one.
+        let no_vaapi = caps(Linux, HwAccel::Qsv, &["av1_vaapi_decode"]);
+        assert_eq!(pick(&no_vaapi, "av1", 8, false), Extractor::Software);
+        assert_ne!(pick(&no_vaapi, "av1", 8, true), Extractor::Software);
+        let nvidia = caps(Linux, HwAccel::Nvenc, &["vp9_cuda_decode"]);
+        assert_eq!(pick(&nvidia, "vp9", 8, false), Extractor::Software);
+        assert_eq!(pick(&nvidia, "h264", 8, false), Extractor::Cuda);
+        // No hardware decoder is compiled in for these at all.
+        assert_eq!(pick(&nvidia, "h264", 10, false), Extractor::Software);
+        assert_eq!(pick(&nvidia, "mpeg4", 8, false), Extractor::Software);
     }
 
     #[test]

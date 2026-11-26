@@ -5,6 +5,7 @@ use crate::api::{
 };
 use crate::args::{http_header_args, live_h264_encoder};
 use crate::jsnum::js_string;
+use crate::probe::pix_fmt_depth;
 use std::collections::BTreeMap;
 
 /// Tries per upstream before a session gives up on it. [ts:services/livetv-session.service.ts:143]
@@ -122,8 +123,9 @@ pub fn forces_transcode(
     codec != "h264" || interlaced || active_video.is_some_and(|a| a != codec)
 }
 
-/// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its field order; the
-/// format row holds no type and may hold commas. [ts:services/livetv-session.service.ts:170-193]
+/// ffprobe's `csv=p=0`: a stream row is its codec, its type, then (video) its pixel format and
+/// field order (ffprobe's order, not `probe_args`'); the format row has no type, maybe commas.
+/// [ts:services/livetv-session.service.ts:170-193]
 pub fn parse_probe_output(stdout: &str) -> LiveProbe {
     let mut p = LiveProbe::default();
     // JS `trim()`: \s, which includes \r.
@@ -139,13 +141,22 @@ pub fn parse_probe_output(stdout: &str) -> LiveProbe {
         let kind = parts[at];
         if kind == "video" && p.video_codec.is_none() {
             p.video_codec = Some(parts[0].to_string());
-            p.field_order = parts.get(at + 1).map(|f| f.to_string());
+            p.bit_depth = parts.get(at + 1).and_then(|f| pix_fmt_depth(f));
+            p.field_order = parts.get(at + 2).map(|f| f.to_string());
         }
         if kind == "audio" && p.audio_codec.is_none() {
             p.audio_codec = Some(parts[0].to_string());
         }
     }
     p
+}
+
+/// A live run's stderr tail shows ffmpeg failing before any decode: the upstream could not be
+/// opened or read up to its streams, or holds no video stream.
+pub fn input_failed(stderr_tail: &[String]) -> bool {
+    stderr_tail
+        .iter()
+        .any(|l| l.contains("Error opening input") || l.contains("matches no streams"))
 }
 
 /// Unknown fails open: an unrecognised container is still worth a direct attempt.
@@ -212,7 +223,7 @@ pub fn probe_args(
         "-probesize",
         "5000000",
         "-show_entries",
-        "format=format_name:stream=codec_type,codec_name,field_order",
+        "format=format_name:stream=codec_type,codec_name,pix_fmt,field_order",
         "-of",
         "csv=p=0",
     ]
@@ -388,23 +399,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_probe_reads_the_field_order_of_the_video() {
-        let p = parse_probe_output("h264,video,tt\naac,audio\nmpegts\n");
+    fn an_input_failure_is_told_apart_from_a_decode_failure() {
+        let tail = |t: &str| t.lines().map(String::from).collect::<Vec<_>>();
+        // ffmpeg 8.1.2 with the live input options: refused, 404, silent, not media.
+        for t in [
+            "[in#0 @ 0x5c8a50796c40] Error opening input: Connection refused\n\
+             Error opening input file http://127.0.0.1:18089/x.ts.\n\
+             Error opening input files: Connection refused",
+            "[http @ 0x6422b35d30c0] HTTP error 404 File not found\n\
+             [in#0 @ 0x6422b2eb0140] Error opening input: Server returned 404 Not Found",
+            "[in#0 @ 0x5c849fabdc40] Error opening input: Connection timed out",
+            "[in#0 @ 0x5a23aed0d040] Error opening input: Invalid data found when processing input",
+            // An upstream with no video stream.
+            "Stream map '' matches no streams.\nTo ignore this, add a trailing '?' to the map.",
+        ] {
+            assert!(input_failed(&tail(t)), "{t}");
+        }
+        // 10-bit H.264 through h264_qsv: the input opened, the decoder failed.
+        let decode = "[h264_qsv @ 0x63db92a13240] get_buffer() failed\n\
+            [vist#0:0/h264 @ 0x63db9256f8c0] [dec:h264_qsv @ 0x63db92a17140] Decoding error: \
+            Invalid argument\nConversion failed!";
+        assert!(!input_failed(&tail(decode)));
+        assert!(!input_failed(&[]));
+    }
+
+    #[test]
+    fn a_probe_reads_the_field_order_and_bit_depth_of_the_video() {
+        // ffprobe 6.1 and 9 on an interlaced H.264 TS: the program lists its streams again.
+        let p = parse_probe_output(
+            "h264,video,yuv420p,tt\naac,audio\n\nh264,video,yuv420p,tt\naac,audio\nmpegts\n",
+        );
         assert_eq!(
             (
                 p.video_codec.as_deref(),
                 p.audio_codec.as_deref(),
-                p.interlaced()
+                p.interlaced(),
+                p.bit_depth
             ),
-            (Some("h264"), Some("aac"), Some(true))
+            (Some("h264"), Some("aac"), Some(true), None)
         );
-        let p = parse_probe_output("mpegts\nh264,video,progressive\n");
-        assert_eq!(p.interlaced(), Some(false));
-        assert_eq!(parse_probe_output("h264,video\n").interlaced(), None);
-        assert_eq!(
-            parse_probe_output("h264,video,unknown\n").interlaced(),
-            None
-        );
+        let p = parse_probe_output("mpegts\nhevc,video,yuv420p10le,progressive\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (Some(false), Some(10)));
+        let wire = serde_json::to_value(&p).unwrap();
+        assert_eq!(wire["fieldOrder"], "progressive");
+        assert_eq!(wire["bitDepth"], 10);
+        let p = parse_probe_output("h264,video\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (None, None));
+        let p = parse_probe_output("h264,video,unknown,unknown\n");
+        assert_eq!((p.interlaced(), p.bit_depth), (None, None));
         assert_eq!(
             effective_mode(LiveMode::Remux, Some("h264"), true),
             LiveMode::Transcode
