@@ -14,7 +14,7 @@ pub use self::supervise::shutdown;
 use self::open::{has_video, probe, vetted_proxy};
 use self::proxy::VetProxy;
 use self::supervise::{supervise, teardown, unregister};
-use self::upstream::{attempt, highest_segment, https, recover, stop_transport};
+use self::upstream::{attempt, https, recover, stop_transport};
 use self::vet::Resolver;
 use crate::AppState;
 use crate::cache::Cache;
@@ -174,7 +174,8 @@ struct PipeMut {
     /// process left): a playlist still at that mtime is never appended to.
     foreign_playlist: Option<SystemTime>,
     last_segment_at: Instant,
-    last_seg: Option<u32>,
+    /// The playlist's mtime when it last moved: ffmpeg rewrites it at each segment.
+    last_playlist: Option<SystemTime>,
     viewers: HashMap<String, Viewer>,
     idle_since: Option<Instant>,
     last_error: Option<String>,
