@@ -267,6 +267,8 @@ pub(super) async fn start(
             tees: vec![],
             last_segment_at: Instant::now(),
             last_playlist: None,
+            timeline: Default::default(),
+            inits: vec![],
             viewers: HashMap::new(),
             idle_since: None,
             last_error: None,

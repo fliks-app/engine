@@ -55,6 +55,8 @@
       "2",
       "-ar",
       "48000",
+      "-hls_segment_options",
+      "movflags=+frag_discont:use_editlist=0:avoid_negative_ts=make_non_negative",
       "-f",
       "hls",
       "-hls_time",

@@ -430,6 +430,18 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     if o.append {
         flags.push_str("+append_list+discont_start");
     }
+    // A run goes on where the listed segments end: the session's timestamps never go back.
+    if o.timeline.seconds > 0.0 {
+        a.extend(["-output_ts_offset".into(), seconds(o.timeline.seconds)]);
+    }
+    if !o.use_ts {
+        // Timestamps in the tfdt, no edit list: MSE drops edit lists, and A/V sync with them.
+        // Without one movenc would zero each run's start, offset included, unless told otherwise.
+        a.extend(strs(&[
+            "-hls_segment_options",
+            "movflags=+frag_discont:use_editlist=0:avoid_negative_ts=make_non_negative",
+        ]));
+    }
     a.extend(hls_head(js(o.segment_seconds), js(list)));
     a.extend(["-hls_delete_threshold".into(), "3".into()]);
     a.extend(hls_segment_type(o.use_ts));
@@ -668,6 +680,34 @@ mod tests {
             "encodeThreads": threads
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn a_live_run_continues_the_session_timeline() {
+        let after =
+            |a: &[String], flag: &str| a.iter().position(|x| x == flag).map(|i| a[i + 1].clone());
+        let mut r = live_request("remux", "none", 2);
+        let first = live(&r, &HostCaps::default(), &dev());
+        assert_eq!(after(&first, "-output_ts_offset"), None);
+        assert_eq!(
+            after(&first, "-hls_segment_options").as_deref(),
+            Some("movflags=+frag_discont:use_editlist=0:avoid_negative_ts=make_non_negative")
+        );
+        r.timeline = crate::live::Timeline {
+            next: 7,
+            seconds: 13.96,
+        };
+        r.append = true;
+        let appended = live(&r, &HostCaps::default(), &dev());
+        assert_eq!(
+            after(&appended, "-output_ts_offset").as_deref(),
+            Some("13.96")
+        );
+        assert_eq!(after(&appended, "-start_number"), None);
+        r.use_ts = true;
+        let ts = live(&r, &HostCaps::default(), &dev());
+        assert_eq!(after(&ts, "-hls_segment_options"), None);
+        assert_eq!(after(&ts, "-output_ts_offset").as_deref(), Some("13.96"));
     }
 
     fn vf(hw: &str, interlaced: Option<bool>, bps: Option<f64>, probes: &[&str]) -> Option<String> {

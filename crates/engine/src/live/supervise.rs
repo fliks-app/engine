@@ -1,7 +1,8 @@
 //! Watching a started upstream, failing it over and tearing it down.
 
 use super::{
-    Pipe, STALL_CHECK_EVERY, STALL_TIMEOUT, TICK, attempt, playlist_mtime, recover, stop_transport,
+    Pipe, STALL_CHECK_EVERY, STALL_TIMEOUT, TICK, attempt, count_playlist, playlist_mtime, recover,
+    stop_transport,
 };
 use crate::cache::remove_dir;
 use crate::lock::Locked;
@@ -26,11 +27,13 @@ pub(super) async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
         let ttl = config.lifetime.resolved().live_session_ttl_ms as i64;
         let idle = Duration::from_secs(config.livetv.channel_idle_seconds.max(0) as u64);
         let now = Instant::now();
+        let mut changed = false;
         let (expired, idle_over, failure) = {
             let mut m = pipe.m.locked();
             if written.is_some() && written != m.last_playlist {
                 m.last_playlist = written;
                 m.last_segment_at = now;
+                changed = true;
             }
             let cutoff = now_ms() - ttl;
             let flowing: Vec<String> = m
@@ -74,6 +77,9 @@ pub(super) async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
             };
             (expired, idle_over, failure)
         };
+        if changed && let Some(dir) = &pipe.dir {
+            count_playlist(dir, &pipe.m);
+        }
         if !expired.is_empty() {
             let mut reg = rt.live.reg.locked();
             for sid in &expired {

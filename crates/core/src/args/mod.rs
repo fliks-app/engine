@@ -256,6 +256,9 @@ pub struct LiveArgs {
     /// The ordinal of this run in its session: names its fMP4 init (`live::init_name`).
     #[serde(default)]
     pub run: u32,
+    /// What the session's earlier runs listed (`live::Timeline`): this run continues it. [new]
+    #[serde(default)]
+    pub timeline: crate::live::Timeline,
     #[serde(default)]
     pub probe_seconds: Option<f64>,
     /// The source's `field_order`: interlaced, progressive, or `None` when unknown.
