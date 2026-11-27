@@ -847,6 +847,9 @@ fn error_result(worker: &str, attempt: u32, e: &str) -> JobResultRequest {
         level: None,
         copy_reason: None,
         cpu_fallback: None,
+        sampled_savings_pct: None,
+        savings_pct: None,
+        ssim: None,
         nothing_to_do: false,
         separate: None,
     }
@@ -870,6 +873,9 @@ fn result_request(
         level: None,
         copy_reason: None,
         cpu_fallback: None,
+        sampled_savings_pct: None,
+        savings_pct: None,
+        ssim: None,
         nothing_to_do: false,
         separate: None,
     };
@@ -878,6 +884,9 @@ fn result_request(
             level: Some(optimize.level),
             copy_reason: optimize.copy_reason.clone(),
             cpu_fallback: Some(optimize.cpu_fallback),
+            sampled_savings_pct: optimize.sampled_savings_pct,
+            savings_pct: optimize.savings_pct,
+            ssim: optimize.ssim,
             nothing_to_do: true,
             ..ok(0.0, None, None)
         },
@@ -885,6 +894,9 @@ fn result_request(
             level: Some(optimize.level),
             copy_reason: optimize.copy_reason.clone(),
             cpu_fallback: Some(optimize.cpu_fallback),
+            sampled_savings_pct: optimize.sampled_savings_pct,
+            savings_pct: optimize.savings_pct,
+            ssim: optimize.ssim,
             ..ok(
                 optimize.out_size,
                 Some(optimize.out_sha256.clone()),
@@ -1119,9 +1131,9 @@ mod tests {
             copy_reason: None,
             cpu_fallback: false,
             nothing_to_do: false,
-            sampled_savings_pct: None,
-            savings_pct: None,
-            ssim: None,
+            sampled_savings_pct: Some(30.0),
+            savings_pct: Some(25.0),
+            ssim: Some(0.99),
         };
         let snap = snapshot(
             BgJobState::Done,
@@ -1134,6 +1146,15 @@ mod tests {
         assert!(r.ok && r.out_size == 12.0 && r.out_sha256.as_deref() == Some("ab"));
         assert_eq!(r.level, Some(OptimizeLevel::Remux));
         assert!(!r.nothing_to_do);
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(
+            (&v["sampledSavingsPct"], &v["savingsPct"], &v["ssim"]),
+            (
+                &serde_json::json!(30.0),
+                &serde_json::json!(25.0),
+                &serde_json::json!(0.99)
+            )
+        );
     }
 
     #[test]

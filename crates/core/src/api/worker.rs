@@ -462,6 +462,14 @@ pub struct JobResultRequest {
     /// `Optimize` only: the output was produced on the CPU after the hardware encoder failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_fallback: Option<bool>,
+    /// `Optimize` only: video savings the samples predicted and the encode reached, in percent,
+    /// and the lowest mean SSIM of the output's check windows (`OptimizeMeta`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampled_savings_pct: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub savings_pct: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssim: Option<f64>,
     /// `Optimize` only: the video copy left nothing to change; no output was staged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nothing_to_do: bool,
@@ -547,6 +555,9 @@ mod tests {
             level: None,
             copy_reason: None,
             cpu_fallback: None,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
             nothing_to_do: false,
             separate: None,
         };
@@ -585,6 +596,9 @@ mod tests {
             level: None,
             copy_reason: None,
             cpu_fallback: None,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
             nothing_to_do: false,
             separate: Some(SeparateOutput {
                 model: "m".into(),
