@@ -343,6 +343,15 @@ pub struct OptimizeMeta {
     /// A copied video left nothing to change: no output was staged (`stagedPath` is not a file).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nothing_to_do: bool,
+    /// Video savings the samples predicted, in percent (negative: bigger).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampled_savings_pct: Option<f64>,
+    /// Video savings of the encode, kept or dropped for `low_savings`, in percent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub savings_pct: Option<f64>,
+    /// Lowest mean SSIM of the output's check windows, when they were measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssim: Option<f64>,
 }
 
 /// A source that read and decoded cleanly.

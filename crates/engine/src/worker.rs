@@ -1004,6 +1004,9 @@ mod tests {
             copy_reason: None,
             cpu_fallback: false,
             nothing_to_do: false,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
         };
         let done = JobResult::Optimize {
             optimize: Box::new(meta),
@@ -1058,6 +1061,9 @@ mod tests {
             copy_reason: None,
             cpu_fallback: false,
             nothing_to_do: false,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
         };
         let done = JobResult::Optimize {
             optimize: Box::new(meta),
@@ -1113,6 +1119,9 @@ mod tests {
             copy_reason: None,
             cpu_fallback: false,
             nothing_to_do: false,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
         };
         let snap = snapshot(
             BgJobState::Done,
@@ -1138,6 +1147,9 @@ mod tests {
             copy_reason: Some("low_savings".into()),
             cpu_fallback: true,
             nothing_to_do: true,
+            sampled_savings_pct: None,
+            savings_pct: None,
+            ssim: None,
         };
         let snap = snapshot(
             BgJobState::Done,

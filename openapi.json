@@ -6336,6 +6336,30 @@
             "format": "double",
             "description": "f64: no 64-bit integers on the wire."
           },
+          "sampledSavingsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Video savings the samples predicted, in percent (negative: bigger)."
+          },
+          "savingsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Video savings of the encode, kept or dropped for `low_savings`, in percent."
+          },
+          "ssim": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Lowest mean SSIM of the output's check windows, when they were measured."
+          },
           "stagedPath": {
             "type": "string",
             "description": "Where the output is."
@@ -6458,6 +6482,13 @@
                 "type": "null"
               }
             ]
+          },
+          "qualityCheck": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The SSIM check of a re-encoded output; absent: for hardware outputs and `faithful`."
           },
           "rename": {
             "type": "boolean",
