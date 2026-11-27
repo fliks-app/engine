@@ -248,6 +248,9 @@ pub struct OptimizePlan {
     /// Keep Dolby Vision 7/8 and HDR10+ video as it is (copy); absent: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_hdr10plus_dv: Option<bool>,
+    /// The SSIM check of a re-encoded output; absent: for hardware outputs and `faithful`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_check: Option<bool>,
     /// Output container; absent: the source's (MP4 and MOV stay MP4, the rest is MKV).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container: Option<OptimizeContainer>,

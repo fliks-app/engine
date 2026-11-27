@@ -106,6 +106,9 @@ pub async fn run(ctx: &Ctx, p: &OptimizePayload) -> Result<JobResult, String> {
         src: &src,
         staged: &staged,
         src_packets: None,
+        sampled_savings: None,
+        savings: None,
+        ssim: None,
         created: false,
         remote,
         home: ctx.lane(),
@@ -155,6 +158,10 @@ struct Work<'a> {
     src: &'a Path,
     staged: &'a Path,
     src_packets: Option<PacketStats>,
+    /// Measures for the result: sampled and real savings, lowest output SSIM.
+    sampled_savings: Option<f64>,
+    savings: Option<f64>,
+    ssim: Option<f64>,
     created: bool,
     /// `src` holds the `inputUrl`, read over HTTP.
     remote: bool,
@@ -583,11 +590,12 @@ impl Work<'_> {
     async fn output_packets(&mut self) -> Result<(PacketStats, bool), String> {
         self.ctx.job.enter_cpu_lane();
         let out = packets(self.ctx, opt::packet_args(&self.staged_text()), None).await?;
-        let low = match self.plan().min_savings_pct {
-            Some(min) => opt::savings_pct(self.source_packets().await?.bytes, out.bytes) < min,
-            None => false,
-        };
-        Ok((out, low))
+        let saved = opt::savings_pct(self.source_packets().await?.bytes, out.bytes);
+        self.savings = Some(saved);
+        Ok((
+            out,
+            self.plan().min_savings_pct.is_some_and(|min| saved < min),
+        ))
     }
 
     async fn source_packets(&mut self) -> Result<PacketStats, String> {
@@ -652,9 +660,11 @@ impl Work<'_> {
                     .map_err(|e| self.source_error(e))?,
             );
         }
+        // Per packet: a seek mid-GOP or a B-frame past the window end shifts a few frames.
+        let saved = opt::savings_pct(source.mean(), encoded.mean());
+        self.sampled_savings = Some(saved);
         if let Some(min) = self.plan().min_savings_pct
-            // Per packet: a seek mid-GOP or a B-frame past the window end shifts a few frames.
-            && opt::savings_pct(source.mean(), encoded.mean()) < min
+            && saved < min
         {
             return Ok(Sampled::Copy(CopyReason::LowSavings));
         }
@@ -727,14 +737,15 @@ impl Work<'_> {
             return Err(decode_verdict(e));
         }
         let faithful = self.plan().quality == Some(OptimizeQuality::Faithful);
-        if reencoded && (hardware || faithful) && self.plan().crop.is_none() {
+        let wanted = self.plan().quality_check.unwrap_or(hardware || faithful);
+        if reencoded && wanted && self.plan().crop.is_none() {
             self.ssim(&probed, &path).await?;
         }
         Ok(())
     }
 
     /// Mean SSIM of three windows against the source: green or black frames score far below.
-    async fn ssim(&self, out: &MediaInfo, path: &str) -> Result<(), String> {
+    async fn ssim(&mut self, out: &MediaInfo, path: &str) -> Result<(), String> {
         let v = opt::main_video(out)?;
         let (Some(w), Some(h)) = (v.width, v.height) else {
             return Ok(());
@@ -745,7 +756,11 @@ impl Work<'_> {
             let r = run_ffmpeg(self.ctx, &argv, 5.0, (95.0, 95.0))
                 .await
                 .map_err(|e| self.source_error(e))?;
-            match opt::parse_ssim(&r.lines) {
+            let measured = opt::parse_ssim(&r.lines);
+            if let Some(s) = measured {
+                self.ssim = Some(self.ssim.map_or(s, |m: f64| m.min(s)));
+            }
+            match measured {
                 Some(s) if s >= opt::MIN_SSIM => {}
                 other => {
                     return Err(Class::Verify.message(format!(
@@ -770,6 +785,9 @@ impl Work<'_> {
                 copy_reason: made.copy_reason.map(|r| r.as_str().into()),
                 cpu_fallback: made.cpu_fallback,
                 nothing_to_do: true,
+                sampled_savings_pct: self.sampled_savings,
+                savings_pct: self.savings,
+                ssim: self.ssim,
             });
         }
         let _ = safe_write::sync_file(self.staged);
@@ -794,6 +812,9 @@ impl Work<'_> {
             copy_reason: made.copy_reason.map(|r| r.as_str().into()),
             cpu_fallback: made.cpu_fallback,
             nothing_to_do: false,
+            sampled_savings_pct: self.sampled_savings,
+            savings_pct: self.savings,
+            ssim: self.ssim,
         })
     }
 }

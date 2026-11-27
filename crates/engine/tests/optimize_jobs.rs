@@ -310,14 +310,19 @@ async fn a_hevc_reencode_is_verified_and_a_demanding_threshold_keeps_the_video()
         return;
     }
     let staged = f.dir.join(".fliks-opt-6-1.tmp");
-    let plan =
-        json!({ "level": "reencode", "codec": "hevc", "software": true, "quality": "small" });
+    let plan = json!({ "level": "reencode", "codec": "hevc", "software": true, "quality": "small",
+        "qualityCheck": true });
     let v = run_kind(&f, optimize(&f, plan, &staged)).await;
     assert_eq!(v["state"], "done", "{v}");
     let m = &v["result"]["optimize"];
     assert_eq!(m["level"], "reencode");
     assert_eq!(m["outInfo"]["video"][0]["codec"], "hevc");
     assert_eq!(m["cpuFallback"], false);
+    assert!(
+        m["sampledSavingsPct"].is_f64() && m["savingsPct"].is_f64(),
+        "{m}"
+    );
+    assert!(m["ssim"].as_f64().is_some_and(|s| s > 0.9), "{m}");
     let staged = f.dir.join(".fliks-opt-6-2.tmp");
     let plan = json!({ "level": "reencode", "codec": "hevc", "software": true,
         "minSavingsPct": 99.99 });
@@ -344,6 +349,11 @@ async fn an_unsampled_encode_short_of_the_savings_keeps_the_video_before_its_che
     let v = run_kind(&f, optimize(&f, plan, &staged)).await;
     assert_eq!(v["state"], "done", "{v}");
     let m = &v["result"]["optimize"];
+    assert!(m["savingsPct"].as_f64().is_some_and(|s| s < 99.99), "{m}");
+    assert!(
+        m["sampledSavingsPct"].is_null() && m["ssim"].is_null(),
+        "{m}"
+    );
     assert_eq!(
         (m["level"].as_str(), m["copyReason"].as_str()),
         (Some("remux"), Some("low_savings"))
