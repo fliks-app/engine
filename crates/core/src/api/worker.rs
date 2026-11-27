@@ -295,8 +295,8 @@ pub struct JobHeartbeatRequest {
     /// 0 to 1.
     pub progress: f64,
     pub paused: bool,
-    /// The device the job now holds when it left the leased one: `cpu` for a hardware encode
-    /// redone in software.
+    /// The device the job runs on when it is not the leased one: `cpu` for the software work of a
+    /// GPU lease (a hardware encode redone in software, the output checks). Absent: the leased one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
 }

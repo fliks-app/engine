@@ -83,8 +83,6 @@ pub struct BgJob {
     /// A leased optimization: its own device slot, outside `MAX_RUNNING`; a software fallback on
     /// a GPU lane moves it to the CPU lane (`Ctx::set_lane`).
     lane: Mutex<Option<Lane>>,
-    /// A leased hardware encode redone in software: the host is told it now holds the CPU device.
-    left_leased_device: AtomicBool,
     /// Unpaused milliseconds of the last pipeline run.
     last_active_ms: AtomicU64,
     /// A background run was stopped by the promotion: `run` redoes the job from its start.
@@ -110,15 +108,9 @@ impl BgJob {
         }
     }
 
-    pub fn leave_leased_device(&self) {
-        self.left_leased_device.store(true, Relaxed);
-    }
-
-    /// The device the job runs on when it is no longer its leased one.
-    pub fn moved_to(&self) -> Option<String> {
-        self.left_leased_device
-            .load(Relaxed)
-            .then(|| Lane::cpu().device)
+    /// The device of the lane the job runs on now.
+    pub fn lane_device(&self) -> Option<String> {
+        self.lane.locked().as_ref().map(|l| l.device.clone())
     }
 
     fn base_state(&self) -> BgJobState {
@@ -399,7 +391,6 @@ fn queue(
         seq,
         dedupe: dedupe.clone(),
         lane: Mutex::new(lane),
-        left_leased_device: AtomicBool::new(false),
         last_active_ms: AtomicU64::new(0),
         created_ms: now_ms(),
         cancel: watch::channel(false).0,
@@ -707,8 +698,10 @@ mod tests {
     #[test]
     fn cpu_only_work_leaves_a_gpu_lane_and_never_creates_one() {
         let j = job(Some(Lane::new("gpu0")));
+        assert_eq!(j.lane_device().as_deref(), Some("gpu0"));
         j.enter_cpu_lane();
         assert_eq!(*j.lane.locked(), Some(Lane::cpu()));
+        assert_eq!(j.lane_device(), Some(Lane::cpu().device));
         let unleased = job(None);
         unleased.enter_cpu_lane();
         assert_eq!(*unleased.lane.locked(), None);

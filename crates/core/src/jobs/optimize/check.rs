@@ -24,14 +24,29 @@ impl PacketStats {
         }
     }
 
-    /// A `pts_time,size` line, counted when its pts falls in `[from, to)`.
+    /// A `pts_time,dts_time,size` line, counted when its pts (its dts when the container has no
+    /// pts, AVI) falls in `[from, to)`.
     pub fn add_window_line(&mut self, line: &str, from: f64, to: f64) {
-        let mut f = line.trim().split(',').map(str::parse::<f64>);
-        if let (Some(Ok(pts)), Some(Ok(n))) = (f.next(), f.next())
-            && (from..to).contains(&pts)
+        let f: Vec<Option<f64>> = line.trim().split(',').map(|v| v.parse().ok()).collect();
+        if let [pts, dts, Some(n), ..] = f[..]
+            && pts.or(dts).is_some_and(|t| (from..to).contains(&t))
         {
             self.count += 1;
             self.bytes += n;
+        }
+    }
+
+    pub fn add(&mut self, other: PacketStats) {
+        self.count += other.count;
+        self.bytes += other.bytes;
+    }
+
+    /// Mean packet size, 0 without packets.
+    pub fn mean(&self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.bytes / self.count as f64
         }
     }
 }
@@ -62,7 +77,7 @@ pub fn window_packet_args(file: &str, from: f64, to: f64) -> Vec<String> {
         "-read_intervals",
         &interval,
         "-show_entries",
-        "packet=pts_time,size",
+        "packet=pts_time,dts_time,size",
         "-of",
         "csv=p=0",
         file,
@@ -411,22 +426,17 @@ mod tests {
         let mut s = PacketStats::default();
         // The keyframe ffprobe reads before the window and the packet at its end are not counted.
         for l in [
-            "98.5,9000",
-            "100.0,500",
-            "101.2,300",
-            "N/A,700",
-            "102.0,400",
-            "100.9,200,",
+            "98.5,98.4,9000",
+            "100.0,99.9,500",
+            "101.2,100.0,300",
+            "N/A,N/A,700",
+            "N/A,101.5,50",
+            "102.0,101.9,400",
+            "100.9,100.8,200,",
         ] {
             s.add_window_line(l, 100.0, 102.0);
         }
-        assert_eq!(
-            s,
-            PacketStats {
-                count: 3,
-                bytes: 1000.0
-            }
-        );
+        assert_eq!((s.count, s.bytes, s.mean()), (4, 1050.0, 262.5));
         assert!(window_packet_args("f.mkv", 100.0, 102.0).contains(&"100.000%102.000".into()));
     }
 

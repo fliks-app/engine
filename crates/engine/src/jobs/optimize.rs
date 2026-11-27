@@ -234,15 +234,13 @@ impl Work<'_> {
     async fn cleanup(&self) {
         let _ = tokio::fs::remove_file(self.staged).await;
         for k in 0..opt::SAMPLE_COUNT {
-            for kind in ["s", "e"] {
-                let _ = tokio::fs::remove_file(self.sample(k, kind)).await;
-            }
+            let _ = tokio::fs::remove_file(self.sample(k)).await;
         }
     }
 
     /// Samples live in the engine cache, never beside the source.
-    fn sample(&self, k: usize, kind: &str) -> PathBuf {
-        self.ctx.rt.cache.optimize_sample(&self.ctx.job.id, k, kind)
+    fn sample(&self, k: usize) -> PathBuf {
+        self.ctx.rt.cache.optimize_sample(&self.ctx.job.id, k, "e")
     }
 
     async fn start(&mut self, src_len: u64) -> Result<OptimizeMeta, String> {
@@ -379,7 +377,7 @@ impl Work<'_> {
             .await
             .and_then(|r| self.damage(&r))?;
         self.statistics_tags().await?;
-        self.check(false, false).await?;
+        self.check(false, false, None).await?;
         Ok(Produced {
             level: OptimizeLevel::Remux,
             copy_reason: reason,
@@ -507,7 +505,7 @@ impl Work<'_> {
         }
     }
 
-    /// Encodes the file, retrying on the CPU when a hardware run fails; the packet stats of the output.
+    /// Encodes the file, retrying on the CPU when a hardware run fails.
     async fn encode_or_fallback(
         &mut self,
         hw: HwAccel,
@@ -534,11 +532,13 @@ impl Work<'_> {
             let verdict = match run {
                 Ok(r) if r.errors > 0 => Err(self.damage(&r).unwrap_err()),
                 // An output that misses the savings is dropped before the costly checks.
-                Ok(_) => match self.low_savings().await {
-                    Ok(true) => Ok(Encoded::LowSavings),
-                    Ok(false) => {
+                Ok(_) => match self.output_packets().await {
+                    Ok((_, true)) => Ok(Encoded::LowSavings),
+                    Ok((out, false)) => {
                         self.statistics_tags().await?;
-                        self.check(true, *hardware).await.map(|()| Encoded::Kept)
+                        self.check(true, *hardware, Some(out))
+                            .await
+                            .map(|()| Encoded::Kept)
                     }
                     Err(e) => Err(e),
                 },
@@ -561,8 +561,7 @@ impl Work<'_> {
     }
 
     /// A hardware run failed on the job's device: it counts against the device, and the job goes
-    /// back to the queue (`busy`) when another usable device can encode its codec, else it is
-    /// redone in software on the CPU device.
+    /// back to the queue (`busy`) when another usable device can encode its codec.
     fn hw_failed(&self, e: &str) -> Result<(), String> {
         tracing::warn!(job = self.ctx.job.id, "hardware run failed: {e}");
         let Some(l) = self.home.as_ref().filter(|l| l.gpu()) else {
@@ -577,18 +576,18 @@ impl Work<'_> {
                 Class::Busy.message(format!("{} failed, another device can take it", l.device))
             );
         }
-        self.ctx.job.leave_leased_device();
         Ok(())
     }
 
-    /// The encoded video saves less than the plan requires.
-    async fn low_savings(&mut self) -> Result<bool, String> {
-        let Some(min) = self.plan().min_savings_pct else {
-            return Ok(false);
-        };
+    /// The output's video packets, and whether they save less than the plan requires.
+    async fn output_packets(&mut self) -> Result<(PacketStats, bool), String> {
+        self.ctx.job.enter_cpu_lane();
         let out = packets(self.ctx, opt::packet_args(&self.staged_text()), None).await?;
-        let src = self.source_packets().await?;
-        Ok(opt::savings_pct(src.bytes, out.bytes) < min)
+        let low = match self.plan().min_savings_pct {
+            Some(min) => opt::savings_pct(self.source_packets().await?.bytes, out.bytes) < min,
+            None => false,
+        };
+        Ok((out, low))
     }
 
     async fn source_packets(&mut self) -> Result<PacketStats, String> {
@@ -618,13 +617,14 @@ impl Work<'_> {
         }
         let dir = self.ctx.rt.cache.optimize_dir();
         std::fs::create_dir_all(&dir).map_err(|e| io_err(&dir, e))?;
-        let (mut source, mut encoded, mut wall) = (0.0, 0.0, 0.0);
+        let (mut source, mut encoded) = (PacketStats::default(), PacketStats::default());
+        let mut wall = 0.0;
         let input = self.src.to_string_lossy().into_owned();
         // `-ss` on an input seeks from the file's start time.
         let origin = self.info().format_start_seconds.unwrap_or(0.0);
         let step = 5.0 / starts.len() as f64;
         for (k, start) in starts.iter().enumerate() {
-            let out = self.sample(k, "e");
+            let out = self.sample(k);
             let argv = self.argv(false, hw, out.to_string_lossy().into_owned(), |file| {
                 file.format = FileFormat::Mp4;
                 if let Some(a) = file.archive.as_mut() {
@@ -643,16 +643,18 @@ impl Work<'_> {
             let out_text = out.to_string_lossy().into_owned();
             let made = packets(self.ctx, opt::packet_args(&out_text), None).await;
             let _ = tokio::fs::remove_file(&out).await;
-            encoded += made?.bytes;
+            encoded.add(made?);
             let (from, to) = (origin + start, origin + start + opt::SAMPLE_SECONDS);
             let argv = self.net(opt::window_packet_args(&input, from, to));
-            source += packets(self.ctx, argv, Some((from, to)))
-                .await
-                .map_err(|e| self.source_error(e))?
-                .bytes;
+            source.add(
+                packets(self.ctx, argv, Some((from, to)))
+                    .await
+                    .map_err(|e| self.source_error(e))?,
+            );
         }
         if let Some(min) = self.plan().min_savings_pct
-            && opt::savings_pct(source, encoded) < min
+            // Per packet: a seek mid-GOP or a B-frame past the window end shifts a few frames.
+            && opt::savings_pct(source.mean(), encoded.mean()) < min
         {
             return Ok(Sampled::Copy(CopyReason::LowSavings));
         }
@@ -672,15 +674,23 @@ impl Work<'_> {
             .map_err(|e| self.source_error(e))
     }
 
-    /// Verifies the staged output; the video packet stats of the output.
-    async fn check(&mut self, reencoded: bool, hardware: bool) -> Result<(), String> {
+    /// Verifies the staged output; `out` is its video packet stats when already read.
+    async fn check(
+        &mut self,
+        reencoded: bool,
+        hardware: bool,
+        out: Option<PacketStats>,
+    ) -> Result<(), String> {
         let ctx = self.ctx;
         // The output checks are software runs, whatever encoded the file.
         ctx.job.enter_cpu_lane();
         let path = self.staged_text();
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;
-        let out_packets = packets(ctx, opt::packet_args(&path), None).await?;
+        let out_packets = match out {
+            Some(p) => p,
+            None => packets(ctx, opt::packet_args(&path), None).await?,
+        };
         let src_packets = self.source_packets().await?;
         let gap = if reencoded {
             keyframe_gap(ctx, &probed, &path).await?

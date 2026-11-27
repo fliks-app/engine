@@ -3454,7 +3454,7 @@
               "string",
               "null"
             ],
-            "description": "The device the job now holds when it left the leased one: `cpu` for a hardware encode\nredone in software."
+            "description": "The device the job runs on when it is not the leased one: `cpu` for the software work of a\nGPU lease (a hardware encode redone in software, the output checks). Absent: the leased one."
           },
           "paused": {
             "type": "boolean"
