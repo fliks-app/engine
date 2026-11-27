@@ -101,6 +101,11 @@ pub(super) async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
 /// The running upstream failed: count it and recover in place. [ts:svc:1087-1102]
 async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> bool {
     tracing::warn!(key = pipe.key, "live upstream failed: {error}");
+    // A run still alive stalled: no polite stop, it would flush what it buffered since.
+    let stalled = pipe.m.locked().proc.clone();
+    if let Some(p) = stalled {
+        p.kill().await;
+    }
     stop_transport(pipe).await;
     let pos = pipe.m.locked().current;
     attempt(rt, pipe, pipe.order[pos], Some(error));
