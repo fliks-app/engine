@@ -155,7 +155,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         return Start::Failed;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, p, switched, cpu_decode) = {
+    let (mode, p, switched, cpu_decode, run) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
         let switched = m.mode == LiveMode::Remux
@@ -167,7 +167,8 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         if switched {
             m.mode = LiveMode::Transcode;
         }
-        (m.mode, p, switched, m.cpu_decode)
+        m.runs += 1;
+        (m.mode, p, switched, m.cpu_decode, m.runs - 1)
     };
     let written = playlist_mtime(&dir);
     let append = {
@@ -226,6 +227,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         video_bitrate_bps: pipe.bitrate,
         audio_codec: p.audio_codec.clone(),
         append,
+        run,
         probe_seconds: Some(pipe.probe_seconds),
         interlaced: p.interlaced(),
         video_codec: p.video_codec.clone(),

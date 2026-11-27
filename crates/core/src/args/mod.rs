@@ -253,6 +253,9 @@ pub struct LiveArgs {
     pub audio_codec: Option<String>,
     #[serde(default)]
     pub append: bool,
+    /// The ordinal of this run in its session: names its fMP4 init (`live::init_name`).
+    #[serde(default)]
+    pub run: u32,
     #[serde(default)]
     pub probe_seconds: Option<f64>,
     /// The source's `field_order`: interlaced, progressive, or `None` when unknown.

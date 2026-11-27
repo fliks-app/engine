@@ -643,7 +643,6 @@ fn live(args: &[String]) {
     } else {
         "m4s"
     };
-    let fmp4 = ext == "m4s";
     let existing = std::fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| {
@@ -661,14 +660,18 @@ fn live(args: &[String]) {
     } else {
         0
     };
-    if fmp4 {
-        put(&dir.join("init.mp4"), b"init");
+    let init = args
+        .iter()
+        .position(|a| a == "-hls_fmp4_init_filename")
+        .map(|i| args[i + 1].clone());
+    if let Some(init) = &init {
+        put(&dir.join(init), b"init");
     }
     let mut m3u8 = format!(
         "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{first}\n"
     );
-    if fmp4 {
-        m3u8.push_str("#EXT-X-MAP:URI=\"init.mp4\"\n");
+    if let Some(init) = &init {
+        m3u8.push_str(&format!("#EXT-X-MAP:URI=\"{init}\"\n"));
     }
     for n in first.. {
         let written = n - first;

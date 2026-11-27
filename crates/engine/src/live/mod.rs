@@ -165,6 +165,8 @@ struct PipeMut {
     device: Option<String>,
     /// A GPU decode failed: its transcodes decode on the CPU.
     cpu_decode: bool,
+    /// Packaged runs spawned so far: the ordinal of the next one.
+    runs: u32,
     direct: Option<Direct>,
     content_type: Option<String>,
     tees: Vec<(String, mpsc::Sender<Bytes>)>,

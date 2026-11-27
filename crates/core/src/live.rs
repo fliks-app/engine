@@ -301,9 +301,23 @@ pub fn with_token(raw: &str, token: Option<&str>) -> String {
         .join("\n")
 }
 
-/// `init.mp4` or `seg-<5+ ASCII digits>.(m4s|ts)`. [ts:controllers/livetv.controller.ts:45-47]
+/// The fMP4 init of a session's `run`: one name per run, a player keeps an init by its URL.
+pub fn init_name(run: u32) -> String {
+    match run {
+        0 => "init.mp4".into(),
+        n => format!("init-{n}.mp4"),
+    }
+}
+
+/// `init.mp4`, `init-<digits>.mp4` or `seg-<5+ ASCII digits>.(m4s|ts)`.
+/// [ts:controllers/livetv.controller.ts:45-47]
 pub fn is_segment_name(name: &str) -> bool {
-    if name == "init.mp4" {
+    let run = name
+        .strip_prefix("init-")
+        .and_then(|r| r.strip_suffix(".mp4"));
+    if name == "init.mp4"
+        || run.is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+    {
         return true;
     }
     let Some(rest) = name.strip_prefix("seg-") else {
@@ -431,6 +445,24 @@ mod tests {
             Invalid argument\nConversion failed!";
         assert!(!input_failed(&tail(decode)));
         assert!(!input_failed(&[]));
+    }
+
+    #[test]
+    fn each_run_has_an_init_name_the_segment_route_takes() {
+        assert_eq!(init_name(0), "init.mp4");
+        assert_eq!(init_name(2), "init-2.mp4");
+        for n in [0, 1, 12] {
+            assert!(is_segment_name(&init_name(n)), "{n}");
+        }
+        for bad in [
+            "init-.mp4",
+            "init-a.mp4",
+            "init-1.mp4.tmp",
+            "init-1",
+            "../init-1.mp4",
+        ] {
+            assert!(!is_segment_name(bad), "{bad}");
+        }
     }
 
     #[test]

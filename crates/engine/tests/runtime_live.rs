@@ -998,6 +998,37 @@ async fn a_stalled_upstream_fails_over_within_the_ts_window() {
 }
 
 #[tokio::test]
+async fn each_run_names_its_own_init() {
+    // A player keeps an init by its URL: under one name it would decode with the earlier run's.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/dies", 0), upstream("http://up/ok", 1)];
+    let a = open(&e, open_req("31", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    until("the next run", 30, || runs(&e).len() == 2).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let names: Vec<_> = runs(&e)
+        .iter()
+        .map(|r| arg_after(r, "-hls_fmp4_init_filename").unwrap())
+        .collect();
+    assert_eq!(names, ["init.mp4", "init-1.mp4"]);
+    let base = format!("/api/livetv/sessions/{}", sid(&a));
+    let list = e.get(&format!("{base}/index.m3u8"), "alice-jwt", &[]).await;
+    assert!(
+        list.text().contains("#EXT-X-MAP:URI=\"init-1.mp4"),
+        "{}",
+        list.text()
+    );
+    for (name, status) in [("init-1.mp4", 200), ("init.mp4", 200), ("init-x.mp4", 400)] {
+        let r = e.get(&format!("{base}/{name}"), "alice-jwt", &[]).await;
+        assert_eq!(r.status, status, "{name}");
+    }
+}
+
+#[tokio::test]
 async fn a_run_starts_although_the_clock_stepped_back() {
     // The earlier run's segments are dated after the ones the next run writes.
     let e = live_engine(json!({}), json!({})).await;
