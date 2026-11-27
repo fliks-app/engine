@@ -83,6 +83,8 @@ pub struct BgJob {
     /// A leased optimization: its own device slot, outside `MAX_RUNNING`; a software fallback on
     /// a GPU lane moves it to the CPU lane (`Ctx::set_lane`).
     lane: Mutex<Option<Lane>>,
+    /// A leased hardware encode redone in software: the host is told it now holds the CPU device.
+    left_leased_device: AtomicBool,
     /// Unpaused milliseconds of the last pipeline run.
     last_active_ms: AtomicU64,
     /// A background run was stopped by the promotion: `run` redoes the job from its start.
@@ -106,6 +108,17 @@ impl BgJob {
         if l.as_ref().is_some_and(Lane::gpu) {
             *l = Some(Lane::cpu());
         }
+    }
+
+    pub fn leave_leased_device(&self) {
+        self.left_leased_device.store(true, Relaxed);
+    }
+
+    /// The device the job runs on when it is no longer its leased one.
+    pub fn moved_to(&self) -> Option<String> {
+        self.left_leased_device
+            .load(Relaxed)
+            .then(|| Lane::cpu().device)
     }
 
     fn base_state(&self) -> BgJobState {
@@ -386,6 +399,7 @@ fn queue(
         seq,
         dedupe: dedupe.clone(),
         lane: Mutex::new(lane),
+        left_leased_device: AtomicBool::new(false),
         last_active_ms: AtomicU64::new(0),
         created_ms: now_ms(),
         cancel: watch::channel(false).0,

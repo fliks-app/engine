@@ -3449,6 +3449,13 @@
             "format": "int32",
             "minimum": 0
           },
+          "deviceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The device the job now holds when it left the leased one: `cpu` for a hardware encode\nredone in software."
+          },
           "paused": {
             "type": "boolean"
           },

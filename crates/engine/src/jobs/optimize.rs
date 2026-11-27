@@ -471,13 +471,9 @@ impl Work<'_> {
             }
             Sampled::Hours(_) | Sampled::None => {}
         }
-        let stats = self
+        if let Encoded::LowSavings = self
             .encode_or_fallback(hw, &mut hardware, &mut cpu_fallback)
-            .await?;
-        // The produced video track must still save what the samples promised.
-        if let (Some(f), Some(min)) = (stats, self.plan().min_savings_pct)
-            && let Some(src) = self.src_packets
-            && opt::savings_pct(src.bytes, f.bytes) < min
+            .await?
         {
             return self.copy(Some(CopyReason::LowSavings)).await;
         }
@@ -503,7 +499,7 @@ impl Work<'_> {
                 .await
             {
                 Err(e) if *hardware && self.falls_back(&e) => {
-                    self.hw_failed()?;
+                    self.hw_failed(&e)?;
                     (*hardware, *cpu_fallback) = (false, true);
                 }
                 other => return other,
@@ -517,7 +513,7 @@ impl Work<'_> {
         hw: HwAccel,
         hardware: &mut bool,
         cpu_fallback: &mut bool,
-    ) -> Result<Option<PacketStats>, String> {
+    ) -> Result<Encoded, String> {
         let total = self.duration();
         loop {
             self.enter_lane(*hardware);
@@ -537,9 +533,14 @@ impl Work<'_> {
             let run = self.run(&argv, total, (5.0, 85.0)).await;
             let verdict = match run {
                 Ok(r) if r.errors > 0 => Err(self.damage(&r).unwrap_err()),
-                Ok(_) => match self.statistics_tags().await {
-                    Ok(()) => self.check(true, *hardware).await.map(Some),
-                    Err(e) => return Err(e),
+                // An output that misses the savings is dropped before the costly checks.
+                Ok(_) => match self.low_savings().await {
+                    Ok(true) => Ok(Encoded::LowSavings),
+                    Ok(false) => {
+                        self.statistics_tags().await?;
+                        self.check(true, *hardware).await.map(|()| Encoded::Kept)
+                    }
+                    Err(e) => Err(e),
                 },
                 Err(e) => Err(e),
             };
@@ -551,7 +552,7 @@ impl Work<'_> {
                     return Ok(f);
                 }
                 Err(e) if *hardware && self.falls_back(&e) => {
-                    self.hw_failed()?;
+                    self.hw_failed(&e)?;
                     (*hardware, *cpu_fallback) = (false, true);
                 }
                 Err(e) => return Err(e),
@@ -560,8 +561,10 @@ impl Work<'_> {
     }
 
     /// A hardware run failed on the job's device: it counts against the device, and the job goes
-    /// back to the queue (`busy`) when another usable device can encode its codec.
-    fn hw_failed(&self) -> Result<(), String> {
+    /// back to the queue (`busy`) when another usable device can encode its codec, else it is
+    /// redone in software on the CPU device.
+    fn hw_failed(&self, e: &str) -> Result<(), String> {
+        tracing::warn!(job = self.ctx.job.id, "hardware run failed: {e}");
         let Some(l) = self.home.as_ref().filter(|l| l.gpu()) else {
             return Ok(());
         };
@@ -574,7 +577,30 @@ impl Work<'_> {
                 Class::Busy.message(format!("{} failed, another device can take it", l.device))
             );
         }
+        self.ctx.job.leave_leased_device();
         Ok(())
+    }
+
+    /// The encoded video saves less than the plan requires.
+    async fn low_savings(&mut self) -> Result<bool, String> {
+        let Some(min) = self.plan().min_savings_pct else {
+            return Ok(false);
+        };
+        let out = packets(self.ctx, opt::packet_args(&self.staged_text()), None).await?;
+        let src = self.source_packets().await?;
+        Ok(opt::savings_pct(src.bytes, out.bytes) < min)
+    }
+
+    async fn source_packets(&mut self) -> Result<PacketStats, String> {
+        if let Some(p) = self.src_packets {
+            return Ok(p);
+        }
+        let argv = self.net(opt::packet_args(&self.src.to_string_lossy()));
+        let p = packets(self.ctx, argv, None)
+            .await
+            .map_err(|e| self.source_error(e))?;
+        self.src_packets = Some(p);
+        Ok(p)
     }
 
     /// A failed hardware attempt is redone in software only when the encoder or the output is at
@@ -647,7 +673,7 @@ impl Work<'_> {
     }
 
     /// Verifies the staged output; the video packet stats of the output.
-    async fn check(&mut self, reencoded: bool, hardware: bool) -> Result<PacketStats, String> {
+    async fn check(&mut self, reencoded: bool, hardware: bool) -> Result<(), String> {
         let ctx = self.ctx;
         // The output checks are software runs, whatever encoded the file.
         ctx.job.enter_cpu_lane();
@@ -655,14 +681,7 @@ impl Work<'_> {
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;
         let out_packets = packets(ctx, opt::packet_args(&path), None).await?;
-        if self.src_packets.is_none() {
-            let argv = self.net(opt::packet_args(&self.src.to_string_lossy()));
-            self.src_packets = Some(
-                packets(ctx, argv, None)
-                    .await
-                    .map_err(|e| self.source_error(e))?,
-            );
-        }
+        let src_packets = self.source_packets().await?;
         let gap = if reencoded {
             keyframe_gap(ctx, &probed, &path).await?
         } else {
@@ -677,7 +696,7 @@ impl Work<'_> {
             out: &probed,
             plan: self.plan(),
             src_facts: Facts {
-                packets: self.src_packets,
+                packets: Some(src_packets),
                 max_keyframe_gap: None,
             },
             out_facts,
@@ -701,7 +720,7 @@ impl Work<'_> {
         if reencoded && (hardware || faithful) && self.plan().crop.is_none() {
             self.ssim(&probed, &path).await?;
         }
-        Ok(out_packets)
+        Ok(())
     }
 
     /// Mean SSIM of three windows against the source: green or black frames score far below.
@@ -767,6 +786,11 @@ impl Work<'_> {
             nothing_to_do: false,
         })
     }
+}
+
+enum Encoded {
+    Kept,
+    LowSavings,
 }
 
 enum Sampled {

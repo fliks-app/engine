@@ -511,6 +511,7 @@ impl Worker {
                     &mut pulse,
                     progress,
                     snap.state == BgJobState::Paused,
+                    job.moved_to(),
                 )
                 .await
             {
@@ -551,6 +552,7 @@ impl Worker {
         p: &mut Pulse,
         progress: f64,
         paused: bool,
+        device_id: Option<String>,
     ) -> bool {
         if Instant::now() < p.next {
             return false;
@@ -561,6 +563,7 @@ impl Worker {
             attempt,
             progress,
             paused,
+            device_id,
         };
         let answer = self
             .post(&format!("/engine/jobs/{id}/heartbeat"), &req, CALL_TIMEOUT)
@@ -642,7 +645,7 @@ impl Worker {
         })?;
         let mut offset = 0u64;
         loop {
-            if self.pulse(id, attempt, pulse, 1.0, false).await {
+            if self.pulse(id, attempt, pulse, 1.0, false, None).await {
                 return Err(Upload::Fenced);
             }
             if Instant::now() >= pulse.deadline {
