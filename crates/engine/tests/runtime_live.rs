@@ -359,11 +359,7 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
     assert_eq!(runs.len(), 3, "{runs:?}");
     let last = runs.last().unwrap();
     assert!(last.contains(&"http://up/ok".to_string()));
-    assert!(
-        last.iter()
-            .any(|a| a.ends_with("+append_list+discont_start")),
-        "{last:?}"
-    );
+    assert!(last.iter().any(|a| a.ends_with("+append_list")), "{last:?}");
     let snap = e
         .control("GET", &format!("/v1/live/{}", sid(&a)), None)
         .await
@@ -945,8 +941,8 @@ async fn a_gpu_decode_retry_that_fails_too_blames_the_upstream() {
 }
 
 #[tokio::test]
-async fn a_transcode_after_a_remux_never_appends_to_its_playlist() {
-    // The switched run fails before a segment: the next transcode starts its own playlist.
+async fn a_transcode_after_a_remux_appends_to_its_playlist() {
+    // The switched run fails before a segment, the next transcode follows the remux's segments.
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
     let hevc = json!({ "url": "http://up/hevc-fail", "priority": 1, "probedVideoCodec": "hevc" });
@@ -961,13 +957,37 @@ async fn a_transcode_after_a_remux_never_appends_to_its_playlist() {
     assert_eq!(attempt(&ok), Some((0, None)));
     std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
     until("the third run", 30, || runs(&e).len() == 3).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((2, None))).await;
+    assert_eq!(attempt(&ok), Some((2, None)));
     let r = runs(&e);
     let video: Vec<_> = r.iter().map(|a| arg_after(a, "-c:v").unwrap()).collect();
     assert_eq!(video, ["copy", "libx264", "libx264"]);
-    let appends = r
-        .iter()
-        .any(|a| a.iter().any(|x| x.contains("append_list")));
-    assert!(!appends, "{r:?}");
+    for run in &r[1..] {
+        let flags = arg_after(run, "-hls_flags").unwrap();
+        assert!(flags.ends_with("+append_list"), "{flags}");
+        assert_eq!(arg_after(run, "-output_ts_offset").as_deref(), Some("6"));
+    }
+    // The failed switched run's init never maps a segment: the transcode's replaces it.
+    let list = e
+        .get(
+            &format!("/api/livetv/sessions/{}/index.m3u8", sid(&a)),
+            "alice-jwt",
+            &[],
+        )
+        .await
+        .text();
+    let maps: Vec<_> = list
+        .lines()
+        .filter(|l| l.starts_with("#EXT-X-MAP"))
+        .collect();
+    assert_eq!(
+        maps,
+        [
+            "#EXT-X-MAP:URI=\"init.mp4?token=alice-jwt\"",
+            "#EXT-X-MAP:URI=\"init-2.mp4?token=alice-jwt\""
+        ],
+        "{list}"
+    );
 }
 
 #[tokio::test]
@@ -1019,16 +1039,99 @@ async fn each_run_names_its_own_init() {
         .collect();
     assert_eq!(names, ["init.mp4", "init-1.mp4"]);
     let base = format!("/api/livetv/sessions/{}", sid(&a));
-    let list = e.get(&format!("{base}/index.m3u8"), "alice-jwt", &[]).await;
-    assert!(
-        list.text().contains("#EXT-X-MAP:URI=\"init-1.mp4"),
-        "{}",
-        list.text()
-    );
+    let list = e
+        .get(&format!("{base}/index.m3u8"), "alice-jwt", &[])
+        .await
+        .text();
+    // ffmpeg's one map is the latest run's: the engine maps each run's segments to its own init.
+    let at = |s: &str| list.find(s).unwrap_or_else(|| panic!("{s} in {list}"));
+    assert!(at("\"init.mp4?") < at("seg-00000.m4s"), "{list}");
+    assert!(at("seg-00002.m4s") < at("\"init-1.mp4?"), "{list}");
+    assert!(at("\"init-1.mp4?") < at("seg-00003.m4s"), "{list}");
     for (name, status) in [("init-1.mp4", 200), ("init.mp4", 200), ("init-x.mp4", 400)] {
         let r = e.get(&format!("{base}/{name}"), "alice-jwt", &[]).await;
         assert_eq!(r.status, status, "{name}");
     }
+}
+
+#[tokio::test]
+async fn each_run_continues_the_session_timeline() {
+    // The next run's timestamps start where the listed segments end, three of 2 s here.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/dies", 0), upstream("http://up/ok", 1)];
+    open(&e, open_req("33", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let r = runs(&e);
+    assert_eq!(arg_after(&r[0], "-output_ts_offset"), None);
+    assert_eq!(arg_after(&r[1], "-output_ts_offset").as_deref(), Some("6"));
+    // Appended: ffmpeg numbers it from the playlist.
+    assert_eq!(arg_after(&r[1], "-start_number"), None);
+}
+
+#[tokio::test]
+async fn the_timeline_counts_segments_the_window_dropped() {
+    // A window of 2: the run's first segment leaves the playlist before the next run spawns.
+    let e = live_engine(
+        json!({}),
+        json!({ "segmentSeconds": 30, "timeshiftMinutes": 1 }),
+    )
+    .await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![
+        upstream("http://up/dies-holds", 0),
+        upstream("http://up/ok", 1),
+    ];
+    let a = open(&e, open_req("34", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let counted = || e.rt.live.timeline(&sid(&a)).map_or(0, |t| t.next);
+    until("the supervisor counted segments 0 and 1", 10, || {
+        counted() == 2
+    })
+    .await;
+    let dir = live_dirs(&e)[0].clone();
+    std::fs::write(dir.join("slide"), b"").unwrap();
+    until("the window slid", 10, || {
+        std::fs::read_to_string(dir.join("index.m3u8"))
+            .is_ok_and(|l| l.contains("#EXT-X-MEDIA-SEQUENCE:1"))
+    })
+    .await;
+    std::fs::write(dir.join("die"), b"").unwrap();
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let r = runs(&e);
+    assert_eq!(arg_after(&r[0], "-hls_list_size").as_deref(), Some("2"));
+    assert_eq!(arg_after(&r[1], "-output_ts_offset").as_deref(), Some("6"));
+}
+
+#[tokio::test]
+async fn a_playlist_a_previous_process_left_is_not_counted() {
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let left = e.root.join("live").join("35_remux_fmp4_0-0");
+    std::fs::create_dir_all(&left).unwrap();
+    std::fs::write(
+        left.join("index.m3u8"),
+        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.000000,\nseg-00000.m4s\n",
+    )
+    .unwrap();
+    let ups = vec![upstream("http://up/ok", 0)];
+    open(&e, open_req("35", ups, json!({}), "alice", "t")).await;
+    assert_eq!(live_dirs(&e), [left]);
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let r = runs(&e);
+    assert_eq!(arg_after(&r[0], "-output_ts_offset"), None);
+    assert!(
+        !arg_after(&r[0], "-hls_flags")
+            .unwrap()
+            .contains("append_list")
+    );
 }
 
 #[tokio::test]
@@ -1060,7 +1163,7 @@ async fn a_run_starts_although_the_clock_stepped_back() {
 
 #[tokio::test]
 async fn a_transcode_after_a_long_remux_is_not_taken_for_a_stall() {
-    // The remux had reached segment 500 when its upstream died; the transcode restarts at 0.
+    // A stray segment 500 the remux never listed: the transcode numbers on from 3, under it.
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
     let hevc = json!({ "url": "http://up/hevc", "priority": 1, "probedVideoCodec": "hevc" });
@@ -1102,7 +1205,7 @@ async fn an_mpeg_ts_run_slow_to_open_is_not_taken_for_a_stall() {
 
 #[tokio::test]
 async fn a_transcode_stalled_after_a_remux_is_still_caught() {
-    // A run that does not append and stalls after its first segment, over an earlier run's.
+    // A switched run that stalls after its first segment, appended to the remux's playlist.
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
     let hevc = json!({ "url": "http://up/hevc-stall", "priority": 1, "probedVideoCodec": "hevc" });

@@ -579,8 +579,8 @@ fn flush_on_term(dir: &std::path::Path, seg: &str, said: &str) -> ! {
     }
 }
 
-/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `10bit`,
-/// `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); with `flush`, a polite stop writes a segment.
+/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `holds`,
+/// `10bit`, `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); `flush`: a polite stop writes a segment.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -646,23 +646,24 @@ fn live(args: &[String]) {
     } else {
         "m4s"
     };
-    let existing = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| {
-            let n = e.unwrap().file_name().to_string_lossy().into_owned();
-            n.strip_prefix("seg-")?
-                .split('.')
-                .next()?
-                .parse::<u32>()
-                .ok()
-        })
-        .max();
     let append = at("-hls_flags").contains("append_list");
-    let first = if append {
-        existing.map_or(0, |m| m + 1)
-    } else {
-        0
-    };
+    let size: usize = at("-hls_list_size").parse().unwrap();
+    // As ffmpeg: an appended run keeps what the playlist lists and numbers on from it.
+    let (mut sequence, mut listed) = (0u32, Vec::<String>::new());
+    if append && let Ok(old) = std::fs::read_to_string(dir.join("index.m3u8")) {
+        let mut entry = String::new();
+        for line in old.lines() {
+            if let Some(n) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+                sequence = n.parse().unwrap();
+            } else if line.starts_with("#EXTINF") || line.starts_with("#EXT-X-DISCONTINUITY") {
+                entry.push_str(&format!("{line}\n"));
+            } else if !line.starts_with('#') && !line.is_empty() {
+                listed.push(format!("{entry}{line}\n"));
+                entry.clear();
+            }
+        }
+    }
+    let first = sequence + listed.len() as u32;
     let init = args
         .iter()
         .position(|a| a == "-hls_fmp4_init_filename")
@@ -678,14 +679,14 @@ fn live(args: &[String]) {
         std::thread::sleep(Duration::from_secs(6));
         std::fs::remove_file(open).unwrap();
     }
-    let mut m3u8 = format!(
-        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{first}\n"
-    );
-    if let Some(init) = &init {
-        m3u8.push_str(&format!("#EXT-X-MAP:URI=\"{init}\"\n"));
-    }
     for n in first.. {
         let written = n - first;
+        // `holds` writes its third segment, which slides a small window, at `slide`.
+        if input.contains("holds") && written == 2 {
+            while !dir.join("slide").exists() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
         if input.contains("stall") && written == 1 {
             if input.contains("flush") {
                 flush_on_term(&dir, &format!("seg-{n:05}.{ext}"), "ready")
@@ -703,7 +704,23 @@ fn live(args: &[String]) {
             &dir.join(format!("seg-{n:05}.{ext}")),
             format!("segment {n}"),
         );
-        m3u8.push_str(&format!("#EXTINF:2.000000,\nseg-{n:05}.{ext}\n"));
+        let discont = if append && written == 0 {
+            "#EXT-X-DISCONTINUITY\n"
+        } else {
+            ""
+        };
+        listed.push(format!("{discont}#EXTINF:2.000000,\nseg-{n:05}.{ext}\n"));
+        while listed.len() > size {
+            listed.remove(0);
+            sequence += 1;
+        }
+        let mut m3u8 = format!(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{sequence}\n"
+        );
+        if let Some(init) = &init {
+            m3u8.push_str(&format!("#EXT-X-MAP:URI=\"{init}\"\n"));
+        }
+        m3u8.push_str(&listed.concat());
         put(&dir.join("index.m3u8"), &m3u8);
         std::thread::sleep(Duration::from_millis(300));
     }

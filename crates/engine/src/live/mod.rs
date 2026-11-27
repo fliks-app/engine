@@ -30,7 +30,7 @@ use axum::response::{IntoResponse, Response};
 use fliks_engine_core::api::{
     EngineEvent, LiveError, LiveMode, LiveProbe, LiveSnapshot, OpenLiveRequest, OpenLiveResponse,
 };
-use fliks_engine_core::live::Failover;
+use fliks_engine_core::live::{Failover, Timeline};
 use http_body_util::Empty;
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::Client;
@@ -172,12 +172,16 @@ struct PipeMut {
     tees: Vec<(String, mpsc::Sender<Bytes>)>,
     /// The codec of the running fMP4 init (remux).
     active_codec: Option<String>,
-    /// The mtime of an `index.m3u8` this mode did not write (the other mode's, or one a previous
-    /// process left): a playlist still at that mtime is never appended to.
+    /// The mtime of an `index.m3u8` a previous process left: a playlist still at that mtime is
+    /// neither appended to nor counted.
     foreign_playlist: Option<SystemTime>,
     last_segment_at: Instant,
     /// The playlist's mtime as last seen: ffmpeg rewrites it at each segment, whatever its number.
     last_playlist: Option<SystemTime>,
+    /// Counted at each playlist change, before the window drops a segment.
+    timeline: Timeline,
+    /// Each fMP4 run's first media sequence and init, ascending: served as one map per run.
+    inits: Vec<(u64, String)>,
     viewers: HashMap<String, Viewer>,
     idle_since: Option<Instant>,
     last_error: Option<String>,
@@ -222,6 +226,10 @@ impl Pipe {
         self.dir.as_deref()
     }
 
+    pub fn inits(&self) -> Vec<(u64, String)> {
+        self.m.locked().inits.clone()
+    }
+
     pub fn owner_of(&self, sid: &str) -> Option<Option<String>> {
         self.m.locked().viewers.get(sid).map(|v| v.owner.clone())
     }
@@ -244,6 +252,17 @@ fn playlist_mtime(dir: &Path) -> Option<SystemTime> {
     std::fs::metadata(dir.join("index.m3u8"))
         .and_then(|f| f.modified())
         .ok()
+}
+
+/// Counts what `dir`'s playlist lists into `m.timeline`, unless a previous process wrote it.
+fn count_playlist(dir: &Path, m: &Mutex<PipeMut>) {
+    let written = playlist_mtime(dir);
+    if written.is_none() || written == m.locked().foreign_playlist {
+        return;
+    }
+    if let Ok(list) = std::fs::read_to_string(dir.join("index.m3u8")) {
+        m.locked().timeline.read(&list);
+    }
 }
 
 /// `<cache root>/live`, wiped at boot.
@@ -315,6 +334,11 @@ impl Live {
             .collect();
         out.sort_by(|a, b| a.opened_at_ms.total_cmp(&b.opened_at_ms));
         out
+    }
+
+    /// What the playlists of `sid`'s session have listed so far.
+    pub fn timeline(&self, sid: &str) -> Option<Timeline> {
+        Some(self.pipe_of(sid)?.m.locked().timeline)
     }
 
     pub fn snapshot(&self, sid: &str) -> Option<LiveSnapshot> {

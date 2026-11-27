@@ -68,7 +68,7 @@ async fn live_access(
     }
 }
 
-/// ffmpeg's live playlist, every URI carrying the request's token. [ts:modules/livetv/controllers/livetv.controller.ts:245-266]
+/// ffmpeg's live playlist with one map per run, every URI carrying the request's token. [ts:modules/livetv/controllers/livetv.controller.ts:245-266]
 pub(super) async fn live_playlist(
     State(rt): S,
     UrlPath(sid): UrlPath<String>,
@@ -85,7 +85,7 @@ pub(super) async fn live_playlist(
     };
     match raw {
         Some(raw) => playlist(fliks_engine_core::live::with_token(
-            &raw,
+            &fliks_engine_core::live::with_inits(&raw, &pipe.inits()),
             q.get("token").map(String::as_str),
         )),
         None => nest(StatusCode::NOT_FOUND, "Playlist not ready yet"),

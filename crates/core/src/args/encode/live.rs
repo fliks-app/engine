@@ -186,6 +186,11 @@ pub fn live_video(o: &LiveArgs) -> Vec<String> {
         "-force_key_frames".into(),
         format!("expr:gte(t,n_forced*{})", js(o.segment_seconds)),
     ]);
+    // SPS/PPS in each keyframe: a demuxer that keeps the first run's init (libavformat's HLS)
+    // decodes a later run with them. QSV and VAAPI write them already, which the filter keeps.
+    if !o.use_ts {
+        a.extend(strs(&["-bsf:v", "dump_extra=freq=keyframe"]));
+    }
     a
 }
 

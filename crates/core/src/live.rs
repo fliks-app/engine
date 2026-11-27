@@ -335,6 +335,69 @@ pub fn segment_number(name: &str) -> Option<u32> {
     rest[..rest.find('.')?].parse().ok()
 }
 
+/// What a session's playlists have listed, each segment counted once by media sequence: the next
+/// run numbers on from `next` and starts its timestamps at `seconds`, the listed duration. [new]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
+pub struct Timeline {
+    /// The media sequence number after the last counted segment.
+    pub next: u64,
+    pub seconds: f64,
+}
+
+impl Timeline {
+    /// Counts the segments of `playlist` not counted yet.
+    pub fn read(&mut self, playlist: &str) {
+        let mut seq = 0;
+        for line in playlist.lines() {
+            if let Some(n) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+                seq = n.trim().parse().unwrap_or(0);
+            } else if let Some(d) = line.strip_prefix("#EXTINF:") {
+                let d: f64 = d
+                    .split(',')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse()
+                    .unwrap_or(0.0);
+                if seq >= self.next {
+                    self.seconds += d;
+                    self.next = seq + 1;
+                }
+                seq += 1;
+            }
+        }
+    }
+}
+
+/// ffmpeg's playlist with one `#EXT-X-MAP` per run: `inits` holds each run's first media sequence
+/// and init, ascending. ffmpeg writes one map, the latest run's, for every listed segment. [new]
+pub fn with_inits(raw: &str, inits: &[(u64, String)]) -> String {
+    if inits.is_empty() {
+        return raw.to_string();
+    }
+    let mut out = Vec::new();
+    let (mut seq, mut mapped) = (0, None);
+    for line in raw.split('\n') {
+        if line.starts_with("#EXT-X-MAP") {
+            continue;
+        }
+        if let Some(n) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+            seq = n.trim().parse().unwrap_or(0);
+        } else if line.starts_with("#EXTINF:") {
+            let init = inits.iter().rev().find(|(first, _)| *first <= seq);
+            if let Some((_, init)) = init
+                && mapped != Some(init)
+            {
+                out.push(format!("#EXT-X-MAP:URI=\"{init}\""));
+                mapped = Some(init);
+            }
+            seq += 1;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
 /// The upstream walk of a session: tries per upstream, round robin from the failed one.
 /// [ts:services/livetv-session.service.ts:820-858,1087-1102]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -549,6 +612,39 @@ mod tests {
                 "http://u/"
             ]
         );
+    }
+
+    #[test]
+    fn timeline_counts_each_listed_segment_once() {
+        let mut t = Timeline::default();
+        t.read("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.000000,\nseg-00000.m4s\n#EXTINF:1.960000,\nseg-00001.m4s\n");
+        assert_eq!((t.next, t.seconds), (2, 3.96));
+        // The window slid and an appended run followed, after a discontinuity.
+        t.read("#EXT-X-MEDIA-SEQUENCE:1\n#EXT-X-DISCONTINUITY\n#EXTINF:1.960000,\nseg-00001.m4s\n#EXT-X-DISCONTINUITY\n#EXTINF:2.000000,\n#EXT-X-PROGRAM-DATE-TIME:2026-11-27T17:13:34.600+0100\nseg-00002.m4s\n");
+        assert_eq!(t.next, 3);
+        assert!((t.seconds - 5.96).abs() < 1e-9, "{t:?}");
+        // A playlist restarted at 0 adds nothing.
+        t.read("#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.000000,\nseg-00000.m4s\n");
+        assert_eq!(t.next, 3);
+    }
+
+    #[test]
+    fn with_inits_maps_each_run_to_its_own_init() {
+        let raw = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:4\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI=\"init-2.mp4\"\n\
+                   #EXTINF:2.000000,\nseg-00004.m4s\n#EXT-X-DISCONTINUITY\n#EXTINF:2.000000,\nseg-00005.m4s\n\
+                   #EXTINF:2.000000,\nseg-00006.m4s\n";
+        let inits = [
+            (0, "init.mp4".to_string()),
+            (3, "init-1.mp4".to_string()),
+            (5, "init-2.mp4".to_string()),
+        ];
+        assert_eq!(
+            with_inits(raw, &inits),
+            "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:4\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI=\"init-1.mp4\"\n\
+             #EXTINF:2.000000,\nseg-00004.m4s\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI=\"init-2.mp4\"\n\
+             #EXTINF:2.000000,\nseg-00005.m4s\n#EXTINF:2.000000,\nseg-00006.m4s\n"
+        );
+        assert_eq!(with_inits(raw, &[]), raw);
     }
 
     #[test]

@@ -3,7 +3,8 @@
 use super::vet::{self, Resolver};
 use super::{
     DIRECT_CONNECT_TIMEOUT, DIRECT_SNIFF, Direct, FIRST_SEGMENT_POLL, FIRST_SEGMENT_TIMEOUT,
-    MAX_REDIRECTS, Pipe, STARTUP_ERROR, has_video, playlist_mtime, probe, vetted_proxy,
+    MAX_REDIRECTS, Pipe, STARTUP_ERROR, count_playlist, has_video, playlist_mtime, probe,
+    vetted_proxy,
 };
 use crate::lock::Locked;
 use crate::proc::Ffmpeg;
@@ -155,28 +156,32 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         return Start::Failed;
     };
     let dir = pipe.dir.clone().expect("packaged pipe");
-    let (mode, p, switched, cpu_decode, run) = {
+    let (mode, p, cpu_decode, run) = {
         let mut m = pipe.m.locked();
         let p = m.probes[i].clone().unwrap_or_default();
-        let switched = m.mode == LiveMode::Remux
+        if m.mode == LiveMode::Remux
             && core_live::forces_transcode(
                 p.video_codec.as_deref(),
                 m.active_codec.as_deref(),
                 p.interlaced() == Some(true),
-            );
-        if switched {
+            )
+        {
             m.mode = LiveMode::Transcode;
         }
         m.runs += 1;
-        (m.mode, p, switched, m.cpu_decode, m.runs - 1)
+        (m.mode, p, m.cpu_decode, m.runs - 1)
     };
+    count_playlist(&dir, &pipe.m);
     let written = playlist_mtime(&dir);
-    let append = {
+    let (append, timeline) = {
         let mut m = pipe.m.locked();
-        if switched {
-            m.foreign_playlist = written;
+        let append = written.is_some() && written != m.foreign_playlist;
+        let first = if append { m.timeline.next } else { 0 };
+        if !pipe.use_ts {
+            m.inits.retain(|(s, _)| *s < first);
+            m.inits.push((first, core_live::init_name(run)));
         }
-        written.is_some() && written != m.foreign_playlist
+        (append, m.timeline)
     };
     let (ua, referer, extra) = core_live::split_headers(&u.headers);
     let transcode = mode == LiveMode::Transcode;
@@ -228,6 +233,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         audio_codec: p.audio_codec.clone(),
         append,
         run,
+        timeline,
         probe_seconds: Some(pipe.probe_seconds),
         interlaced: p.interlaced(),
         video_codec: p.video_codec.clone(),

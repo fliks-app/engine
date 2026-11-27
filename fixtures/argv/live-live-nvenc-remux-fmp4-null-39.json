@@ -39,6 +39,8 @@
       "2",
       "-ar",
       "48000",
+      "-hls_segment_options",
+      "movflags=+frag_discont:use_editlist=0:avoid_negative_ts=make_non_negative",
       "-f",
       "hls",
       "-hls_time",
@@ -52,7 +54,7 @@
       "-hls_fmp4_init_filename",
       "init.mp4",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list+discont_start",
+      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list",
       "-hls_segment_filename",
       "/cache/live/39/seg-%05d.m4s",
       "/cache/live/39/index.m3u8"
