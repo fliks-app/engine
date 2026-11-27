@@ -112,7 +112,7 @@ impl BgJob {
         self.m.locked().state
     }
 
-    /// Every run of the job is held by playback right now.
+    /// No run of the job progresses: each yields its slot or waits for one.
     pub fn paused(&self) -> bool {
         self.snapshot().state == BgJobState::Paused
     }
