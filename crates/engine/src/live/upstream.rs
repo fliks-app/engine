@@ -252,7 +252,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
             m.proc = Some(proc.clone());
             m.slot = Some(slot.unwrap_or_else(|| rt.slots.playback_on(None)));
             m.last_segment_at = Instant::now();
-            m.last_seg = None;
+            m.last_playlist = None;
         }
     }
     if pipe.m.locked().ended {
@@ -329,22 +329,6 @@ async fn newest_segment(dir: &Path) -> Option<SystemTime> {
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().starts_with("seg-"))
             .filter_map(|e| e.metadata().ok()?.modified().ok())
-            .max()
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-/// One blocking hop for the whole listing, not one per batch of entries.
-pub(super) async fn highest_segment(dir: &Path) -> Option<u32> {
-    let dir = dir.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        std::fs::read_dir(dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|e| core_live::segment_number(&e.file_name().to_string_lossy()))
             .max()
     })
     .await

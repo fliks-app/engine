@@ -1,7 +1,7 @@
 //! Watching a started upstream, failing it over and tearing it down.
 
 use super::{
-    Pipe, STALL_CHECK_EVERY, STALL_TIMEOUT, TICK, attempt, highest_segment, recover, stop_transport,
+    Pipe, STALL_CHECK_EVERY, STALL_TIMEOUT, TICK, attempt, playlist_mtime, recover, stop_transport,
 };
 use crate::cache::remove_dir;
 use crate::lock::Locked;
@@ -21,18 +21,16 @@ pub(super) async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
         if pipe.m.locked().ended {
             return;
         }
-        let top = match &pipe.dir {
-            Some(d) => highest_segment(d).await,
-            None => None,
-        };
+        let written = pipe.dir.as_deref().and_then(playlist_mtime);
         let config = rt.current_config();
         let ttl = config.lifetime.resolved().live_session_ttl_ms as i64;
         let idle = Duration::from_secs(config.livetv.channel_idle_seconds.max(0) as u64);
         let now = Instant::now();
         let (expired, idle_over, failure) = {
             let mut m = pipe.m.locked();
-            if top.is_some() && top > m.last_seg {
-                m.last_seg = top;
+            // Not the highest `seg-N`: a run that does not append restarts under the old ones.
+            if written.is_some() && written != m.last_playlist {
+                m.last_playlist = written;
                 m.last_segment_at = now;
             }
             let cutoff = now_ms() - ttl;
@@ -110,7 +108,7 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
     {
         let mut m = pipe.m.locked();
         m.failover.failed(pos);
-        m.last_seg = None;
+        m.last_playlist = None;
     }
     if recover(rt, pipe).await {
         return true;

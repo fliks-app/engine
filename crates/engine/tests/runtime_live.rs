@@ -992,6 +992,30 @@ async fn a_stalled_upstream_fails_over_within_the_ts_window() {
 }
 
 #[tokio::test]
+async fn a_transcode_after_a_long_remux_is_not_taken_for_a_stall() {
+    // The remux had reached segment 500 when its upstream died; the transcode restarts at 0.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let hevc = json!({ "url": "http://up/hevc", "priority": 1, "probedVideoCodec": "hevc" });
+    let ups = vec![upstream("http://up/dies", 0), hevc];
+    let a = open(&e, open_req("28", ups, json!({}), "alice", "t")).await;
+    assert_eq!(a["mode"], "remux");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let dir = live_dirs(&e)[0].clone();
+    std::fs::write(dir.join("seg-00500.m4s"), b"").unwrap();
+    std::fs::write(dir.join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    // Past the 15 s stall window and its 5 s check: the run feeding the session is left alone.
+    let more = event(&mut rx, 60, |ev| attempt(ev).is_some());
+    let more = tokio::time::timeout(Duration::from_secs(22), more).await;
+    assert!(more.is_err(), "{more:?}");
+}
+
+#[tokio::test]
 async fn access_denial_and_revocation_end_viewers() {
     let e = live_engine(json!({}), json!({ "channelIdleSeconds": 0 })).await;
     let mut rx = e.rt.events.subscribe();
