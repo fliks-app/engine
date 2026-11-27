@@ -971,7 +971,10 @@ async fn a_transcode_after_a_remux_never_appends_to_its_playlist() {
 async fn a_stalled_upstream_fails_over_within_the_ts_window() {
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
-    let ups = vec![upstream("http://up/stall", 0), upstream("http://up/ok", 1)];
+    let ups = vec![
+        upstream("http://up/stall-flush", 0),
+        upstream("http://up/ok", 1),
+    ];
     open(&e, open_req("5", ups, json!({}), "alice", "t")).await;
     assert_eq!(
         attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await),
@@ -989,6 +992,36 @@ async fn a_stalled_upstream_fails_over_within_the_ts_window() {
         Some((1, None))
     );
     until("the stalled run killed", 30, || e.ffmpeg_pids().len() == 1).await;
+    // Killed: stopped politely, it would flush what it held as the segment the next run writes.
+    let next = std::fs::read_to_string(live_dirs(&e)[0].join("seg-00001.m4s")).unwrap();
+    assert_eq!(next, "segment 1");
+}
+
+#[tokio::test]
+async fn a_run_starts_although_the_clock_stepped_back() {
+    // The earlier run's segments are dated after the ones the next run writes.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/dies", 0), upstream("http://up/ok", 1)];
+    open(&e, open_req("30", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let dir = live_dirs(&e)[0].clone();
+    until("the three segments", 10, || {
+        dir.join("seg-00002.m4s").exists()
+    })
+    .await;
+    let later = std::time::SystemTime::now() + Duration::from_secs(3600);
+    for n in 0..3 {
+        let seg = dir.join(format!("seg-{n:05}.m4s"));
+        let seg = std::fs::File::options().write(true).open(seg).unwrap();
+        seg.set_modified(later).unwrap();
+    }
+    std::fs::write(dir.join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
 }
 
 #[tokio::test]

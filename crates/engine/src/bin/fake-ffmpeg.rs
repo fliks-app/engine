@@ -548,9 +548,9 @@ fn itemstop(args: &[String]) {
     std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
 }
 
-/// A run whose decoder gives no frame: a SIGTERM flushes a segment and a playlist, as the muxer's
-/// trailer does with the audio it buffered; a SIGKILL leaves nothing.
-fn refuse(dir: &std::path::Path) -> ! {
+/// Alive until a SIGTERM, which flushes `seg` (and a playlist if none) as the muxer's trailer does;
+/// a SIGKILL leaves nothing. `said` goes to stderr once the handler is in place.
+fn flush_on_term(dir: &std::path::Path, seg: &str, said: &str) -> ! {
     #[cfg(unix)]
     static TERM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     #[cfg(unix)]
@@ -560,28 +560,27 @@ fn refuse(dir: &std::path::Path) -> ! {
         }
         unsafe { libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t) };
     }
-    eprintln!(
-        "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to decoder: \
-         Function not implemented"
-    );
+    eprintln!("{said}");
     #[cfg(unix)]
     {
         while !TERM.load(std::sync::atomic::Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(20));
         }
-        std::fs::write(dir.join("seg-00000.m4s"), "audio only").unwrap();
-        std::fs::write(dir.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        std::fs::write(dir.join(seg), "flushed").unwrap();
+        if !dir.join("index.m3u8").exists() {
+            std::fs::write(dir.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        }
         std::process::exit(255)
     }
     #[cfg(not(unix))]
     {
-        let _ = dir;
+        let _ = (dir, seg);
         hang()
     }
 }
 
 /// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
-/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs), `10bit`.
+/// segment, `flush`: one more at a polite stop), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs), `10bit`.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -625,7 +624,9 @@ fn live(args: &[String]) {
     // A GPU that cannot decode this upstream: a `-hwaccel` run dies, hangs, or runs on refusing it.
     if args.iter().any(|a| a == "-hwaccel") {
         if input.contains("gpurefuses") {
-            refuse(&dir)
+            let refusal = "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to \
+                           decoder: Function not implemented";
+            flush_on_term(&dir, "seg-00000.m4s", refusal)
         }
         if input.contains("gpudies") {
             eprintln!(
@@ -672,6 +673,9 @@ fn live(args: &[String]) {
     for n in first.. {
         let written = n - first;
         if input.contains("stall") && written == 1 {
+            if input.contains("flush") {
+                flush_on_term(&dir, &format!("seg-{n:05}.{ext}"), "ready")
+            }
             hang()
         }
         if input.contains("dies") && written == 3 {

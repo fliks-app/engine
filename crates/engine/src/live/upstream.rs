@@ -17,6 +17,8 @@ use fliks_engine_core::live as core_live;
 use http_body_util::{BodyExt, Empty};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::connect::HttpConnector;
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -233,7 +235,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
     };
     let gpu_decode = args::live_gpu_decode(&o, &caps);
     let argv = args::live(&o, &caps, &dev);
-    let before = newest_segment(&dir).await;
+    let before = segments(&dir).await;
     let spawned = if vet_proxy.is_some() {
         Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
     } else {
@@ -257,7 +259,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         proc.stop().await;
         return Start::Failed;
     }
-    let wait = first_segment(&dir, &proc, before, gpu_decode).await;
+    let wait = first_segment(&dir, &proc, &before, gpu_decode).await;
     let ok = wait == Wait::Segment;
     let tail = proc.stderr_tail();
     // A break past the input, not the window running out (nor a stop: the pipe ended).
@@ -299,17 +301,18 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
     start
 }
 
-/// Waits 20 s for a `seg-*` entry written past `before`; the run exiting ends the wait, as does
-/// the decoder of a `gpu_decode` one refusing the stream. [ts:svc:1001-1047]
+/// Waits 20 s for a `seg-*` entry `before` lacks or dates otherwise; the run exiting ends the
+/// wait, as does the decoder of a `gpu_decode` one refusing the stream. [ts:svc:1001-1047]
 async fn first_segment(
     dir: &Path,
     proc: &Ffmpeg,
-    before: Option<SystemTime>,
+    before: &HashMap<OsString, SystemTime>,
     gpu_decode: bool,
 ) -> Wait {
     let until = Instant::now() + FIRST_SEGMENT_TIMEOUT;
     loop {
-        if newest_segment(dir).await > before {
+        let now = segments(dir).await;
+        if now.iter().any(|(name, at)| before.get(name) != Some(at)) {
             return Wait::Segment;
         }
         if gpu_decode && core_live::decoder_refused(&proc.stderr_tail()) {
@@ -322,8 +325,8 @@ async fn first_segment(
     }
 }
 
-/// The latest mtime among the `seg-*` entries: file times only, as `playlist_mtime`.
-async fn newest_segment(dir: &Path) -> Option<SystemTime> {
+/// The `seg-*` entries and their mtimes, compared for equality only: no clock is trusted.
+async fn segments(dir: &Path) -> HashMap<OsString, SystemTime> {
     let dir = dir.to_path_buf();
     tokio::task::spawn_blocking(move || {
         std::fs::read_dir(dir)
@@ -331,12 +334,11 @@ async fn newest_segment(dir: &Path) -> Option<SystemTime> {
             .flatten()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().starts_with("seg-"))
-            .filter_map(|e| e.metadata().ok()?.modified().ok())
-            .max()
+            .filter_map(|e| Some((e.file_name(), e.metadata().ok()?.modified().ok()?)))
+            .collect()
     })
     .await
-    .ok()
-    .flatten()
+    .unwrap_or_default()
 }
 
 /// A GET (http or https) following up to 5 redirects; `Err` is the reason to record.
