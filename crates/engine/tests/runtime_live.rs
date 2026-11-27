@@ -1,7 +1,6 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
-//! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
-//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `gpurefuses`, `badchain`,
-//! `noprobe`).
+//! ffprobe and writes segments and a playlist the upstream URL shapes (`fail`, `dies`, `stall`,
+//! `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `gpurefuses`, `badchain`, `noprobe`).
 //! Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
@@ -885,6 +884,9 @@ async fn a_gpu_decoder_refusing_the_stream_is_redone_with_cpu_decode() {
     assert_eq!(attempt(&ok), Some((0, None)));
     let hw: Vec<_> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
     assert_eq!(hw, [Some("vaapi".to_string()), None]);
+    // Killed: stopped politely, the refused run would leave a playlist the next one appends to.
+    let flags = arg_after(&runs(&e)[1], "-hls_flags").unwrap();
+    assert!(!flags.contains("append_list"), "{flags}");
 }
 
 #[tokio::test]

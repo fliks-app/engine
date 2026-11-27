@@ -548,9 +548,40 @@ fn itemstop(args: &[String]) {
     std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
 }
 
+/// A run whose decoder gives no frame: a SIGTERM flushes a segment and a playlist, as the muxer's
+/// trailer does with the audio it buffered; a SIGKILL leaves nothing.
+fn refuse(dir: &std::path::Path) -> ! {
+    #[cfg(unix)]
+    static TERM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    #[cfg(unix)]
+    {
+        extern "C" fn on_term(_: libc::c_int) {
+            TERM.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        unsafe { libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t) };
+    }
+    eprintln!(
+        "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to decoder: \
+         Function not implemented"
+    );
+    #[cfg(unix)]
+    {
+        while !TERM.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::fs::write(dir.join("seg-00000.m4s"), "audio only").unwrap();
+        std::fs::write(dir.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        std::process::exit(255)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        hang()
+    }
+}
+
 /// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
-/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (`-hwaccel` runs),
-/// `10bit` probe.
+/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs), `10bit`.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -594,11 +625,7 @@ fn live(args: &[String]) {
     // A GPU that cannot decode this upstream: a `-hwaccel` run dies, hangs, or runs on refusing it.
     if args.iter().any(|a| a == "-hwaccel") {
         if input.contains("gpurefuses") {
-            eprintln!(
-                "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to decoder: \
-                 Function not implemented"
-            );
-            hang()
+            refuse(&dir)
         }
         if input.contains("gpudies") {
             eprintln!(
