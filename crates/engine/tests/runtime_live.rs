@@ -355,9 +355,8 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
         attempt(&event(&mut rx, 60, |ev| attempt(ev).is_some()).await),
         Some((0, None))
     );
-    // Old segments count as the first one (the TS's check): the run may not have started yet.
-    until("the third run", 30, || runs(&e).len() == 3).await;
     let runs = runs(&e);
+    assert_eq!(runs.len(), 3, "{runs:?}");
     let last = runs.last().unwrap();
     assert!(last.contains(&"http://up/ok".to_string()));
     assert!(
@@ -840,6 +839,33 @@ async fn a_failed_gpu_decode_is_redone_with_cpu_decode_and_kept() {
     assert!(attempt(&failed).unwrap().1.is_some());
     until("the restart", 30, || runs(&e).len() == 3).await;
     assert_eq!(hw(&runs(&e)[2]), None);
+}
+
+#[tokio::test]
+async fn a_failed_gpu_decode_after_a_failover_is_redone_too() {
+    // The first upstream left segments: they are not the next run's.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let ups = vec![
+        upstream("http://up/dies", 0),
+        upstream("http://up/gpudies", 1),
+    ];
+    open(&e, open_req("26", ups, caps, "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let die = live_dirs(&e)[0].join("die");
+    std::fs::write(&die, b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    // `gpudies` holds at three segments too.
+    std::fs::remove_file(&die).unwrap();
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let hw: Vec<_> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
+    let vaapi = Some("vaapi".to_string());
+    assert_eq!(hw, [vaapi.clone(), vaapi, None]);
 }
 
 #[tokio::test]

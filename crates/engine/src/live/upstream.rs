@@ -20,6 +20,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 use tokio::time::Instant;
 
 /// http and https with the platform's roots (`SSL_CERT_FILE`/`SSL_CERT_DIR` override them).
@@ -125,7 +126,7 @@ async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     }
 }
 
-/// One ffmpeg run into the pipe's directory, successful once a segment exists. [ts:svc:862-927]
+/// One ffmpeg run into the pipe's directory, successful once it wrote a segment. [ts:svc:862-927]
 async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start {
     let u = &pipe.upstreams[i];
     let mut vet_proxy = None;
@@ -222,6 +223,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
     };
     let gpu_decode = args::live_gpu_decode(&o, &caps);
     let argv = args::live(&o, &caps, &dev);
+    let before = newest_segment(&dir).await;
     let spawned = if vet_proxy.is_some() {
         Ffmpeg::spawn_vetted(&rt.ffmpeg, &argv).await
     } else {
@@ -247,7 +249,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         proc.stop().await;
         return Start::Failed;
     }
-    let ok = first_segment(&dir, &proc).await;
+    let ok = first_segment(&dir, &proc, before).await;
     let tail = proc.stderr_tail();
     // An exit past the input, not the window running out (nor a stop: the pipe ended).
     let start = if ok {
@@ -284,11 +286,12 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
     start
 }
 
-/// Any `seg-*` entry within 20 s; the run exiting first fails. [ts:svc:1001-1047]
-async fn first_segment(dir: &Path, proc: &Ffmpeg) -> bool {
+/// A `seg-*` entry written past `before` within 20 s; the run exiting first fails.
+/// [ts:svc:1001-1047]
+async fn first_segment(dir: &Path, proc: &Ffmpeg, before: Option<SystemTime>) -> bool {
     let until = Instant::now() + FIRST_SEGMENT_TIMEOUT;
     loop {
-        if has_segment(dir).await {
+        if newest_segment(dir).await > before {
             return true;
         }
         if proc.exited().is_some() || Instant::now() >= until {
@@ -298,17 +301,21 @@ async fn first_segment(dir: &Path, proc: &Ffmpeg) -> bool {
     }
 }
 
-async fn has_segment(dir: &Path) -> bool {
+/// The latest mtime among the `seg-*` entries: file times only, as `playlist_mtime`.
+async fn newest_segment(dir: &Path) -> Option<SystemTime> {
     let dir = dir.to_path_buf();
     tokio::task::spawn_blocking(move || {
         std::fs::read_dir(dir)
             .into_iter()
             .flatten()
             .flatten()
-            .any(|e| e.file_name().to_string_lossy().starts_with("seg-"))
+            .filter(|e| e.file_name().to_string_lossy().starts_with("seg-"))
+            .filter_map(|e| e.metadata().ok()?.modified().ok())
+            .max()
     })
     .await
-    .unwrap_or(false)
+    .ok()
+    .flatten()
 }
 
 /// One blocking hop for the whole listing, not one per batch of entries.
