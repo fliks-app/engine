@@ -4387,6 +4387,21 @@
             "format": "double",
             "description": "Bytes of the staged output; 0 for a `Verify`."
           },
+          "sampledSavingsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`Optimize` only: video savings the samples predicted and the encode reached, in percent,\nand the lowest mean SSIM of the output's check windows (`OptimizeMeta`)."
+          },
+          "savingsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "separate": {
             "oneOf": [
               {
@@ -4397,6 +4412,13 @@
                 "type": "null"
               }
             ]
+          },
+          "ssim": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "workerId": {
             "type": "string"
