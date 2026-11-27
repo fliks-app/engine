@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.31.0](https://github.com/fliks-app/engine/compare/v1.30.7...v1.31.0) (2026-11-27)
+
+
+### Features
+
+* **optimize:** report sampled and real savings and the output SSIM ([#294](https://github.com/fliks-app/engine/issues/294)) ([eda457b](https://github.com/fliks-app/engine/commit/eda457b1de337532eda6af71c7c4709faaa6d83d))
+
+
+### Bug Fixes
+
+* **live:** count a run as started on a segment it wrote itself ([#289](https://github.com/fliks-app/engine/issues/289)) ([0e68481](https://github.com/fliks-app/engine/commit/0e684819e5af891d6c2684d4bfd598e2fdd0ae67))
+* **live:** redo on the cpu a run whose gpu decoder refuses the stream ([#293](https://github.com/fliks-app/engine/issues/293)) ([01fb724](https://github.com/fliks-app/engine/commit/01fb724e94e16edeb1177696adf46a936a3a9b52))
+* **optimize:** measure savings on packets, before the output checks ([#292](https://github.com/fliks-app/engine/issues/292)) ([523bbe2](https://github.com/fliks-app/engine/commit/523bbe2cfa0730c0378bfee08927cb3260b6b5c2))
+
 ## [1.30.7](https://github.com/fliks-app/engine/compare/v1.30.6...v1.30.7) (2026-11-26)
 
 
