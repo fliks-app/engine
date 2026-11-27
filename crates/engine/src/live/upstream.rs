@@ -101,6 +101,16 @@ enum Start {
     GpuDecodeFailed,
 }
 
+/// What ended the wait for a run's first segment.
+#[derive(PartialEq)]
+enum Wait {
+    Segment,
+    /// The decoder of a GPU decode run refused the stream.
+    Refused,
+    /// The run exited or the 20 s ran out.
+    Nothing,
+}
+
 /// The upstream probed if need be, then `spawn_packaged`, redone once with CPU decode (the GPU
 /// still encodes) after `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
 async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
@@ -249,29 +259,25 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         proc.stop().await;
         return Start::Failed;
     }
-    let ok = first_segment(&dir, &proc, before, gpu_decode).await;
+    let wait = first_segment(&dir, &proc, before, gpu_decode).await;
+    let ok = wait == Wait::Segment;
     let tail = proc.stderr_tail();
     // A break past the input, not the window running out (nor a stop: the pipe ended).
+    let broke = wait == Wait::Refused || gpu_decode && proc.exited().is_some();
     let start = if ok {
         Start::Ok
-    } else if gpu_decode
-        && (proc.exited().is_some() || core_live::decoder_refused(&tail))
-        && !pipe.m.locked().ended
-        && !core_live::input_failed(&tail)
-    {
+    } else if broke && !pipe.m.locked().ended && !core_live::input_failed(&tail) {
         tracing::warn!(
             url = u.url,
             "live run decoding on the gpu broke before a segment, again with cpu decode:\n{}",
             tail.join("\n")
         );
+        // No polite stop: a refused run would flush the audio it buffered into the playlist.
+        proc.kill().await;
         Start::GpuDecodeFailed
     } else {
         Start::Failed
     };
-    if !ok {
-        // No polite stop: ffmpeg would flush what it buffered into the session's playlist.
-        proc.kill().await;
-    }
     // A hardware run that ran forgives the device; after a failed GPU decode, its CPU decode run
     // gives the attempt's one verdict.
     if let Some(d) = &device {
@@ -290,24 +296,24 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
     start
 }
 
-/// A `seg-*` entry written past `before` within 20 s; the run exiting first fails, as does a
-/// `gpu_decode` one whose decoder refuses the stream. [ts:svc:1001-1047]
+/// Waits 20 s for a `seg-*` entry written past `before`; the run exiting ends the wait, as does
+/// the decoder of a `gpu_decode` one refusing the stream. [ts:svc:1001-1047]
 async fn first_segment(
     dir: &Path,
     proc: &Ffmpeg,
     before: Option<SystemTime>,
     gpu_decode: bool,
-) -> bool {
+) -> Wait {
     let until = Instant::now() + FIRST_SEGMENT_TIMEOUT;
     loop {
         if newest_segment(dir).await > before {
-            return true;
+            return Wait::Segment;
         }
-        if proc.exited().is_some()
-            || Instant::now() >= until
-            || gpu_decode && core_live::decoder_refused(&proc.stderr_tail())
-        {
-            return false;
+        if gpu_decode && core_live::decoder_refused(&proc.stderr_tail()) {
+            return Wait::Refused;
+        }
+        if proc.exited().is_some() || Instant::now() >= until {
+            return Wait::Nothing;
         }
         tokio::time::sleep(FIRST_SEGMENT_POLL).await;
     }

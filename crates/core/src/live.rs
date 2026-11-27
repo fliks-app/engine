@@ -159,11 +159,12 @@ pub fn input_failed(stderr_tail: &[String]) -> bool {
         .any(|l| l.contains("Error opening input") || l.contains("matches no streams"))
 }
 
-/// A live run's stderr tail shows its decoder refusing the stream (any cause but damaged data):
-/// ffmpeg runs on and never outputs a frame.
+/// A live run's stderr tail shows its video decoder failing a packet with another error than
+/// invalid data: QSV refuses a stream so, and ffmpeg runs on without ever outputting a frame.
 pub fn decoder_refused(stderr_tail: &[String]) -> bool {
     stderr_tail.iter().any(|l| {
-        l.contains("Error submitting packet to decoder")
+        l.contains("[vist#")
+            && l.contains("Error submitting packet to decoder")
             && !l.contains("Invalid data found when processing input")
     })
 }
@@ -444,6 +445,10 @@ mod tests {
         let damaged = "[vist#0:0/h264 @ 0x55d0] [dec:h264 @ 0x55d1] Error submitting packet to \
             decoder: Invalid data found when processing input";
         assert!(!decoder_refused(&tail(damaged)));
+        // An audio decoder's trouble says nothing about the GPU.
+        let audio = "[aist#0:1/aac_latm @ 0x55d0] [dec:aac_latm @ 0x55d1] Error submitting packet \
+            to decoder: Not yet implemented in FFmpeg, patches welcome";
+        assert!(!decoder_refused(&tail(audio)));
         assert!(!decoder_refused(&[]));
     }
 
