@@ -397,29 +397,46 @@ impl Ffmpeg {
         self.decode_errors.load(Ordering::Relaxed) as u32
     }
 
-    /// CPU time (user + system, threads and reaped children) burnt so far.
+    /// CPU time (user + system) of the run's process group: a tool's live workers count before
+    /// they exit, the exited ones through their parent's reaped-children time.
     #[cfg(target_os = "linux")]
     pub fn cpu_time_ms(&self) -> Option<u64> {
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", self.pid?)).ok()?;
-        let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
-        Some(stat_cpu_ticks(&stat)? * 1000 / ticks)
+        let pid = self.pid?;
+        let (_, mut ticks) =
+            stat_group_ticks(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
+        for e in std::fs::read_dir("/proc").ok()?.flatten() {
+            if e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) == Some(pid) {
+                continue;
+            }
+            let stat = std::fs::read_to_string(e.path().join("stat")).unwrap_or_default();
+            if let Some((pgrp, t)) = stat_group_ticks(&stat)
+                && pgrp == pid
+            {
+                ticks += t;
+            }
+        }
+        let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
+        Some(ticks * 1000 / hz)
     }
 
-    /// `proc_pid_rusage` counts in mach ticks, hence the timebase.
+    /// CPU time of the run's process group, live workers included (as on Linux).
     #[cfg(target_os = "macos")]
-    #[allow(deprecated)]
     pub fn cpu_time_ms(&self) -> Option<u64> {
-        let (mut ri, mut tb): (libc::rusage_info_v2, libc::mach_timebase_info_data_t) =
-            unsafe { std::mem::zeroed() };
-        let buf = &mut ri as *mut _ as *mut libc::rusage_info_t;
-        let ok = unsafe {
-            libc::mach_timebase_info(&mut tb) == 0
-                && tb.denom != 0
-                && libc::proc_pid_rusage(self.pid? as i32, libc::RUSAGE_INFO_V2, buf) == 0
+        let pid = self.pid? as libc::pid_t;
+        let mut pids = [0 as libc::pid_t; 512];
+        let n = unsafe {
+            libc::proc_listpgrppids(
+                pid,
+                pids.as_mut_ptr().cast(),
+                std::mem::size_of_val(&pids) as i32,
+            )
         };
-        let ticks = ri.ri_user_time + ri.ri_system_time;
-        let ticks = ticks + ri.ri_child_user_time + ri.ri_child_system_time;
-        ok.then(|| (ticks as u128 * tb.numer as u128 / tb.denom as u128 / 1_000_000) as u64)
+        let own = rusage_ms(pid)?;
+        let others = pids[..n.clamp(0, pids.len() as i32) as usize]
+            .iter()
+            .filter(|&&p| p != pid && p > 0)
+            .filter_map(|&p| rusage_ms(p));
+        Some(own + others.sum::<u64>())
     }
 
     /// CPU time (user + kernel) burnt so far, from `GetProcessTimes`.
@@ -521,15 +538,34 @@ impl Ffmpeg {
     }
 }
 
-/// utime + stime + cutime + cstime of a `/proc/<pid>/stat` line (the name may hold spaces).
+/// pgrp and utime + stime + cutime + cstime of a `/proc/<pid>/stat` line (the name may hold spaces).
 #[cfg(target_os = "linux")]
-fn stat_cpu_ticks(stat: &str) -> Option<u64> {
-    let rest = &stat[stat.rfind(')')? + 1..];
-    rest.split_whitespace()
-        .skip(11)
-        .take(4)
-        .map(|f| f.parse::<u64>().ok())
-        .sum()
+fn stat_group_ticks(stat: &str) -> Option<(u32, u64)> {
+    let f: Vec<&str> = stat[stat.rfind(')')? + 1..].split_whitespace().collect();
+    let ticks = f
+        .get(11..15)?
+        .iter()
+        .map(|x| x.parse::<u64>().ok())
+        .sum::<Option<u64>>()?;
+    Some((f.get(2)?.parse().ok()?, ticks))
+}
+
+/// User + system time of one process and its reaped children; `proc_pid_rusage` counts in mach
+/// ticks, hence the timebase.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+fn rusage_ms(pid: libc::pid_t) -> Option<u64> {
+    let (mut ri, mut tb): (libc::rusage_info_v2, libc::mach_timebase_info_data_t) =
+        unsafe { std::mem::zeroed() };
+    let buf = &mut ri as *mut _ as *mut libc::rusage_info_t;
+    let ok = unsafe {
+        libc::mach_timebase_info(&mut tb) == 0
+            && tb.denom != 0
+            && libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2, buf) == 0
+    };
+    let ticks = ri.ri_user_time + ri.ri_system_time;
+    let ticks = ticks + ri.ri_child_user_time + ri.ri_child_system_time;
+    ok.then(|| (ticks as u128 * tb.numer as u128 / tb.denom as u128 / 1_000_000) as u64)
 }
 
 #[cfg(unix)]
@@ -676,9 +712,26 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn cpu_ticks_come_from_fields_14_to_17() {
-        let line = "42 (ff mpeg) ) S 1 42 42 0 -1 4194560 100 0 0 0 7 5 3 1 20 0 4 0 99 0";
-        assert_eq!(stat_cpu_ticks(line), Some(16));
+    fn group_and_cpu_ticks_come_from_fields_5_and_14_to_17() {
+        let line = "42 (ff mpeg) ) S 1 41 42 0 -1 4194560 100 0 0 0 7 5 3 1 20 0 4 0 99 0";
+        assert_eq!(stat_group_ticks(line), Some((41, 16)));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn cpu_time_counts_a_live_worker_of_a_silent_parent() {
+        let p = Ffmpeg::spawn("sh", &sh("yes > /dev/null & wait"))
+            .await
+            .unwrap();
+        let t = std::time::Instant::now();
+        while p.cpu_time_ms().unwrap() < 300 {
+            assert!(
+                t.elapsed() < Duration::from_secs(30),
+                "worker CPU never counted"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        p.stop().await;
     }
 
     #[tokio::test]
