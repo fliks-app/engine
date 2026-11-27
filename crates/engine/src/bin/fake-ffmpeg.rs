@@ -548,9 +548,9 @@ fn itemstop(args: &[String]) {
     std::fs::rename(&open, dir.join(format!("seg-{:04}.ts", start + 1))).unwrap();
 }
 
-/// A run whose decoder gives no frame: a SIGTERM flushes a segment and a playlist, as the muxer's
-/// trailer does with the audio it buffered; a SIGKILL leaves nothing.
-fn refuse(dir: &std::path::Path) -> ! {
+/// Alive until a SIGTERM, which flushes `seg` (and a playlist if none) as the muxer's trailer does;
+/// a SIGKILL leaves nothing. `said` goes to stderr once the handler is in place.
+fn flush_on_term(dir: &std::path::Path, seg: &str, said: &str) -> ! {
     #[cfg(unix)]
     static TERM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     #[cfg(unix)]
@@ -560,28 +560,27 @@ fn refuse(dir: &std::path::Path) -> ! {
         }
         unsafe { libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t) };
     }
-    eprintln!(
-        "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to decoder: \
-         Function not implemented"
-    );
+    eprintln!("{said}");
     #[cfg(unix)]
     {
         while !TERM.load(std::sync::atomic::Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(20));
         }
-        std::fs::write(dir.join("seg-00000.m4s"), "audio only").unwrap();
-        std::fs::write(dir.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        std::fs::write(dir.join(seg), "flushed").unwrap();
+        if !dir.join("index.m3u8").exists() {
+            std::fs::write(dir.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        }
         std::process::exit(255)
     }
     #[cfg(not(unix))]
     {
-        let _ = dir;
+        let _ = (dir, seg);
         hang()
     }
 }
 
-/// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
-/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs), `10bit`.
+/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `10bit`,
+/// `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); with `flush`, a polite stop writes a segment.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -625,7 +624,9 @@ fn live(args: &[String]) {
     // A GPU that cannot decode this upstream: a `-hwaccel` run dies, hangs, or runs on refusing it.
     if args.iter().any(|a| a == "-hwaccel") {
         if input.contains("gpurefuses") {
-            refuse(&dir)
+            let refusal = "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to \
+                           decoder: Function not implemented";
+            flush_on_term(&dir, "seg-00000.m4s", refusal)
         }
         if input.contains("gpudies") {
             eprintln!(
@@ -634,6 +635,9 @@ fn live(args: &[String]) {
             std::process::exit(1)
         }
         if input.contains("gpuhangs") {
+            if input.contains("flush") {
+                flush_on_term(&dir, "seg-00000.m4s", "ready")
+            }
             hang()
         }
     }
@@ -642,7 +646,6 @@ fn live(args: &[String]) {
     } else {
         "m4s"
     };
-    let fmp4 = ext == "m4s";
     let existing = std::fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| {
@@ -660,18 +663,33 @@ fn live(args: &[String]) {
     } else {
         0
     };
-    if fmp4 {
-        put(&dir.join("init.mp4"), b"init");
+    let init = args
+        .iter()
+        .position(|a| a == "-hls_fmp4_init_filename")
+        .map(|i| args[i + 1].clone());
+    if let Some(init) = &init {
+        put(&dir.join(init), b"init");
+    }
+    // An MPEG-TS run slow to open: its first segment stays a `.tmp` for 6 s.
+    if input.contains("slowts") {
+        std::thread::sleep(Duration::from_secs(11));
+        let open = dir.join(format!("seg-00000.{ext}.tmp"));
+        std::fs::write(&open, "partial").unwrap();
+        std::thread::sleep(Duration::from_secs(6));
+        std::fs::remove_file(open).unwrap();
     }
     let mut m3u8 = format!(
         "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{first}\n"
     );
-    if fmp4 {
-        m3u8.push_str("#EXT-X-MAP:URI=\"init.mp4\"\n");
+    if let Some(init) = &init {
+        m3u8.push_str(&format!("#EXT-X-MAP:URI=\"{init}\"\n"));
     }
     for n in first.. {
         let written = n - first;
         if input.contains("stall") && written == 1 {
+            if input.contains("flush") {
+                flush_on_term(&dir, &format!("seg-{n:05}.{ext}"), "ready")
+            }
             hang()
         }
         if input.contains("dies") && written == 3 {

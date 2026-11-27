@@ -165,6 +165,8 @@ struct PipeMut {
     device: Option<String>,
     /// A GPU decode failed: its transcodes decode on the CPU.
     cpu_decode: bool,
+    /// Packaged runs spawned so far: the ordinal of the next one.
+    runs: u32,
     direct: Option<Direct>,
     content_type: Option<String>,
     tees: Vec<(String, mpsc::Sender<Bytes>)>,
@@ -174,7 +176,7 @@ struct PipeMut {
     /// process left): a playlist still at that mtime is never appended to.
     foreign_playlist: Option<SystemTime>,
     last_segment_at: Instant,
-    /// The playlist's mtime when it last moved: ffmpeg rewrites it at each segment.
+    /// The playlist's mtime as last seen: ffmpeg rewrites it at each segment, whatever its number.
     last_playlist: Option<SystemTime>,
     viewers: HashMap<String, Viewer>,
     idle_since: Option<Instant>,

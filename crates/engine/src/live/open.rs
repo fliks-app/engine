@@ -256,6 +256,7 @@ pub(super) async fn start(
             probes,
             device: None,
             cpu_decode: false,
+            runs: 0,
             foreign_playlist,
             failover: Failover::new(order.len()),
             current: 0,

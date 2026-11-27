@@ -434,7 +434,8 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     a.extend(["-hls_delete_threshold".into(), "3".into()]);
     a.extend(hls_segment_type(o.use_ts));
     if !o.use_ts {
-        a.extend(strs(&["-hls_fmp4_init_filename", "init.mp4"]));
+        let init = crate::live::init_name(o.run);
+        a.extend(["-hls_fmp4_init_filename".into(), init]);
     }
     a.extend([
         "-hls_flags".into(),

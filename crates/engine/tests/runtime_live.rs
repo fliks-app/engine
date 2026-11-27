@@ -1,6 +1,6 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
 //! ffprobe and writes segments and a playlist the upstream URL shapes (`fail`, `dies`, `stall`,
-//! `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `gpurefuses`, `badchain`, `noprobe`).
+//! `slowts`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `gpurefuses`, `badchain`, `noprobe`).
 //! Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
@@ -897,7 +897,7 @@ async fn a_gpu_decode_that_never_starts_fails_over_without_a_retry() {
     let mut rx = e.rt.events.subscribe();
     let caps = json!({ "maxBitrateBps": 2500000 });
     let ups = vec![
-        upstream("http://up/gpuhangs", 0),
+        upstream("http://up/gpuhangs-flush", 0),
         upstream("http://up/b", 1),
     ];
     let a = open(&e, open_req("23", ups, caps, "alice", "t")).await;
@@ -914,6 +914,9 @@ async fn a_gpu_decode_that_never_starts_fails_over_without_a_retry() {
         r.iter()
             .all(|a| arg_after(a, "-hwaccel").as_deref() == Some("vaapi"))
     );
+    // Killed: stopped politely, the hung run would leave a playlist the next one appends to.
+    let flags = arg_after(&r[1], "-hls_flags").unwrap();
+    assert!(!flags.contains("append_list"), "{flags}");
 }
 
 #[tokio::test]
@@ -971,7 +974,10 @@ async fn a_transcode_after_a_remux_never_appends_to_its_playlist() {
 async fn a_stalled_upstream_fails_over_within_the_ts_window() {
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
-    let ups = vec![upstream("http://up/stall", 0), upstream("http://up/ok", 1)];
+    let ups = vec![
+        upstream("http://up/stall-flush", 0),
+        upstream("http://up/ok", 1),
+    ];
     open(&e, open_req("5", ups, json!({}), "alice", "t")).await;
     assert_eq!(
         attempt(&event(&mut rx, 30, |ev| attempt(ev).is_some()).await),
@@ -989,6 +995,67 @@ async fn a_stalled_upstream_fails_over_within_the_ts_window() {
         Some((1, None))
     );
     until("the stalled run killed", 30, || e.ffmpeg_pids().len() == 1).await;
+    // Killed: stopped politely, it would flush what it held as the segment the next run writes.
+    let next = std::fs::read_to_string(live_dirs(&e)[0].join("seg-00001.m4s")).unwrap();
+    assert_eq!(next, "segment 1");
+}
+
+#[tokio::test]
+async fn each_run_names_its_own_init() {
+    // A player keeps an init by its URL: under one name it would decode with the earlier run's.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/dies", 0), upstream("http://up/ok", 1)];
+    let a = open(&e, open_req("31", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    until("the next run", 30, || runs(&e).len() == 2).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let names: Vec<_> = runs(&e)
+        .iter()
+        .map(|r| arg_after(r, "-hls_fmp4_init_filename").unwrap())
+        .collect();
+    assert_eq!(names, ["init.mp4", "init-1.mp4"]);
+    let base = format!("/api/livetv/sessions/{}", sid(&a));
+    let list = e.get(&format!("{base}/index.m3u8"), "alice-jwt", &[]).await;
+    assert!(
+        list.text().contains("#EXT-X-MAP:URI=\"init-1.mp4"),
+        "{}",
+        list.text()
+    );
+    for (name, status) in [("init-1.mp4", 200), ("init.mp4", 200), ("init-x.mp4", 400)] {
+        let r = e.get(&format!("{base}/{name}"), "alice-jwt", &[]).await;
+        assert_eq!(r.status, status, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn a_run_starts_although_the_clock_stepped_back() {
+    // The earlier run's segments are dated after the ones the next run writes.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/dies", 0), upstream("http://up/ok", 1)];
+    open(&e, open_req("30", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let dir = live_dirs(&e)[0].clone();
+    until("the three segments", 10, || {
+        dir.join("seg-00002.m4s").exists()
+    })
+    .await;
+    let later = std::time::SystemTime::now() + Duration::from_secs(3600);
+    for n in 0..3 {
+        let seg = dir.join(format!("seg-{n:05}.m4s"));
+        let seg = std::fs::File::options().write(true).open(seg).unwrap();
+        seg.set_modified(later).unwrap();
+    }
+    std::fs::write(dir.join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
 }
 
 #[tokio::test]
@@ -1011,8 +1078,48 @@ async fn a_transcode_after_a_long_remux_is_not_taken_for_a_stall() {
     assert_eq!(attempt(&ok), Some((1, None)));
     // Past the 15 s stall window and its 5 s check: the run feeding the session is left alone.
     let more = event(&mut rx, 60, |ev| attempt(ev).is_some());
-    let more = tokio::time::timeout(Duration::from_secs(22), more).await;
+    let more = tokio::time::timeout(Duration::from_secs(25), more).await;
     assert!(more.is_err(), "{more:?}");
+}
+
+#[tokio::test]
+async fn an_mpeg_ts_run_slow_to_open_is_not_taken_for_a_stall() {
+    // Its first segment is a `.tmp` at the start verdict, 11 s in, and completes 6 s later.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let ups = vec![upstream("http://up/slowts", 0)];
+    open(
+        &e,
+        open_req("32", ups, json!({ "useTs": true }), "alice", "t"),
+    )
+    .await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let more = event(&mut rx, 60, |ev| attempt(ev).is_some());
+    let more = tokio::time::timeout(Duration::from_secs(25), more).await;
+    assert!(more.is_err(), "{more:?}");
+}
+
+#[tokio::test]
+async fn a_transcode_stalled_after_a_remux_is_still_caught() {
+    // A run that does not append and stalls after its first segment, over an earlier run's.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let hevc = json!({ "url": "http://up/hevc-stall", "priority": 1, "probedVideoCodec": "hevc" });
+    let ups = vec![upstream("http://up/dies", 0), hevc];
+    open(&e, open_req("29", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let stalled = event(&mut rx, 60, |ev| attempt(ev).is_some()).await;
+    assert_eq!(
+        attempt(&stalled),
+        Some((1, Some("no new segment for 15 s")))
+    );
 }
 
 #[tokio::test]

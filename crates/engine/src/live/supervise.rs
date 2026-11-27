@@ -28,7 +28,6 @@ pub(super) async fn supervise(rt: Arc<Runtime>, pipe: Arc<Pipe>) {
         let now = Instant::now();
         let (expired, idle_over, failure) = {
             let mut m = pipe.m.locked();
-            // Not the highest `seg-N`: a run that does not append restarts under the old ones.
             if written.is_some() && written != m.last_playlist {
                 m.last_playlist = written;
                 m.last_segment_at = now;
@@ -108,7 +107,6 @@ async fn handle_failure(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, error: String) -> b
     {
         let mut m = pipe.m.locked();
         m.failover.failed(pos);
-        m.last_playlist = None;
     }
     if recover(rt, pipe).await {
         return true;
