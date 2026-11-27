@@ -332,6 +332,26 @@ async fn a_hevc_reencode_is_verified_and_a_demanding_threshold_keeps_the_video()
 }
 
 #[tokio::test]
+async fn an_unsampled_encode_short_of_the_savings_keeps_the_video_before_its_checks() {
+    let Some(f) = fixture(15).await else { return };
+    if !encoder(&ffmpeg(), "libx265") {
+        eprintln!("libx265 not available: skipped");
+        return;
+    }
+    let staged = f.dir.join(".fliks-opt-60-1.tmp");
+    let plan = json!({ "level": "reencode", "codec": "hevc", "software": true,
+        "minSavingsPct": 99.99 });
+    let v = run_kind(&f, optimize(&f, plan, &staged)).await;
+    assert_eq!(v["state"], "done", "{v}");
+    let m = &v["result"]["optimize"];
+    assert_eq!(
+        (m["level"].as_str(), m["copyReason"].as_str()),
+        (Some("remux"), Some("low_savings"))
+    );
+    assert_eq!(m["outInfo"]["video"][0]["codec"], "h264");
+}
+
+#[tokio::test]
 async fn verify_passes_a_clean_file_and_refuses_a_corrupt_one() {
     let Some(f) = fixture(8).await else { return };
     let v = run_kind(

@@ -23,6 +23,32 @@ impl PacketStats {
             self.bytes += n;
         }
     }
+
+    /// A `pts_time,dts_time,size` line, counted when its pts (its dts when the container has no
+    /// pts, AVI) falls in `[from, to)`.
+    pub fn add_window_line(&mut self, line: &str, from: f64, to: f64) {
+        let f: Vec<Option<f64>> = line.trim().split(',').map(|v| v.parse().ok()).collect();
+        if let [pts, dts, Some(n), ..] = f[..]
+            && pts.or(dts).is_some_and(|t| (from..to).contains(&t))
+        {
+            self.count += 1;
+            self.bytes += n;
+        }
+    }
+
+    pub fn add(&mut self, other: PacketStats) {
+        self.count += other.count;
+        self.bytes += other.bytes;
+    }
+
+    /// Mean packet size, 0 without packets.
+    pub fn mean(&self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.bytes / self.count as f64
+        }
+    }
 }
 
 pub fn packet_args(file: &str) -> Vec<String> {
@@ -33,6 +59,25 @@ pub fn packet_args(file: &str) -> Vec<String> {
         "v:0",
         "-show_entries",
         "packet=size",
+        "-of",
+        "csv=p=0",
+        file,
+    ])
+}
+
+/// The video packets around `[from, to)` (absolute pts), for [`PacketStats::add_window_line`]:
+/// a copy of that window would start at the keyframe before `from` and count a whole extra GOP.
+pub fn window_packet_args(file: &str, from: f64, to: f64) -> Vec<String> {
+    let interval = format!("{from:.3}%{to:.3}");
+    crate::strs(&[
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-read_intervals",
+        &interval,
+        "-show_entries",
+        "packet=pts_time,dts_time,size",
         "-of",
         "csv=p=0",
         file,
@@ -375,6 +420,25 @@ fn check_encoding(
 mod tests {
     use super::*;
     use crate::jobs::optimize::tests::{info, plan};
+
+    #[test]
+    fn window_lines_count_only_packets_in_range() {
+        let mut s = PacketStats::default();
+        // The keyframe ffprobe reads before the window and the packet at its end are not counted.
+        for l in [
+            "98.5,98.4,9000",
+            "100.0,99.9,500",
+            "101.2,100.0,300",
+            "N/A,N/A,700",
+            "N/A,101.5,50",
+            "102.0,101.9,400",
+            "100.9,100.8,200,",
+        ] {
+            s.add_window_line(l, 100.0, 102.0);
+        }
+        assert_eq!((s.count, s.bytes, s.mean()), (4, 1050.0, 262.5));
+        assert!(window_packet_args("f.mkv", 100.0, 102.0).contains(&"100.000%102.000".into()));
+    }
 
     #[test]
     fn stream_ends_decide_not_the_container_duration() {

@@ -172,6 +172,8 @@ struct Pulse {
     every: Duration,
     deadline: Instant,
     next: Instant,
+    /// The device the job runs on when it is not its leased one.
+    device: Option<String>,
 }
 
 impl Pulse {
@@ -182,6 +184,7 @@ impl Pulse {
             every,
             deadline: Instant::now() + lease,
             next: Instant::now() + every,
+            device: None,
         }
     }
 }
@@ -278,7 +281,7 @@ impl Worker {
         self.held
             .locked()
             .values()
-            .filter(|h| h.device == device)
+            .filter(|h| h.job.lane_device().unwrap_or_else(|| h.device.clone()) == device)
             .count()
     }
 
@@ -471,10 +474,14 @@ impl Worker {
                         dropped: dropped.clone(),
                     },
                 );
-                tokio::spawn(
-                    self.clone()
-                        .watch(id, attempt, lease_s, job, dropped, remote),
-                );
+                tokio::spawn(self.clone().watch(
+                    id,
+                    attempt,
+                    lease_s,
+                    (job, device.id.clone()),
+                    dropped,
+                    remote,
+                ));
             }
             Err(e) => {
                 tracing::warn!(job = id, "leased job refused: {e}");
@@ -491,7 +498,7 @@ impl Worker {
         id: u32,
         attempt: u32,
         lease_s: u32,
-        job: Arc<BgJob>,
+        (job, leased_on): (Arc<BgJob>, String),
         dropped: Arc<AtomicBool>,
         remote: bool,
     ) {
@@ -504,6 +511,7 @@ impl Worker {
             tokio::time::sleep(Duration::from_millis(250)).await;
             let snap = job.snapshot();
             let progress = (snap.pct / 100.0).clamp(0.0, 1.0);
+            pulse.device = job.lane_device().filter(|d| *d != leased_on);
             if self
                 .pulse(
                     id,
@@ -561,6 +569,7 @@ impl Worker {
             attempt,
             progress,
             paused,
+            device_id: p.device.clone(),
         };
         let answer = self
             .post(&format!("/engine/jobs/{id}/heartbeat"), &req, CALL_TIMEOUT)

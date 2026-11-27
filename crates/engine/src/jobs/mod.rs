@@ -108,6 +108,11 @@ impl BgJob {
         }
     }
 
+    /// The device of the lane the job runs on now.
+    pub fn lane_device(&self) -> Option<String> {
+        self.lane.locked().as_ref().map(|l| l.device.clone())
+    }
+
     fn base_state(&self) -> BgJobState {
         self.m.locked().state
     }
@@ -693,8 +698,10 @@ mod tests {
     #[test]
     fn cpu_only_work_leaves_a_gpu_lane_and_never_creates_one() {
         let j = job(Some(Lane::new("gpu0")));
+        assert_eq!(j.lane_device().as_deref(), Some("gpu0"));
         j.enter_cpu_lane();
         assert_eq!(*j.lane.locked(), Some(Lane::cpu()));
+        assert_eq!(j.lane_device(), Some(Lane::cpu().device));
         let unleased = job(None);
         unleased.enter_cpu_lane();
         assert_eq!(*unleased.lane.locked(), None);
