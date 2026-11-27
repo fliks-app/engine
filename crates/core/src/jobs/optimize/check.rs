@@ -23,6 +23,17 @@ impl PacketStats {
             self.bytes += n;
         }
     }
+
+    /// A `pts_time,size` line, counted when its pts falls in `[from, to)`.
+    pub fn add_window_line(&mut self, line: &str, from: f64, to: f64) {
+        let mut f = line.trim().split(',').map(str::parse::<f64>);
+        if let (Some(Ok(pts)), Some(Ok(n))) = (f.next(), f.next())
+            && (from..to).contains(&pts)
+        {
+            self.count += 1;
+            self.bytes += n;
+        }
+    }
 }
 
 pub fn packet_args(file: &str) -> Vec<String> {
@@ -33,6 +44,25 @@ pub fn packet_args(file: &str) -> Vec<String> {
         "v:0",
         "-show_entries",
         "packet=size",
+        "-of",
+        "csv=p=0",
+        file,
+    ])
+}
+
+/// The video packets around `[from, to)` (absolute pts), for [`PacketStats::add_window_line`]:
+/// a copy of that window would start at the keyframe before `from` and count a whole extra GOP.
+pub fn window_packet_args(file: &str, from: f64, to: f64) -> Vec<String> {
+    let interval = format!("{from:.3}%{to:.3}");
+    crate::strs(&[
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-read_intervals",
+        &interval,
+        "-show_entries",
+        "packet=pts_time,size",
         "-of",
         "csv=p=0",
         file,
@@ -375,6 +405,30 @@ fn check_encoding(
 mod tests {
     use super::*;
     use crate::jobs::optimize::tests::{info, plan};
+
+    #[test]
+    fn window_lines_count_only_packets_in_range() {
+        let mut s = PacketStats::default();
+        // The keyframe ffprobe reads before the window and the packet at its end are not counted.
+        for l in [
+            "98.5,9000",
+            "100.0,500",
+            "101.2,300",
+            "N/A,700",
+            "102.0,400",
+            "100.9,200,",
+        ] {
+            s.add_window_line(l, 100.0, 102.0);
+        }
+        assert_eq!(
+            s,
+            PacketStats {
+                count: 3,
+                bytes: 1000.0
+            }
+        );
+        assert!(window_packet_args("f.mkv", 100.0, 102.0).contains(&"100.000%102.000".into()));
+    }
 
     #[test]
     fn stream_ends_decide_not_the_container_duration() {

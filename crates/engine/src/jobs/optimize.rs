@@ -583,7 +583,8 @@ impl Work<'_> {
         !self.ctx.cancelled() && software_may_help(e)
     }
 
-    /// Encodes the sample windows and the same windows copied: savings and software speed.
+    /// Encodes the sample windows, sized against the source's packets in the same windows:
+    /// savings and software speed.
     async fn samples(&mut self, hw: HwAccel) -> Result<Sampled, String> {
         let starts = opt::sample_starts(self.duration());
         if starts.is_empty() {
@@ -591,49 +592,41 @@ impl Work<'_> {
         }
         let dir = self.ctx.rt.cache.optimize_dir();
         std::fs::create_dir_all(&dir).map_err(|e| io_err(&dir, e))?;
-        let (mut copied, mut encoded, mut wall) = (0.0, 0.0, 0.0);
+        let (mut source, mut encoded, mut wall) = (0.0, 0.0, 0.0);
         let input = self.src.to_string_lossy().into_owned();
+        // `-ss` on an input seeks from the file's start time.
+        let origin = self.info().format_start_seconds.unwrap_or(0.0);
         let step = 5.0 / starts.len() as f64;
         for (k, start) in starts.iter().enumerate() {
-            for (copy, kind) in [(true, "s"), (false, "e")] {
-                let out = self.sample(k, kind);
-                let argv = self.argv(
-                    copy,
-                    if copy { HwAccel::None } else { hw },
-                    out.to_string_lossy().into_owned(),
-                    |file| {
-                        // Video alone in an MP4: the sizes compare the video tracks.
-                        file.format = FileFormat::Mp4;
-                        if let Some(a) = file.archive.as_mut() {
-                            (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
-                                (vec![], vec![], vec![], false);
-                        }
-                    },
-                )?;
-                let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
-                self.run(
-                    &argv,
-                    opt::SAMPLE_SECONDS,
-                    (k as f64 * step, (k + 1) as f64 * step),
-                )
-                .await?;
-                if !copy {
-                    wall += self.ctx.last_active_ms() as f64 / 1000.0;
+            let out = self.sample(k, "e");
+            let argv = self.argv(false, hw, out.to_string_lossy().into_owned(), |file| {
+                file.format = FileFormat::Mp4;
+                if let Some(a) = file.archive.as_mut() {
+                    (a.audio, a.subtitles, a.extra_subtitles, a.hvc1_tag) =
+                        (vec![], vec![], vec![], false);
                 }
-                let len = tokio::fs::metadata(&out)
-                    .await
-                    .map_err(|e| io_err(&out, e))?
-                    .len() as f64;
-                let _ = tokio::fs::remove_file(&out).await;
-                if copy {
-                    copied += len;
-                } else {
-                    encoded += len;
-                }
-            }
+            })?;
+            let argv = opt::windowed(argv, &input, *start, opt::SAMPLE_SECONDS);
+            self.run(
+                &argv,
+                opt::SAMPLE_SECONDS,
+                (k as f64 * step, (k + 1) as f64 * step),
+            )
+            .await?;
+            wall += self.ctx.last_active_ms() as f64 / 1000.0;
+            let out_text = out.to_string_lossy().into_owned();
+            let made = packets(self.ctx, opt::packet_args(&out_text), None).await;
+            let _ = tokio::fs::remove_file(&out).await;
+            encoded += made?.bytes;
+            let (from, to) = (origin + start, origin + start + opt::SAMPLE_SECONDS);
+            let argv = self.net(opt::window_packet_args(&input, from, to));
+            source += packets(self.ctx, argv, Some((from, to)))
+                .await
+                .map_err(|e| self.source_error(e))?
+                .bytes;
         }
         if let Some(min) = self.plan().min_savings_pct
-            && opt::savings_pct(copied, encoded) < min
+            && opt::savings_pct(source, encoded) < min
         {
             return Ok(Sampled::Copy(CopyReason::LowSavings));
         }
@@ -661,10 +654,14 @@ impl Work<'_> {
         let path = self.staged_text();
         let _ = safe_write::sync_file(self.staged);
         let probed = probe_file(ctx, &path).await?;
-        let out_packets = packets(ctx, opt::packet_args(&path)).await?;
+        let out_packets = packets(ctx, opt::packet_args(&path), None).await?;
         if self.src_packets.is_none() {
             let argv = self.net(opt::packet_args(&self.src.to_string_lossy()));
-            self.src_packets = Some(packets(ctx, argv).await.map_err(|e| self.source_error(e))?);
+            self.src_packets = Some(
+                packets(ctx, argv, None)
+                    .await
+                    .map_err(|e| self.source_error(e))?,
+            );
         }
         let gap = if reencoded {
             keyframe_gap(ctx, &probed, &path).await?
@@ -780,14 +777,21 @@ enum Sampled {
     None,
 }
 
-/// Video packets of the first video stream of `path`.
-async fn packets(ctx: &Ctx, argv: Vec<String>) -> Result<PacketStats, String> {
+/// Video packets of the first video stream; only those in `window` when one is given.
+async fn packets(
+    ctx: &Ctx,
+    argv: Vec<String>,
+    window: Option<(f64, f64)>,
+) -> Result<PacketStats, String> {
     let cmd = ffprobe(ctx, &argv);
     let c = ctx.clone();
     ctx.pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
         let mut s = PacketStats::default();
         lines(&c, &p[0], |l| {
-            s.add_line(l);
+            match window {
+                Some((from, to)) => s.add_window_line(l, from, to),
+                None => s.add_line(l),
+            }
             true
         })
         .await
