@@ -55,6 +55,8 @@
       "5000000",
       "-force_key_frames",
       "expr:gte(t,n_forced*6)",
+      "-bsf:v",
+      "dump_extra=freq=keyframe",
       "-c:a",
       "aac",
       "-b:a",

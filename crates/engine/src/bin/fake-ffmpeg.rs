@@ -579,9 +579,8 @@ fn flush_on_term(dir: &std::path::Path, seg: &str, said: &str) -> ! {
     }
 }
 
-/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `paced`,
-/// `10bit`, `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); with `flush`, a polite stop writes a
-/// segment.
+/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `holds`,
+/// `10bit`, `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); `flush`: a polite stop writes a segment.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -680,10 +679,14 @@ fn live(args: &[String]) {
         std::thread::sleep(Duration::from_secs(6));
         std::fs::remove_file(open).unwrap();
     }
-    // `paced`: a segment a second, so the engine sees each one before the window drops it.
-    let pace = Duration::from_millis(if input.contains("paced") { 1000 } else { 300 });
     for n in first.. {
         let written = n - first;
+        // `holds` writes its third segment, which slides a small window, at `slide`.
+        if input.contains("holds") && written == 2 {
+            while !dir.join("slide").exists() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
         if input.contains("stall") && written == 1 {
             if input.contains("flush") {
                 flush_on_term(&dir, &format!("seg-{n:05}.{ext}"), "ready")
@@ -719,7 +722,7 @@ fn live(args: &[String]) {
         }
         m3u8.push_str(&listed.concat());
         put(&dir.join("index.m3u8"), &m3u8);
-        std::thread::sleep(pace);
+        std::thread::sleep(Duration::from_millis(300));
     }
 }
 

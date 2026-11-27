@@ -336,8 +336,7 @@ pub fn segment_number(name: &str) -> Option<u32> {
 }
 
 /// What a session's playlists have listed, each segment counted once by media sequence: the next
-/// run's first segment is `next`, and its timestamps start at `seconds`, where the listed ones end.
-/// [new]
+/// run numbers on from `next` and starts its timestamps at `seconds`, the listed duration. [new]
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
 pub struct Timeline {
     /// The media sequence number after the last counted segment.

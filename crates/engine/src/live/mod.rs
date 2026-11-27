@@ -336,6 +336,11 @@ impl Live {
         out
     }
 
+    /// What the playlists of `sid`'s session have listed so far.
+    pub fn timeline(&self, sid: &str) -> Option<Timeline> {
+        Some(self.pipe_of(sid)?.m.locked().timeline)
+    }
+
     pub fn snapshot(&self, sid: &str) -> Option<LiveSnapshot> {
         let p = self.pipe_of(sid)?;
         let m = p.m.locked();

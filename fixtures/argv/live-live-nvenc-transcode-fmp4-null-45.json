@@ -47,6 +47,8 @@
       "5000000",
       "-force_key_frames",
       "expr:gte(t,n_forced*2)",
+      "-bsf:v",
+      "dump_extra=freq=keyframe",
       "-c:a",
       "aac",
       "-b:a",
@@ -70,7 +72,7 @@
       "-hls_fmp4_init_filename",
       "init.mp4",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list+discont_start",
+      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list",
       "-hls_segment_filename",
       "/cache/live/45/seg-%05d.m4s",
       "/cache/live/45/index.m3u8"

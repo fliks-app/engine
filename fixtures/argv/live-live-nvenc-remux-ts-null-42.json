@@ -52,7 +52,7 @@
       "-hls_segment_type",
       "mpegts",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list+discont_start",
+      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list",
       "-hls_segment_filename",
       "/cache/live/42/seg-%05d.ts",
       "/cache/live/42/index.m3u8"

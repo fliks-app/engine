@@ -149,8 +149,8 @@ async fn attempt(rx: &mut broadcast::Receiver<EngineEvent>, secs: u64) -> (u32, 
     .expect("LiveAttempt")
 }
 
-/// The segment URIs of the live playlist, token included.
-async fn segments(e: &Engine, sid: &str) -> Vec<String> {
+/// The live playlist as served.
+async fn playlist(e: &Engine, sid: &str) -> String {
     let r = e
         .get(
             &format!("/api/livetv/sessions/{sid}/index.m3u8"),
@@ -160,6 +160,12 @@ async fn segments(e: &Engine, sid: &str) -> Vec<String> {
         .await;
     assert_eq!(r.status, 200, "{}", r.text());
     r.text()
+}
+
+/// The segment URIs of the live playlist, token included.
+async fn segments(e: &Engine, sid: &str) -> Vec<String> {
+    playlist(e, sid)
+        .await
         .lines()
         .filter(|l| l.starts_with("seg-"))
         .map(String::from)
@@ -207,6 +213,20 @@ fn codecs(bytes: &[u8]) -> Vec<String> {
         }
     }
     names
+}
+
+/// The lowest pts of the first packets of `bytes` (an init segment and a media one).
+fn first_pts(bytes: &[u8]) -> f64 {
+    let args = [
+        "-read_intervals",
+        "%+#20",
+        "-show_entries",
+        "packet=pts_time",
+    ];
+    ffprobe(bytes, &args)
+        .lines()
+        .filter_map(|l| l.trim().parse::<f64>().ok())
+        .fold(f64::INFINITY, f64::min)
 }
 
 /// The video packets of `bytes` (an init segment and a media one).
@@ -259,8 +279,37 @@ async fn remux_fails_over_to_the_next_upstream_and_releases() {
         s.last().is_some_and(|l| number(l) > last_before + 1)
     })
     .await;
+    // One map per run; the second run's timestamps start at the first run's listed duration.
+    let text = playlist(&e, &sid).await;
+    let maps: Vec<&str> = text
+        .lines()
+        .filter(|l| l.starts_with("#EXT-X-MAP"))
+        .collect();
+    assert_eq!(maps.len(), 2, "{text}");
+    assert!(maps[1].contains("\"init-1.mp4?"), "{text}");
+    let (run1, run2) = text.split_once(maps[1]).unwrap();
+    let offset: f64 = run1
+        .lines()
+        .filter_map(|l| l.strip_prefix("#EXTINF:"))
+        .map(|d| d.split(',').next().unwrap().parse::<f64>().unwrap())
+        .sum();
+    let init1 = fetch(&e, &sid, "init-1.mp4?").await;
+    for i in [&init, &init1] {
+        assert!(
+            !i.windows(4).any(|w| w == b"elst"),
+            "an edit list MSE would drop"
+        );
+    }
+    let mut media = init1.clone();
+    let first = run2.lines().find(|l| l.starts_with("seg-")).unwrap();
+    media.extend(fetch(&e, &sid, first).await);
+    let start = first_pts(&media);
+    assert!(
+        start <= offset + 0.1 && start > offset - 0.5,
+        "{start} against {offset}"
+    );
     let after = segments(&e, &sid).await;
-    let mut media = init;
+    let mut media = init1;
     media.extend(fetch(&e, &sid, after.last().unwrap()).await);
     assert_eq!(codecs(&media), ["h264", "aac"]);
 

@@ -428,9 +428,9 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     let mut flags =
         "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time".to_string();
     if o.append {
-        flags.push_str("+append_list+discont_start");
+        flags.push_str("+append_list");
     }
-    // A run goes on where the listed segments end: the session's timestamps never go back.
+    // A run starts its timestamps at the listed duration, not at 0 like each ffmpeg run would.
     if o.timeline.seconds > 0.0 {
         a.extend(["-output_ts_offset".into(), seconds(o.timeline.seconds)]);
     }

@@ -359,11 +359,7 @@ async fn failover_by_priority_at_start_and_on_a_running_exit() {
     assert_eq!(runs.len(), 3, "{runs:?}");
     let last = runs.last().unwrap();
     assert!(last.contains(&"http://up/ok".to_string()));
-    assert!(
-        last.iter()
-            .any(|a| a.ends_with("+append_list+discont_start")),
-        "{last:?}"
-    );
+    assert!(last.iter().any(|a| a.ends_with("+append_list")), "{last:?}");
     let snap = e
         .control("GET", &format!("/v1/live/{}", sid(&a)), None)
         .await
@@ -968,7 +964,7 @@ async fn a_transcode_after_a_remux_appends_to_its_playlist() {
     assert_eq!(video, ["copy", "libx264", "libx264"]);
     for run in &r[1..] {
         let flags = arg_after(run, "-hls_flags").unwrap();
-        assert!(flags.ends_with("+append_list+discont_start"), "{flags}");
+        assert!(flags.ends_with("+append_list"), "{flags}");
         assert_eq!(arg_after(run, "-output_ts_offset").as_deref(), Some("6"));
     }
     // The failed switched run's init never maps a segment: the transcode's replaces it.
@@ -1079,7 +1075,7 @@ async fn each_run_continues_the_session_timeline() {
 
 #[tokio::test]
 async fn the_timeline_counts_segments_the_window_dropped() {
-    // A window of 2 segments: the run's first is gone from the playlist before the next run spawns.
+    // A window of 2: the run's first segment leaves the playlist before the next run spawns.
     let e = live_engine(
         json!({}),
         json!({ "segmentSeconds": 30, "timeshiftMinutes": 1 }),
@@ -1087,14 +1083,20 @@ async fn the_timeline_counts_segments_the_window_dropped() {
     .await;
     let mut rx = e.rt.events.subscribe();
     let ups = vec![
-        upstream("http://up/dies-paced", 0),
+        upstream("http://up/dies-holds", 0),
         upstream("http://up/ok", 1),
     ];
-    open(&e, open_req("34", ups, json!({}), "alice", "t")).await;
+    let a = open(&e, open_req("34", ups, json!({}), "alice", "t")).await;
     let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
     assert_eq!(attempt(&ok), Some((0, None)));
+    let counted = || e.rt.live.timeline(&sid(&a)).map_or(0, |t| t.next);
+    until("the supervisor counted segments 0 and 1", 10, || {
+        counted() == 2
+    })
+    .await;
     let dir = live_dirs(&e)[0].clone();
-    until("the window slid", 30, || {
+    std::fs::write(dir.join("slide"), b"").unwrap();
+    until("the window slid", 10, || {
         std::fs::read_to_string(dir.join("index.m3u8"))
             .is_ok_and(|l| l.contains("#EXT-X-MEDIA-SEQUENCE:1"))
     })
