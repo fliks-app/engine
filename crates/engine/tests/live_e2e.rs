@@ -40,6 +40,18 @@ fn interlaced_source() -> PathBuf {
     )
 }
 
+/// `source` in 10-bit H.264, which no Intel decoder reads.
+fn ten_bit_source() -> PathBuf {
+    clip(
+        "live-src-120s-10bit.ts",
+        &format!(
+            "-f lavfi -i testsrc2=size=640x360:rate=24:duration={SECONDS} \
+             -f lavfi -i sine=frequency=440:sample_rate=48000:duration={SECONDS} \
+             -c:v libx264 -preset veryfast -pix_fmt yuv420p10le -g 48 -c:a aac -ac 2 -shortest"
+        ),
+    )
+}
+
 /// An upstream sending the clip at its own bitrate; `kill` resets its streams and closes it.
 struct Provider {
     url: String,
@@ -172,30 +184,37 @@ async fn fetch(e: &Engine, sid: &str, uri: &str) -> Vec<u8> {
     r.body.to_vec()
 }
 
-/// ffprobe's `codec_name` of each stream of `bytes` (MPEG-TS lists its program's streams again).
-fn codecs(bytes: &[u8]) -> Vec<String> {
+/// ffprobe's csv answer to `args` about `bytes`.
+fn ffprobe(bytes: &[u8], args: &[&str]) -> String {
     let f_dir = temp_dir("live-probe");
     let f = f_dir.join("seg.bin");
     std::fs::write(&f, bytes).unwrap();
     let out = std::process::Command::new(fliks_engine::tool_path("FFPROBE_PATH", "ffprobe"))
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_name",
-            "-of",
-            "csv=p=0",
-        ])
+        .args(["-v", "error", "-of", "csv=p=0"])
+        .args(args)
         .arg(&f)
         .output()
         .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// ffprobe's `codec_name` of each stream of `bytes` (MPEG-TS lists its program's streams again).
+fn codecs(bytes: &[u8]) -> Vec<String> {
     let mut names: Vec<String> = vec![];
-    for l in String::from_utf8_lossy(&out.stdout).lines() {
+    for l in ffprobe(bytes, &["-show_entries", "stream=codec_name"]).lines() {
         if !l.is_empty() && !names.iter().any(|n| n == l) {
             names.push(l.into());
         }
     }
     names
+}
+
+/// The video packets of `bytes` (an init segment and a media one).
+fn video_packets(bytes: &[u8]) -> u32 {
+    let count = ["-select_streams", "v:0", "-count_packets"];
+    let entry = ["-show_entries", "stream=nb_read_packets"];
+    let out = ffprobe(bytes, &[count.as_slice(), entry.as_slice()].concat());
+    out.trim().parse().unwrap_or(0)
 }
 
 #[tokio::test]
@@ -336,6 +355,41 @@ async fn a_gpu_encodes_frames_the_cpu_decoded() {
             until("ffmpeg gone", 10, || e.ffmpeg_pids().is_empty()).await;
             up.kill();
         }
+    }
+}
+
+#[tokio::test]
+#[ignore = "an Intel GPU on the default render node and real ffmpeg: ENGINE_E2E=1 cargo test -p \
+    fliks-engine --test live_e2e -- --ignored"]
+async fn a_stream_the_gpu_decoder_refuses_is_redone_on_the_cpu() {
+    // Named 8-bit H.264 by the host, 10-bit on the wire: the GPU decode run never gives a frame.
+    for hw in [HwAccel::Vaapi, HwAccel::Qsv] {
+        let e = live_engine_on(host(hw, DEFAULT_RENDER_NODE, "signal")).await;
+        let up = Provider::serve(ten_bit_source()).await;
+        let a = open(
+            &e,
+            json!([{ "url": up.url, "probedVideoCodec": "h264", "probedAudioCodec": "aac" }]),
+            json!({ "directPlay": false, "maxBitrateBps": 1000000 }),
+        )
+        .await;
+        let sid = a["sessionId"].as_str().unwrap().to_string();
+        let procs = e.ffmpeg_procs();
+        let cmd = &procs.first().expect("the transcode").2;
+        assert!(
+            cmd.contains("format=nv12,hwupload") && !cmd.contains("-hwaccel"),
+            "{hw:?} {cmd}"
+        );
+        until_async(&e, &sid, 20, |s| s.len() >= 2).await;
+        // The refused run left no segment behind: each one carries video.
+        let init = fetch(&e, &sid, "init.mp4?").await;
+        for uri in segments(&e, &sid).await {
+            let seg = [init.clone(), fetch(&e, &sid, &uri).await].concat();
+            assert!(video_packets(&seg) > 0, "{hw:?} {uri}");
+        }
+        let path = format!("/v1/sessions/{sid}");
+        assert_eq!(e.control("DELETE", &path, None).await.status, 204);
+        until("ffmpeg gone", 10, || e.ffmpeg_pids().is_empty()).await;
+        up.kill();
     }
 }
 

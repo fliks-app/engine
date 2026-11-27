@@ -1,6 +1,7 @@
 //! Live TV against the `fake-ffmpeg` test binary in `live` mode (no real ffmpeg): it stands in for
 //! ffprobe and writes segments and a playlist whose behaviour the upstream URL picks (`fail`,
-//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `badchain`, `noprobe`).
+//! `dies`, `stall`, `hevc`, `av1`, `10bit`, `gpudies`, `gpuhangs`, `gpurefuses`, `badchain`,
+//! `noprobe`).
 //! Spec: `docs/spec/live.md`.
 mod runtime_common;
 use axum::{Router, body::Body, routing::get};
@@ -866,6 +867,24 @@ async fn a_failed_gpu_decode_after_a_failover_is_redone_too() {
     let hw: Vec<_> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
     let vaapi = Some("vaapi".to_string());
     assert_eq!(hw, [vaapi.clone(), vaapi, None]);
+}
+
+#[tokio::test]
+async fn a_gpu_decoder_refusing_the_stream_is_redone_with_cpu_decode() {
+    // ffmpeg runs on when its decoder refuses every packet: its stderr gives the verdict.
+    let gpu = host(HwAccel::Vaapi, "/dev/dri/renderD128", "signal");
+    let e = live_engine_on(gpu, json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let caps = json!({ "maxBitrateBps": 2500000 });
+    let ups = vec![upstream("http://up/gpurefuses", 0)];
+    let t = std::time::Instant::now();
+    open(&e, open_req("27", ups, caps, "alice", "t")).await;
+    // Not waited out to the 20 s window.
+    assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let hw: Vec<_> = runs(&e).iter().map(|a| arg_after(a, "-hwaccel")).collect();
+    assert_eq!(hw, [Some("vaapi".to_string()), None]);
 }
 
 #[tokio::test]

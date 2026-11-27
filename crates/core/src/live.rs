@@ -159,6 +159,15 @@ pub fn input_failed(stderr_tail: &[String]) -> bool {
         .any(|l| l.contains("Error opening input") || l.contains("matches no streams"))
 }
 
+/// A live run's stderr tail shows its decoder refusing the stream (any cause but damaged data):
+/// ffmpeg runs on and never outputs a frame.
+pub fn decoder_refused(stderr_tail: &[String]) -> bool {
+    stderr_tail.iter().any(|l| {
+        l.contains("Error submitting packet to decoder")
+            && !l.contains("Invalid data found when processing input")
+    })
+}
+
 /// Unknown fails open: an unrecognised container is still worth a direct attempt.
 /// [ts:services/livetv-session.service.ts:197-200]
 pub fn is_manifest_container(container: Option<&str>) -> bool {
@@ -421,6 +430,21 @@ mod tests {
             Invalid argument\nConversion failed!";
         assert!(!input_failed(&tail(decode)));
         assert!(!input_failed(&[]));
+    }
+
+    #[test]
+    fn a_decoder_refusing_the_stream_is_told_apart_from_damaged_data() {
+        let tail = |t: &str| t.lines().map(String::from).collect::<Vec<_>>();
+        // ffmpeg 8.1.2, 10-bit H.264 through h264_qsv on a live input: once per keyframe.
+        let refused = "[h264_qsv @ 0x6020ab2dec80] Error querying IO surface: unsupported (-3)\n\
+            [vist#0:0/h264 @ 0x6020a9ad85c0] [dec:h264_qsv @ 0x6020ab290740] Error submitting \
+            packet to decoder: Function not implemented";
+        assert!(decoder_refused(&tail(refused)));
+        // A stream joined between two keyframes.
+        let damaged = "[vist#0:0/h264 @ 0x55d0] [dec:h264 @ 0x55d1] Error submitting packet to \
+            decoder: Invalid data found when processing input";
+        assert!(!decoder_refused(&tail(damaged)));
+        assert!(!decoder_refused(&[]));
     }
 
     #[test]

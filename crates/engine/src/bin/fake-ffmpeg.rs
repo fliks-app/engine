@@ -549,7 +549,8 @@ fn itemstop(args: &[String]) {
 }
 
 /// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
-/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs` (`-hwaccel` runs), `10bit` probe.
+/// segment), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (`-hwaccel` runs),
+/// `10bit` probe.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -590,8 +591,15 @@ fn live(args: &[String]) {
     if input.contains("slowstart") {
         hang()
     }
-    // A GPU that cannot decode this upstream: it dies or hangs on a `-hwaccel` run.
+    // A GPU that cannot decode this upstream: a `-hwaccel` run dies, hangs, or runs on refusing it.
     if args.iter().any(|a| a == "-hwaccel") {
+        if input.contains("gpurefuses") {
+            eprintln!(
+                "[vist#0:0/h264 @ 0x0] [dec:h264_qsv @ 0x0] Error submitting packet to decoder: \
+                 Function not implemented"
+            );
+            hang()
+        }
         if input.contains("gpudies") {
             eprintln!(
                 "[h264 @ 0x0] Failed setup for format vaapi: hwaccel initialisation returned error."
