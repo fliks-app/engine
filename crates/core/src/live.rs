@@ -309,7 +309,7 @@ pub fn init_name(run: u32) -> String {
     }
 }
 
-/// `init.mp4`, `init-<digits>.mp4` or `seg-<5+ ASCII digits>.(m4s|ts)`.
+/// `init.mp4`, `init-<digits>.mp4` [new] or `seg-<5+ ASCII digits>.(m4s|ts)`.
 /// [ts:controllers/livetv.controller.ts:45-47]
 pub fn is_segment_name(name: &str) -> bool {
     let run = name

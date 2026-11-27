@@ -579,8 +579,8 @@ fn flush_on_term(dir: &std::path::Path, seg: &str, said: &str) -> ! {
     }
 }
 
-/// Live TV by URL: `fail` (input refused), `badchain` (fails past it), `slowstart`, `stall` (one
-/// segment, `flush`: one more at a polite stop), `dies` (three, then at `die`), `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs), `10bit`.
+/// Live TV by URL: `fail`, `badchain`, `slowstart`, `slowts`, `stall`, `dies` (at `die`), `10bit`,
+/// `gpudies`/`gpuhangs`/`gpurefuses` (GPU runs); with `flush`, a polite stop writes a segment.
 fn live(args: &[String]) {
     let url = args.last().unwrap();
     if args.iter().any(|a| a == "csv=p=0") {
@@ -635,6 +635,9 @@ fn live(args: &[String]) {
             std::process::exit(1)
         }
         if input.contains("gpuhangs") {
+            if input.contains("flush") {
+                flush_on_term(&dir, "seg-00000.m4s", "ready")
+            }
             hang()
         }
     }
@@ -666,6 +669,14 @@ fn live(args: &[String]) {
         .map(|i| args[i + 1].clone());
     if let Some(init) = &init {
         put(&dir.join(init), b"init");
+    }
+    // An MPEG-TS run slow to open: its first segment stays a `.tmp` for 6 s.
+    if input.contains("slowts") {
+        std::thread::sleep(Duration::from_secs(11));
+        let open = dir.join(format!("seg-00000.{ext}.tmp"));
+        std::fs::write(&open, "partial").unwrap();
+        std::thread::sleep(Duration::from_secs(6));
+        std::fs::remove_file(open).unwrap();
     }
     let mut m3u8 = format!(
         "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{first}\n"

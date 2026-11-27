@@ -258,7 +258,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         }
     }
     if pipe.m.locked().ended {
-        proc.stop().await;
+        proc.kill().await;
         return Start::Failed;
     }
     let wait = first_segment(&dir, &proc, &before, gpu_decode).await;
@@ -274,8 +274,6 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
             "live run decoding on the gpu broke before a segment, again with cpu decode:\n{}",
             tail.join("\n")
         );
-        // No polite stop: a refused run would flush the audio it buffered into the playlist.
-        proc.kill().await;
         Start::GpuDecodeFailed
     } else {
         Start::Failed
@@ -475,7 +473,8 @@ fn fan_out(pipe: &Pipe, chunk: Bytes) {
     m.tees.retain(|(_, tx)| tx.try_send(chunk.clone()).is_ok());
 }
 
-/// Stops the process or the connection feeding the pipe; viewers and tees stay. [ts:svc:1121-1133]
+/// Kills the process or drops the connection feeding the pipe; viewers and tees stay.
+/// [ts:svc:1121-1133]
 pub(super) async fn stop_transport(pipe: &Pipe) {
     let (proc, slot, direct) = {
         let mut m = pipe.m.locked();
@@ -485,7 +484,8 @@ pub(super) async fn stop_transport(pipe: &Pipe) {
         d.reader.abort();
     }
     if let Some(p) = proc {
-        p.stop().await;
+        // No polite stop: ffmpeg would flush what it buffered into the session's playlist.
+        p.kill().await;
     }
     drop(slot);
 }
