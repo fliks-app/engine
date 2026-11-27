@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.2](https://github.com/fliks-app/engine/compare/v1.31.1...v1.31.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **jobs:** count the CPU of a run's live workers in the watchdog ([#297](https://github.com/fliks-app/engine/issues/297)) ([2a3a048](https://github.com/fliks-app/engine/commit/2a3a0485b8de60511cb60521c338287896e8038a))
+
 ## [1.31.1](https://github.com/fliks-app/engine/compare/v1.31.0...v1.31.1) (2026-11-27)
 
 
