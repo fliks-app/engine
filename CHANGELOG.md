@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.1](https://github.com/fliks-app/engine/compare/v1.31.0...v1.31.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **live:** narrow the refused gpu decode check and its kill ([#295](https://github.com/fliks-app/engine/issues/295)) ([964c7cb](https://github.com/fliks-app/engine/commit/964c7cb5d5bee25c66bb46079d4bf76a0b532190))
+
 ## [1.31.0](https://github.com/fliks-app/engine/compare/v1.30.7...v1.31.0) (2026-11-27)
 
 
