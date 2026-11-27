@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.31.3](https://github.com/fliks-app/engine/compare/v1.31.2...v1.31.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **live:** judge a stall on the playlist, not the highest segment number ([#299](https://github.com/fliks-app/engine/issues/299)) ([34357ab](https://github.com/fliks-app/engine/commit/34357ab1a68df65d779332ba6bbce694db524fad))
+* **worker:** send the optimize savings and SSIM in the job result ([#301](https://github.com/fliks-app/engine/issues/301)) ([7c27e3b](https://github.com/fliks-app/engine/commit/7c27e3b4da9570f46005fe4febf9fe99a2c67433))
+
 ## [1.31.2](https://github.com/fliks-app/engine/compare/v1.31.1...v1.31.2) (2026-11-27)
 
 
