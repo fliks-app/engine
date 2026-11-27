@@ -315,7 +315,7 @@ pub fn is_segment_name(name: &str) -> bool {
     digits.len() >= 5 && digits.bytes().all(|b| b.is_ascii_digit()) && matches!(ext, "m4s" | "ts")
 }
 
-/// The `seg-N` number of a file ffmpeg wrote (`.tmp` included).
+/// The `seg-N` number of a segment file.
 pub fn segment_number(name: &str) -> Option<u32> {
     let rest = name.strip_prefix("seg-")?;
     rest[..rest.find('.')?].parse().ok()

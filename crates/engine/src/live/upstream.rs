@@ -251,8 +251,6 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         if !m.ended {
             m.proc = Some(proc.clone());
             m.slot = Some(slot.unwrap_or_else(|| rt.slots.playback_on(None)));
-            m.last_segment_at = Instant::now();
-            m.last_playlist = None;
         }
     }
     if pipe.m.locked().ended {
@@ -290,8 +288,13 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
             Start::GpuDecodeFailed => {}
         }
     }
-    if ok && mode == LiveMode::Remux {
-        pipe.m.locked().active_codec = p.video_codec;
+    if ok {
+        let mut m = pipe.m.locked();
+        // The stall window opens here: a TS run writes no playlist before its first cut.
+        m.last_segment_at = Instant::now();
+        if mode == LiveMode::Remux {
+            m.active_codec = p.video_codec;
+        }
     }
     start
 }

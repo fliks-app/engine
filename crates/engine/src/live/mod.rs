@@ -174,7 +174,7 @@ struct PipeMut {
     /// process left): a playlist still at that mtime is never appended to.
     foreign_playlist: Option<SystemTime>,
     last_segment_at: Instant,
-    /// The playlist's mtime when it last moved: ffmpeg rewrites it at each segment.
+    /// The playlist's mtime as last seen: ffmpeg rewrites it at each segment, whatever its number.
     last_playlist: Option<SystemTime>,
     viewers: HashMap<String, Viewer>,
     idle_since: Option<Instant>,

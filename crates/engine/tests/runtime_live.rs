@@ -1011,8 +1011,30 @@ async fn a_transcode_after_a_long_remux_is_not_taken_for_a_stall() {
     assert_eq!(attempt(&ok), Some((1, None)));
     // Past the 15 s stall window and its 5 s check: the run feeding the session is left alone.
     let more = event(&mut rx, 60, |ev| attempt(ev).is_some());
-    let more = tokio::time::timeout(Duration::from_secs(22), more).await;
+    let more = tokio::time::timeout(Duration::from_secs(25), more).await;
     assert!(more.is_err(), "{more:?}");
+}
+
+#[tokio::test]
+async fn a_transcode_stalled_after_a_remux_is_still_caught() {
+    // The remux's playlist is still in the directory: it does not count for the run that follows.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let hevc = json!({ "url": "http://up/hevc-stall", "priority": 1, "probedVideoCodec": "hevc" });
+    let ups = vec![upstream("http://up/dies", 0), hevc];
+    open(&e, open_req("29", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let stalled = event(&mut rx, 60, |ev| attempt(ev).is_some()).await;
+    assert_eq!(
+        attempt(&stalled),
+        Some((1, Some("no new segment for 15 s")))
+    );
 }
 
 #[tokio::test]
