@@ -11,6 +11,8 @@ const ALTERNATIVE: f64 = 0.05;
 const MIN_ONSETS: usize = 16;
 const GRID_MS: f64 = 10.0;
 const BPM_RANGE: (f64, f64) = (60.0, 200.0);
+/// A period scoring this share of the best one is taken when it is shorter.
+const PERIOD_SHARE: f64 = 0.8;
 
 /// Krumhansl-Kessler key profiles, tonic first.
 const MAJOR: [f64; 12] = [
@@ -75,6 +77,9 @@ fn key(pitches: &[(f64, f64)]) -> Option<KeyEstimate> {
             ));
         }
     }
+    if !keys[0].0.is_finite() {
+        return None;
+    }
     keys.sort_by(|a, b| b.0.total_cmp(&a.0));
     Some(KeyEstimate {
         key: keys[0].1,
@@ -102,9 +107,15 @@ fn tempo(notes: &[MelodyNote]) -> Option<TempoEstimate> {
     }
     let first = notes.iter().map(|n| n.start_ms).min()?;
     let last = notes.iter().map(|n| n.start_ms).max()?;
-    let mut env = vec![0.0f64; ((last - first) as f64 / GRID_MS) as usize + 1];
+    let mut env = vec![0.0f64; ((last - first) as f64 / GRID_MS).round() as usize + 1];
+    // Each onset spreads over 20 ms each side: onsets on the 16 ms pitch frames jitter on the grid.
     for n in notes {
-        env[((n.start_ms - first) as f64 / GRID_MS).round() as usize] += 1.0;
+        let at = ((n.start_ms - first) as f64 / GRID_MS).round() as usize;
+        for (i, w) in [(at.wrapping_sub(1), 0.5), (at, 1.0), (at + 1, 0.5)] {
+            if let Some(v) = env.get_mut(i) {
+                *v += w;
+            }
+        }
     }
     let ac = |lag: usize| -> f64 {
         env.iter()
@@ -114,10 +125,19 @@ fn tempo(notes: &[MelodyNote]) -> Option<TempoEstimate> {
     };
     let lag_of = |bpm: f64| (60_000.0 / bpm / GRID_MS).round() as usize;
     let (lo, hi) = (lag_of(BPM_RANGE.1), lag_of(BPM_RANGE.0));
-    let best = (lo..=hi).fold((lo, f64::MIN), |b, l| {
-        let v = ac(l);
-        if v > b.1 { (l, v) } else { b }
-    });
+    // The shortest strong period: a multiple of the beat scores as high once onsets jitter.
+    let scores: Vec<f64> = (lo..=hi).map(ac).collect();
+    let top = scores.iter().copied().fold(f64::MIN, f64::max);
+    let best = scores
+        .iter()
+        .enumerate()
+        .find(|(i, v)| {
+            **v >= PERIOD_SHARE * top
+                && *i > 0
+                && scores.get(i + 1).is_none_or(|n| *v >= n)
+                && scores[i - 1] <= **v
+        })
+        .map_or((lo, top), |(i, v)| (lo + i, *v));
     let zero = ac(0);
     if best.1 <= 0.0 || zero <= 0.0 {
         return None;
@@ -212,6 +232,15 @@ mod tests {
         let t = analyse(&melody(&C_MAJOR, 32, 0.0)).unwrap().tempo.unwrap();
         assert!((t.bpm - 120.0).abs() <= 1.0, "{t:?}");
         assert!(t.confidence > 0.5);
+    }
+
+    #[test]
+    fn onsets_on_the_pitch_frame_grid_stay_inside_the_envelope() {
+        let notes: Vec<_> = (0..32)
+            .map(|i| note(i * 496, 400, 60.0 + f64::from(i % 5)))
+            .collect();
+        let t = analyse(&notes).unwrap().tempo.unwrap();
+        assert!((t.bpm - 121.0).abs() <= 1.5, "{t:?}");
     }
 
     #[test]

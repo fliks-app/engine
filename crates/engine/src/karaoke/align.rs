@@ -25,8 +25,10 @@ pub async fn run(
     let models = k.models();
     let detected = ctc::language_of(language, lines);
     let picked = models.pick_aligner(model, detected.as_deref())?;
+    // The recogniser takes two-letter codes only; any other language it detects itself.
+    let heard = detected.as_deref().filter(|c| c.len() == 2);
     let Some(case) = picked.ctc else {
-        return recognise(ctx, &picked, lines, detected.as_deref(), None).await;
+        return recognise(ctx, &picked, lines, heard, None).await;
     };
     let failure = match ctc::run(
         ctx,
@@ -45,7 +47,7 @@ pub async fn run(
     match models.pick(None, ModelKind::Alignment).ok() {
         Some(whisper) if k.tools(&ctx.rt.ffmpeg).await.whisper.is_some() => {
             tracing::warn!("CTC alignment failed, using the speech recogniser: {failure}");
-            recognise(ctx, &whisper, lines, detected.as_deref(), Some(failure)).await
+            recognise(ctx, &whisper, lines, heard, Some(failure)).await
         }
         _ => Err(failure),
     }

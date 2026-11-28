@@ -112,7 +112,7 @@ fn track(
             ("fmin", scalar(FMIN)),
             ("fmax", scalar(FMAX)),
         ])?;
-        report((i + 1) as f64 / total as f64 * 100.0);
+        report((i + 1) as f64 / total as f64 * 95.0);
         let [pitch, conf] = &r[..] else {
             return Err("unexpected pitch network output".into());
         };

@@ -897,6 +897,14 @@ impl Manager {
         tokio::fs::create_dir_all(&stage)
             .await
             .map_err(|e| format!("create {}: {e}", stage.display()))?;
+        // A part file of another version would be resumed against the wrong file, then installed.
+        let parts: Vec<String> = e.files.iter().map(part_name).collect();
+        for f in std::fs::read_dir(&stage).into_iter().flatten().flatten() {
+            let name = f.file_name().to_string_lossy().into_owned();
+            if name.ends_with(".part") && !parts.contains(&name) {
+                let _ = tokio::fs::remove_file(f.path()).await;
+            }
+        }
         let client = client();
         let mut done_before = 0u64;
         for f in &e.files {
@@ -911,7 +919,7 @@ impl Manager {
                 self.set_bytes(id, generation, done_before);
                 continue;
             }
-            let part = stage.join(format!("{}.part", f.name));
+            let part = stage.join(part_name(f));
             let mut waits = RETRY_AFTER.iter();
             loop {
                 let r = self
@@ -1136,6 +1144,11 @@ impl Manager {
     }
 }
 
+/// The part file of `f`, named after its hash so only the same file resumes it.
+fn part_name(f: &FileEntry) -> String {
+    format!("{}.{}.part", f.name, &f.sha256[..16.min(f.sha256.len())])
+}
+
 /// Why a file's transfer failed: `Broken` keeps the part file for a resume.
 enum Fetch {
     Broken(String),
@@ -1232,8 +1245,8 @@ fn client() -> Client<HttpsConnector<HttpConnector>, Empty<Bytes>> {
 }
 
 /// The body of `url` after its redirects (the same scheme rules for every hop).
-/// With `from` above 0 the body starts there when the server honours the range (`true`). A
-/// failure of the network or the server is `Broken`, a refusal of the file `Bad`.
+/// From `from` when the server honours the range (`true`); a network or server failure is
+/// `Broken`, a refusal of the file `Bad`.
 async fn open(
     client: &Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
     url: &str,

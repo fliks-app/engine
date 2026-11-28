@@ -311,9 +311,8 @@ impl Stft {
         s
     }
 
-    /// Adds the stems of the window's first `STEP_FRAMES` frames into `out`: the vocals are the
-    /// vocal mask, the instrumental the accompaniment mask. Above `MODEL_BINS` the vocal mask is
-    /// the mean of the one over `EXTEND_FROM..MODEL_BINS` and the instrumental its complement.
+    /// Adds the stems of the window's first `STEP_FRAMES` frames into `out`. Above `MODEL_BINS` the
+    /// vocal mask is its mean over `EXTEND_FROM..MODEL_BINS`, the instrumental its complement.
     pub fn synthesise(&self, s: &Spectra, vocal_mask: &[f32], acc_mask: &[f32], out: &mut Overlap) {
         let (mut re, mut im) = (vec![0.0f32; N_FFT], vec![0.0f32; N_FFT]);
         for f in 0..STEP_FRAMES {

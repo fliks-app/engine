@@ -243,7 +243,8 @@ async fn a_download_resumes_from_the_part_file_a_broken_transfer_left() {
     let base = range_server(ranged.clone()).await;
     let dir = e.root.join("models-resume");
     std::fs::create_dir_all(dir.join(".flaky.new")).unwrap();
-    std::fs::write(dir.join(".flaky.new/a.bin.part"), &PLAIN[..5]).unwrap();
+    let part = format!(".flaky.new/a.bin.{}.part", &sha(PLAIN)[..16]);
+    std::fs::write(dir.join(part), &PLAIN[..5]).unwrap();
     e.rt.karaoke.replace(
         Manager::new(
             dir.clone(),
