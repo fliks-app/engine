@@ -160,6 +160,8 @@ struct PipeMut {
     probes: Vec<Option<LiveProbe>>,
     /// Per request position: a run on it failed to open its input, the next attempt probes again.
     stale_probes: Vec<bool>,
+    /// Per request position: the URL its probe was taken on (the host's: the upstream's own).
+    probe_urls: Vec<String>,
     failover: Failover,
     /// The position `failover` gave last.
     current: usize,

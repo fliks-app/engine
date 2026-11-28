@@ -16,7 +16,7 @@ use fliks_engine_core::api::{
 };
 use fliks_engine_core::args;
 use fliks_engine_core::args::LiveArgs;
-use fliks_engine_core::hls::{HlsPick, pick_variant};
+use fliks_engine_core::hls::{HlsPick, pick_variant, resolve_uri};
 use fliks_engine_core::ladder::height_for_bitrate;
 use fliks_engine_core::live as core_live;
 use http_body_util::{BodyExt, Empty};
@@ -118,63 +118,62 @@ enum Wait {
     Nothing,
 }
 
-/// The upstream probed if unknown or stale, its multivariant playlist resolved to the variant a
-/// run reads, then `spawn_packaged`, redone once with CPU decode (the GPU still encodes) after
-/// `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
+/// What a run reads of an upstream: its URL, or the pick of its playlist, with the cookies the
+/// playlist's answer set.
+struct Read {
+    pick: HlsPick,
+    cookies: Option<String>,
+}
+
+/// Upstream `i` probed if unknown, an HLS one read through its pick, the probe retaken on what
+/// is read, then `spawn_packaged`, redone once with CPU decode after `GpuDecodeFailed`.
 async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     let u = &pipe.upstreams[i];
-    let (has, mut stale) = {
+    let (has, stale, mut probed_on) = {
         let m = pipe.m.locked();
-        (m.probes[i].clone(), m.stale_probes[i])
+        (
+            m.probes[i].clone(),
+            m.stale_probes[i],
+            m.probe_urls[i].clone(),
+        )
     };
-    let hls = |p: &Option<LiveProbe>| {
-        core_live::is_hls_container(p.as_ref().and_then(|p| p.container.as_deref()))
+    if !has_video(&has) {
+        if let Some(p) = probe(rt, u, None).await {
+            keep_probe(pipe, i, p, &u.url);
+            probed_on = u.url.clone();
+        }
+    } else if stale {
+        probed_on.clear();
+    }
+    let hls = core_live::is_hls_container(
+        pipe.m.locked().probes[i]
+            .as_ref()
+            .and_then(|p| p.container.as_deref()),
+    );
+    let mut read = Read {
+        pick: HlsPick {
+            video: u.url.clone(),
+            audio: None,
+        },
+        cookies: None,
     };
-    let mut input = None;
-    if hls(&has) {
+    if hls {
         match pick(rt, pipe, i).await {
-            Ok(Some(p)) => input = Some(p),
+            Ok(Some(r)) => read = r,
             // Not a playlist after all: what the probe said of it is stale.
-            Ok(None) => stale = true,
+            Ok(None) => probed_on.clear(),
             Err(e) => {
                 pipe.m.locked().last_error = Some(e);
                 return false;
             }
         }
     }
-    if !has_video(&has) || stale {
-        let url = input.as_ref().map_or(&u.url, |p| &p.video);
-        if let Some(p) = probe(rt, &with_url(u, url)).await {
-            let first_sight = input.is_none() && hls(&Some(p.clone()));
-            {
-                let mut m = pipe.m.locked();
-                m.probes[i] = Some(p);
-                m.stale_probes[i] = false;
-            }
-            if first_sight {
-                match pick(rt, pipe, i).await {
-                    Ok(Some(p)) => {
-                        if p.video != u.url
-                            && let Some(v) = probe(rt, &with_url(u, &p.video)).await
-                        {
-                            pipe.m.locked().probes[i] = Some(v);
-                        }
-                        input = Some(p);
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        pipe.m.locked().last_error = Some(e);
-                        return false;
-                    }
-                }
-            }
-        }
+    if probed_on != read.pick.video
+        && let Some(p) = probe(rt, &with_url(u, &read.pick.video), read.cookies.as_deref()).await
+    {
+        keep_probe(pipe, i, p, &read.pick.video);
     }
-    let input = input.unwrap_or_else(|| HlsPick {
-        video: u.url.clone(),
-        audio: None,
-    });
-    match spawn_packaged(rt, pipe, i, &input).await {
+    match spawn_packaged(rt, pipe, i, &read).await {
         Start::Ok => true,
         Start::Failed => false,
         Start::GpuDecodeFailed => {
@@ -183,11 +182,18 @@ async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
                 return false;
             }
             pipe.m.locked().cpu_decode = true;
-            let ok = spawn_packaged(rt, pipe, i, &input).await == Start::Ok;
+            let ok = spawn_packaged(rt, pipe, i, &read).await == Start::Ok;
             pipe.m.locked().cpu_decode = ok;
             ok
         }
     }
+}
+
+fn keep_probe(pipe: &Pipe, i: usize, p: LiveProbe, url: &str) {
+    let mut m = pipe.m.locked();
+    m.probes[i] = Some(p);
+    m.probe_urls[i] = url.into();
+    m.stale_probes[i] = false;
 }
 
 fn with_url(u: &LiveUpstream, url: &str) -> LiveUpstream {
@@ -198,49 +204,59 @@ fn with_url(u: &LiveUpstream, url: &str) -> LiveUpstream {
 }
 
 /// What a run reads from upstream `i`, fetched at each attempt (variant URLs may carry tokens):
-/// the variant of a multivariant playlist, else the upstream itself; `None` if it is no playlist.
-async fn pick(rt: &Runtime, pipe: &Pipe, i: usize) -> Result<Option<HlsPick>, String> {
+/// the pick of a multivariant playlist, else the upstream itself; `None` if it is no playlist.
+async fn pick(rt: &Runtime, pipe: &Pipe, i: usize) -> Result<Option<Read>, String> {
     let u = &pipe.upstreams[i];
-    let Some((url, text)) = fetch_playlist(rt, u).await? else {
+    let Some((url, cookies, text)) = fetch_playlist(rt, u).await? else {
         return Ok(None);
     };
     let remux = pipe.m.locked().mode == LiveMode::Remux;
     let height = pipe.bitrate.filter(|b| *b > 0.0).map(height_for_bitrate);
-    Ok(Some(
-        pick_variant(&text, &url, remux, height).unwrap_or_else(|| HlsPick {
-            video: u.url.clone(),
-            audio: None,
-        }),
-    ))
+    let pick = pick_variant(&text, &url, remux, height).unwrap_or_else(|| HlsPick {
+        video: u.url.clone(),
+        audio: None,
+    });
+    let cookies = (!cookies.is_empty()).then(|| cookies.join("\n"));
+    Ok(Some(Read { pick, cookies }))
 }
 
-/// The playlist `u` answers with and the URL that answered; `None` when it answers something else.
+/// The playlist `u` answers with, the URL that answered and the cookies set; `None` when it
+/// answers something else. One deadline for all of it: a trickling answer holds no attempt.
 async fn fetch_playlist(
     rt: &Runtime,
     u: &LiveUpstream,
-) -> Result<Option<(String, String)>, String> {
-    let (url, res) = tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, http_get(rt, u))
+) -> Result<Option<(String, Vec<String>, String)>, String> {
+    let read = async {
+        let answer = http_get(rt, u).await?;
+        let mut body = answer.res.into_body();
+        let mut text = Vec::new();
+        loop {
+            match tokio::time::timeout(DIRECT_SNIFF, body.frame()).await {
+                Ok(Some(Ok(f))) => text.extend_from_slice(&f.into_data().unwrap_or_default()),
+                Ok(Some(Err(e))) => return Err(causes(&e)),
+                Ok(None) => break,
+                Err(_) => return Err("playlist read stalled".into()),
+            }
+            // A stream (MPEG-TS) is dropped once its first bytes tell.
+            if text.len() >= 16 && !core_live::is_manifest_payload(&text) {
+                return Ok(None);
+            }
+            if text.len() > PLAYLIST_MAX_BYTES {
+                return Err("playlist larger than 1 MiB".into());
+            }
+        }
+        Ok(core_live::is_manifest_payload(&text).then(|| {
+            let text = String::from_utf8_lossy(&text).into_owned();
+            (answer.url, answer.cookies, text)
+        }))
+    };
+    tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, read)
         .await
-        .map_err(|_| "timeout of 30000ms exceeded".to_string())??;
-    let mut body = res.into_body();
-    let mut text = Vec::new();
-    while text.len() < PLAYLIST_MAX_BYTES {
-        match tokio::time::timeout(DIRECT_SNIFF, body.frame()).await {
-            Ok(Some(Ok(f))) => text.extend_from_slice(&f.into_data().unwrap_or_default()),
-            Ok(Some(Err(e))) => return Err(causes(&e)),
-            Ok(None) | Err(_) => break,
-        }
-        // A stream (MPEG-TS) is dropped at its first bytes.
-        if !text.is_empty() && !core_live::is_manifest_payload(&text) {
-            return Ok(None);
-        }
-    }
-    Ok(core_live::is_manifest_payload(&text)
-        .then(|| (url, String::from_utf8_lossy(&text).into_owned())))
+        .map_err(|_| "timeout of 30000ms exceeded".to_string())?
 }
 
 /// One ffmpeg run into the pipe's directory, successful once it wrote a segment. [ts:svc:862-927]
-async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, input: &HlsPick) -> Start {
+async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, read: &Read) -> Start {
     let u = &pipe.upstreams[i];
     let mut vet_proxy = None;
     if u.vetted {
@@ -314,8 +330,9 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize, input: &H
         fliks_engine_core::api::HwAccel::None
     };
     let o = LiveArgs {
-        input_url: input.video.clone(),
-        audio_url: input.audio.clone(),
+        input_url: read.pick.video.clone(),
+        audio_url: read.pick.audio.clone(),
+        cookies: read.cookies.clone(),
         vet_proxy: vet_proxy.clone(),
         output_dir: dir.to_string_lossy().into_owned(),
         segment_seconds: pipe.segment_seconds,
@@ -453,14 +470,19 @@ async fn segments(dir: &Path) -> HashMap<OsString, SystemTime> {
     .unwrap_or_default()
 }
 
-/// A GET (http or https) following up to 5 redirects, with the URL that answered; `Err` is the
-/// reason to record.
-async fn http_get(
-    rt: &Runtime,
-    u: &fliks_engine_core::api::LiveUpstream,
-) -> Result<(String, hyper::Response<hyper::body::Incoming>), String> {
+/// The answer to a GET: the URL that gave it, the cookies set on the way (`scoped_cookie`).
+struct Answer {
+    url: String,
+    cookies: Vec<String>,
+    res: hyper::Response<hyper::body::Incoming>,
+}
+
+/// A GET (http or https) following up to 5 redirects, each hop sent the cookies the earlier ones
+/// set for its host, as ffmpeg's own requests do; `Err` is the reason to record.
+async fn http_get(rt: &Runtime, u: &LiveUpstream) -> Result<Answer, String> {
     let (ua, _, _) = core_live::split_headers(&u.headers);
     let mut url = u.url.clone();
+    let mut cookies: Vec<String> = vec![];
     let client = if u.vetted {
         &rt.live.vetted_client
     } else {
@@ -483,8 +505,16 @@ async fn http_get(
         {
             b = b.header(k, v);
         }
+        if let Some(c) = core_live::cookie_header(&cookies, &url) {
+            b = b.header(header::COOKIE, c);
+        }
         let req = b.body(Empty::new()).map_err(|e| e.to_string())?;
         let res = client.request(req).await.map_err(|e| causes(&e))?;
+        for c in res.headers().get_all(header::SET_COOKIE) {
+            if let Ok(c) = c.to_str() {
+                cookies.push(core_live::scoped_cookie(c, &url));
+            }
+        }
         let status = res.status();
         if status.is_redirection()
             && let Some(loc) = res
@@ -492,16 +522,7 @@ async fn http_get(
                 .get(header::LOCATION)
                 .and_then(|v| v.to_str().ok())
         {
-            url = if loc.starts_with('/') {
-                let uri: hyper::Uri = url
-                    .parse()
-                    .map_err(|e: hyper::http::uri::InvalidUri| e.to_string())?;
-                let scheme = uri.scheme_str().unwrap_or("http");
-                let host = uri.authority().map_or("", |a| a.as_str());
-                format!("{scheme}://{host}{loc}")
-            } else {
-                loc.to_string()
-            };
+            url = resolve_uri(&url, loc);
             continue;
         }
         if !status.is_success() {
@@ -510,7 +531,7 @@ async fn http_get(
                 status.as_u16()
             ));
         }
-        return Ok((url, res));
+        return Ok(Answer { url, cookies, res });
     }
     Err("Maximum number of redirects exceeded".into())
 }
@@ -519,7 +540,7 @@ async fn http_get(
 async fn connect_direct(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
     let u = &pipe.upstreams[i];
     let res = match tokio::time::timeout(DIRECT_CONNECT_TIMEOUT, http_get(rt, u)).await {
-        Ok(Ok((_, r))) => r,
+        Ok(Ok(a)) => a.res,
         Ok(Err(e)) => {
             pipe.m.locked().last_error = Some(e);
             return false;

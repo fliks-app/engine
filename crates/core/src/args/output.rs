@@ -393,6 +393,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         o.referer.as_deref(),
         &o.extra_headers,
     ));
+    a.extend(crate::live::cookie_args(o.cookies.as_deref()));
     let probe = js_max(3.0, o.probe_seconds.unwrap_or(3.0));
     a.extend([
         "-analyzeduration".into(),
@@ -413,15 +414,18 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     } else {
         vec![]
     };
-    a.extend(start.clone());
+    a.extend(start);
     a.extend(["-i".into(), o.input_url.clone()]);
     match &o.audio_url {
-        // A rendition's own segments start elsewhere: its clock is the variant's, not its start.
+        // On the variant's clock, not each input's start; from 4 segments back, so a rendition
+        // listing up to 2 more covers the variant's start (the trim below cuts what precedes it).
         Some(audio) => {
             a.extend(reading);
-            a.extend(start);
-            a.extend(["-isync".into(), "0".into(), "-i".into(), audio.clone()]);
+            a.extend(strs(&["-live_start_index", "-4", "-isync", "0", "-i"]));
+            a.push(audio.clone());
             a.extend(strs(&["-map", "0:v:0", "-map", "1:a:0?", "-sn", "-dn"]));
+            // A rendition whose playlist ends ends the run: ffmpeg would go on without audio.
+            a.push("-shortest".into());
         }
         None => a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"])),
     }
@@ -759,28 +763,42 @@ mod tests {
         r.container = Some("hls".into());
         r.audio_url = Some("http://x/audio.m3u8".into());
         r.user_agent = Some("UA".into());
+        r.vet_proxy = Some("http://127.0.0.1:9/".into());
+        r.cookies = Some("tok=1; domain=x".into());
         let a = live(&r, &HostCaps::default(), &dev());
         let inputs: Vec<usize> = (0..a.len()).filter(|i| a[*i] == "-i").collect();
         assert_eq!(inputs.len(), 2, "{a:?}");
-        let second = &a[inputs[0] + 2..inputs[1] + 2];
+        let (first, second) = (&a[..inputs[0]], &a[inputs[0] + 2..inputs[1] + 2]);
         // The same reading options, no decoder options, synced to the variant's start.
         for opt in [
             "-reconnect",
+            "-protocol_whitelist",
+            "-http_proxy",
             "-user_agent",
+            "-cookies",
             "-analyzeduration",
-            "-live_start_index",
         ] {
+            assert!(first.iter().any(|x| x == opt), "{opt} in {first:?}");
             assert!(second.iter().any(|x| x == opt), "{opt} in {second:?}");
         }
         assert!(
             !second.iter().any(|x| x == "-hwaccel" || x == "-threads"),
             "{second:?}"
         );
+        assert_eq!(first[first.len() - 2..], ["-live_start_index", "-2"]);
         assert_eq!(
-            second[second.len() - 4..],
-            ["-isync", "0", "-i", "http://x/audio.m3u8"]
+            second[second.len() - 6..],
+            [
+                "-live_start_index",
+                "-4",
+                "-isync",
+                "0",
+                "-i",
+                "http://x/audio.m3u8"
+            ]
         );
         assert!(a.windows(2).any(|w| w == ["-map", "1:a:0?"]), "{a:?}");
+        assert!(a.iter().any(|x| x == "-shortest"), "{a:?}");
         assert!(a.windows(2).any(|w| w == ["-af", "atrim=start=0"]), "{a:?}");
         // Re-encoded even into TS: the cut needs a decode.
         r.use_ts = true;

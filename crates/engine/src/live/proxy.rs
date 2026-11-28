@@ -309,7 +309,8 @@ mod tests {
         });
         let url = format!("http://127.0.0.1:{port}/live.m3u8");
         let probe = |proxy: String| {
-            let args = fliks_engine_core::live::probe_args(&url, &Default::default(), Some(&proxy));
+            let args =
+                fliks_engine_core::live::probe_args(&url, &Default::default(), Some(&proxy), None);
             let ffprobe = ffprobe.clone();
             async move {
                 tokio::process::Command::new(ffprobe)

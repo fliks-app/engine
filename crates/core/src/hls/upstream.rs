@@ -14,6 +14,7 @@ struct Variant {
     bandwidth: Option<u64>,
     codecs: Option<String>,
     audio: Option<String>,
+    range: Option<String>,
 }
 
 struct Rendition {
@@ -23,33 +24,32 @@ struct Rendition {
     autoselect: bool,
 }
 
-const AUDIO_CODECS: [&str; 9] = [
-    "mp4a", "ac-3", "ec-3", "ac-4", "opus", "flac", "fLaC", "alac", "mp3",
+const AUDIO_CODECS: [&str; 13] = [
+    "mp4a", "ac-3", "ec-3", "ec+3", "ac-4", "dts", "mha1", "mhm1", "opus", "flac", "fLaC", "alac",
+    "mp3",
 ];
 
-/// The variant a run reads from the multivariant playlist `text` fetched at `base` (its final
-/// URL), `None` for a media playlist or one without a variant holding video. A remux copies
-/// the video: the highest H.264 variant, else the highest. A transcode to `height` lines: the
-/// lowest variant at least that tall, else the highest. Highest: by height, then bandwidth.
+/// The variant a run reads (rules in `live.md`, packaged attempt) from the multivariant playlist
+/// `text` answered at `base`; `None` for a media playlist or one without a variant holding video.
 pub fn pick_variant(text: &str, base: &str, remux: bool, height: Option<u32>) -> Option<HlsPick> {
     let (variants, renditions) = parse(text, base);
     let video: Vec<&Variant> = variants.iter().filter(|v| has_video(v)).collect();
-    let rank = |v: &&Variant| (v.height.unwrap_or(0), v.bandwidth.unwrap_or(0));
-    let h264: Vec<&Variant> = video.iter().copied().filter(|v| is_h264(v)).collect();
-    let pool = if remux && !h264.is_empty() {
-        h264
-    } else {
-        video
-    };
-    let covering = height.and_then(|h| {
+    // The live transcode has no tonemap, and a remux copies: SDR when there is one.
+    let mut pool = prefer(video, |v| v.range.as_deref().is_none_or(|r| r == "SDR"));
+    if remux {
+        pool = prefer(pool, is_h264);
+    }
+    let up = |v: &&Variant| (v.height.unwrap_or(0), aac(v), v.bandwidth.unwrap_or(0));
+    let down = |v: &&Variant| (v.height.unwrap_or(0), !aac(v), v.bandwidth.unwrap_or(0));
+    let covering = height.filter(|_| !remux).and_then(|h| {
         pool.iter()
             .copied()
             .filter(|v| v.height.is_some_and(|vh| vh >= h))
-            .min_by_key(rank)
+            .min_by_key(down)
     });
     let chosen = match covering {
-        Some(v) if !remux => v,
-        _ => pool.iter().copied().rev().max_by_key(rank)?,
+        Some(v) => v,
+        None => pool.iter().copied().rev().max_by_key(up)?,
     };
     let audio = chosen.audio.as_ref().and_then(|g| {
         let group: Vec<&Rendition> = renditions.iter().filter(|r| &r.group == g).collect();
@@ -66,18 +66,39 @@ pub fn pick_variant(text: &str, base: &str, remux: bool, height: Option<u32>) ->
     })
 }
 
+/// The variants of `pool` that `keep` holds, or all of them when it holds none.
+fn prefer(pool: Vec<&Variant>, keep: impl Fn(&Variant) -> bool) -> Vec<&Variant> {
+    let kept: Vec<_> = pool.iter().copied().filter(|v| keep(v)).collect();
+    if kept.is_empty() { pool } else { kept }
+}
+
+fn codecs(v: &Variant) -> impl Iterator<Item = &str> {
+    v.codecs.iter().flat_map(|c| c.split(',')).map(str::trim)
+}
+
+fn is_audio(codec: &str) -> bool {
+    AUDIO_CODECS.iter().any(|a| codec.starts_with(a))
+}
+
 fn has_video(v: &Variant) -> bool {
-    v.codecs.as_deref().is_none_or(|c| {
-        c.split(',')
-            .any(|c| !AUDIO_CODECS.iter().any(|a| c.trim().starts_with(a)))
-    })
+    v.codecs.is_none() || codecs(v).any(|c| !is_audio(c))
+}
+
+/// Its audio, if any is listed, is AAC: copied into TS, where another codec is encoded.
+fn aac(v: &Variant) -> bool {
+    codecs(v)
+        .filter(|c| is_audio(c))
+        .all(|c| c.starts_with("mp4a"))
 }
 
 fn is_h264(v: &Variant) -> bool {
-    v.codecs.as_deref().is_some_and(|c| {
-        c.split(',')
-            .any(|c| c.trim().starts_with("avc1") || c.trim().starts_with("avc3"))
-    })
+    codecs(v).any(|c| c.starts_with("avc1") || c.starts_with("avc3"))
+}
+
+/// Only http and https: a playlist could name any URL ffmpeg opens, `file:` included.
+fn http(uri: String) -> Option<String> {
+    let lower = uri.to_ascii_lowercase();
+    (lower.starts_with("http://") || lower.starts_with("https://")).then_some(uri)
 }
 
 fn parse(text: &str, base: &str) -> (Vec<Variant>, Vec<Rendition>) {
@@ -90,9 +111,13 @@ fn parse(text: &str, base: &str) -> (Vec<Variant>, Vec<Rendition>) {
             let a = attributes(a);
             let get = |k: &str| a.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
             if get("TYPE").as_deref() == Some("AUDIO") {
+                let uri = get("URI").map(|u| http(resolve_uri(base, &u)));
+                if uri == Some(None) {
+                    continue;
+                }
                 renditions.push(Rendition {
                     group: get("GROUP-ID").unwrap_or_default(),
-                    uri: get("URI").map(|u| resolve_uri(base, &u)),
+                    uri: uri.flatten(),
                     default: get("DEFAULT").as_deref() == Some("YES"),
                     autoselect: get("AUTOSELECT").as_deref() == Some("YES"),
                 });
@@ -102,13 +127,17 @@ fn parse(text: &str, base: &str) -> (Vec<Variant>, Vec<Rendition>) {
             && let Some(a) = pending.take()
         {
             let get = |k: &str| a.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            let Some(uri) = http(resolve_uri(base, line)) else {
+                continue;
+            };
             variants.push(Variant {
-                uri: resolve_uri(base, line),
+                uri,
                 height: get("RESOLUTION")
                     .and_then(|r| r.split_once('x').and_then(|(_, h)| h.parse().ok())),
                 bandwidth: get("BANDWIDTH").and_then(|b| b.parse().ok()),
                 codecs: get("CODECS"),
                 audio: get("AUDIO"),
+                range: get("VIDEO-RANGE"),
             });
         }
     }
@@ -126,7 +155,7 @@ fn attributes(list: &str) -> Vec<(String, String)> {
             },
             None => after.split_once(',').unwrap_or((after, "")),
         };
-        out.push((name.trim().to_string(), value.to_string()));
+        out.push((name.trim().to_string(), value.trim().to_string()));
         rest = next;
     }
     out
@@ -171,6 +200,8 @@ pub fn resolve_uri(base: &str, reference: &str) -> String {
         reference.split_at(reference.find(['?', '#']).unwrap_or(reference.len()));
     let merged = if ref_path.starts_with('/') {
         ref_path.to_string()
+    } else if path.is_empty() && rest.starts_with("//") {
+        format!("/{ref_path}")
     } else {
         format!(
             "{}{ref_path}",
@@ -264,6 +295,41 @@ mod tests {
     }
 
     #[test]
+    fn sdr_and_aac_are_preferred_and_odd_audio_is_audio() {
+        let m = "#EXTM3U\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\",VIDEO-RANGE=PQ\n\
+            pq.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=6200000,RESOLUTION=1920x1080 ,CODECS=\"avc1.640028,ec-3\"\n\
+            ec3.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080 ,CODECS=\"avc1.640028,mp4a.40.2\",VIDEO-RANGE=SDR\n\
+            sdr.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=9900000,CODECS=\"dtsx,mha1.0C,ec+3\"\n\
+            audio.m3u8\n";
+        for (remux, height) in [(true, None), (false, None), (false, Some(1080))] {
+            let p = pick_variant(m, "http://h/m.m3u8", remux, height).unwrap();
+            assert_eq!(p.video, "http://h/sdr.m3u8", "{remux} {height:?}");
+        }
+    }
+
+    #[test]
+    fn only_http_uris_are_read() {
+        let m = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"x\",DEFAULT=YES,URI=\"file:///etc/a.m3u8\"\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1920x1080,AUDIO=\"a\"\n\
+            file:///etc/passwd\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,AUDIO=\"a\"\n\
+            HTTPS://cdn/v.m3u8\n";
+        let p = pick_variant(m, "http://h/m.m3u8", true, None).unwrap();
+        assert_eq!(
+            p,
+            HlsPick {
+                video: "HTTPS://cdn/v.m3u8".into(),
+                audio: None
+            }
+        );
+    }
+
+    #[test]
     fn uris_resolve_against_the_final_url() {
         let b = "http://h:8080/a/b/c.m3u8?x=1";
         for (r, want) in [
@@ -277,5 +343,7 @@ mod tests {
         ] {
             assert_eq!(resolve_uri(b, r), want, "{r}");
         }
+        assert_eq!(resolve_uri("http://h", "v.m3u8"), "http://h/v.m3u8");
+        assert_eq!(resolve_uri("http://h?q", "v.m3u8"), "http://h/v.m3u8");
     }
 }

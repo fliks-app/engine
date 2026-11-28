@@ -234,6 +234,9 @@ pub struct LiveArgs {
     /// A demuxed audio rendition of the HLS variant `input_url` names, read as a second input.
     #[serde(default)]
     pub audio_url: Option<String>,
+    /// What the HLS playlist's answer set, for every request of the run (`live::cookie_args`).
+    #[serde(default)]
+    pub cookies: Option<String>,
     /// The vetting proxy every request of a vetted input goes through.
     #[serde(default)]
     pub vet_proxy: Option<String>,

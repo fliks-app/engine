@@ -78,7 +78,7 @@ pub async fn open(
         if !req.upstreams[first].at_capacity
             && core_live::decide_mode(&snapped, fast_zap, caps.hw_accel) == LiveMode::Direct
             && !has_video(&probes[first])
-            && let Some(p) = probe(rt, &req.upstreams[first]).await
+            && let Some(p) = probe(rt, &req.upstreams[first], None).await
         {
             probes[first] = Some(p);
         }
@@ -204,7 +204,7 @@ pub(super) async fn start(
     let first = order[0];
     if mode != LiveMode::Direct
         && !has_video(&probes[first])
-        && let Some(p) = probe(rt, &req.upstreams[first]).await
+        && let Some(p) = probe(rt, &req.upstreams[first], None).await
     {
         probes[first] = Some(p);
     }
@@ -254,6 +254,7 @@ pub(super) async fn start(
                 .then(|| video0.map(String::from))
                 .flatten(),
             stale_probes: vec![false; probes.len()],
+            probe_urls: req.upstreams.iter().map(|u| u.url.clone()).collect(),
             probes,
             device: None,
             cpu_decode: false,
@@ -354,6 +355,7 @@ pub(super) fn join(
 pub(super) async fn probe(
     rt: &Runtime,
     u: &fliks_engine_core::api::LiveUpstream,
+    cookies: Option<&str>,
 ) -> Option<LiveProbe> {
     let mut proxy = None;
     if u.vetted {
@@ -367,11 +369,16 @@ pub(super) async fn probe(
     }
     let _slot = rt.slots.playback_on(None);
     let mut cmd = tokio::process::Command::new(&rt.ffprobe);
-    cmd.args(core_live::probe_args(&u.url, &u.headers, proxy.as_deref()))
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true);
+    cmd.args(core_live::probe_args(
+        &u.url,
+        &u.headers,
+        proxy.as_deref(),
+        cookies,
+    ))
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null())
+    .kill_on_drop(true);
     if proxy.is_some() {
         cmd.env_remove("no_proxy").env_remove("NO_PROXY");
     }
