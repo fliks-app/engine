@@ -344,8 +344,13 @@ fn every_wire_key_is_in_its_schema() {
         AlignMeta,
         AlignedLine,
         AlignedWord,
+        JobRevisions,
         KaraokeRuntime,
+        Key,
+        KeyEstimate,
+        KeyMode,
         LrcFit,
+        MelodyAnalysis,
         MelodyMeta,
         MelodyNote,
         MelodySpan,
@@ -361,6 +366,7 @@ fn every_wire_key_is_in_its_schema() {
         SeparateOutput,
         StemUpload,
         StemFile,
+        TempoEstimate,
     );
     let mut all: Vec<&str> = doc["components"]["schemas"]
         .as_object()
