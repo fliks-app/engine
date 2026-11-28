@@ -177,14 +177,17 @@ impl Drop for StopOnDrop {
     }
 }
 
-/// The decoder of the job's media: its first audio stream as 16 kHz mono f32 on stdout.
-pub fn pcm_cmd(ctx: &Ctx) -> Cmd {
+/// The longest audio `Align` and `Melody` decode: an hour is 230 MB of samples.
+const MAX_PCM_SECONDS: usize = 3600;
+
+/// The decoder of `path` (mapped already): its first audio stream as 16 kHz mono f32 on stdout.
+pub fn pcm_cmd(ctx: &Ctx, path: &str) -> Cmd {
     let argv: Vec<String> = [
         "-hide_banner",
         "-loglevel",
         "warning",
         "-i",
-        &ctx.media_path(),
+        path,
         "-map",
         "0:a:0",
         "-vn",
@@ -203,32 +206,37 @@ pub fn pcm_cmd(ctx: &Ctx) -> Cmd {
     Cmd::new("ffmpeg", &ctx.rt.ffmpeg, &argv, Pipes::stdout())
 }
 
-/// Every sample the `pcm_cmd` run `p` decodes.
+/// Every sample the `pcm_cmd` run `p` decodes, up to `MAX_PCM_SECONDS`.
 pub async fn read_pcm(ctx: &Ctx, p: &Ffmpeg) -> Result<Vec<f32>, String> {
     let mut out = p.take_stdout().ok_or("no decoder output")?;
-    let mut bytes = vec![];
+    let mut pcm = vec![];
     let mut buf = vec![0u8; 1 << 20];
+    let mut held = 0;
     loop {
         let n = out
-            .read(&mut buf)
+            .read(&mut buf[held..])
             .await
             .map_err(|e| format!("decode: {e}"))?;
         if n == 0 {
             break;
         }
-        bytes.extend_from_slice(&buf[..n]);
+        let have = held + n;
+        let (samples, rest) = buf[..have].as_chunks::<4>();
+        pcm.extend(samples.iter().map(|b| f32::from_le_bytes(*b)));
+        held = rest.len();
+        buf.copy_within(have - held..have, 0);
+        if pcm.len() > MAX_PCM_SECONDS * SAMPLE_RATE as usize {
+            return Err(format!(
+                "the audio is longer than {} minutes",
+                MAX_PCM_SECONDS / 60
+            ));
+        }
         ctx.pulse();
     }
     match p.wait().await.code {
-        Some(0) => {}
-        code => return Err(format!("ffmpeg exited with {code:?}: {}", tail(p, 2))),
+        Some(0) => Ok(pcm),
+        code => Err(format!("ffmpeg exited with {code:?}: {}", tail(p, 2))),
     }
-    Ok(bytes
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| f32::from_le_bytes(*b))
-        .collect())
 }
 
 #[cfg(all(test, target_os = "linux"))]

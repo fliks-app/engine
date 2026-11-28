@@ -211,6 +211,59 @@ async fn a_model_is_downloaded_verified_listed_and_deleted() {
     );
 }
 
+/// `/rest` answers a range of `PLAIN` and refuses a whole-file request.
+async fn range_server(ranged: Arc<std::sync::atomic::AtomicBool>) -> String {
+    let rest = get(move |headers: axum::http::HeaderMap| {
+        let ranged = ranged.clone();
+        async move {
+            let from: Option<usize> = headers.get(header::RANGE).and_then(|v| {
+                v.to_str()
+                    .ok()?
+                    .strip_prefix("bytes=")?
+                    .strip_suffix('-')?
+                    .parse()
+                    .ok()
+            });
+            match from {
+                Some(from) => {
+                    ranged.store(true, std::sync::atomic::Ordering::Relaxed);
+                    (StatusCode::PARTIAL_CONTENT, PLAIN[from..].to_vec()).into_response()
+                }
+                None => StatusCode::FORBIDDEN.into_response(),
+            }
+        }
+    });
+    listen(Router::new().route("/rest", rest)).await
+}
+
+#[tokio::test]
+async fn a_download_resumes_from_the_part_file_a_broken_transfer_left() {
+    let e = engine().await;
+    let ranged = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let base = range_server(ranged.clone()).await;
+    let dir = e.root.join("models-resume");
+    std::fs::create_dir_all(dir.join(".flaky.new")).unwrap();
+    std::fs::write(dir.join(".flaky.new/a.bin.part"), &PLAIN[..5]).unwrap();
+    e.rt.karaoke.replace(
+        Manager::new(
+            dir.clone(),
+            vec![entry(
+                "flaky",
+                ModelKind::Melody,
+                true,
+                vec![file("a.bin", format!("{base}/rest"), PLAIN)],
+            )],
+            e.rt.events.clone(),
+        ),
+        Arc::new(NoOnnx),
+    );
+    let r = e.control("POST", "/v1/models/flaky/download", None).await;
+    assert_eq!(r.status, 202, "{}", r.text());
+    settle(&e, "flaky", "installed").await;
+    assert_eq!(std::fs::read(dir.join("flaky/a.bin")).unwrap(), PLAIN);
+    assert!(ranged.load(std::sync::atomic::Ordering::Relaxed));
+}
+
 /// A manager of one melody model `good` (two files of `PLAIN`) and the file server behind it.
 async fn good_manager(e: &Engine, tag: &str) -> PathBuf {
     let base = server().await;
@@ -1328,4 +1381,98 @@ async fn align_runs_a_real_ctc_model_when_one_is_given() {
     );
     assert!(matched(&a) > 0.5, "{a}");
     assert!(matched(&wrong) < 0.3, "{wrong}");
+}
+
+/// The default networks downloaded into `FLIKS_REAL_MODELS` and run on a clip through the real
+/// ONNX runtime (`ORT_DYLIB_PATH`): the nightly check of their input names and shapes.
+#[tokio::test]
+async fn the_real_default_models_download_and_run_a_clip() {
+    let Some(models) = std::env::var_os("FLIKS_REAL_MODELS") else {
+        eprintln!("FLIKS_REAL_MODELS not set: skipped");
+        return;
+    };
+    let e = engine().await;
+    let models = PathBuf::from(models);
+    e.rt.karaoke.replace(
+        Manager::new(
+            models.clone(),
+            fliks_engine::karaoke::models::manifest(),
+            e.rt.events.clone(),
+        ),
+        fliks_engine::karaoke::onnx::default_backend(&models),
+    );
+    let ids = ["spleeter-2stems", "swiftf0", "wav2vec2-ctc-en"];
+    for id in ids {
+        let r = e
+            .control("POST", &format!("/v1/models/{id}/download"), None)
+            .await;
+        assert!([200, 202].contains(&r.status), "{id}: {}", r.text());
+    }
+    for _ in 0..1800 {
+        let list = e.control("GET", "/v1/models", None).await.json();
+        let state = |id: &str| {
+            list["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["id"] == id)
+                .unwrap()
+                .clone()
+        };
+        if let Some(m) = ids
+            .iter()
+            .map(|id| state(id))
+            .find(|m| m["state"] == "failed")
+        {
+            panic!("download failed: {m}");
+        }
+        if ids.iter().all(|id| state(id)["state"] == "installed") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let d = dir(&e, "real-models");
+    let clip = d.join("clip.flac");
+    let graph = "sine=frequency=220:sample_rate=44100:duration=10,volume=0.3[a];\
+                 anoisesrc=r=44100:a=0.02:d=10[n];[a][n]amix=inputs=2[m];[m]aformat=channel_layouts=stereo[o]";
+    assert!(make(&e, &clip, graph), "ffmpeg cannot make the clip");
+    let mut info = audio_info();
+    info["durationSeconds"] = json!(10.0);
+    let (vocals, inst) = (d.join("vocals.opus"), d.join("instrumental.opus"));
+    let r = run_kind(
+        &e,
+        &clip,
+        json!({ "type": "Separate", "info": info, "vocals": vocals, "instrumental": inst }),
+    )
+    .await;
+    assert_eq!(r["state"], "done", "{r}");
+    assert!(std::fs::metadata(&inst).unwrap().len() > 0);
+    let r = run_kind(
+        &e,
+        &clip,
+        json!({ "type": "Melody", "spans": [{ "startMs": 0, "endMs": 10000 }] }),
+    )
+    .await;
+    assert_eq!(r["state"], "done", "{r}");
+    let notes = r["result"]["melody"]["spans"][0]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(
+        notes
+            .iter()
+            .any(|n| (n["midi"].as_f64().unwrap() - 57.0).abs() < 1.0),
+        "{r}"
+    );
+    let r = run_kind(
+        &e,
+        &clip,
+        json!({ "type": "Align", "lines": [{ "text": "hello world" }],
+            "model": "wav2vec2-ctc-en", "voicing": vocals }),
+    )
+    .await;
+    assert_eq!(r["state"], "done", "{r}");
+    let a = &r["result"]["align"];
+    assert_eq!(a["backend"], "ctc-cpu", "{r}");
+    assert!(a.get("fallback").is_none(), "{r}");
 }

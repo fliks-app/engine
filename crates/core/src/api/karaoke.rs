@@ -160,6 +160,29 @@ pub struct ModelsResponse {
     /// Directories no manifest entry names, hidden ones (caches) excluded.
     pub orphans: Vec<ModelOrphan>,
     pub models: Vec<ModelInfo>,
+    /// The `revision` each job kind stamps on its result today.
+    pub revisions: JobRevisions,
+}
+
+/// Version of the algorithm around the model, per job kind: a result stamped with an older one
+/// was made by code that has changed since, even with the same model version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRevisions {
+    pub separate: u32,
+    pub align: u32,
+    pub melody: u32,
+}
+
+pub const REVISIONS: JobRevisions = JobRevisions {
+    separate: 2,
+    align: 2,
+    melody: 2,
+};
+
+/// The revision of a result written before the field existed.
+pub(crate) fn first() -> u32 {
+    1
 }
 
 /// One written audio file of a `Separate`.
@@ -189,6 +212,9 @@ pub struct SeparateMeta {
     pub guide: Option<StemFile>,
     /// Length of the stems.
     pub duration_seconds: f64,
+    /// `JobRevisions.separate` of the engine that wrote the stems.
+    #[serde(default = "first")]
+    pub revision: u32,
 }
 
 /// One lyric line to time. A line with no times is placed by the audio alone.
@@ -259,6 +285,9 @@ pub struct AlignMeta {
     /// absent when no line had times or too few lines were found to fit one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lrc_fit: Option<LrcFit>,
+    /// `JobRevisions.align` of the engine that placed the words.
+    #[serde(default = "first")]
+    pub revision: u32,
 }
 
 /// The line times of an `Align` request against the audio: `audio = offsetMs + scale * lrc`.
@@ -298,6 +327,65 @@ pub struct MelodyMeta {
     pub model_version: String,
     /// The notes of each request span, in order; an unvoiced span has none.
     pub spans: Vec<Vec<MelodyNote>>,
+    /// What the notes of every span say about the song; absent when they hold too few notes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<MelodyAnalysis>,
+    /// `JobRevisions.melody` of the engine that found the notes.
+    #[serde(default = "first")]
+    pub revision: u32,
+}
+
+/// Key, tuning, range and tempo of the sung melody.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MelodyAnalysis {
+    /// How far the singing sits from A4 = 440 Hz, -50 to 50 cents.
+    pub tuning_cents: f64,
+    /// MIDI pitch (tuning removed) under which 5 % of the sung time lies.
+    pub low_midi: f64,
+    /// MIDI pitch (tuning removed) above which 5 % of the sung time lies.
+    pub high_midi: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeyEstimate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tempo: Option<TempoEstimate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyMode {
+    Major,
+    Minor,
+}
+
+/// A key: its tonic as a pitch class, 0 (C) to 11 (B).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Key {
+    pub tonic: u32,
+    pub mode: KeyMode,
+}
+
+/// The best key of the melody's pitch classes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyEstimate {
+    pub key: Key,
+    /// Correlation of the pitch classes with the key's profile, -1 to 1.
+    pub confidence: f64,
+    /// The runner-up when it scores nearly as well (a melody alone often cannot tell a major key
+    /// from its relative minor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternative: Option<Key>,
+}
+
+/// Beats per minute the note onsets repeat at.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TempoEstimate {
+    pub bpm: f64,
+    /// Strength of that period in the onsets, 0 to 1.
+    pub confidence: f64,
 }
 
 /// `error` of a job failed for want of a model or a runtime, as `<code>: <message>`.

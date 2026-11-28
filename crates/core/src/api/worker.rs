@@ -431,6 +431,9 @@ pub struct SeparateOutput {
     /// The provider that ran the networks, or `cpu`.
     pub provider: String,
     pub duration_seconds: f64,
+    /// `JobRevisions.separate` of the worker's engine.
+    #[serde(default = "super::karaoke::first")]
+    pub revision: u32,
     /// All three of `STEM_NAMES`.
     pub stems: Vec<StemUpload>,
 }
@@ -605,6 +608,7 @@ mod tests {
                 model_version: "2".into(),
                 provider: "cpu".into(),
                 duration_seconds: 1.5,
+                revision: 2,
                 stems: vec![StemUpload {
                     name: "vocals".into(),
                     size: 3.0,

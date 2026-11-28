@@ -66,6 +66,13 @@ impl Ctx {
         ModelBusy(self.job.clone())
     }
 
+    /// Blocks a model thread while its run is paused for playback, until `stop` is set.
+    pub fn wait_while_paused(&self, stop: &AtomicBool) {
+        while self.job.held.load(Relaxed) && !stop.load(Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
     /// Marks progress the watchdog cannot see (bytes read, lines parsed).
     pub fn pulse(&self) {
         self.job.activity.fetch_add(1, Relaxed);
@@ -161,6 +168,7 @@ impl Ctx {
             m.runs -= 1;
             m.paused_runs -= u32::from(paused.load(Relaxed));
         }
+        self.job.held.store(false, Relaxed);
         // Nothing outlives the unit: a finished one may leave a producer behind (a pipe's writer).
         for p in &procs {
             match verdict {
@@ -264,9 +272,11 @@ impl Ctx {
                 for p in procs {
                     sent |= p.pause(cap, want).await;
                 }
-                if sent {
+                // A model thread outlives the decoder that fed it: it waits on `held` instead.
+                if sent || !want || self.job.model_busy.load(Relaxed) {
                     paused = want;
                     paused_out.store(paused, Relaxed);
+                    self.job.held.store(paused, Relaxed);
                     let mut m = self.job.m.locked();
                     if paused {
                         m.paused_runs += 1;

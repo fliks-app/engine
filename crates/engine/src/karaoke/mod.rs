@@ -350,15 +350,20 @@ type S = State<Arc<AppState>>;
     (status = 200, body = ModelsResponse, description = "the manifest with each model's state, and what this engine can run")))]
 pub async fn list(State(s): S) -> Json<ModelsResponse> {
     let k = &s.rt.karaoke;
+    let runtime = k.runtime(&s.rt.ffmpeg).await;
     let models = k.models();
-    Json(ModelsResponse {
-        runtime: k.runtime(&s.rt.ffmpeg).await,
+    // Every model is stat'ed and the directory walked: off the async threads.
+    let listed = tokio::task::spawn_blocking(move || ModelsResponse {
+        runtime,
         models_dir: models.dir().to_string_lossy().into_owned(),
         free_bytes: models.free_bytes().map(|b| b as f64),
         used_bytes: models.used_bytes() as f64,
         orphans: models.orphans(),
         models: models.list(),
+        revisions: fliks_engine_core::api::REVISIONS,
     })
+    .await;
+    Json(listed.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic())))
 }
 
 #[utoipa::path(post, path = "/v1/models/{id}/download", operation_id = "download_model", responses(
