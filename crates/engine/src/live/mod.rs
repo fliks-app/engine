@@ -156,6 +156,8 @@ struct PipeMut {
     mode: LiveMode,
     /// Per request position.
     probes: Vec<Option<LiveProbe>>,
+    /// Per request position: a run on it failed to open its input, the next attempt probes again.
+    stale_probes: Vec<bool>,
     failover: Failover,
     /// The position `failover` gave last.
     current: usize,

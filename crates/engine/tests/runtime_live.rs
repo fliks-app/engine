@@ -704,6 +704,38 @@ async fn a_playlist_upstream_starts_two_segments_before_its_end() {
 }
 
 #[tokio::test]
+async fn an_input_failure_has_the_next_attempt_probe_again() {
+    // The host stored `hls` for a URL that now serves MPEG-TS: ffmpeg refuses the HLS option.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let stale = json!({ "url": "http://up/ok", "priority": 0, "probedVideoCodec": "h264",
+        "probedContainer": "hls" });
+    let a = open(&e, open_req("37", vec![stale], json!({}), "alice", "t")).await;
+    let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    // The fresh probe goes back to the host, which stores it over the stale one.
+    let EngineEvent::LiveAttempt { probe, .. } = &ok else {
+        unreachable!()
+    };
+    assert_eq!(probe.as_ref().unwrap().container.as_deref(), Some("mpegts"));
+    let r = runs(&e);
+    assert_eq!(
+        r.len(),
+        2,
+        "one failed attempt, then a run on the fresh probe: {r:?}"
+    );
+    assert_eq!(arg_after(&r[0], "-live_start_index").as_deref(), Some("-2"));
+    assert_eq!(arg_after(&r[1], "-live_start_index"), None);
+    let snap = e
+        .control("GET", &format!("/v1/live/{}", sid(&a)), None)
+        .await
+        .json();
+    assert_eq!(snap["restarts"], 1);
+}
+
+#[tokio::test]
 async fn probe_picks_a_transcode_and_ts_segments() {
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();

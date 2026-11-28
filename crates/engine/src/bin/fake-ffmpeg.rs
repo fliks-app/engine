@@ -607,6 +607,13 @@ fn live(args: &[String]) {
         .open(dir.join("argv.log"))
         .unwrap();
     writeln!(log, "{}", serde_json::to_string(args).unwrap()).unwrap();
+    // ffmpeg's HLS demuxer alone takes `-live_start_index`.
+    if args.iter().any(|a| a == "-live_start_index") && !input.contains("manifest") {
+        eprintln!("Option live_start_index not found.");
+        eprintln!("Error opening input file {input}.");
+        eprintln!("Error opening input files: Option not found");
+        std::process::exit(8)
+    }
     if input.contains("fail") {
         eprintln!("[in#0 @ 0x0] Error opening input: Connection refused");
         eprintln!("Error opening input file {input}.");

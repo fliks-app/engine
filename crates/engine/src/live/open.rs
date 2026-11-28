@@ -253,6 +253,7 @@ pub(super) async fn start(
             active_codec: (effective == LiveMode::Remux)
                 .then(|| video0.map(String::from))
                 .flatten(),
+            stale_probes: vec![false; probes.len()],
             probes,
             device: None,
             cpu_decode: false,

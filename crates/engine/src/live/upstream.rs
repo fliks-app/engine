@@ -114,14 +114,19 @@ enum Wait {
     Nothing,
 }
 
-/// The upstream probed if need be, then `spawn_packaged`, redone once with CPU decode (the GPU
-/// still encodes) after `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
+/// The upstream probed if unknown or stale, then `spawn_packaged`, redone once with CPU decode
+/// (the GPU still encodes) after `GpuDecodeFailed`; the pipe keeps CPU decode if that run starts.
 async fn packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> bool {
-    let has = pipe.m.locked().probes[i].clone();
-    if !has_video(&has)
+    let (has, stale) = {
+        let m = pipe.m.locked();
+        (m.probes[i].clone(), m.stale_probes[i])
+    };
+    if (!has_video(&has) || stale)
         && let Some(p) = probe(rt, &pipe.upstreams[i]).await
     {
-        pipe.m.locked().probes[i] = Some(p);
+        let mut m = pipe.m.locked();
+        m.probes[i] = Some(p);
+        m.stale_probes[i] = false;
     }
     match spawn_packaged(rt, pipe, i).await {
         Start::Ok => true,
@@ -283,6 +288,10 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         );
         Start::GpuDecodeFailed
     } else {
+        // What the probe said of its input (its container, the host's stored one) may be wrong.
+        if core_live::input_failed(&tail) {
+            pipe.m.locked().stale_probes[i] = true;
+        }
         Start::Failed
     };
     // A hardware run that ran forgives the device; after a failed GPU decode, its CPU decode run
