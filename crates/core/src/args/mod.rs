@@ -231,6 +231,9 @@ pub enum LiveMode {
 #[serde(rename_all = "camelCase")]
 pub struct LiveArgs {
     pub input_url: String,
+    /// A demuxed audio rendition of the HLS variant `input_url` names, read as a second input.
+    #[serde(default)]
+    pub audio_url: Option<String>,
     /// The vetting proxy every request of a vetted input goes through.
     #[serde(default)]
     pub vet_proxy: Option<String>,

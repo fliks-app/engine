@@ -685,31 +685,121 @@ async fn a_vetoed_primary_still_plans_direct_and_joins_a_running_session() {
     assert_eq!(conns.load(Ordering::SeqCst), 1);
 }
 
+/// A live HLS upstream: a multivariant playlist (two H.264 variants, an I-frame one, a demuxed
+/// audio rendition) under `manifest-dies`, a media playlist under `plain`, MPEG-TS at `ts`.
+async fn playlists() -> String {
+    let master = "#EXTM3U\n\
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"en\",DEFAULT=YES,URI=\"audio.m3u8\"\n\
+        #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS=\"avc1.4d401e,mp4a.40.2\",AUDIO=\"a\"\n\
+        low.m3u8\n\
+        #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS=\"avc1.4d401f,mp4a.40.2\",AUDIO=\"a\"\n\
+        high.m3u8\n\
+        #EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,RESOLUTION=1920x1080,URI=\"iframes.m3u8\"\n";
+    let media = "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\nseg1.ts\n";
+    let app = Router::new()
+        .route(
+            "/manifest-dies/master.m3u8",
+            get(move || async move { master }),
+        )
+        .route("/plain/index.m3u8", get(move || async move { media }))
+        .route(
+            "/ts",
+            get(|| async { ([("content-type", "video/mp2t")], "\x47MPEG-TS bytes") }),
+        );
+    listen(app).await
+}
+
 #[tokio::test]
-async fn a_playlist_upstream_starts_two_segments_before_its_end() {
-    // The probe names an HLS playlist: ffmpeg starts 2 segments before its end, not 3.
+async fn a_multivariant_upstream_is_read_from_one_variant() {
+    // ffmpeg would open every variant and rendition, and align their starts within one segment.
+    let base = playlists().await;
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
-    let playlist = json!({ "url": "http://up/manifest-dies", "priority": 0 });
-    let ups = vec![playlist, upstream("http://up/ok", 1)];
+    let master = json!({ "url": format!("{base}/manifest-dies/master.m3u8"), "priority": 0 });
+    let ups = vec![master, upstream("http://up/ok", 1)];
     open(&e, open_req("36", ups, json!({}), "alice", "t")).await;
     let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
     assert_eq!(attempt(&ok), Some((0, None)));
+    let EngineEvent::LiveAttempt { probe, .. } = &ok else {
+        unreachable!()
+    };
+    assert_eq!(probe.as_ref().unwrap().container.as_deref(), Some("hls"));
     std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
     let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
     assert_eq!(attempt(&ok), Some((1, None)));
     let r = runs(&e);
-    assert_eq!(arg_after(&r[0], "-live_start_index").as_deref(), Some("-2"));
+    let inputs: Vec<_> = r[0]
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| *a == "-i")
+        .map(|(i, _)| r[0][i + 1].clone())
+        .collect();
+    let (high, audio) = (
+        format!("{base}/manifest-dies/high.m3u8"),
+        format!("{base}/manifest-dies/audio.m3u8"),
+    );
+    assert_eq!(
+        inputs,
+        [high, audio],
+        "the remux reads the tallest H.264 variant"
+    );
+    let at = r[0].iter().position(|a| a == "-isync").unwrap();
+    assert_eq!(r[0][at + 1..at + 3], ["0", "-i"]);
+    let starts = r[0].iter().filter(|a| *a == "-live_start_index").count();
+    assert_eq!(starts, 2, "each media playlist starts 2 segments back");
+    assert_eq!(arg_after(&r[0], "-map").as_deref(), Some("0:v:0"));
+    assert!(
+        r[0].windows(2).any(|w| w == ["-map", "1:a:0?"]),
+        "{:?}",
+        r[0]
+    );
     assert_eq!(arg_after(&r[1], "-live_start_index"), None);
 }
 
 #[tokio::test]
-async fn an_input_failure_has_the_next_attempt_probe_again() {
-    // The host stored `hls` for a URL that now serves MPEG-TS: ffmpeg refuses the HLS option.
+async fn a_capped_transcode_reads_the_lowest_variant_covering_its_height() {
+    let base = playlists().await;
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
-    let stale = json!({ "url": "http://up/ok", "priority": 0, "probedVideoCodec": "h264",
+    let master = json!({ "url": format!("{base}/manifest-dies/master.m3u8"), "priority": 0 });
+    let caps = json!({ "directPlay": false, "maxBitrateBps": 1000000 });
+    let a = open(&e, open_req("38", vec![master], caps, "alice", "t")).await;
+    assert_eq!(a["mode"], "transcode");
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let r = runs(&e);
+    let low = format!("{base}/manifest-dies/low.m3u8");
+    assert_eq!(arg_after(&r[0], "-i"), Some(low));
+}
+
+#[tokio::test]
+async fn an_upstream_stored_as_hls_that_serves_ts_is_probed_before_its_run() {
+    // The host stores what an earlier probe found: ffmpeg would refuse the HLS-only option.
+    let base = playlists().await;
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let stale = json!({ "url": format!("{base}/ts"), "priority": 0, "probedVideoCodec": "h264",
         "probedContainer": "hls" });
+    open(&e, open_req("39", vec![stale], json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    let EngineEvent::LiveAttempt { probe, .. } = &ok else {
+        unreachable!()
+    };
+    assert_eq!(probe.as_ref().unwrap().container.as_deref(), Some("mpegts"));
+    let r = runs(&e);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(arg_after(&r[0], "-live_start_index"), None);
+}
+
+#[tokio::test]
+async fn an_input_failure_has_the_next_attempt_probe_again() {
+    // A playlist the fake ffmpeg refuses to open (its name lacks `manifest`): its probe says TS.
+    let base = playlists().await;
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let stale = json!({ "url": format!("{base}/plain/index.m3u8"), "priority": 0,
+        "probedVideoCodec": "h264", "probedContainer": "hls" });
     let a = open(&e, open_req("37", vec![stale], json!({}), "alice", "t")).await;
     let failed = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
     assert!(matches!(attempt(&failed), Some((0, Some(_)))), "{failed:?}");
@@ -1694,13 +1784,14 @@ async fn direct_tees_one_upstream_and_packages_a_manifest() {
         assert_eq!(m["mode"], "remux", "{path}");
         assert!(m["playPath"].as_str().unwrap().ends_with("/index.m3u8"));
     }
-    // A probe that names a playlist never dials the upstream directly.
+    // A probe that names a playlist never dials the upstream directly: its one connection is the
+    // packaged run's read of the playlist, which finds a stream and probes it again.
     let before = conns.load(Ordering::SeqCst);
     let mut probed = upstream(&format!("{up}/live.ts"), 0);
     probed["probedContainer"] = json!("hls");
     let m = open(&e, open_req("13", vec![probed], direct, "alice", "t13")).await;
     assert_eq!(m["mode"], "remux");
-    assert_eq!(conns.load(Ordering::SeqCst), before);
+    assert_eq!(conns.load(Ordering::SeqCst), before + 1);
 }
 
 #[tokio::test]

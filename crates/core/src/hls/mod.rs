@@ -1,12 +1,14 @@
 //! HLS playlist text (`docs/spec/hls.md`): every URI hangs off a caller-given prefix.
 mod codecs;
 mod master;
+mod upstream;
 
 pub use codecs::copy_source as copy_source_codec_string;
 pub use master::{
     AudioStreamMeta, HdrPassThrough, MasterOptions, SubtitleKind, SubtitleRendition,
     iframe_resolution, master_playlist, pinned_rung_name, remux_bandwidth_bps,
 };
+pub use upstream::{HlsPick, pick_variant, resolve_uri};
 
 pub use crate::decide::timeline::parse_source_fps;
 use crate::decide::timeline::{frame_seconds_of, real_segment_seconds, uniform_segment_count};

@@ -53,6 +53,8 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 const STALL_CHECK_EVERY: Duration = Duration::from_secs(5);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const DIRECT_SNIFF: Duration = Duration::from_secs(4);
+/// An upstream's playlist is read up to this size.
+const PLAYLIST_MAX_BYTES: usize = 1 << 20;
 /// axios' `timeout` and `maxRedirects`. [ts:livetv-http.ts:109-111]
 const DIRECT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_REDIRECTS: usize = 5;
