@@ -160,6 +160,10 @@ pub enum JobKind {
         /// CPU only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         providers: Option<Vec<String>>,
+        /// Absolute path on this host of the vocal stem when `media` is the mix: word ends and
+        /// silences are read from it. Absent: from `media`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        voicing: Option<String>,
     },
     /// The notes sung in each of `spans` of the vocal stem `media` names. Needs a `melody` model
     /// and an ONNX runtime.

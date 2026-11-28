@@ -208,6 +208,10 @@ struct Spans<'a> {
     silent: &'a [bool],
     stop: &'a AtomicBool,
     pulse: &'a dyn Fn(),
+    /// Before each network call: blocks while the job is paused.
+    pause: &'a dyn Fn(),
+    /// Told how far (0 to 100) the track is placed, after each network call.
+    progress: &'a dyn Fn(f64),
 }
 
 /// `(frames, classes)` of a CTC network's answer.
@@ -251,6 +255,7 @@ impl Spans<'_> {
 
     /// The logits of `from_ms..to_ms` (a call with the context around it), and the class count.
     fn call(&mut self, from_ms: u32, to_ms: u32) -> Result<(Vec<f32>, usize), String> {
+        (self.pause)();
         if self.stop.load(Relaxed) {
             return Err("stopped".into());
         }
@@ -279,6 +284,8 @@ impl Spans<'_> {
         };
         let out = self.net.run(vec![(self.win.input.name(), input)])?;
         (self.pulse)();
+        let total = (self.pcm.len() / SAMPLES_PER_MS).max(1) as f64;
+        (self.progress)((f64::from(to_ms) / total * 100.0).min(95.0));
         let (frames, classes) = frames_and_classes(&out)?;
         let skip = ((lead_ms / FRAME_MS) as usize).min(frames);
         let want = (to_ms - from_ms).div_ceil(FRAME_MS) as usize;
@@ -382,6 +389,7 @@ pub async fn run(
     lines: &[AlignLine],
     language: Option<&str>,
     providers: Option<&[String]>,
+    voicing: Option<&str>,
 ) -> Result<Result<AlignMeta, String>, String> {
     let backend = ctx.rt.karaoke.backend();
     let runtime = backend.runtime();
@@ -396,24 +404,34 @@ pub async fn run(
     let allow = providers.unwrap_or_default().to_vec();
     let loaded = {
         let (backend, file, export) = (backend.clone(), file.clone(), export.clone());
-        super::run::low(move || load(&*backend, &file, &allow, &export))
-            .await
-            .map_err(|e| e.to_string())?
+        let files = picked.files.clone();
+        super::run::low(move || {
+            let _files = files.open();
+            load(&*backend, &file, &allow, &export)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     };
     let Loaded { net, provider, .. } = match loaded {
         Ok(loaded) => loaded,
         Err(e) => return Ok(Err(e)),
     };
     ctx.pulse();
-    let cmd = pcm_cmd(ctx);
+    let mut cmds = vec![pcm_cmd(ctx, &ctx.media_path())];
+    cmds.extend(voicing.map(|v| pcm_cmd(ctx, &ctx.rt.map_media_path(v))));
+    let files = picked.files.clone();
     let (c, lines, language) = (
         ctx.clone(),
         lines.to_vec(),
         language.unwrap_or_default().to_owned(),
     );
     let (provider, placed) = ctx
-        .pipeline(ctx.run_timeout_ms(), vec![cmd], |p| async move {
+        .pipeline(ctx.run_timeout_ms(), cmds, |p| async move {
             let pcm = read_pcm(&c, &p[0]).await?;
+            let stem = match p.get(1) {
+                Some(p) => Some(read_pcm(&c, p).await?),
+                None => None,
+            };
             if pcm.is_empty() {
                 return Err(JobErrorClass::Corrupt.message("no audio decoded"));
             }
@@ -425,12 +443,15 @@ pub async fn run(
                 if fits(&lines, &export.vocab, &language, duration_ms).is_err() {
                     return (provider, Err(TOO_LARGE.to_string()));
                 }
-                let voice = Voicing::of(&pcm);
+                let voice = Voicing::of(stem.as_deref().unwrap_or(&pcm));
                 let (provider, em) = place_or_retry(
                     net,
                     provider,
                     &stop,
-                    || load(&*backend, &file, &[], &export),
+                    || {
+                        let _files = files.open();
+                        load(&*backend, &file, &[], &export)
+                    },
                     |net| {
                         let spans = Spans {
                             net,
@@ -439,6 +460,8 @@ pub async fn run(
                             silent: &voice.silent,
                             stop: &stop,
                             pulse: &|| c.pulse(),
+                            pause: &|| c.wait_while_paused(&stop),
+                            progress: &|pct| c.progress(pct),
                         };
                         emissions(spans, duration_ms, &lines, &language, &export)
                     },
@@ -472,6 +495,7 @@ pub async fn run(
         matched: a.matched,
         fallback: None,
         lrc_fit: a.lrc_fit,
+        revision: fliks_engine_core::api::REVISIONS.align,
     }))
 }
 
@@ -743,6 +767,8 @@ mod tests {
             silent,
             stop,
             pulse: &|| (),
+            pause: &|| (),
+            progress: &|_| (),
         }
     }
 
@@ -1100,6 +1126,8 @@ mod tests {
                 silent: &voice.silent,
                 stop: &stop,
                 pulse: &|| (),
+                pause: &|| (),
+                progress: &|_| (),
             };
             let t0 = Instant::now();
             let em = emissions(

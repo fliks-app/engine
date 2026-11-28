@@ -2,6 +2,7 @@
 //! in the vocal stem, and timed from them. The recogniser runs in the engine. Spec:
 //! `docs/spec/karaoke.md` section 4.
 use crate::api::{AlignLine, AlignedLine, AlignedWord, JobKind, LrcFit};
+use unicode_normalization::char::is_combining_mark;
 
 const MAX_LINES: usize = 3000;
 const MAX_WORDS: usize = 6000;
@@ -40,11 +41,21 @@ pub struct Heard {
 
 pub fn validate(kind: &JobKind) -> Result<(), String> {
     let JobKind::Align {
-        lines, language, ..
+        lines,
+        language,
+        voicing,
+        ..
     } = kind
     else {
         return Ok(());
     };
+    if let Some(v) = voicing
+        && (!super::merge::plain(v) || !super::merge::absolute(v))
+    {
+        return Err(format!(
+            "voicing must be an absolute path without control characters: {v}"
+        ));
+    }
     if let Some(l) = language
         && (!(2..=3).contains(&l.len()) || !l.bytes().all(|b| b.is_ascii_lowercase()))
     {
@@ -104,6 +115,48 @@ fn repeat_marker(token: &str) -> Option<u32> {
         .filter(|n| (2..=MAX_REPEAT).contains(n))
 }
 
+/// Scripts written without spaces: one word per character.
+fn unspaced(c: char) -> bool {
+    matches!(u32::from(c),
+        0x3005 | 0x3007 | 0x3040..=0x30FF | 0x31F0..=0x31FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF | 0xFF66..=0xFF9F | 0x20000..=0x323AF
+        | 0x0E01..=0x0EDF | 0x1000..=0x109F | 0x1780..=0x17FF)
+}
+
+/// Byte ranges of the words of one whitespace token: each character of an unspaced script (with
+/// its combining marks) is a word, other runs stay whole, punctuation joins its neighbour.
+fn split_scripts(w: &str) -> Vec<(usize, usize)> {
+    let mut units: Vec<(usize, usize, bool, bool)> = vec![]; // start, end, unspaced, has letter
+    for (i, c) in w.char_indices() {
+        let end = i + c.len_utf8();
+        let sc = unspaced(c);
+        match units.last_mut() {
+            Some(u) if is_combining_mark(c) || (!sc && !u.2) => {
+                u.1 = end;
+                u.3 |= c.is_alphanumeric();
+            }
+            _ => units.push((i, end, sc, c.is_alphanumeric())),
+        }
+    }
+    let mut out: Vec<(usize, usize)> = vec![];
+    let mut lead = None;
+    let opens = |a: usize, b: usize| w[a..b].chars().all(|c| "([（「『【《〈“‘".contains(c));
+    for (a, b, _, letter) in units {
+        match (letter, out.last_mut()) {
+            (true, _) => out.push((lead.take().unwrap_or(a), b)),
+            (false, Some(last)) if lead.is_none() && !opens(a, b) => last.1 = b,
+            (false, _) => lead = Some(lead.unwrap_or(a)),
+        }
+    }
+    if let (Some(_), Some(last)) = (lead, out.last_mut()) {
+        last.1 = w.len();
+    }
+    if out.is_empty() {
+        out.push((0, w.len()));
+    }
+    out
+}
+
 /// The copies to place, repeats expanded: a line marked `x2` comes twice.
 pub fn words_of(lines: &[AlignLine]) -> Vec<Copy> {
     let mut out = vec![];
@@ -129,30 +182,33 @@ pub fn words_of(lines: &[AlignLine]) -> Vec<Copy> {
                 times = n;
                 continue;
             }
-            words.push((s, e));
-            let (mut grouped, mut bare) = (parens > 0 || w.starts_with('('), false);
-            let labelled = brackets > 0 || w.starts_with('[');
-            for c in w.chars() {
-                match c {
-                    '(' => {
-                        if parens == 0 {
-                            group += 1;
+            for (a, b) in split_scripts(w) {
+                words.push((s + a as u32, s + b as u32));
+                let w = &w[a..b];
+                let (mut grouped, mut bare) = (parens > 0 || w.starts_with('('), false);
+                let labelled = brackets > 0 || w.starts_with('[');
+                for c in w.chars() {
+                    match c {
+                        '(' => {
+                            if parens == 0 {
+                                group += 1;
+                            }
+                            parens += 1;
+                            grouped = true;
                         }
-                        parens += 1;
-                        grouped = true;
+                        ')' => parens = parens.saturating_sub(1),
+                        '[' => brackets += 1,
+                        ']' => brackets = brackets.saturating_sub(1),
+                        c if c.is_alphanumeric() && brackets == 0 => bare = true,
+                        _ => {}
                     }
-                    ')' => parens = parens.saturating_sub(1),
-                    '[' => brackets += 1,
-                    ']' => brackets = brackets.saturating_sub(1),
-                    c if c.is_alphanumeric() && brackets == 0 => bare = true,
-                    _ => {}
                 }
+                roles.push(match (labelled && !bare, grouped) {
+                    (true, _) => Role::Label,
+                    (_, true) => Role::Optional(group),
+                    _ => Role::Word,
+                });
             }
-            roles.push(match (labelled && !bare, grouped) {
-                (true, _) => Role::Label,
-                (_, true) => Role::Optional(group),
-                _ => Role::Word,
-            });
         }
         for r in 0..times {
             let window = l.start_ms.zip(l.end_ms).map(|(s, e)| {
@@ -329,9 +385,8 @@ fn theil_sen(pts: &[(f64, f64)]) -> Option<(f64, f64)> {
 /// it was found.
 pub(super) type Run = (Vec<AlignedLine>, f64, Vec<bool>);
 
-/// The map from the request's line times to the audio, fitted on the first copy of every line of
-/// `run` that has a found word and is found at `FIT_MATCHED`, at that word's start. `None`
-/// without enough lines or when the fit leaves its bounds.
+/// The map from the request's line times to the audio, fitted on the lines of `run` found at
+/// `FIT_MATCHED`. `None` without enough lines or when the fit leaves its bounds.
 pub(super) fn fit_lrc(lines: &[AlignLine], run: &Run, duration_ms: u32) -> Option<LrcFit> {
     let (mut pts, mut at) = (vec![], 0);
     for (c, p) in words_of(lines).iter().zip(&run.0) {
@@ -397,13 +452,8 @@ pub(super) fn prefer(timed: f64, untimed: Option<f64>, remapped: Option<f64>) ->
     }
 }
 
-/// The result of `timed`, the pass over the lines as given, or of a better pass: `again` runs the
-/// same search on other lines (`None`: it failed). The track is `duration_ms` long.
-///
-/// When `timed` finds under `GOOD_ENOUGH`, the lines are searched untimed and with their times
-/// mapped by a fit on that pass; the timed pass is kept unless another finds `MIN_GAIN` more. A
-/// fit that is not unreliable never gives up the bands (they protect repeated choruses): only
-/// the mapped pass may replace the timed one. The fit is reported whichever pass is kept.
+/// `timed` (the lines as given) unless a pass over untimed or fit-mapped lines (`again`) finds
+/// `MIN_GAIN` more; the fit is reported whichever is kept. A reliable fit keeps the bands.
 pub(super) fn choose(
     lines: &[AlignLine],
     duration_ms: u32,
@@ -540,9 +590,8 @@ pub(super) fn shares(copies: &[Copy], found: &[bool]) -> (Vec<f64>, f64) {
     )
 }
 
-/// The lines of `copies` from the word times in `times` (flat word order): the words nothing
-/// was placed for are timed first, see `fill`. `found` flags each word heard, `matched` is each
-/// copy's share found, `end_ms` the track's length.
+/// The lines of `copies` from the word times in `times` (flat word order), the words nothing was
+/// placed for timed by `fill`; `found` flags the words heard.
 pub(super) fn finish(
     copies: &[Copy],
     times: &mut [Option<(u32, u32)>],
@@ -986,6 +1035,34 @@ mod tests {
         assert!((share - 0.5).abs() < 1e-9 && (out[0].matched - 0.5).abs() < 1e-9);
     }
 
+    fn pieces(text: &str) -> Vec<String> {
+        let l = [line(text)];
+        words_of(&l)[0]
+            .words
+            .iter()
+            .map(|&(a, b)| text[a as usize..b as usize].to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn scripts_without_spaces_give_one_word_per_character() {
+        assert_eq!(pieces("東京へ行く"), ["東", "京", "へ", "行", "く"]);
+        assert_eq!(pieces("我爱你，中国。"), ["我", "爱", "你，", "中", "国。"]);
+        assert_eq!(pieces("「夢」を 見る"), ["「夢」", "を", "見", "る"]);
+        assert_eq!(pieces("ผู้ชาย"), ["ผู้", "ช", "า", "ย"]);
+        assert_eq!(pieces("Tokyo 東京へ"), ["Tokyo", "東", "京", "へ"]);
+        assert_eq!(pieces("Tokyo東京, la"), ["Tokyo", "東", "京,", "la"]);
+        assert_eq!(pieces("hello, world"), ["hello,", "world"]);
+        assert_eq!(pieces("..."), ["..."]);
+        let l = [line("夢(ゆめ) x2")];
+        let c = words_of(&l);
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            c[0].roles,
+            [Role::Word, Role::Optional(1), Role::Optional(1)]
+        );
+    }
+
     #[test]
     fn matched_words_take_the_heard_times_and_misreadings_still_match() {
         let l = [line("Hello, world"), line("sing along tonight")];
@@ -1095,6 +1172,7 @@ mod tests {
             language: None,
             model: None,
             providers: None,
+            voicing: None,
         };
         assert!(validate(&kind(vec![line("  ")])).is_err());
         assert!(validate(&kind(vec![timed("a", 500, 100)])).is_err());
@@ -1104,6 +1182,7 @@ mod tests {
             language: Some("--prompt".into()),
             model: None,
             providers: None,
+            voicing: None,
         };
         assert!(validate(&bad).is_err());
     }

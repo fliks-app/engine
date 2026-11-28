@@ -91,6 +91,8 @@ pub struct BgJob {
     activity: AtomicU64,
     /// A model thread is computing: the stall rule waits `MODEL_STALL_MS`, not the lifetime's.
     model_busy: AtomicBool,
+    /// The run is paused for playback: model threads wait in `Ctx::wait_while_paused`.
+    held: AtomicBool,
     m: Mutex<JobMut>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -398,6 +400,7 @@ fn queue(
         promoted: AtomicBool::new(false),
         activity: AtomicU64::new(0),
         model_busy: AtomicBool::new(false),
+        held: AtomicBool::new(false),
         m: Mutex::new(JobMut {
             state: BgJobState::Queued,
             pct: 0.0,
@@ -537,9 +540,12 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
             language,
             model,
             providers,
+            voicing,
         } => {
             let (language, model) = (language.as_deref(), model.as_deref());
-            crate::karaoke::run_align(ctx, lines, language, model, providers.as_deref()).await
+            let voicing = voicing.as_deref();
+            crate::karaoke::run_align(ctx, lines, language, model, providers.as_deref(), voicing)
+                .await
         }
         JobKind::Melody { spans, model } => {
             crate::karaoke::run_melody(ctx, spans, model.as_deref()).await
