@@ -393,6 +393,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         o.referer.as_deref(),
         &o.extra_headers,
     ));
+    a.extend(crate::live::cookie_args(o.cookies.as_deref()));
     let probe = js_max(3.0, o.probe_seconds.unwrap_or(3.0));
     a.extend([
         "-analyzeduration".into(),
@@ -400,21 +401,47 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         "-probesize".into(),
         js(round(5_000_000.0 * probe / 3.0)),
     ]);
+    let reading = a.clone();
     if o.mode == super::LiveMode::Transcode {
         a.extend(live_input(o, caps, dev));
         let threads = o.encode_threads.max(1).to_string();
         a.extend(["-threads".into(), threads]);
     }
+    // 2 segments back, not ffmpeg's 3: the next run re-reads what it starts on. Not 1: a 2 s
+    // upstream segment holds no second keyframe past `hls_time`.
+    let start = if crate::live::is_hls_container(o.container.as_deref()) {
+        strs(&["-live_start_index", "-2"])
+    } else {
+        vec![]
+    };
+    a.extend(start);
     a.extend(["-i".into(), o.input_url.clone()]);
-    a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
+    match &o.audio_url {
+        // On the variant's clock, not each input's start; from 4 segments back, so a rendition
+        // listing up to 2 more covers the variant's start (the trim below cuts what precedes it).
+        Some(audio) => {
+            a.extend(reading);
+            a.extend(strs(&["-live_start_index", "-4", "-isync", "0", "-i"]));
+            a.push(audio.clone());
+            a.extend(strs(&["-map", "0:v:0", "-map", "1:a:0?", "-sn", "-dn"]));
+            // A rendition whose playlist ends ends the run: ffmpeg would go on without audio.
+            a.push("-shortest".into());
+        }
+        None => a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"])),
+    }
     if let Some(vf) = live_filters(o, caps) {
         a.extend(["-vf".into(), vf]);
     }
     a.extend(live_video(o));
     // A broadcast switches AAC layouts at programme boundaries: ADTS in TS says so, fMP4 cannot.
-    if o.audio_codec.as_deref() == Some("aac") && o.use_ts {
+    if o.audio_codec.as_deref() == Some("aac") && o.use_ts && o.audio_url.is_none() {
         a.extend(audio_copy_args("", "aac", true));
     } else {
+        // A rendition lagging the variant starts earlier: what it holds before the variant's
+        // first frame is cut, or the run would start under the earlier one.
+        if o.audio_url.is_some() {
+            a.extend(strs(&["-af", "atrim=start=0"]));
+        }
         a.extend(audio_encode_args(
             "",
             AudioCodec::Aac,
@@ -425,8 +452,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     }
     let list = js_max(1.0, (o.window_minutes * 60.0 / o.segment_seconds).ceil());
     let ext = if o.use_ts { "ts" } else { "m4s" };
-    let mut flags =
-        "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time".to_string();
+    let mut flags = "delete_segments+omit_endlist+independent_segments+temp_file".to_string();
     if o.append {
         flags.push_str("+append_list");
     }
@@ -708,6 +734,81 @@ mod tests {
         let ts = live(&r, &HostCaps::default(), &dev());
         assert_eq!(after(&ts, "-hls_segment_options"), None);
         assert_eq!(after(&ts, "-output_ts_offset").as_deref(), Some("13.96"));
+    }
+
+    #[test]
+    fn a_live_playlist_upstream_starts_two_segments_before_its_end() {
+        let mut r = live_request("remux", "none", 2);
+        let ts = live(&r, &HostCaps::default(), &dev());
+        assert!(!ts.iter().any(|a| a == "-live_start_index"), "{ts:?}");
+        r.container = Some("hls".into());
+        let hls = live(&r, &HostCaps::default(), &dev());
+        let at = hls.iter().position(|a| a == "-live_start_index").unwrap();
+        assert_eq!(hls[at + 1], "-2");
+        assert!(
+            at < hls.iter().position(|a| a == "-i").unwrap(),
+            "an input option"
+        );
+        let flags = hls.iter().position(|a| a == "-hls_flags").unwrap();
+        assert!(
+            !hls[flags + 1].contains("program_date_time"),
+            "{}",
+            hls[flags + 1]
+        );
+    }
+
+    #[test]
+    fn a_demuxed_audio_rendition_is_a_second_input_on_the_variants_clock() {
+        let mut r = live_request("transcode", "vaapi", 2);
+        r.container = Some("hls".into());
+        r.audio_url = Some("http://x/audio.m3u8".into());
+        r.user_agent = Some("UA".into());
+        r.vet_proxy = Some("http://127.0.0.1:9/".into());
+        r.cookies = Some("tok=1; domain=x".into());
+        let a = live(&r, &HostCaps::default(), &dev());
+        let inputs: Vec<usize> = (0..a.len()).filter(|i| a[*i] == "-i").collect();
+        assert_eq!(inputs.len(), 2, "{a:?}");
+        let (first, second) = (&a[..inputs[0]], &a[inputs[0] + 2..inputs[1] + 2]);
+        // The same reading options, no decoder options, synced to the variant's start.
+        for opt in [
+            "-reconnect",
+            "-protocol_whitelist",
+            "-http_proxy",
+            "-user_agent",
+            "-cookies",
+            "-analyzeduration",
+        ] {
+            assert!(first.iter().any(|x| x == opt), "{opt} in {first:?}");
+            assert!(second.iter().any(|x| x == opt), "{opt} in {second:?}");
+        }
+        assert!(
+            !second.iter().any(|x| x == "-hwaccel" || x == "-threads"),
+            "{second:?}"
+        );
+        assert_eq!(first[first.len() - 2..], ["-live_start_index", "-2"]);
+        assert_eq!(
+            second[second.len() - 6..],
+            [
+                "-live_start_index",
+                "-4",
+                "-isync",
+                "0",
+                "-i",
+                "http://x/audio.m3u8"
+            ]
+        );
+        assert!(a.windows(2).any(|w| w == ["-map", "1:a:0?"]), "{a:?}");
+        assert!(a.iter().any(|x| x == "-shortest"), "{a:?}");
+        assert!(a.windows(2).any(|w| w == ["-af", "atrim=start=0"]), "{a:?}");
+        // Re-encoded even into TS: the cut needs a decode.
+        r.use_ts = true;
+        r.audio_codec = Some("aac".into());
+        let ts = live(&r, &HostCaps::default(), &dev());
+        assert!(
+            ts.windows(2).any(|w| w == ["-af", "atrim=start=0"]),
+            "{ts:?}"
+        );
+        assert!(!ts.windows(2).any(|w| w == ["-c:a", "copy"]), "{ts:?}");
     }
 
     fn vf(hw: &str, interlaced: Option<bool>, bps: Option<f64>, probes: &[&str]) -> Option<String> {

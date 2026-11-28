@@ -44,7 +44,7 @@
       "-hls_segment_type",
       "mpegts",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time",
+      "delete_segments+omit_endlist+independent_segments+temp_file",
       "-hls_segment_filename",
       "/tmp/transcode/live/1-remux/seg-%05d.ts",
       "/tmp/transcode/live/1-remux/index.m3u8"

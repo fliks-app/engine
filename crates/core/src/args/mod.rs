@@ -231,6 +231,12 @@ pub enum LiveMode {
 #[serde(rename_all = "camelCase")]
 pub struct LiveArgs {
     pub input_url: String,
+    /// A demuxed audio rendition of the HLS variant `input_url` names, read as a second input.
+    #[serde(default)]
+    pub audio_url: Option<String>,
+    /// What the HLS playlist's answer set, for every request of the run (`live::cookie_args`).
+    #[serde(default)]
+    pub cookies: Option<String>,
     /// The vetting proxy every request of a vetted input goes through.
     #[serde(default)]
     pub vet_proxy: Option<String>,
@@ -251,6 +257,9 @@ pub struct LiveArgs {
     pub video_bitrate_bps: Option<f64>,
     #[serde(default)]
     pub audio_codec: Option<String>,
+    /// The upstream's probed container (ffprobe `format_name`); `None` when unknown.
+    #[serde(default)]
+    pub container: Option<String>,
     #[serde(default)]
     pub append: bool,
     /// The ordinal of this run in its session: names its fMP4 init (`live::init_name`).

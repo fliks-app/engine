@@ -66,7 +66,7 @@
       "-hls_segment_type",
       "mpegts",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time",
+      "delete_segments+omit_endlist+independent_segments+temp_file",
       "-hls_segment_filename",
       "/cache/live/22/seg-%05d.ts",
       "/cache/live/22/index.m3u8"

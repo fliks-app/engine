@@ -54,7 +54,7 @@
       "-hls_fmp4_init_filename",
       "init.mp4",
       "-hls_flags",
-      "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time+append_list",
+      "delete_segments+omit_endlist+independent_segments+temp_file+append_list",
       "-hls_segment_filename",
       "/cache/live/3/seg-%05d.m4s",
       "/cache/live/3/index.m3u8"

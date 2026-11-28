@@ -178,6 +178,14 @@ pub fn is_manifest_container(container: Option<&str>) -> bool {
     })
 }
 
+/// An HLS playlist, as ffprobe names its demuxer in a `format_name` list.
+pub fn is_hls_container(container: Option<&str>) -> bool {
+    container.is_some_and(|c| {
+        c.split(',')
+            .any(|n| matches!(n.trim(), "hls" | "applehttp"))
+    })
+}
+
 /// [ts:services/livetv-session.service.ts:964]
 pub fn is_manifest_content_type(content_type: &str) -> bool {
     let ct = content_type.to_lowercase();
@@ -223,6 +231,7 @@ pub fn probe_args(
     url: &str,
     headers: &BTreeMap<String, String>,
     vet_proxy: Option<&str>,
+    cookies: Option<&str>,
 ) -> Vec<String> {
     let (ua, referer, rest) = split_headers(headers);
     let mut a: Vec<String> = [
@@ -241,8 +250,55 @@ pub fn probe_args(
     .into();
     a.extend(vetted_input_args(vet_proxy));
     a.extend(http_header_args(ua.as_deref(), referer.as_deref(), &rest));
+    a.extend(cookie_args(cookies));
     a.push(url.into());
     a
+}
+
+/// `-cookies`: `Set-Cookie` values a playlist's answer set, one per line, each with a `domain`.
+pub fn cookie_args(cookies: Option<&str>) -> Vec<String> {
+    cookies
+        .filter(|c| !c.is_empty())
+        .map_or(vec![], |c| vec!["-cookies".into(), c.into()])
+}
+
+/// The `Cookie` header `url` gets from `scoped_cookie` values: those whose domain ends its host.
+pub fn cookie_header(cookies: &[String], url: &str) -> Option<String> {
+    let host = url_host(url).to_ascii_lowercase();
+    let pairs: Vec<&str> = cookies
+        .iter()
+        .filter(|c| {
+            c.split(';').skip(1).any(|a| {
+                let a = a.trim().to_ascii_lowercase();
+                a.strip_prefix("domain=")
+                    .is_some_and(|d| host.ends_with(d.trim_start_matches('.')))
+            })
+        })
+        .map(|c| c.split(';').next().unwrap_or("").trim())
+        .collect();
+    (!pairs.is_empty()).then(|| pairs.join("; "))
+}
+
+fn url_host(url: &str) -> &str {
+    let host = url
+        .split_once("://")
+        .map_or("", |(_, r)| r.split(['/', '?', '#']).next().unwrap_or(""));
+    host.rsplit_once('@').map_or(host, |(_, h)| h)
+}
+
+/// A `Set-Cookie` value scoped to `url`'s host: ffmpeg sends one without `domain` to any host,
+/// and matches `domain` against the host as written in the URL, its port included.
+pub fn scoped_cookie(set_cookie: &str, url: &str) -> String {
+    let has_domain = set_cookie
+        .split(';')
+        .skip(1)
+        .any(|a| a.trim().to_ascii_lowercase().starts_with("domain="));
+    let host = url_host(url);
+    if has_domain || host.is_empty() {
+        set_cookie.to_string()
+    } else {
+        format!("{}; domain={host}", set_cookie.trim_end_matches([';', ' ']))
+    }
 }
 
 /// A vetted input only speaks http(s), every request of it through the vetting proxy.
@@ -603,7 +659,7 @@ mod tests {
             ("X-Token".into(), "t".into()),
         ]);
         assert_eq!(
-            probe_args("http://u/", &h, None)[10..],
+            probe_args("http://u/", &h, None, None)[10..],
             [
                 "-user_agent",
                 "UA",
@@ -626,6 +682,49 @@ mod tests {
         // A playlist restarted at 0 adds nothing.
         t.read("#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.000000,\nseg-00000.m4s\n");
         assert_eq!(t.next, 3);
+    }
+
+    #[test]
+    fn a_cookie_is_scoped_to_the_host_that_set_it() {
+        assert_eq!(
+            scoped_cookie("tok=1; Path=/", "http://127.0.0.1:8796/c/master.m3u8"),
+            "tok=1; Path=/; domain=127.0.0.1:8796"
+        );
+        assert_eq!(
+            scoped_cookie(
+                "hdntl=x; Domain=.akamaized.net",
+                "https://a.akamaized.net/m"
+            ),
+            "hdntl=x; Domain=.akamaized.net"
+        );
+        assert_eq!(
+            scoped_cookie("a=b", "https://u@cdn.example?x"),
+            "a=b; domain=cdn.example"
+        );
+        let set = [
+            "tok=1; Path=/; domain=h:81".to_string(),
+            "x=2; Domain=.cdn.example".to_string(),
+        ];
+        assert_eq!(
+            cookie_header(&set, "http://h:81/a").as_deref(),
+            Some("tok=1")
+        );
+        assert_eq!(
+            cookie_header(&set, "https://a.cdn.example/v").as_deref(),
+            Some("x=2")
+        );
+        assert_eq!(cookie_header(&set, "https://other/v"), None);
+        let a = probe_args("http://u/", &BTreeMap::new(), None, Some("a=b; domain=u"));
+        assert_eq!(a[a.len() - 3..], ["-cookies", "a=b; domain=u", "http://u/"]);
+    }
+
+    #[test]
+    fn hls_is_told_from_other_containers() {
+        assert!(is_hls_container(Some("hls")));
+        assert!(is_hls_container(Some("applehttp")));
+        assert!(!is_hls_container(Some("mpegts")));
+        assert!(!is_hls_container(Some("dash")));
+        assert!(!is_hls_container(None));
     }
 
     #[test]
