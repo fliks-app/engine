@@ -286,7 +286,7 @@ fn spell_de(n: u32) -> String {
     let rest = |m: u32| if m == 0 { String::new() } else { spell_de(m) };
     match n {
         0..=19 => DE_UNITS[n as usize].into(),
-        20..=99 if n % 10 == 0 => DE_TENS[(n / 10) as usize].into(),
+        20..=99 if n.is_multiple_of(10) => DE_TENS[(n / 10) as usize].into(),
         20..=99 => {
             let unit = if n % 10 == 1 {
                 "ein"
@@ -374,7 +374,7 @@ const ES_HUNDREDS: [&str; 10] = [
 fn spell_es(n: u32) -> String {
     match n {
         0..=29 => ES_UNITS[n as usize].into(),
-        30..=99 if n % 10 == 0 => ES_TENS[(n / 10) as usize].into(),
+        30..=99 if n.is_multiple_of(10) => ES_TENS[(n / 10) as usize].into(),
         30..=99 => format!(
             "{} y {}",
             ES_TENS[(n / 10) as usize],
@@ -502,7 +502,7 @@ fn spell_nl(n: u32) -> String {
     let rest = |m: u32| if m == 0 { String::new() } else { spell_nl(m) };
     match n {
         0..=19 => NL_UNITS[n as usize].into(),
-        20..=99 if n % 10 == 0 => NL_TENS[(n / 10) as usize].into(),
+        20..=99 if n.is_multiple_of(10) => NL_TENS[(n / 10) as usize].into(),
         20..=99 => {
             let en = if matches!(n % 10, 2 | 3) { "ën" } else { "en" };
             format!(

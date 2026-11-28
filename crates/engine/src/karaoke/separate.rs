@@ -3,7 +3,7 @@
 use super::models::Outcome;
 use super::run::{Outputs, StopOnDrop, unsupported};
 use super::{Net, Tensor, Warm};
-use crate::jobs::{Cmd, Ctx, ModelBusy, tail};
+use crate::jobs::{Cmd, Ctx, tail};
 use crate::proc::Pipes;
 use fliks_engine_core::api::{
     JobErrorClass, JobKind, JobResult, MediaInfo, ModelInfo, ModelKind, ModelState, SeparateMeta,
@@ -343,16 +343,13 @@ async fn decode_and_separate(
         let driver = super::run::low({
             let (c, stop) = (c.clone(), stop.clone());
             move || {
-                let busy = || c.model_busy();
-                let pause = || c.wait_while_paused(&stop);
                 drive(
                     rx,
                     (vocals_net, acc_net),
                     sinks,
                     gain,
                     &stop,
-                    &busy,
-                    &pause,
+                    &c,
                     &|seconds| {
                         c.pulse();
                         if let Some(t) = total_seconds {
@@ -400,8 +397,7 @@ fn drive(
     mut sinks: Vec<Pcm>,
     gain: f32,
     stop: &AtomicBool,
-    busy: &dyn Fn() -> ModelBusy,
-    pause: &dyn Fn(),
+    ctx: &Ctx,
     progress: &dyn Fn(f64),
 ) -> Result<u64, String> {
     let stft = Stft::default();
@@ -431,11 +427,11 @@ fn drive(
             }
             leftover.drain(..frames * 8);
         }
-        pause();
+        ctx.wait_while_paused(stop);
         if stop.load(Relaxed) {
             return Err("stopped".into());
         }
-        let _computing = busy();
+        let _computing = ctx.model_busy();
         let have = base + l.len();
         let samples = have.saturating_sub(LEAD);
         let at = from - base;
