@@ -909,6 +909,25 @@
           }
         }
       }
+    },
+    "/v1/stills/{mediaFileId}": {
+      "get": {
+        "tags": [
+          "jobs::still"
+        ],
+        "operationId": "get_still",
+        "responses": {
+          "200": {
+            "description": "the frame the last `Still` job stored",
+            "content": {
+              "image/jpeg": {}
+            }
+          },
+          "404": {
+            "description": "no stored still"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3708,6 +3727,33 @@
           },
           {
             "type": "object",
+            "title": "StillJob",
+            "description": "One JPEG frame of a video file, kept in the engine cache and read with\n`GET /v1/stills/{mediaFileId}`: the best of 24 frames from `atSeconds`, else from a tenth\nof `info.durationSeconds`.",
+            "required": [
+              "info",
+              "type"
+            ],
+            "properties": {
+              "atSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "info": {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Still"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "title": "MergeJob",
             "description": "The ordered audio files of one audiobook merged into one `.m4b` written at `output`, with a\nchapter per part (or the part's own chapters), the first cover and the parts' tags.\n`media` names the first part: it identifies the job (cancel, invalidate).",
             "required": [
@@ -4184,6 +4230,25 @@
                 "type": "string",
                 "enum": [
                   "Cover"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file is read with `GET /v1/stills/{mediaFileId}`.",
+            "required": [
+              "still",
+              "type"
+            ],
+            "properties": {
+              "still": {
+                "$ref": "#/components/schemas/StillMeta"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Still"
                 ]
               }
             }
@@ -8103,6 +8168,31 @@
           "size": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "StillMeta": {
+        "type": "object",
+        "description": "The stored frame of `GET /v1/stills/{mediaFileId}`.",
+        "required": [
+          "mime",
+          "bytes",
+          "atSeconds"
+        ],
+        "properties": {
+          "atSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "The content position the capture started at."
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mime": {
+            "type": "string",
+            "description": "`image/jpeg`."
           }
         }
       },

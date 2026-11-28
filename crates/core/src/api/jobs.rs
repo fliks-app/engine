@@ -70,6 +70,15 @@ pub enum JobKind {
     /// with `GET /v1/covers/{mediaFileId}`.
     #[schema(title = "CoverJob")]
     Cover { info: MediaInfo },
+    /// One JPEG frame of a video file, kept in the engine cache and read with
+    /// `GET /v1/stills/{mediaFileId}`: the best of 24 frames from `atSeconds`, else from a tenth
+    /// of `info.durationSeconds`.
+    #[schema(title = "StillJob")]
+    Still {
+        info: MediaInfo,
+        #[serde(default, rename = "atSeconds", skip_serializing_if = "Option::is_none")]
+        at_seconds: Option<f64>,
+    },
     /// The ordered audio files of one audiobook merged into one `.m4b` written at `output`, with a
     /// chapter per part (or the part's own chapters), the first cover and the parts' tags.
     /// `media` names the first part: it identifies the job (cancel, invalidate).
@@ -250,6 +259,7 @@ impl JobKind {
             JobKind::SubtitleSync { .. } => "SubtitleSync",
             JobKind::SubtitleToSrt { .. } => "SubtitleToSrt",
             JobKind::Cover { .. } => "Cover",
+            JobKind::Still { .. } => "Still",
             JobKind::Merge { .. } => "Merge",
             JobKind::Pcm { .. } => "Pcm",
             JobKind::Separate { .. } => "Separate",
@@ -270,6 +280,7 @@ impl JobKind {
             | JobKind::SubtitleSync { info, .. }
             | JobKind::SubtitleToSrt { info, .. }
             | JobKind::Separate { info, .. }
+            | JobKind::Still { info, .. }
             | JobKind::Cover { info } => Some(info),
             JobKind::Fingerprint { .. }
             | JobKind::Merge { .. }
@@ -290,11 +301,11 @@ impl JobKind {
             | JobKind::SubtitleExtract { .. }
             | JobKind::SubtitleOcr { .. }
             | JobKind::SubtitleToSrt { .. }
+            | JobKind::Still { .. }
             | JobKind::Optimize { .. }
             | JobKind::Verify { .. } => VIDEO_ONLY,
-            JobKind::SubtitleSync { .. } | JobKind::Pcm { .. } => ANY,
-            JobKind::Cover { .. }
-            | JobKind::Merge { .. }
+            JobKind::SubtitleSync { .. } | JobKind::Pcm { .. } | JobKind::Cover { .. } => ANY,
+            JobKind::Merge { .. }
             | JobKind::Separate { .. }
             | JobKind::Align { .. }
             | JobKind::Melody { .. } => AUDIO_ONLY,
@@ -318,7 +329,8 @@ pub const JOB_FAMILIES: &[(&str, &[MediaFamily])] = &[
     ("SubtitleOcr", VIDEO_ONLY),
     ("SubtitleSync", ANY),
     ("SubtitleToSrt", VIDEO_ONLY),
-    ("Cover", AUDIO_ONLY),
+    ("Cover", ANY),
+    ("Still", VIDEO_ONLY),
     ("Merge", AUDIO_ONLY),
     ("Pcm", ANY),
     ("Separate", AUDIO_ONLY),
@@ -409,6 +421,17 @@ pub struct CoverMeta {
     /// `image/jpeg` or `image/png`.
     pub mime: String,
     pub bytes: u32,
+}
+
+/// The stored frame of `GET /v1/stills/{mediaFileId}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StillMeta {
+    /// `image/jpeg`.
+    pub mime: String,
+    pub bytes: u32,
+    /// The content position the capture started at.
+    pub at_seconds: f64,
 }
 
 #[derive(
@@ -503,6 +526,10 @@ pub enum JobResult {
     Cover {
         cover: CoverMeta,
     },
+    /// The file is read with `GET /v1/stills/{mediaFileId}`.
+    Still {
+        still: StillMeta,
+    },
     /// The file is at the request's `output`.
     Merge {
         merge: MergeMeta,
@@ -585,6 +612,7 @@ mod tests {
             json!({ "type": "SubtitleToSrt", "info": info(), "source": { "type": "stream",
                 "index": 0 } }),
             json!({ "type": "Cover", "info": info() }),
+            json!({ "type": "Still", "info": info(), "atSeconds": 5.0 }),
             json!({ "type": "Merge", "parts": [], "output": "/a.m4b" }),
             json!({ "type": "Pcm", "output": "/a.pcm" }),
             json!({ "type": "Separate", "info": info(), "vocals": "/v.opus",

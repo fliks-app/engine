@@ -229,6 +229,11 @@ impl Cache {
         self.root.join("covers/v1").join(file.to_string())
     }
 
+    /// The `still.jpg` of a video file.
+    pub fn still_dir(&self, file: u32) -> PathBuf {
+        self.root.join("stills/v1").join(file.to_string())
+    }
+
     /// Scratch files of one `Merge` job (the concat list and the metadata file) or of an audio
     /// job (`Separate`, `Align`, `Melody`: PCM and recogniser files).
     pub fn merge_dir(&self, job: &str) -> PathBuf {

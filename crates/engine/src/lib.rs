@@ -66,7 +66,7 @@ pub fn random_hex(bytes: usize) -> String {
         sessions::open, sessions::list, sessions::get_one, sessions::delete, sessions::heartbeat,
         sessions::command, sessions::revoke, sessions::invalidate, sessions::cache,
         sessions::cache_delete, sessions::events, jobs::create, jobs::list, jobs::get_one,
-        jobs::delete, jobs::cover::get, karaoke::list, karaoke::download, karaoke::verify, karaoke::delete, karaoke::delete_orphan, intro::detect, live::open_handler, live::list_handler, live::get_handler),
+        jobs::delete, jobs::cover::get, jobs::still::get, karaoke::list, karaoke::download, karaoke::verify, karaoke::delete, karaoke::delete_orphan, intro::detect, live::open_handler, live::list_handler, live::get_handler),
     components(schemas(MediaInfo, DeviceProfile, SourceScan, Fingerprint, IntroDetectRequest,
         IntroDetectResponse, IntroEpisode, IntroSegment, ResolveRequest, ResolveResponse,
         SessionExpired, WorkerHello, WorkerHelloResponse, LeaseRequest, LeasedJob,
@@ -140,6 +140,7 @@ pub fn router(token: String, rt: Arc<runtime::Runtime>) -> Router {
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{id}", get(jobs::get_one).delete(jobs::delete))
         .route("/v1/covers/{id}", get(jobs::cover::get))
+        .route("/v1/stills/{id}", get(jobs::still::get))
         .route("/v1/models", get(karaoke::list))
         .route("/v1/models/{id}", axum::routing::delete(karaoke::delete))
         .route(
@@ -204,6 +205,7 @@ async fn hello(State(s): State<Arc<AppState>>) -> Json<Hello> {
                 "fingerprint".into(),
                 "subtitle-extract".into(),
                 "cover".into(),
+                "still".into(),
                 "merge".into(),
                 "pcm".into(),
                 "live".into(),

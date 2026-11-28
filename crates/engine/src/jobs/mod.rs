@@ -13,6 +13,7 @@ mod run;
 mod scan;
 mod sprite;
 mod srt;
+pub(crate) mod still;
 pub(crate) mod subtitles;
 mod sync;
 mod verify;
@@ -265,6 +266,9 @@ fn validate(rt: &Runtime, kind: &JobKind) -> Result<(), String> {
         JobKind::Cover { info } => {
             fliks_engine_core::jobs::cover::validate(info)?;
         }
+        JobKind::Still { info, at_seconds } => {
+            fliks_engine_core::jobs::still::validate(info, *at_seconds)?;
+        }
         JobKind::Merge { parts, output, .. } => {
             fliks_engine_core::jobs::merge::validate(parts, output)?;
         }
@@ -494,6 +498,7 @@ async fn exec(ctx: &Ctx) -> Result<JobResult, String> {
         JobKind::Sprite { info } => sprite::run(ctx, info).await,
         JobKind::Scan { info } => scan::run(ctx, info).await,
         JobKind::Cover { info } => cover::run(ctx, info).await,
+        JobKind::Still { info, at_seconds } => still::run(ctx, info, *at_seconds).await,
         JobKind::Merge {
             parts,
             output,

@@ -1474,8 +1474,11 @@ async fn cover_job_re_encodes_a_bmp_picture_to_jpeg() {
 async fn jobs_are_filtered_by_the_family_of_the_file() {
     let (e, file) = engine_of("cover", json!({})).await;
     let book = audio_book();
-    let mut with_cover = info();
-    with_cover["cover"] = book["cover"].clone();
+    let info_without_duration = || {
+        let mut i = info();
+        i.as_object_mut().unwrap().remove("durationSeconds");
+        i
+    };
     let empty = json!({ "video": [], "audio": [], "subtitles": [] });
     for (kind, why) in [
         (
@@ -1491,8 +1494,12 @@ async fn jobs_are_filtered_by_the_family_of_the_file() {
             "SubtitleExtract does not apply to audio files",
         ),
         (
-            json!({ "type": "Cover", "info": with_cover }),
-            "Cover does not apply to video files",
+            json!({ "type": "Still", "info": book }),
+            "Still does not apply to audio files",
+        ),
+        (
+            json!({ "type": "Still", "info": info_without_duration() }),
+            "Still needs atSeconds or a positive info.durationSeconds",
         ),
         (
             json!({ "type": "Cover", "info": empty }),
@@ -1510,8 +1517,45 @@ async fn jobs_are_filtered_by_the_family_of_the_file() {
             .unwrap()
             .contains(&json!("cover"))
     );
+    assert!(
+        hello["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("still"))
+    );
     assert!(has(json!({ "kind": "Sprite", "families": ["video"] })));
-    assert!(has(json!({ "kind": "Cover", "families": ["audio"] })));
+    assert!(has(
+        json!({ "kind": "Cover", "families": ["video", "audio"] })
+    ));
+    assert!(has(json!({ "kind": "Still", "families": ["video"] })));
+}
+
+#[tokio::test]
+async fn still_job_stores_a_frame_and_the_control_plane_reads_it() {
+    let (e, file) = engine_of("cover", json!({})).await;
+    let v = run_kind(&e, 7, &file, json!({ "type": "Still", "info": info() })).await;
+    let want = json!({ "type": "Still", "still":
+        { "mime": "image/jpeg", "bytes": 9, "atSeconds": 12.0 } });
+    assert_eq!(
+        (v["state"].as_str(), &v["result"]),
+        (Some("done"), &want),
+        "{v}"
+    );
+    let r = e.control("GET", "/v1/stills/7", None).await;
+    assert_eq!(
+        (r.status, r.header("content-type")),
+        (200, Some("image/jpeg".into()))
+    );
+    assert_eq!(&r.body[..], b"\xFF\xD8cover\xFF\xD9");
+    assert_eq!(e.control("GET", "/v1/stills/8", None).await.status, 404);
+    let kind = json!({ "type": "Still", "info": info(), "atSeconds": 3.5 });
+    let v = run_kind(&e, 7, &file, kind).await;
+    assert_eq!(v["result"]["still"]["atSeconds"], 3.5, "{v}");
+    let r = e
+        .control("POST", "/v1/invalidate", Some(json!({ "mediaFileId": 7 })))
+        .await;
+    assert_eq!(r.status, 200);
+    assert_eq!(e.control("GET", "/v1/stills/7", None).await.status, 404);
 }
 
 fn aac_part(path: &std::path::Path, seconds: f64, title: &str) -> Value {
