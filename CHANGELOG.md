@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.32.0](https://github.com/fliks-app/engine/compare/v1.31.4...v1.32.0) (2026-11-28)
+
+
+### Features
+
+* **jobs:** add a still job and open cover to video files ([#308](https://github.com/fliks-app/engine/issues/308)) ([348a356](https://github.com/fliks-app/engine/commit/348a35601339247dd5eda375b181dfd0a446b27a))
+
+
+### Bug Fixes
+
+* **live:** read hls upstreams through one variant and drop playlist dates ([#305](https://github.com/fliks-app/engine/issues/305)) ([6993506](https://github.com/fliks-app/engine/commit/69935067a21d743e9458226fb58af2fff6ea0439))
+
 ## [1.31.4](https://github.com/fliks-app/engine/compare/v1.31.3...v1.31.4) (2026-11-28)
 
 
