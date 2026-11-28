@@ -317,6 +317,7 @@ fn every_wire_key_is_in_its_schema() {
         SourceScan,
         SpriteDecode,
         SpriteMeta,
+        StillMeta,
         SrtSource,
         StreamPlan,
         StreamingConfig,

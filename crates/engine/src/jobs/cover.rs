@@ -76,7 +76,13 @@ pub async fn run(ctx: &Ctx, info: &MediaInfo) -> Result<JobResult, String> {
     (status = 200, content_type = "image/jpeg", description = "the picture a `Cover` job stored (`image/png` for a PNG)"),
     (status = 404, description = "no stored cover")))]
 pub async fn get(State(s): State<Arc<AppState>>, UrlPath(id): UrlPath<u32>) -> Response {
-    let Some((path, _)) = stored(&s.rt.cache.cover_dir(id)).await else {
+    let found = stored(&s.rt.cache.cover_dir(id)).await;
+    respond(found.map(|(p, _)| p)).await
+}
+
+/// The picture at `path` with its `Content-Type`, 404 when there is none.
+pub async fn respond(path: Option<PathBuf>) -> Response {
+    let Some(path) = path else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let Ok(file) = tokio::fs::File::open(&path).await else {

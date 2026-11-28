@@ -16,5 +16,6 @@ pub mod scan;
 pub mod separate;
 pub mod sprite;
 pub mod srt;
+pub mod still;
 pub mod subtitles;
 pub mod sync;

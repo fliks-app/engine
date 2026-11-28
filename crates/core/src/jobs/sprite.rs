@@ -121,7 +121,7 @@ pub struct FrameArgs<'a> {
 }
 
 /// HDR to SDR BT.709 at tile size. [ts:modules/streaming/thumbnail-extractors/tonemap.ts]
-fn tonemap_chain(w: u32) -> String {
+pub fn tonemap_chain(w: u32) -> String {
     format!(
         "zscale=w={w}:h=-2:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,\
          tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
