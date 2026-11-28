@@ -251,6 +251,9 @@ pub struct LiveArgs {
     pub video_bitrate_bps: Option<f64>,
     #[serde(default)]
     pub audio_codec: Option<String>,
+    /// The upstream's probed container (ffprobe `format_name`); `None` when unknown.
+    #[serde(default)]
+    pub container: Option<String>,
     #[serde(default)]
     pub append: bool,
     /// The ordinal of this run in its session: names its fMP4 init (`live::init_name`).

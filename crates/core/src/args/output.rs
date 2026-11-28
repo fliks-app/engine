@@ -405,6 +405,11 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
         let threads = o.encode_threads.max(1).to_string();
         a.extend(["-threads".into(), threads]);
     }
+    // The next run re-reads what it starts on: 2 segments back, not ffmpeg's 3. Not 1: ffmpeg
+    // aligns a variant listing one segment fewer only from 2 back, and 1 holds no second keyframe.
+    if crate::live::is_hls_container(o.container.as_deref()) {
+        a.extend(strs(&["-live_start_index", "-2"]));
+    }
     a.extend(["-i".into(), o.input_url.clone()]);
     a.extend(strs(&["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]));
     if let Some(vf) = live_filters(o, caps) {
@@ -425,8 +430,7 @@ pub fn live(o: &LiveArgs, caps: &HostCaps, dev: &Device) -> Vec<String> {
     }
     let list = js_max(1.0, (o.window_minutes * 60.0 / o.segment_seconds).ceil());
     let ext = if o.use_ts { "ts" } else { "m4s" };
-    let mut flags =
-        "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time".to_string();
+    let mut flags = "delete_segments+omit_endlist+independent_segments+temp_file".to_string();
     if o.append {
         flags.push_str("+append_list");
     }
@@ -708,6 +712,27 @@ mod tests {
         let ts = live(&r, &HostCaps::default(), &dev());
         assert_eq!(after(&ts, "-hls_segment_options"), None);
         assert_eq!(after(&ts, "-output_ts_offset").as_deref(), Some("13.96"));
+    }
+
+    #[test]
+    fn a_live_playlist_upstream_starts_two_segments_before_its_end() {
+        let mut r = live_request("remux", "none", 2);
+        let ts = live(&r, &HostCaps::default(), &dev());
+        assert!(!ts.iter().any(|a| a == "-live_start_index"), "{ts:?}");
+        r.container = Some("hls".into());
+        let hls = live(&r, &HostCaps::default(), &dev());
+        let at = hls.iter().position(|a| a == "-live_start_index").unwrap();
+        assert_eq!(hls[at + 1], "-2");
+        assert!(
+            at < hls.iter().position(|a| a == "-i").unwrap(),
+            "an input option"
+        );
+        let flags = hls.iter().position(|a| a == "-hls_flags").unwrap();
+        assert!(
+            !hls[flags + 1].contains("program_date_time"),
+            "{}",
+            hls[flags + 1]
+        );
     }
 
     fn vf(hw: &str, interlaced: Option<bool>, bps: Option<f64>, probes: &[&str]) -> Option<String> {

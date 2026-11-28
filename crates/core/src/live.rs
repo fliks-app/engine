@@ -178,6 +178,14 @@ pub fn is_manifest_container(container: Option<&str>) -> bool {
     })
 }
 
+/// An HLS playlist, as ffprobe names its demuxer in a `format_name` list.
+pub fn is_hls_container(container: Option<&str>) -> bool {
+    container.is_some_and(|c| {
+        c.split(',')
+            .any(|n| matches!(n.trim(), "hls" | "applehttp"))
+    })
+}
+
 /// [ts:services/livetv-session.service.ts:964]
 pub fn is_manifest_content_type(content_type: &str) -> bool {
     let ct = content_type.to_lowercase();
@@ -626,6 +634,15 @@ mod tests {
         // A playlist restarted at 0 adds nothing.
         t.read("#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.000000,\nseg-00000.m4s\n");
         assert_eq!(t.next, 3);
+    }
+
+    #[test]
+    fn hls_is_told_from_other_containers() {
+        assert!(is_hls_container(Some("hls")));
+        assert!(is_hls_container(Some("applehttp")));
+        assert!(!is_hls_container(Some("mpegts")));
+        assert!(!is_hls_container(Some("dash")));
+        assert!(!is_hls_container(None));
     }
 
     #[test]

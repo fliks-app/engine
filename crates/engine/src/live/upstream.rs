@@ -231,6 +231,7 @@ async fn spawn_packaged(rt: &Arc<Runtime>, pipe: &Arc<Pipe>, i: usize) -> Start 
         hw_accel,
         video_bitrate_bps: pipe.bitrate,
         audio_codec: p.audio_codec.clone(),
+        container: p.container.clone(),
         append,
         run,
         timeline,

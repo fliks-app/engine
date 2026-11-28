@@ -686,6 +686,24 @@ async fn a_vetoed_primary_still_plans_direct_and_joins_a_running_session() {
 }
 
 #[tokio::test]
+async fn a_playlist_upstream_starts_two_segments_before_its_end() {
+    // The probe names an HLS playlist: ffmpeg starts 2 segments before its end, not 3.
+    let e = live_engine(json!({}), json!({})).await;
+    let mut rx = e.rt.events.subscribe();
+    let playlist = json!({ "url": "http://up/manifest-dies", "priority": 0 });
+    let ups = vec![playlist, upstream("http://up/ok", 1)];
+    open(&e, open_req("36", ups, json!({}), "alice", "t")).await;
+    let ok = event(&mut rx, 30, |ev| attempt(ev).is_some()).await;
+    assert_eq!(attempt(&ok), Some((0, None)));
+    std::fs::write(live_dirs(&e)[0].join("die"), b"").unwrap();
+    let ok = event(&mut rx, 30, |ev| attempt(ev) == Some((1, None))).await;
+    assert_eq!(attempt(&ok), Some((1, None)));
+    let r = runs(&e);
+    assert_eq!(arg_after(&r[0], "-live_start_index").as_deref(), Some("-2"));
+    assert_eq!(arg_after(&r[1], "-live_start_index"), None);
+}
+
+#[tokio::test]
 async fn probe_picks_a_transcode_and_ts_segments() {
     let e = live_engine(json!({}), json!({})).await;
     let mut rx = e.rt.events.subscribe();
