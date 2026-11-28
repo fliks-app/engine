@@ -12,14 +12,20 @@ pub const HOP: usize = 1024;
 pub const BINS: usize = N_FFT / 2 + 1;
 /// Bins the network masks; the ones above (about 11 kHz) it never sees.
 pub const MODEL_BINS: usize = 1024;
-/// Frames the network takes at once.
-pub const CHUNK_FRAMES: usize = 512;
-/// Samples of one chunk's output that are final once it is done.
-pub const CHUNK_SAMPLES: usize = CHUNK_FRAMES * HOP;
+/// Frames of one network window (its input size).
+pub const NET_FRAMES: usize = 512;
+/// Frames synthesised per window; the windows advance by this many.
+pub const STEP_FRAMES: usize = 384;
+/// Frames two consecutive windows share, their masks cross-faded.
+pub const FADE_FRAMES: usize = NET_FRAMES - STEP_FRAMES;
+/// Samples of one step's output that are final once it is done.
+pub const CHUNK_SAMPLES: usize = STEP_FRAMES * HOP;
+/// First bin of the band whose vocal mask extends the one above `MODEL_BINS`.
+const EXTEND_FROM: usize = MODEL_BINS * 3 / 4;
 /// Zeros in front of the signal so its first samples sit under the whole window overlap.
 pub const LEAD: usize = N_FFT - HOP;
-/// Samples of a chunk's frames from its first frame's start to its last frame's end.
-pub const CHUNK_SPAN: usize = (CHUNK_FRAMES - 1) * HOP + N_FFT;
+/// Samples of a window's frames from its first frame's start to its last frame's end.
+pub const CHUNK_SPAN: usize = (NET_FRAMES - 1) * HOP + N_FFT;
 const EPS: f32 = 1e-10;
 pub const DEFAULT_GUIDE_VOCALS_GAIN: f64 = 0.25;
 pub const DEFAULT_BITRATE_KBPS: u32 = 96;
@@ -124,7 +130,7 @@ impl Fft {
     }
 }
 
-/// Spectra of one chunk: `[channel][frame][bin]`, `BINS` bins per frame.
+/// Spectra of one window: `[channel][frame][bin]`, `BINS` bins per frame.
 pub struct Spectra {
     pub re: Vec<f32>,
     pub im: Vec<f32>,
@@ -132,14 +138,14 @@ pub struct Spectra {
 
 impl Spectra {
     fn at(ch: usize, frame: usize, bin: usize) -> usize {
-        (ch * CHUNK_FRAMES + frame) * BINS + bin
+        (ch * NET_FRAMES + frame) * BINS + bin
     }
 
-    /// The network's input: `[2][CHUNK_FRAMES][MODEL_BINS]` magnitudes.
+    /// The network's input: `[2][NET_FRAMES][MODEL_BINS]` magnitudes.
     pub fn magnitudes(&self) -> Vec<f32> {
-        let mut m = Vec::with_capacity(2 * CHUNK_FRAMES * MODEL_BINS);
+        let mut m = Vec::with_capacity(2 * NET_FRAMES * MODEL_BINS);
         for ch in 0..2 {
-            for f in 0..CHUNK_FRAMES {
+            for f in 0..NET_FRAMES {
                 let base = Self::at(ch, f, 0);
                 m.extend((0..MODEL_BINS).map(|k| self.re[base + k].hypot(self.im[base + k])));
             }
@@ -148,7 +154,39 @@ impl Spectra {
     }
 }
 
-/// Soft masks of the two stems from the network's outputs (`[2][CHUNK_FRAMES][MODEL_BINS]`
+/// The last `FADE_FRAMES` frames of a window's masks, `[channel][frame][bin]`.
+pub struct Tail {
+    vocals: Vec<f32>,
+    acc: Vec<f32>,
+}
+
+/// Cross-fades the first `FADE_FRAMES` frames of both masks with the previous window's tail, the
+/// same weights for both so they still sum to 1, and returns this window's tail.
+pub fn blend(vocals: &mut [f32], acc: &mut [f32], prev: Option<&Tail>) -> Tail {
+    let span = FADE_FRAMES * MODEL_BINS;
+    let mut tail = Tail {
+        vocals: Vec::with_capacity(2 * span),
+        acc: Vec::with_capacity(2 * span),
+    };
+    for ch in 0..2 {
+        let head = ch * NET_FRAMES * MODEL_BINS;
+        let last = head + STEP_FRAMES * MODEL_BINS;
+        tail.vocals.extend_from_slice(&vocals[last..last + span]);
+        tail.acc.extend_from_slice(&acc[last..last + span]);
+        let Some(p) = prev else { continue };
+        for f in 0..FADE_FRAMES {
+            let w = (f as f32 + 0.5) / FADE_FRAMES as f32;
+            for k in 0..MODEL_BINS {
+                let (i, j) = (head + f * MODEL_BINS + k, ch * span + f * MODEL_BINS + k);
+                vocals[i] = w * vocals[i] + (1.0 - w) * p.vocals[j];
+                acc[i] = w * acc[i] + (1.0 - w) * p.acc[j];
+            }
+        }
+    }
+    tail
+}
+
+/// Soft masks of the two stems from the network's outputs (`[2][NET_FRAMES][MODEL_BINS]`
 /// each): the share of the energy each stem holds, so the two sum to 1.
 pub fn soft_masks(vocals: &[f32], accompaniment: &[f32]) -> (Vec<f32>, Vec<f32>) {
     let (mut v, mut a) = (vec![0.0; vocals.len()], vec![0.0; vocals.len()]);
@@ -244,14 +282,14 @@ impl Stft {
     /// Spectra of the chunk whose first frame starts at `pcm[0]`; `pcm` holds both channels,
     /// short ones are zero-extended.
     pub fn analyse(&self, pcm: [&[f32]; 2]) -> Spectra {
-        let n = 2 * CHUNK_FRAMES * BINS;
+        let n = 2 * NET_FRAMES * BINS;
         let mut s = Spectra {
             re: vec![0.0; n],
             im: vec![0.0; n],
         };
         let (mut re, mut im) = (vec![0.0f32; N_FFT], vec![0.0f32; N_FFT]);
         let at = |c: &[f32], i: usize| c.get(i).copied().unwrap_or(0.0);
-        for f in 0..CHUNK_FRAMES {
+        for f in 0..NET_FRAMES {
             let p0 = f * HOP;
             // Both channels in one transform: the left is the real part, the right the imaginary.
             for i in 0..N_FFT {
@@ -273,11 +311,17 @@ impl Stft {
         s
     }
 
-    /// Adds the stems of the chunk into `out`: the vocals are the network's vocal mask, the
-    /// instrumental its accompaniment mask, and above `MODEL_BINS` all of it is instrumental.
+    /// Adds the stems of the window's first `STEP_FRAMES` frames into `out`: the vocals are the
+    /// vocal mask, the instrumental the accompaniment mask. Above `MODEL_BINS` the vocal mask is
+    /// the mean of the one over `EXTEND_FROM..MODEL_BINS` and the instrumental its complement.
     pub fn synthesise(&self, s: &Spectra, vocal_mask: &[f32], acc_mask: &[f32], out: &mut Overlap) {
         let (mut re, mut im) = (vec![0.0f32; N_FFT], vec![0.0f32; N_FFT]);
-        for f in 0..CHUNK_FRAMES {
+        for f in 0..STEP_FRAMES {
+            let top = [0, 1].map(|ch| {
+                let base = (ch * NET_FRAMES + f) * MODEL_BINS;
+                let band = &vocal_mask[base + EXTEND_FROM..base + MODEL_BINS];
+                band.iter().sum::<f32>() / band.len() as f32
+            });
             for (vocal, mask, bufs) in [
                 (true, vocal_mask, &mut out.vocals),
                 (false, acc_mask, &mut out.instrumental),
@@ -285,11 +329,11 @@ impl Stft {
                 let bin = |ch: usize, k: usize| {
                     let a = Spectra::at(ch, f, k);
                     let m = if k < MODEL_BINS {
-                        mask[(ch * CHUNK_FRAMES + f) * MODEL_BINS + k]
+                        mask[(ch * NET_FRAMES + f) * MODEL_BINS + k]
                     } else if vocal {
-                        0.0
+                        top[ch]
                     } else {
-                        1.0
+                        1.0 - top[ch]
                     };
                     (s.re[a] * m, s.im[a] * m)
                 };
@@ -322,7 +366,7 @@ impl Stft {
     }
 }
 
-/// Chunks a track of `samples` samples needs.
+/// Steps a track of `samples` samples needs.
 pub fn chunk_count(samples: usize) -> usize {
     (samples + LEAD).div_ceil(CHUNK_SAMPLES).max(1)
 }
@@ -374,7 +418,7 @@ mod tests {
 
     #[test]
     fn two_tones_split_by_frequency_and_sum_back_to_the_mix() {
-        let n = CHUNK_SAMPLES + 5000;
+        let n = 3 * CHUNK_SAMPLES + 5000;
         let (low, high) = (tone(172.265625, n, 0.3), tone(2756.25, n, 0.3));
         let mix: Vec<f32> = low.iter().zip(&high).map(|(a, b)| a + b).collect();
         // The signal sits at `LEAD` in the padded coordinates the chunks are cut from.
@@ -382,11 +426,13 @@ mod tests {
         padded.extend(&mix);
         let stft = Stft::default();
         let mut out = Overlap::default();
+        let mut prev = None;
         let (mut vocals, mut inst): (Vec<f32>, Vec<f32>) = (vec![], vec![]);
         for k in 0..chunk_count(n) {
             let from = (k * CHUNK_SAMPLES).min(padded.len());
             let s = stft.analyse([&padded[from..], &padded[from..]]);
-            let (vm, am) = split_masks(&s.magnitudes(), 30);
+            let (mut vm, mut am) = split_masks(&s.magnitudes(), 30);
+            prev = Some(blend(&mut vm, &mut am, prev.as_ref()));
             stft.synthesise(&s, &vm, &am, &mut out);
             let d = out.finish();
             vocals.extend(d.vocals[0].iter());
@@ -404,6 +450,46 @@ mod tests {
     }
 
     #[test]
+    fn the_blend_fades_linearly_and_keeps_the_masks_summing_to_one() {
+        let len = 2 * NET_FRAMES * MODEL_BINS;
+        let (old_v, old_a) = (vec![0.0f32; len], vec![1.0f32; len]);
+        let tail = blend(&mut old_v.clone(), &mut old_a.clone(), None);
+        let (mut v, mut a) = (vec![1.0f32; len], vec![0.0f32; len]);
+        blend(&mut v, &mut a, Some(&tail));
+        for ch in 0..2 {
+            for f in 0..FADE_FRAMES {
+                let i = (ch * NET_FRAMES + f) * MODEL_BINS;
+                let w = (f as f32 + 0.5) / FADE_FRAMES as f32;
+                assert!((v[i] - w).abs() < 1e-6 && (v[i] + a[i] - 1.0).abs() < 1e-6);
+            }
+            let i = (ch * NET_FRAMES + FADE_FRAMES) * MODEL_BINS;
+            assert!((v[i] - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn the_vocal_mask_above_the_network_band_follows_its_top_quarter() {
+        let n = CHUNK_SAMPLES;
+        let high = tone(15_000.0, n, 0.3);
+        let stft = Stft::default();
+        let s = stft.analyse([&high, &high]);
+        let len = 2 * NET_FRAMES * MODEL_BINS;
+        let (vm, am) = (vec![0.8f32; len], vec![0.2f32; len]);
+        let mut out = Overlap::default();
+        stft.synthesise(&s, &vm, &am, &mut out);
+        let d = out.finish();
+        let mid = 4096..n - 4096;
+        let err = |stem: &[f32], k: f32| -> f64 {
+            rms(&mid
+                .clone()
+                .map(|i| stem[i] - k * high[i])
+                .collect::<Vec<_>>())
+        };
+        assert!(err(&d.vocals[0], 0.8) < 0.01, "{}", err(&d.vocals[0], 0.8));
+        assert!(err(&d.instrumental[0], 0.2) < 0.01);
+    }
+
+    #[test]
     fn the_right_channel_is_kept_apart() {
         let stft = Stft::default();
         let n = CHUNK_SAMPLES;
@@ -411,8 +497,8 @@ mod tests {
         let silent = vec![0.0f32; n];
         let s = stft.analyse([&silent, &right]);
         let m = s.magnitudes();
-        let ch0: f32 = m[..CHUNK_FRAMES * MODEL_BINS].iter().sum();
-        let ch1: f32 = m[CHUNK_FRAMES * MODEL_BINS..].iter().sum();
+        let ch0: f32 = m[..NET_FRAMES * MODEL_BINS].iter().sum();
+        let ch1: f32 = m[NET_FRAMES * MODEL_BINS..].iter().sum();
         assert!(ch0 < 1e-2 && ch1 > 100.0, "{ch0} {ch1}");
     }
 

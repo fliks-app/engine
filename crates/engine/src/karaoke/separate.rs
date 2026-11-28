@@ -1,5 +1,5 @@
 //! The `Separate` job: the decoded track through a two-stem mask network in chunks, the stems
-//! written as PCM, then encoded to Opus in one run. Spec: `docs/spec/karaoke.md` section 3.
+//! written as f32 PCM, then encoded to Opus in one run. Spec: `docs/spec/karaoke.md` section 3.
 use super::models::Outcome;
 use super::run::{Outputs, StopOnDrop, unsupported};
 use super::{Net, Tensor, Warm};
@@ -11,8 +11,8 @@ use fliks_engine_core::api::{
 };
 use fliks_engine_core::jobs::optimize::http_input;
 use fliks_engine_core::jobs::separate::{
-    CHUNK_FRAMES, CHUNK_SAMPLES, CHUNK_SPAN, DEFAULT_BITRATE_KBPS, DEFAULT_GUIDE_VOCALS_GAIN, LEAD,
-    MODEL_BINS, Overlap, SAMPLE_RATE, Stft, chunk_count, soft_masks,
+    CHUNK_SAMPLES, CHUNK_SPAN, DEFAULT_BITRATE_KBPS, DEFAULT_GUIDE_VOCALS_GAIN, LEAD, MODEL_BINS,
+    NET_FRAMES, Overlap, SAMPLE_RATE, Stft, blend, chunk_count, soft_masks,
 };
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 
-/// The network's input: `[channels, splits, frames, bins]`, one split a chunk.
-const NET_INPUT: [i64; 4] = [2, 1, CHUNK_FRAMES as i64, MODEL_BINS as i64];
+/// The network's input: `[channels, splits, frames, bins]`, one split a window.
+const NET_INPUT: [i64; 4] = [2, 1, NET_FRAMES as i64, MODEL_BINS as i64];
 
 /// One output: which stem and where.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,28 +104,41 @@ pub async fn run(ctx: &Ctx, kind: &JobKind) -> Result<JobResult, String> {
     };
     outs.cleanup().await;
     let (provider, seconds) = published?;
-    let file = |stem: Stem| -> Option<StemFile> {
-        let i = wanted.iter().position(|w| w.0 == stem)?;
-        let req = match stem {
+    let file = |stem: Stem| -> Result<Option<StemFile>, String> {
+        let Some(i) = wanted.iter().position(|w| w.0 == stem) else {
+            return Ok(None);
+        };
+        let Some(req) = (match stem {
             Stem::Vocals => vocals,
             Stem::Instrumental => instrumental,
             Stem::Guide => guide,
-        }?;
-        let bytes = std::fs::metadata(&wanted[i].1).map_or(0, |m| m.len());
-        Some(StemFile {
+        }) else {
+            return Ok(None);
+        };
+        let path = &wanted[i].1;
+        let bytes = std::fs::metadata(path)
+            .map_err(|e| format!("stat {}: {e}", path.display()))?
+            .len();
+        Ok(Some(StemFile {
             path: req.into(),
             bytes: bytes as f64,
-        })
+        }))
     };
+    let (vocals_file, instrumental_file, guide_file) = (
+        file(Stem::Vocals)?,
+        file(Stem::Instrumental)?,
+        file(Stem::Guide)?,
+    );
     Ok(JobResult::Separate {
         separate: SeparateMeta {
             model: picked.id.into(),
             model_version: picked.version.clone(),
             provider,
-            vocals: file(Stem::Vocals),
-            instrumental: file(Stem::Instrumental),
-            guide: file(Stem::Guide),
+            vocals: vocals_file,
+            instrumental: instrumental_file,
+            guide: guide_file,
             duration_seconds: seconds,
+            revision: fliks_engine_core::api::REVISIONS.separate,
         },
     })
 }
@@ -221,8 +234,10 @@ async fn build(
         picked.file("vocals.onnx"),
         picked.file("accompaniment.onnx"),
     );
+    let files = picked.files.clone();
     let (vocals_net, acc_net, provider) = super::run::low({
         move || -> Result<_, String> {
+            let _files = files.open();
             let warm: &[Warm] = &[("x", &NET_INPUT)];
             let (v, a) = (
                 backend.load(&vocals_file, allow.as_deref(), warm)?,
@@ -266,7 +281,7 @@ async fn build(
         .map(String::from)
         .to_vec();
     for (stem, _) in wanted {
-        argv.extend(["-f", "s16le", "-ar", "44100", "-ac", "2", "-i"].map(String::from));
+        argv.extend(["-f", "f32le", "-ar", "44100", "-ac", "2", "-i"].map(String::from));
         argv.push(pcm_path(*stem).to_string_lossy().into_owned());
     }
     for i in 0..wanted.len() {
@@ -329,6 +344,7 @@ async fn decode_and_separate(
             let (c, stop) = (c.clone(), stop.clone());
             move || {
                 let busy = || c.model_busy();
+                let pause = || c.wait_while_paused(&stop);
                 drive(
                     rx,
                     (vocals_net, acc_net),
@@ -336,6 +352,7 @@ async fn decode_and_separate(
                     gain,
                     &stop,
                     &busy,
+                    &pause,
                     &|seconds| {
                         c.pulse();
                         if let Some(t) = total_seconds {
@@ -384,6 +401,7 @@ fn drive(
     gain: f32,
     stop: &AtomicBool,
     busy: &dyn Fn() -> ModelBusy,
+    pause: &dyn Fn(),
     progress: &dyn Fn(f64),
 ) -> Result<u64, String> {
     let stft = Stft::default();
@@ -394,6 +412,7 @@ fn drive(
     let (mut base, mut leftover, mut eof) = (0usize, Vec::<u8>::new(), false);
     let mut written = 0u64;
     let mut k = 0usize;
+    let mut tail = None;
     loop {
         let (from, upto) = (k * CHUNK_SAMPLES, k * CHUNK_SAMPLES + CHUNK_SPAN);
         while !eof && base + l.len() < upto {
@@ -412,6 +431,7 @@ fn drive(
             }
             leftover.drain(..frames * 8);
         }
+        pause();
         if stop.load(Relaxed) {
             return Err("stopped".into());
         }
@@ -420,7 +440,6 @@ fn drive(
         let samples = have.saturating_sub(LEAD);
         let at = from - base;
         let s = stft.analyse([&l[at.min(l.len())..], &r[at.min(r.len())..]]);
-        progress(((from + CHUNK_SAMPLES).min(have)) as f64 / f64::from(SAMPLE_RATE));
         let mags = Tensor {
             shape: NET_INPUT.to_vec(),
             data: s.magnitudes(),
@@ -430,16 +449,19 @@ fn drive(
             data: mags.data.clone(),
         };
         let v = vocals_net.run(vec![("x", again())])?;
-        progress(((from + CHUNK_SAMPLES).min(have)) as f64 / f64::from(SAMPLE_RATE));
         let a = acc_net.run(vec![("x", mags)])?;
+        progress(
+            ((from + CHUNK_SAMPLES).min(have).saturating_sub(LEAD)) as f64 / f64::from(SAMPLE_RATE),
+        );
         let (v, a) = (
             v.first().ok_or("no network output")?,
             a.first().ok_or("no network output")?,
         );
-        if v.data.len() != 2 * CHUNK_FRAMES * MODEL_BINS || a.data.len() != v.data.len() {
+        if v.data.len() != 2 * NET_FRAMES * MODEL_BINS || a.data.len() != v.data.len() {
             return Err("unexpected network output size".into());
         }
-        let (vm, am) = soft_masks(&v.data, &a.data);
+        let (mut vm, mut am) = soft_masks(&v.data, &a.data);
+        tail = Some(blend(&mut vm, &mut am, tail.as_ref()));
         stft.synthesise(&s, &vm, &am, &mut overlap);
         let done = overlap.finish();
         // Padded coordinates `from..from + CHUNK_SAMPLES` are samples `from - LEAD..`.
@@ -484,9 +506,8 @@ fn write(
     from: usize,
     to: usize,
 ) -> Result<(), String> {
-    let pcm = |x: f32| ((x.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes();
     for s in sinks {
-        let mut buf = Vec::with_capacity((to - from) * 4);
+        let mut buf = Vec::with_capacity((to - from) * 8);
         for i in from..to {
             for ch in 0..2 {
                 let v = match s.stem {
@@ -494,7 +515,7 @@ fn write(
                     Stem::Instrumental => instrumental[ch][i],
                     Stem::Guide => instrumental[ch][i] + gain * vocals[ch][i],
                 };
-                buf.extend_from_slice(&pcm(v));
+                buf.extend_from_slice(&v.to_le_bytes());
             }
         }
         s.out
