@@ -4,8 +4,10 @@ use super::run::{StopOnDrop, pcm_cmd, read_pcm, unsupported};
 use super::{Net, Tensor};
 use crate::jobs::Ctx;
 use fliks_engine_core::api::{JobResult, MelodyMeta, MelodySpan, ModelKind};
+use fliks_engine_core::jobs::key::analyse;
 use fliks_engine_core::jobs::melody::{
-    FMAX, FMIN, HOP, PitchTrack, SILENCE_PEAK, frames, spans_notes, window_samples, windows,
+    FMAX, FMIN, HOP, PitchTrack, SILENCE_PEAK, frames, normalise, spans_notes, window_samples,
+    windows,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
@@ -24,11 +26,15 @@ pub async fn run(
     }
     let file = picked.file("model.onnx");
     // SwiftF0 stays on the CPU: 10 ms a call, a GPU session costs more than it saves.
-    let loaded = super::run::low(move || backend.load(&file, Some(&[]), &[]))
-        .await
-        .map_err(|e| e.to_string())??;
+    let files = picked.files.clone();
+    let loaded = super::run::low(move || {
+        let _files = files.open();
+        backend.load(&file, Some(&[]), &[])
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     ctx.pulse();
-    let cmd = pcm_cmd(ctx);
+    let cmd = pcm_cmd(ctx, &ctx.media_path());
     let c = ctx.clone();
     let mut net = loaded.net;
     let track = ctx
@@ -39,7 +45,16 @@ pub async fn run(
             let c = c.clone();
             super::run::low(move || {
                 let _busy = c.model_busy();
-                track(&mut *net, &pcm, &stop, &|| c.pulse())
+                track(
+                    &mut *net,
+                    &pcm,
+                    &stop,
+                    &|| c.wait_while_paused(&stop),
+                    &|pct| {
+                        c.pulse();
+                        c.progress(pct);
+                    },
+                )
             })
             .await
             .map_err(|e| e.to_string())?
@@ -48,11 +63,15 @@ pub async fn run(
     if track.hz.is_empty() {
         return Err(fliks_engine_core::api::JobErrorClass::Corrupt.message("no audio decoded"));
     }
+    let notes = spans_notes(&track, spans);
+    let analysis = analyse(&notes.concat());
     Ok(JobResult::Melody {
         melody: MelodyMeta {
             model: picked.id.into(),
             model_version: picked.version.clone(),
-            spans: spans_notes(&track, spans),
+            spans: notes,
+            analysis,
+            revision: fliks_engine_core::api::REVISIONS.melody,
         },
     })
 }
@@ -62,18 +81,22 @@ fn track(
     net: &mut dyn Net,
     pcm: &[f32],
     stop: &AtomicBool,
-    pulse: &dyn Fn(),
+    wait: &dyn Fn(),
+    report: &dyn Fn(f64),
 ) -> Result<PitchTrack, String> {
     let mut out = PitchTrack::default();
     if pcm.is_empty() {
         return Ok(out);
     }
-    for (start, end, given) in windows(frames(pcm.len())) {
+    let calls = windows(frames(pcm.len()));
+    let total = calls.len();
+    for (i, (start, end, given)) in calls.into_iter().enumerate() {
+        wait();
         if stop.load(Relaxed) {
             return Err("stopped".into());
         }
         let (a, b) = window_samples(pcm.len(), end, given);
-        let audio = &pcm[a..b];
+        let audio = normalise(&pcm[a..b]);
         let scalar = |v: f32| Tensor {
             shape: vec![],
             data: vec![v],
@@ -83,13 +106,13 @@ fn track(
                 "audio",
                 Tensor {
                     shape: vec![1, audio.len() as i64],
-                    data: audio.to_vec(),
+                    data: audio,
                 },
             ),
             ("fmin", scalar(FMIN)),
             ("fmax", scalar(FMAX)),
         ])?;
-        pulse();
+        report((i + 1) as f64 / total as f64 * 95.0);
         let [pitch, conf] = &r[..] else {
             return Err("unexpected pitch network output".into());
         };

@@ -1,0 +1,41 @@
+name: Karaoke models
+
+# The default networks downloaded from the manifest and run once through the real ONNX runtime:
+# a re-exported file with other input names or shapes fails here, not in production.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  real-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JELLYFIN_FFMPEG_VERSION: '8.1.2-1'
+      JELLYFIN_FFMPEG_SHA256: 0683c730f0cfa7d2edd321d5c4921ef17d4e6a33a9626c04bef9092c29f94e1e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: false
+      - name: Install jellyfin-ffmpeg
+        run: |
+          wget -q -O /tmp/jf.deb "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg8_${JELLYFIN_FFMPEG_VERSION}-noble_amd64.deb"
+          echo "${JELLYFIN_FFMPEG_SHA256}  /tmp/jf.deb" | sha256sum -c -
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /tmp/jf.deb
+      - name: Install the pinned ONNX runtime
+        run: |
+          . tools/karaoke-pack/pins.env
+          wget -q -O /tmp/ort.nupkg "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg"
+          echo "${ORT_SHA256}  /tmp/ort.nupkg" | sha256sum -c -
+          unzip -q /tmp/ort.nupkg 'runtimes/linux-x64/native/*' -d /tmp/ort
+      - name: Download the models and run a clip through them
+        run: |
+          FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe \
+          ORT_DYLIB_PATH=/tmp/ort/runtimes/linux-x64/native/libonnxruntime.so FLIKS_REAL_MODELS=/tmp/models \
+            cargo test -p fliks-engine --features karaoke --test karaoke the_real_default_models -- --nocapture

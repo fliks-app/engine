@@ -59,9 +59,8 @@ fn tables() -> &'static Tables {
     })
 }
 
-/// The network input for 16 kHz mono `pcm` (at least 560 samples): `[frames, STACKED]`, the
-/// log-mel frames normalised per band over the call, two stacked into one; an odd count is
-/// padded with a frame of `PAD`.
+/// The input for 16 kHz mono `pcm` (at least 560 samples): `[frames, STACKED]`, log-mel frames
+/// normalised per band, two stacked; an odd count is padded with `PAD`.
 pub fn input_features(pcm: &[f32]) -> Vec<f32> {
     let t = tables();
     let n = if pcm.len() < FRAME {

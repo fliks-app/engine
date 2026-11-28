@@ -32,7 +32,7 @@ const REGISTER_REACH: usize = 250;
 const LEAP: f64 = 5.0;
 /// A step of at least this many semitones, or a gap over `MAX_GAP`, cuts a run for the octave pass.
 const RUN_BREAK: f64 = 9.0;
-/// Cost per voiced frame of moving a run an octave (14 frames weigh the two edges of a 12 st leap, 7 each).
+/// Cost per voiced frame of moving a run an octave (14 frames outweigh a 12 st leap's two edges).
 const SHIFT_COST: f64 = 1.0;
 /// Cost per frame and per semitone a run sits further than `FREE_REGISTER` from the local register.
 const PULL: f64 = 1.0;
@@ -54,7 +54,8 @@ const HOP_MAX: f64 = 4.0;
 const OFF_OCTAVE: f64 = 6.0;
 /// Semitones a run's entry or exit step may sit from a whole octave at no extra cost.
 const OCTAVE_STEP: f64 = 0.5;
-/// Frames on each side of the smoothing median: two irons out vibrato.
+/// Frames on each side of the smoothing median: it drops single-frame glitches, the note median
+/// and `STEP_FRAMES` keep a held note whole.
 const SMOOTH: usize = 2;
 /// A note is dropped under this many voiced frames (96 ms).
 const MIN_FRAMES: usize = 6;
@@ -96,9 +97,8 @@ pub fn frames(samples: usize) -> usize {
     (samples / HOP).max(1)
 }
 
-/// The network calls over `frames` frames: `(first frame, end frame, first frame of the
-/// samples it is given)`. A call reads `LEFT_FRAMES` before and `LOOKAHEAD_FRAMES` after its
-/// frames, and returns the ones in `first..end` out of what it computed from `given..`.
+/// The network calls over `frames` frames: `(first frame, end frame, first frame given)`; a call
+/// returns the frames `first..end` of what it computed from `given..`.
 pub fn windows(frames: usize) -> Vec<(usize, usize, usize)> {
     (0..frames)
         .step_by(WINDOW_FRAMES)
@@ -110,6 +110,21 @@ pub fn windows(frames: usize) -> Vec<(usize, usize, usize)> {
             )
         })
         .collect()
+}
+
+/// Peak a window is scaled to before the network sees it.
+const TARGET_PEAK: f32 = 0.9;
+
+/// `audio` scaled to a peak of `TARGET_PEAK`, a quiet vocal under-fires the network; a window
+/// under the silence gate is left as it is.
+pub fn normalise(audio: &[f32]) -> Vec<f32> {
+    let peak = audio.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    let gain = if peak < SILENCE_PEAK {
+        1.0
+    } else {
+        TARGET_PEAK / peak
+    };
+    audio.iter().map(|v| v * gain).collect()
 }
 
 /// The samples one call is given.
@@ -299,9 +314,8 @@ fn fold_octaves(raw: &[Option<f64>]) -> Vec<Option<f64>> {
     apply(&path)
 }
 
-/// The MIDI pitch of every frame, `None` when unvoiced: frames out of the singer's register (the
-/// median of the spans' voiced frames nearby) dropped unless a harmonic of the voice, short octave
-/// errors folded back, then smoothed.
+/// The MIDI pitch of every frame, `None` when unvoiced: out-of-register frames dropped or moved
+/// to their harmonic, octave errors folded back, then smoothed.
 fn cleaned(track: &PitchTrack, spans: &[MelodySpan]) -> Vec<Option<f64>> {
     let n = track.hz.len().min(track.confidence.len());
     let mut raw: Vec<Option<f64>> = (0..n)
@@ -502,6 +516,14 @@ mod tests {
             start_ms: a,
             end_ms: b,
         }
+    }
+
+    #[test]
+    fn normalise_scales_to_the_target_peak() {
+        let n = normalise(&[0.01, -0.02, 0.0]);
+        assert!((n[1] + TARGET_PEAK).abs() < 1e-6);
+        let silent = [0.0, 1e-4, -1e-4];
+        assert_eq!(normalise(&silent), silent);
     }
 
     #[test]

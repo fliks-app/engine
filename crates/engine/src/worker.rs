@@ -910,6 +910,7 @@ fn result_request(
                 model_version: separate.model_version.clone(),
                 provider: separate.provider.clone(),
                 duration_seconds: separate.duration_seconds,
+                revision: separate.revision,
                 stems: stems.to_vec(),
             }),
             ..ok(0.0, None, None)
@@ -1268,6 +1269,7 @@ mod tests {
                     instrumental: Some(file("/i")),
                     guide: Some(file("/g")),
                     duration_seconds: 1.5,
+                    revision: 2,
                 },
             }),
             None,
@@ -1366,6 +1368,7 @@ mod tests {
                     instrumental: files[1].clone(),
                     guide: files[2].clone(),
                     duration_seconds: 1.0,
+                    revision: 2,
                 },
             }),
             None,

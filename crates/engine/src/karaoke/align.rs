@@ -19,22 +19,35 @@ pub async fn run(
     language: Option<&str>,
     model: Option<&str>,
     providers: Option<&[String]>,
+    voicing: Option<&str>,
 ) -> Result<JobResult, String> {
     let k = &ctx.rt.karaoke;
     let models = k.models();
     let detected = ctc::language_of(language, lines);
     let picked = models.pick_aligner(model, detected.as_deref())?;
+    // The recogniser takes two-letter codes only; any other language it detects itself.
+    let heard = detected.as_deref().filter(|c| c.len() == 2);
     let Some(case) = picked.ctc else {
-        return recognise(ctx, &picked, lines, language, None).await;
+        return recognise(ctx, &picked, lines, heard, None).await;
     };
-    let failure = match ctc::run(ctx, &picked, case, lines, detected.as_deref(), providers).await? {
+    let failure = match ctc::run(
+        ctx,
+        &picked,
+        case,
+        lines,
+        detected.as_deref(),
+        providers,
+        voicing,
+    )
+    .await?
+    {
         Ok(align) => return Ok(JobResult::Align { align }),
         Err(e) => e,
     };
     match models.pick(None, ModelKind::Alignment).ok() {
         Some(whisper) if k.tools(&ctx.rt.ffmpeg).await.whisper.is_some() => {
             tracing::warn!("CTC alignment failed, using the speech recogniser: {failure}");
-            recognise(ctx, &whisper, lines, language, Some(failure)).await
+            recognise(ctx, &whisper, lines, heard, Some(failure)).await
         }
         _ => Err(failure),
     }
@@ -79,6 +92,7 @@ async fn recognise(
             matched: aligned.matched,
             fallback,
             lrc_fit: aligned.lrc_fit,
+            revision: fliks_engine_core::api::REVISIONS.align,
         },
     })
 }
@@ -161,15 +175,17 @@ async fn heard(
 fn prompt(lines: &[AlignLine]) -> String {
     let mut out = String::new();
     for c in words_of(lines).into_iter().filter(|c| c.repeat == 0) {
+        let mut prev_end = None;
         for (s, e) in c.words {
             let w = &c.text[s as usize..e as usize];
             if out.chars().count() + w.chars().count() + 1 > PROMPT_CHARS {
                 return out;
             }
-            if !out.is_empty() {
+            if !out.is_empty() && prev_end != Some(s) {
                 out.push(' ');
             }
             out.push_str(w);
+            prev_end = Some(e);
         }
     }
     out

@@ -26,6 +26,8 @@ const MAX_REDIRECTS: usize = 5;
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 /// A download that moves no byte for this long is given up.
 const STALL: Duration = Duration::from_secs(60);
+/// Waits before the retries of a file whose transfer broke off.
+const RETRY_AFTER: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(10)];
 
 /// One model of the manifest.
 pub struct Entry {
@@ -389,6 +391,7 @@ struct Inner {
     downloads: Mutex<HashMap<String, Download>>,
     generations: AtomicU64,
     events: Events,
+    files: Files,
 }
 
 #[derive(Clone)]
@@ -401,6 +404,25 @@ pub struct Picked {
     pub version: String,
     pub ctc: Option<Case>,
     pub dir: PathBuf,
+    pub files: Files,
+}
+
+/// Held while a job loads a model's files, so an update cannot swap them between two loads.
+#[derive(Clone, Default)]
+pub struct Files(Arc<std::sync::RwLock<()>>);
+
+impl Files {
+    pub fn open(&self) -> std::sync::RwLockReadGuard<'_, ()> {
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn swap(&self) -> std::sync::RwLockWriteGuard<'_, ()> {
+        self.0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 impl Picked {
@@ -453,6 +475,7 @@ impl Manager {
             downloads: Mutex::new(HashMap::new()),
             generations: AtomicU64::new(0),
             events,
+            files: Files::default(),
         }))
     }
 
@@ -688,6 +711,7 @@ impl Manager {
             version: rec.map_or_else(|| e.version.into(), |r| r.version),
             ctc: e.ctc,
             dir: self.model_dir(e),
+            files: self.0.files.clone(),
         })
     }
 
@@ -801,10 +825,16 @@ impl Manager {
             return;
         };
         let marker = self.model_dir(e).join(DAMAGED);
-        let _ = match verdict {
-            Ok(()) => std::fs::remove_file(marker),
-            Err(why) => std::fs::write(marker, why),
+        let written = match verdict {
+            Ok(()) => std::fs::remove_file(&marker).or_else(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => Ok(()),
+                _ => Err(e),
+            }),
+            Err(why) => std::fs::write(&marker, why),
         };
+        if let Err(err) = written {
+            tracing::warn!(id, "keep the verdict in {}: {err}", marker.display());
+        }
     }
 
     /// Removes the model, stopping its download; `Ok(false)` for an unknown id. A verification
@@ -867,6 +897,14 @@ impl Manager {
         tokio::fs::create_dir_all(&stage)
             .await
             .map_err(|e| format!("create {}: {e}", stage.display()))?;
+        // A part file of another version would be resumed against the wrong file, then installed.
+        let parts: Vec<String> = e.files.iter().map(part_name).collect();
+        for f in std::fs::read_dir(&stage).into_iter().flatten().flatten() {
+            let name = f.file_name().to_string_lossy().into_owned();
+            if name.ends_with(".part") && !parts.contains(&name) {
+                let _ = tokio::fs::remove_file(f.path()).await;
+            }
+        }
         let client = client();
         let mut done_before = 0u64;
         for f in &e.files {
@@ -881,23 +919,36 @@ impl Manager {
                 self.set_bytes(id, generation, done_before);
                 continue;
             }
-            let part = stage.join(format!("{}.part", f.name));
-            let r = self
-                .fetch_file(
-                    &client,
-                    f,
-                    &part,
-                    done_before,
-                    id,
-                    generation,
-                    cancel.clone(),
-                )
-                .await;
-            if let Err(err) = r {
-                if self.is_current(id, generation) {
-                    let _ = tokio::fs::remove_file(&part).await;
+            let part = stage.join(part_name(f));
+            let mut waits = RETRY_AFTER.iter();
+            loop {
+                let r = self
+                    .fetch_file(
+                        &client,
+                        f,
+                        &part,
+                        done_before,
+                        id,
+                        generation,
+                        cancel.clone(),
+                    )
+                    .await;
+                match r {
+                    Ok(()) => break,
+                    Err(Fetch::Broken(err)) => match waits.next() {
+                        Some(wait) if !*cancel.borrow() => {
+                            tracing::warn!(id, "{err}, resuming in {wait:?}");
+                            tokio::time::sleep(*wait).await;
+                        }
+                        _ => return Err(err),
+                    },
+                    Err(Fetch::Bad(err)) => {
+                        if self.is_current(id, generation) {
+                            let _ = tokio::fs::remove_file(&part).await;
+                        }
+                        return Err(err);
+                    }
                 }
-                return Err(err);
             }
             tokio::fs::rename(&part, &dest)
                 .await
@@ -926,17 +977,24 @@ impl Manager {
         let (dir, stage) = (self.model_dir(e), self.staging_dir(e));
         let old = self.0.dir.join(format!(".{}.old", e.id));
         let _ = tokio::fs::remove_dir_all(&old).await;
-        let had = match tokio::fs::rename(&dir, &old).await {
-            Ok(()) => true,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
-            Err(err) => return Err(format!("replace {}: {err}", e.id)),
-        };
-        if let Err(err) = tokio::fs::rename(&stage, &dir).await {
-            if had {
-                let _ = tokio::fs::rename(&old, &dir).await;
-            }
-            return Err(format!("install {}: {err}", e.id));
-        }
+        let (files, id) = (self.0.files.clone(), e.id);
+        let old2 = old.clone();
+        tokio::task::spawn_blocking(move || {
+            let _no_loads = files.swap();
+            let had = match std::fs::rename(&dir, &old2) {
+                Ok(()) => true,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+                Err(err) => return Err(format!("replace {id}: {err}")),
+            };
+            std::fs::rename(&stage, &dir).map_err(|err| {
+                if had {
+                    let _ = std::fs::rename(&old2, &dir);
+                }
+                format!("install {id}: {err}")
+            })
+        })
+        .await
+        .map_err(|err| err.to_string())??;
         sync_dir(&self.0.dir).await;
         let _ = tokio::fs::remove_dir_all(&old).await;
         Ok(())
@@ -1009,32 +1067,39 @@ impl Manager {
         id: &'static str,
         generation: u64,
         mut cancel: watch::Receiver<bool>,
-    ) -> Result<(), String> {
-        let mut body = open(client, &f.url).await?;
-        let mut file = tokio::fs::File::create(part)
-            .await
-            .map_err(|e| format!("create {}: {e}", part.display()))?;
-        let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
-        let (mut got, mut tick) = (0u64, Ticker::start(done_before));
+    ) -> Result<(), Fetch> {
+        let (mut hash, mut got) = self.resume(part, f.size).await;
+        let (mut body, partial) = open(client, &f.url, got).await?;
+        let mut file = if partial {
+            tokio::fs::OpenOptions::new().append(true).open(part).await
+        } else {
+            (hash, got) = (ring::digest::Context::new(&ring::digest::SHA256), 0);
+            tokio::fs::File::create(part).await
+        }
+        .map_err(|e| Fetch::Bad(format!("write {}: {e}", part.display())))?;
+        let mut tick = Ticker::start(done_before + got);
         loop {
             let frame = tokio::select! {
-                _ = cancel.wait_for(|c| *c) => return Err("cancelled".into()),
+                _ = cancel.wait_for(|c| *c) => return Err(Fetch::Bad("cancelled".into())),
                 r = tokio::time::timeout(STALL, body.frame()) => r
-                    .map_err(|_| format!("{} stalled", f.name))?,
+                    .map_err(|_| Fetch::Broken(format!("{} stalled", f.name)))?,
             };
             let Some(frame) = frame else { break };
-            let frame = frame.map_err(|e| format!("download {}: {e}", f.name))?;
+            let frame = frame.map_err(|e| Fetch::Broken(format!("download {}: {e}", f.name)))?;
             let Some(chunk) = frame.data_ref() else {
                 continue;
             };
             got += chunk.len() as u64;
             if got > f.size {
-                return Err(format!("{} is larger than its manifest size", f.name));
+                return Err(Fetch::Bad(format!(
+                    "{} is larger than its manifest size",
+                    f.name
+                )));
             }
             hash.update(chunk);
             file.write_all(chunk)
                 .await
-                .map_err(|e| format!("write {}: {e}", part.display()))?;
+                .map_err(|e| Fetch::Bad(format!("write {}: {e}", part.display())))?;
             self.set_bytes(id, generation, done_before + got);
             if let Some(rate) = tick.due(done_before + got) {
                 self.set_rate(id, generation, rate);
@@ -1042,16 +1107,52 @@ impl Manager {
             }
         }
         if got != f.size {
-            return Err(format!("{} is {got} bytes, expected {}", f.name, f.size));
+            return Err(Fetch::Broken(format!(
+                "{} is {got} bytes, expected {}",
+                f.name, f.size
+            )));
         }
         let digest = hex(hash.finish().as_ref());
         if digest != f.sha256 {
-            return Err(format!("{} does not match its sha256 ({digest})", f.name));
+            return Err(Fetch::Bad(format!(
+                "{} does not match its sha256 ({digest})",
+                f.name
+            )));
         }
         file.sync_all()
             .await
-            .map_err(|e| format!("write {}: {e}", part.display()))
+            .map_err(|e| Fetch::Bad(format!("write {}: {e}", part.display())))
     }
+
+    /// The hash and length of what an earlier transfer left in `part`, to continue from.
+    async fn resume(&self, part: &Path, size: u64) -> (ring::digest::Context, u64) {
+        let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
+        let Ok(mut file) = tokio::fs::File::open(part).await else {
+            return (hash, 0);
+        };
+        let (mut buf, mut got) = (vec![0u8; 1 << 20], 0u64);
+        loop {
+            match file.read(&mut buf).await {
+                Ok(0) if got < size => return (hash, got),
+                Ok(n) if n > 0 && got + (n as u64) < size => {
+                    hash.update(&buf[..n]);
+                    got += n as u64;
+                }
+                _ => return (ring::digest::Context::new(&ring::digest::SHA256), 0),
+            }
+        }
+    }
+}
+
+/// The part file of `f`, named after its hash so only the same file resumes it.
+fn part_name(f: &FileEntry) -> String {
+    format!("{}.{}.part", f.name, &f.sha256[..16.min(f.sha256.len())])
+}
+
+/// Why a file's transfer failed: `Broken` keeps the part file for a resume.
+enum Fetch {
+    Broken(String),
+    Bad(String),
 }
 
 /// Writes `bytes` to `path` and fsyncs it.
@@ -1144,44 +1245,60 @@ fn client() -> Client<HttpsConnector<HttpConnector>, Empty<Bytes>> {
 }
 
 /// The body of `url` after its redirects (the same scheme rules for every hop).
+/// From `from` when the server honours the range (`true`); a network or server failure is
+/// `Broken`, a refusal of the file `Bad`.
 async fn open(
     client: &Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
     url: &str,
-) -> Result<hyper::body::Incoming, String> {
+    from: u64,
+) -> Result<(hyper::body::Incoming, bool), Fetch> {
     let mut url = url.to_string();
     for _ in 0..=MAX_REDIRECTS {
-        let uri: Uri = url.parse().map_err(|e| format!("bad url {url}: {e}"))?;
-        let req = Request::get(uri.clone())
-            .header(
-                "user-agent",
-                concat!("fliks-engine/", env!("CARGO_PKG_VERSION")),
-            )
+        let uri: Uri = url
+            .parse()
+            .map_err(|e| Fetch::Bad(format!("bad url {url}: {e}")))?;
+        let mut req = Request::get(uri.clone()).header(
+            "user-agent",
+            concat!("fliks-engine/", env!("CARGO_PKG_VERSION")),
+        );
+        if from > 0 {
+            req = req.header(hyper::header::RANGE, format!("bytes={from}-"));
+        }
+        let req = req
             .body(Empty::new())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Fetch::Bad(e.to_string()))?;
         let res = tokio::time::timeout(STALL, client.request(req))
             .await
-            .map_err(|_| format!("{url} did not answer"))?
-            .map_err(|e| format!("{url}: {e}"))?;
+            .map_err(|_| Fetch::Broken(format!("{url} did not answer")))?
+            .map_err(|e| Fetch::Broken(format!("{url}: {e}")))?;
         let status = res.status();
         if status.is_redirection() {
             let to = res
                 .headers()
                 .get(hyper::header::LOCATION)
                 .and_then(|v| v.to_str().ok())
-                .ok_or_else(|| format!("{url}: redirect without a location"))?;
-            let next = absolute(&uri, to)?;
+                .ok_or_else(|| Fetch::Bad(format!("{url}: redirect without a location")))?;
+            let next = absolute(&uri, to).map_err(Fetch::Bad)?;
             if uri.scheme_str() == Some("https") && next.starts_with("http://") {
-                return Err(format!("{url}: redirect to http refused"));
+                return Err(Fetch::Bad(format!("{url}: redirect to http refused")));
             }
             url = next;
             continue;
         }
-        if status != StatusCode::OK {
-            return Err(format!("{url}: HTTP {status}"));
+        let partial = from > 0 && status == StatusCode::PARTIAL_CONTENT;
+        if status != StatusCode::OK && !partial {
+            let why = format!("{url}: HTTP {status}");
+            return Err(
+                if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
+                    Fetch::Broken(why)
+                } else {
+                    Fetch::Bad(why)
+                },
+            );
         }
-        return Ok(res.into_body());
+        return Ok((res.into_body(), partial));
     }
-    Err("too many redirects".into())
+    Err(Fetch::Bad("too many redirects".into()))
 }
 
 /// `location` resolved against the request it answers.

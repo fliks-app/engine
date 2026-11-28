@@ -3,7 +3,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 use super::align::{Aligned, Copy, Role, Run, choose, ended, finish, shares, words_of};
 use super::melody::SAMPLE_RATE;
@@ -128,9 +128,8 @@ pub struct Voicing {
 }
 
 impl Voicing {
-    /// Of the 16 kHz track `pcm`. The loud level around a frame is the 95th percentile of the
-    /// RMS within 10 s (never under 25 dB below the track's own, so a gap is not its own bar);
-    /// a stem with a noise floor also counts as silent what is 20 dB under it and near the floor.
+    /// Of the 16 kHz track `pcm`: silent is `SILENT_DB` under the 95th percentile RMS within 10 s
+    /// (floored 25 dB under the track's own), or 20 dB under it near a stem's noise floor.
     pub fn of(pcm: &[f32]) -> Self {
         let per = (SAMPLE_RATE * FRAME_MS / 1000) as usize;
         let level: Vec<f32> = pcm
@@ -256,11 +255,364 @@ fn spell_fr(n: u32) -> String {
     }
 }
 
+const DE_UNITS: [&str; 20] = [
+    "null",
+    "eins",
+    "zwei",
+    "drei",
+    "vier",
+    "fünf",
+    "sechs",
+    "sieben",
+    "acht",
+    "neun",
+    "zehn",
+    "elf",
+    "zwölf",
+    "dreizehn",
+    "vierzehn",
+    "fünfzehn",
+    "sechzehn",
+    "siebzehn",
+    "achtzehn",
+    "neunzehn",
+];
+const DE_TENS: [&str; 10] = [
+    "", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig",
+];
+
+/// German writes a number as one word: `einundzwanzig`, `zweihundertdreiundzwanzig`.
+fn spell_de(n: u32) -> String {
+    let rest = |m: u32| if m == 0 { String::new() } else { spell_de(m) };
+    match n {
+        0..=19 => DE_UNITS[n as usize].into(),
+        20..=99 if n.is_multiple_of(10) => DE_TENS[(n / 10) as usize].into(),
+        20..=99 => {
+            let unit = if n % 10 == 1 {
+                "ein"
+            } else {
+                DE_UNITS[(n % 10) as usize]
+            };
+            format!("{unit}und{}", DE_TENS[(n / 10) as usize])
+        }
+        100..=999 => {
+            let head = if n < 200 {
+                "hundert".into()
+            } else {
+                format!("{}hundert", spell_de(n / 100))
+            };
+            head + &rest(n % 100)
+        }
+        _ => {
+            let head = if n < 2000 {
+                "tausend".into()
+            } else {
+                format!("{}tausend", spell_de(n / 1000))
+            };
+            head + &rest(n % 1000)
+        }
+    }
+}
+
+const ES_UNITS: [&str; 30] = [
+    "cero",
+    "uno",
+    "dos",
+    "tres",
+    "cuatro",
+    "cinco",
+    "seis",
+    "siete",
+    "ocho",
+    "nueve",
+    "diez",
+    "once",
+    "doce",
+    "trece",
+    "catorce",
+    "quince",
+    "dieciséis",
+    "diecisiete",
+    "dieciocho",
+    "diecinueve",
+    "veinte",
+    "veintiuno",
+    "veintidós",
+    "veintitrés",
+    "veinticuatro",
+    "veinticinco",
+    "veintiséis",
+    "veintisiete",
+    "veintiocho",
+    "veintinueve",
+];
+const ES_TENS: [&str; 10] = [
+    "",
+    "",
+    "",
+    "treinta",
+    "cuarenta",
+    "cincuenta",
+    "sesenta",
+    "setenta",
+    "ochenta",
+    "noventa",
+];
+const ES_HUNDREDS: [&str; 10] = [
+    "",
+    "ciento",
+    "doscientos",
+    "trescientos",
+    "cuatrocientos",
+    "quinientos",
+    "seiscientos",
+    "setecientos",
+    "ochocientos",
+    "novecientos",
+];
+
+fn spell_es(n: u32) -> String {
+    match n {
+        0..=29 => ES_UNITS[n as usize].into(),
+        30..=99 if n.is_multiple_of(10) => ES_TENS[(n / 10) as usize].into(),
+        30..=99 => format!(
+            "{} y {}",
+            ES_TENS[(n / 10) as usize],
+            ES_UNITS[(n % 10) as usize]
+        ),
+        100 => "cien".into(),
+        101..=999 => then(ES_HUNDREDS[(n / 100) as usize].into(), n % 100, spell_es),
+        _ => {
+            let head = if n < 2000 {
+                "mil".into()
+            } else {
+                format!("{} mil", spell_es(n / 1000))
+            };
+            then(head, n % 1000, spell_es)
+        }
+    }
+}
+
+const IT_UNITS: [&str; 20] = [
+    "zero",
+    "uno",
+    "due",
+    "tre",
+    "quattro",
+    "cinque",
+    "sei",
+    "sette",
+    "otto",
+    "nove",
+    "dieci",
+    "undici",
+    "dodici",
+    "tredici",
+    "quattordici",
+    "quindici",
+    "sedici",
+    "diciassette",
+    "diciotto",
+    "diciannove",
+];
+const IT_TENS: [&str; 10] = [
+    "",
+    "",
+    "venti",
+    "trenta",
+    "quaranta",
+    "cinquanta",
+    "sessanta",
+    "settanta",
+    "ottanta",
+    "novanta",
+];
+
+/// Italian joins tens, hundreds and thousands into one word: `ventuno`, `centottanta`.
+fn spell_it(n: u32) -> String {
+    let rest = |m: u32| if m == 0 { String::new() } else { spell_it(m) };
+    match n {
+        0..=19 => IT_UNITS[n as usize].into(),
+        20..=99 => {
+            let (tens, unit) = (IT_TENS[(n / 10) as usize], n % 10);
+            let tens = if matches!(unit, 1 | 8) {
+                &tens[..tens.len() - 1]
+            } else {
+                tens
+            };
+            match unit {
+                0 => tens.into(),
+                3 => format!("{tens}tré"),
+                u => format!("{tens}{}", IT_UNITS[u as usize]),
+            }
+        }
+        100..=999 => {
+            let head = if n < 200 {
+                "cento".into()
+            } else {
+                format!("{}cento", spell_it(n / 100))
+            };
+            let tail = rest(n % 100);
+            let head = if tail.starts_with('o') {
+                head[..head.len() - 1].to_owned()
+            } else {
+                head
+            };
+            head + &tail
+        }
+        _ => {
+            let head = if n < 2000 {
+                "mille".into()
+            } else {
+                format!("{}mila", spell_it(n / 1000))
+            };
+            head + &rest(n % 1000)
+        }
+    }
+}
+
+const NL_UNITS: [&str; 20] = [
+    "nul",
+    "een",
+    "twee",
+    "drie",
+    "vier",
+    "vijf",
+    "zes",
+    "zeven",
+    "acht",
+    "negen",
+    "tien",
+    "elf",
+    "twaalf",
+    "dertien",
+    "veertien",
+    "vijftien",
+    "zestien",
+    "zeventien",
+    "achttien",
+    "negentien",
+];
+const NL_TENS: [&str; 10] = [
+    "", "", "twintig", "dertig", "veertig", "vijftig", "zestig", "zeventig", "tachtig", "negentig",
+];
+
+/// Dutch writes a number as one word: `eenentwintig`, `tweeëntwintig`.
+fn spell_nl(n: u32) -> String {
+    let rest = |m: u32| if m == 0 { String::new() } else { spell_nl(m) };
+    match n {
+        0..=19 => NL_UNITS[n as usize].into(),
+        20..=99 if n.is_multiple_of(10) => NL_TENS[(n / 10) as usize].into(),
+        20..=99 => {
+            let en = if matches!(n % 10, 2 | 3) { "ën" } else { "en" };
+            format!(
+                "{}{en}{}",
+                NL_UNITS[(n % 10) as usize],
+                NL_TENS[(n / 10) as usize]
+            )
+        }
+        100..=999 => {
+            let head = if n < 200 {
+                "honderd".into()
+            } else {
+                format!("{}honderd", spell_nl(n / 100))
+            };
+            head + &rest(n % 100)
+        }
+        _ => {
+            let head = if n < 2000 {
+                "duizend".into()
+            } else {
+                format!("{}duizend", spell_nl(n / 1000))
+            };
+            head + &rest(n % 1000)
+        }
+    }
+}
+
+const PT_UNITS: [&str; 20] = [
+    "zero",
+    "um",
+    "dois",
+    "três",
+    "quatro",
+    "cinco",
+    "seis",
+    "sete",
+    "oito",
+    "nove",
+    "dez",
+    "onze",
+    "doze",
+    "treze",
+    "catorze",
+    "quinze",
+    "dezesseis",
+    "dezessete",
+    "dezoito",
+    "dezenove",
+];
+const PT_TENS: [&str; 10] = [
+    "",
+    "",
+    "vinte",
+    "trinta",
+    "quarenta",
+    "cinquenta",
+    "sessenta",
+    "setenta",
+    "oitenta",
+    "noventa",
+];
+const PT_HUNDREDS: [&str; 10] = [
+    "",
+    "cento",
+    "duzentos",
+    "trezentos",
+    "quatrocentos",
+    "quinhentos",
+    "seiscentos",
+    "setecentos",
+    "oitocentos",
+    "novecentos",
+];
+
+/// `rest` after `head` with `e` when it is under 100 or a round hundred, else a space.
+fn then_pt(head: String, rest: u32) -> String {
+    match rest {
+        0 => head,
+        r if r < 100 || r % 100 == 0 => format!("{head} e {}", spell_pt(r)),
+        r => format!("{head} {}", spell_pt(r)),
+    }
+}
+
+fn spell_pt(n: u32) -> String {
+    match n {
+        0..=19 => PT_UNITS[n as usize].into(),
+        20..=99 => then_pt(PT_TENS[(n / 10) as usize].into(), n % 10),
+        100 => "cem".into(),
+        101..=999 => then_pt(PT_HUNDREDS[(n / 100) as usize].into(), n % 100),
+        _ => {
+            let head = if n < 2000 {
+                "mil".into()
+            } else {
+                format!("{} mil", spell_pt(n / 1000))
+            };
+            then_pt(head, n % 1000)
+        }
+    }
+}
+
 /// A number written out in words for the languages that have a table, else nothing.
 fn spell(n: u32, language: &str) -> String {
     match language {
         "fr" => spell_fr(n),
         "en" => spell_en(n),
+        "de" => spell_de(n),
+        "es" => spell_es(n),
+        "it" => spell_it(n),
+        "nl" => spell_nl(n),
+        "pt" => spell_pt(n),
         _ => String::new(),
     }
 }
@@ -316,11 +668,15 @@ pub fn tokens(word: &str, vocab: &Vocab, language: &str) -> Vec<u32> {
                 Case::Upper => c.to_uppercase().collect(),
                 Case::Lower => c.to_lowercase().collect(),
             };
-            out.extend(
-                cased
-                    .iter()
-                    .map(|k| vocab.ids.get(k).copied().unwrap_or(WILDCARD)),
-            );
+            out.extend(cased.iter().map(|k| {
+                vocab.ids.get(k).copied().unwrap_or_else(|| {
+                    let mut base = k.nfd().filter(|b| !is_combining_mark(*b));
+                    match (base.next(), base.next()) {
+                        (Some(b), None) => vocab.ids.get(&b).copied().unwrap_or(WILDCARD),
+                        _ => WILDCARD,
+                    }
+                })
+            }));
         } else if c.is_alphanumeric() {
             out.push(WILDCARD);
         }
@@ -714,9 +1070,8 @@ fn band_of(copies: &[Copy], i: usize, duration_ms: u32) -> Option<(u32, u32)> {
     (hi > lo).then_some((lo, hi))
 }
 
-/// The frames a copy needs at least: one a token of a required word, a delimiter between words, a
-/// blank between two equal tokens in a row, one for the star before it, two for the blanks a jump
-/// over an optional span goes between.
+/// The frames a copy needs at least: a token each, a delimiter between words, a blank between
+/// equal tokens, the star before it, two blanks around a jump over an optional span.
 fn frames_needed(words: &[Vec<u32>], roles: &[Role]) -> usize {
     let words = words.iter().zip(roles).filter(|(w, _)| !w.is_empty());
     let (mut required, mut spans, mut last) = (vec![], 0, None);
@@ -780,9 +1135,8 @@ struct Plan {
     frames: Vec<(u32, u32)>,
 }
 
-/// The copies of `lines` with their frames. A band too short reaches the next one's end; a copy
-/// that cannot follow the ones before it (stale times) is untimed; one that fits nowhere has no
-/// tokens, so the copies kept always have a path.
+/// The copies of `lines` with their frames: a band too short reaches the next one's end, a copy
+/// with stale times is untimed, one that fits nowhere is dropped.
 fn plan(lines: &[AlignLine], vocab: &Vocab, language: &str, duration_ms: u32) -> Plan {
     let mut copies = words_of(lines);
     let mut toks: Vec<Vec<Vec<u32>>> = copies
@@ -891,10 +1245,8 @@ pub fn fits(
     }
 }
 
-/// The lines placed by CTC forced alignment, and the share of words found: `em` the track's
-/// emissions for `lyric_ids`, `voice` its levels. When the timed pass finds little, the same
-/// emissions are searched again without the times and with the times mapped by a fit on that
-/// pass, and the best pass is kept (see `prefer`).
+/// The lines placed by CTC forced alignment, and the share of words found: `em` the emissions
+/// for `lyric_ids`, `voice` the stem's levels. A weak timed pass is retried by `choose`.
 pub fn align(
     lines: &[AlignLine],
     vocab: &Vocab,
@@ -1042,11 +1394,68 @@ mod tests {
     }
 
     #[test]
-    fn numbers_are_spelled_for_fr_and_en_only() {
+    fn a_letter_the_vocabulary_lacks_falls_back_to_its_base_letter() {
+        let v = Vocab::new([('e', 2), ('a', 3)], BLANK, DELIM, Case::Lower);
+        assert_eq!(tokens("éà", &v, "xx"), vec![2, 3]);
+        assert_eq!(tokens("ü", &v, "xx"), vec![WILDCARD]);
+    }
+
+    #[test]
+    fn numbers_are_spelled_for_the_languages_with_a_table() {
         assert_eq!(spell_fr(21), "vingt et un");
         assert_eq!(spell_fr(71), "soixante et onze");
         assert_eq!(spell_fr(1984), "mille neuf cent quatre vingt quatre");
         assert_eq!(spell_en(1984), "one thousand nine hundred eighty four");
+        let spelled = |f: fn(u32) -> String, n: &[u32]| n.iter().map(|n| f(*n)).collect::<Vec<_>>();
+        assert_eq!(
+            spelled(spell_de, &[1, 21, 100, 223, 1984]),
+            [
+                "eins",
+                "einundzwanzig",
+                "hundert",
+                "zweihundertdreiundzwanzig",
+                "tausendneunhundertvierundachtzig"
+            ]
+        );
+        assert_eq!(
+            spelled(spell_es, &[21, 31, 100, 101, 1984]),
+            [
+                "veintiuno",
+                "treinta y uno",
+                "cien",
+                "ciento uno",
+                "mil novecientos ochenta y cuatro"
+            ]
+        );
+        assert_eq!(
+            spelled(spell_it, &[21, 23, 88, 180, 2001]),
+            [
+                "ventuno",
+                "ventitré",
+                "ottantotto",
+                "centottanta",
+                "duemilauno"
+            ]
+        );
+        assert_eq!(
+            spelled(spell_nl, &[21, 22, 100, 1984]),
+            [
+                "eenentwintig",
+                "tweeëntwintig",
+                "honderd",
+                "duizendnegenhonderdvierentachtig"
+            ]
+        );
+        assert_eq!(
+            spelled(spell_pt, &[21, 100, 101, 1100, 1984]),
+            [
+                "vinte e um",
+                "cem",
+                "cento e um",
+                "mil e cem",
+                "mil novecentos e oitenta e quatro"
+            ]
+        );
         let v = Vocab::new(
             "abcdeinoqrstuvxzé".chars().zip(2..),
             BLANK,
@@ -1054,7 +1463,8 @@ mod tests {
             Case::Lower,
         );
         assert!(!tokens("12", &v, "fr").is_empty());
-        assert_eq!(tokens("12", &v, "de"), vec![WILDCARD]);
+        assert_eq!(tokens("12", &v, "ja"), vec![WILDCARD]);
+        assert!(!tokens("12", &v, "de").is_empty());
     }
 
     #[test]

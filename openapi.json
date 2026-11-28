@@ -991,6 +991,12 @@
           },
           "modelVersion": {
             "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`JobRevisions.align` of the engine that placed the words.",
+            "minimum": 0
           }
         }
       },
@@ -3906,6 +3912,13 @@
                 "enum": [
                   "Align"
                 ]
+              },
+              "voicing": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Absolute path on this host of the vocal stem when `media` is the mix: word ends and\nsilences are read from it. Absent: from `media`."
               }
             }
           },
@@ -4425,6 +4438,32 @@
           }
         }
       },
+      "JobRevisions": {
+        "type": "object",
+        "description": "Version of the algorithm around the model, per job kind: a result stamped with an older one\nwas made by code that has changed since, even with the same model version.",
+        "required": [
+          "separate",
+          "align",
+          "melody"
+        ],
+        "properties": {
+          "align": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "melody": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "separate": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "JobSnapshot": {
         "type": "object",
         "required": [
@@ -4625,6 +4664,60 @@
             ]
           }
         }
+      },
+      "Key": {
+        "type": "object",
+        "description": "A key: its tonic as a pitch class, 0 (C) to 11 (B).",
+        "required": [
+          "tonic",
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/KeyMode"
+          },
+          "tonic": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "KeyEstimate": {
+        "type": "object",
+        "description": "The best key of the melody's pitch classes.",
+        "required": [
+          "key",
+          "confidence"
+        ],
+        "properties": {
+          "alternative": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Key",
+                "description": "The runner-up when it scores nearly as well (a melody alone often cannot tell a major key\nfrom its relative minor)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "description": "Correlation of the pitch classes with the key's profile, -1 to 1."
+          },
+          "key": {
+            "$ref": "#/components/schemas/Key"
+          }
+        }
+      },
+      "KeyMode": {
+        "type": "string",
+        "enum": [
+          "major",
+          "minor"
+        ]
       },
       "Keyframe": {
         "type": "object",
@@ -5626,6 +5719,52 @@
           }
         }
       },
+      "MelodyAnalysis": {
+        "type": "object",
+        "description": "Key, tuning, range and tempo of the sung melody.",
+        "required": [
+          "tuningCents",
+          "lowMidi",
+          "highMidi"
+        ],
+        "properties": {
+          "highMidi": {
+            "type": "number",
+            "format": "double",
+            "description": "MIDI pitch (tuning removed) above which 5 % of the sung time lies."
+          },
+          "key": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KeyEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lowMidi": {
+            "type": "number",
+            "format": "double",
+            "description": "MIDI pitch (tuning removed) under which 5 % of the sung time lies."
+          },
+          "tempo": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TempoEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tuningCents": {
+            "type": "number",
+            "format": "double",
+            "description": "How far the singing sits from A4 = 440 Hz, -50 to 50 cents."
+          }
+        }
+      },
       "MelodyMeta": {
         "type": "object",
         "description": "What a `Melody` found.",
@@ -5635,11 +5774,28 @@
           "spans"
         ],
         "properties": {
+          "analysis": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MelodyAnalysis",
+                "description": "What the notes of every span say about the song; absent when they hold too few notes."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "type": "string"
           },
           "modelVersion": {
             "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`JobRevisions.melody` of the engine that found the notes.",
+            "minimum": 0
           },
           "spans": {
             "type": "array",
@@ -5973,7 +6129,8 @@
           "modelsDir",
           "usedBytes",
           "orphans",
-          "models"
+          "models",
+          "revisions"
         ],
         "properties": {
           "freeBytes": {
@@ -6000,6 +6157,10 @@
               "$ref": "#/components/schemas/ModelOrphan"
             },
             "description": "Directories no manifest entry names, hidden ones (caches) excluded."
+          },
+          "revisions": {
+            "$ref": "#/components/schemas/JobRevisions",
+            "description": "The `revision` each job kind stamps on its result today."
           },
           "runtime": {
             "$ref": "#/components/schemas/KaraokeRuntime"
@@ -7553,6 +7714,12 @@
             "type": "string",
             "description": "The execution provider that ran the networks, or `cpu`."
           },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`JobRevisions.separate` of the engine that wrote the stems.",
+            "minimum": 0
+          },
           "vocals": {
             "oneOf": [
               {
@@ -7589,6 +7756,12 @@
           "provider": {
             "type": "string",
             "description": "The provider that ran the networks, or `cpu`."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`JobRevisions.separate` of the worker's engine.",
+            "minimum": 0
           },
           "stems": {
             "type": "array",
@@ -8370,6 +8543,25 @@
             }
           }
         ]
+      },
+      "TempoEstimate": {
+        "type": "object",
+        "description": "Beats per minute the note onsets repeat at.",
+        "required": [
+          "bpm",
+          "confidence"
+        ],
+        "properties": {
+          "bpm": {
+            "type": "number",
+            "format": "double"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "description": "Strength of that period in the onsets, 0 to 1."
+          }
+        }
       },
       "TonemapAlgo": {
         "type": "string",
