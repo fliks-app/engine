@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.31.4](https://github.com/fliks-app/engine/compare/v1.31.3...v1.31.4) (2026-11-28)
+
+
+### Bug Fixes
+
+* **karaoke:** engine side of the karaoke audit ([#306](https://github.com/fliks-app/engine/issues/306)) ([3c13308](https://github.com/fliks-app/engine/commit/3c13308509a03376f060ae6589eea99484d1fbae))
+* **live:** harden a run's start, stall and stop, and name an init per run ([#302](https://github.com/fliks-app/engine/issues/302)) ([e8fc2d6](https://github.com/fliks-app/engine/commit/e8fc2d66ca9b843c86e9c39e8d92ebbf918973df))
+* **live:** keep one valid playlist and timeline across a session's runs ([#303](https://github.com/fliks-app/engine/issues/303)) ([e3ea9e2](https://github.com/fliks-app/engine/commit/e3ea9e2fa6b3e9d626af08b7695c840ac6e6a6ac))
+
 ## [1.31.3](https://github.com/fliks-app/engine/compare/v1.31.2...v1.31.3) (2026-11-27)
 
 
