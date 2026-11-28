@@ -6,6 +6,7 @@ pub mod ctc;
 pub mod cues;
 pub mod fbank;
 pub mod fingerprint;
+pub mod key;
 pub mod melody;
 pub mod merge;
 pub mod ocr;
